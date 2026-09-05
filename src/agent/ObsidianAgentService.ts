@@ -2239,7 +2239,17 @@ export class ObsidianAgentService {
 		return aggregateSessionSearchHits(hits, query, maxSessions);
 	}
 
-	/** Switches to a stored session, replacing the transcript with its history. */
+	/**
+	 * Switches focus to a stored session.
+	 *
+	 * Two paths, decided by whether this process already built an agent for the
+	 * session. A session touched for the first time is hydrated from its log —
+	 * transcript, compaction, interrupted-run offer, the lot. A session coming
+	 * back into focus is a pure pointer move: its runtime never stopped, so
+	 * re-hydrating it would replace a live conversation with the stale tail its
+	 * log holds. That distinction is what makes a background run survive being
+	 * switched away from and back to (issue #235).
+	 */
 	async openSession(path: string): Promise<void> {
 		await this.initialize();
 		if (this.sessionManager.getActiveSessionPath() === path) {
@@ -2263,6 +2273,19 @@ export class ObsidianAgentService {
 		const rt = this.runtimeFor(path);
 		rt.sessionInfo = info;
 		this.sessionInfo = info;
+		// A runtime that already holds an agent is re-focused, not re-opened, and
+		// everything below this line would undo it. `agent.state.messages` is the
+		// live transcript — a run still in flight has written nothing to the log
+		// yet — so `adoptSessionContext` would swap the working agent for one
+		// rebuilt from the log's stale tail, dropping the reply being streamed and
+		// orphaning the request that is streaming it. `settleInterruptedRuns` would
+		// then read that run's own open ledger entry as a crash left by a previous
+		// process, close it as aborted, and offer to resume it. Both are correct for
+		// a first touch and wrong for a return.
+		if (rt.agent) {
+			this.notify();
+			return;
+		}
 		// The lane belongs to the session being left; the incoming one opens on its
 		// own main line.
 		rt.activeLane = "main";
