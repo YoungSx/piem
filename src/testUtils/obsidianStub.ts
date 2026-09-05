@@ -181,10 +181,16 @@ export class ExtraButtonStub {
  * `onChange` is wired to the element's own `change` event rather than kept as a
  * private callback, so a test can drive the control the way a user does —
  * `el.checked = x; el.dispatchEvent(new Event("change"))` — and exercise the
- * production handler through the same path Obsidian uses. `setValue` deliberately
- * does *not* fire it: Obsidian's own toggle sets the value silently, and a stub
- * that notified on the seeding call would make every row appear to save on
- * render.
+ * production handler through the same path Obsidian uses.
+ *
+ * `setValue` notifies, because Obsidian's own toggle notifies. Its implementation
+ * is `this.on !== value && (this.on = value, toggleClass(…), changeCallback?.(value))`
+ * — verified against 1.13.7 — so a programmatic set re-enters the change handler
+ * whenever it actually changes the value. A stub that set the value silently made
+ * re-entrant handlers look safe, and hid an MCP row whose disable dialog reopened
+ * itself on every answer. Seeding still stays quiet, for the two reasons it does
+ * in Obsidian: rows call `setValue` before `onChange`, and setting the value the
+ * control already holds notifies nobody.
  */
 export class ToggleStub {
 	onChangeHandler: ((value: boolean) => unknown) | undefined;
@@ -205,8 +211,12 @@ export class ToggleStub {
 	}
 
 	setValue(value: boolean): this {
+		if (this.toggleEl.checked === value) {
+			return this;
+		}
 		this.toggleEl.checked = value;
 		this.container.classList.toggle("is-enabled", value);
+		void this.onChangeHandler?.(value);
 		return this;
 	}
 

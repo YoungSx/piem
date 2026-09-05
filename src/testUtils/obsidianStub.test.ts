@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { debounce, getAllTags, prepareFuzzySearch, sortSearchResults } from "./obsidianStub";
+import { debounce, getAllTags, prepareFuzzySearch, sortSearchResults, ToggleStub } from "./obsidianStub";
+import { installDom } from "./dom";
+
+const document = installDom();
 
 /**
  * The stub's own semantics, independent of any consumer.
@@ -187,6 +190,46 @@ describe("obsidianStub", () => {
 			const debounced = debounce(() => undefined, 10);
 			expect(debounced()).toBe(debounced);
 			expect(debounced.cancel()).toBe(debounced);
+		});
+	});
+
+	/**
+	 * The one thing this stub's toggle could get wrong without any consumer
+	 * noticing: whether a programmatic `setValue` notifies.
+	 *
+	 * Obsidian's does — 1.13.7 ships
+	 * `this.on !== value && (this.on = value, …, this.changeCallback?.(value))` —
+	 * so a handler that corrects its own control re-enters itself. While this stub
+	 * set the value silently, an MCP row that did exactly that passed every test
+	 * and shipped a switch that could not be turned off.
+	 */
+	describe("ToggleStub", () => {
+		function build(seed: boolean): { toggle: ToggleStub; seen: boolean[] } {
+			const parent = document.createElement("div");
+			const toggle = new ToggleStub(parent);
+			toggle.setValue(seed);
+			const seen: boolean[] = [];
+			toggle.onChange((value) => seen.push(value));
+			return { toggle, seen };
+		}
+
+		it("setValue notifies when it changes the value", () => {
+			const control = build(false);
+			control.toggle.setValue(true);
+			expect(control.seen).toEqual([true]);
+			expect(control.toggle.getValue()).toBe(true);
+		});
+
+		it("setValue holding the same value notifies nobody", () => {
+			const control = build(true);
+			control.toggle.setValue(true);
+			expect(control.seen).toEqual([]);
+		});
+
+		it("a user's flip notifies exactly once", () => {
+			const control = build(true);
+			control.toggle.toggle(false);
+			expect(control.seen).toEqual([false]);
 		});
 	});
 });
