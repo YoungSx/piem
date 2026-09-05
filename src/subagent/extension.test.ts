@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import type { Api, AssistantMessage, Context, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
@@ -22,6 +22,22 @@ import {
 	composeSubagentPrompt,
 	findSubagentRole,
 } from "./roles";
+import { stubWindowTimers } from "../testUtils/windowStub";
+
+/*
+ * `wait_subagent` arms its timer through `window.setTimeout` — the popout-window
+ * spelling `obsidianmd/prefer-window-timers` pins — so every test that reaches a
+ * wait needs a `window` to arm it on. Installed at file scope rather than inside
+ * one `describe`: the waits are spread across `spawn/wait extension` and
+ * `inspector data`, and a per-block stub would leave whichever block ran without
+ * one failing on `window is not defined`. Without this the file passed only
+ * under a full `bun test`, riding on a `window` some UI test installed first.
+ */
+const restoreWindowTimers = stubWindowTimers();
+
+afterAll(() => {
+	restoreWindowTimers();
+});
 
 const MODEL: Model<Api> = {
 	id: "test-model",
