@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { installObsidianStub, requestUrlMock, resetNotices, shownNotices } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat, TFile, TFolder } from "obsidian";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
@@ -14,6 +14,7 @@ import type { PiemSettings } from "../settings";
 import type { ObsidianAgentService as ObsidianAgentServiceType, PendingToolCall } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { spyLogger } from "../testUtils/logSpy";
+import { stubWindowTimers } from "../testUtils/windowStub";
 import { getT } from "../i18n";
 import type { LoggerLike } from "../logging/Logger";
 
@@ -38,6 +39,20 @@ const SESSION_DIR = `.${"obsidian"}/plugins/piem/sessions`;
 // them here, and a stub that claimed a look would be the very lie
 // `UserSkillsSearchEntry.found` distinguishes.
 const NO_USER_SKILLS = async (): Promise<UserSkillsLoad> => ({ skills: [], diagnostics: [], searched: [] });
+
+/*
+ * The delegation tests reach `wait_subagent`, which arms its timer through
+ * `window.setTimeout` — the popout-window spelling this repo pins. At file scope
+ * so any later block that delegates is covered too; without it the file passed
+ * only under a full `bun test`, on a `window` some UI test installed first, and
+ * the wait surfaced as a tool error reading "window is not defined".
+ */
+const restoreWindowTimers = stubWindowTimers();
+
+afterAll(() => {
+	restoreWindowTimers();
+});
+
 
 class MemoryAdapter {
 	private readonly files = new Map<string, { content: string; mtime: number }>();

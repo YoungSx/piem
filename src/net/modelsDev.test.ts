@@ -1,6 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { fetchModelsDevIndex, parseModelsDevIndex, resetModelsDevIndexForTests } from "./modelsDev";
 import type { ModelsDevIndex } from "./modelsDev";
+import { installObsidianStub } from "../testUtils/obsidianStub";
+
+// `modelsDev` builds its transport through `obsidianFetch`, which imports
+// `obsidian` for `requestUrl` — and that module ships types only, so the stub has
+// to be registered before the import resolves. A static import would resolve
+// first: the file then passed only under a full `bun test`, riding on a
+// registration some earlier file had already done, and failed on its own with
+// "Cannot find package 'obsidian'".
+installObsidianStub();
+const { fetchModelsDevIndex, parseModelsDevIndex, resetModelsDevIndexForTests } = await import("./modelsDev");
 
 /**
  * models.dev is a living dataset fetched at runtime, so the parser cannot know

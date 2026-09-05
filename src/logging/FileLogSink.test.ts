@@ -1,7 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import type { DataAdapter } from "obsidian";
 import { FileLogSink } from "./FileLogSink";
 import type { LogRecord } from "./logRecord";
+import { stubWindowTimers } from "../testUtils/windowStub";
 
 /**
  * The disk half of logging.
@@ -111,6 +112,16 @@ function createSink(adapter: LogAdapterDouble, options: { maxBytes?: number } = 
 }
 
 describe("FileLogSink", () => {
+	// `schedule` is injectable but the cancel half is not: `dispose` reaches
+	// `window.clearTimeout` directly, so even a sink handed a fake scheduler needs
+	// a `window` to hand its handle back to. Without this the file passed only
+	// under a full `bun test`, on a `window` some UI test installed first.
+	const restoreWindowTimers = stubWindowTimers();
+
+	afterAll(() => {
+		restoreWindowTimers();
+	});
+
 	it("batches queued records into one write", async () => {
 		const adapter = new LogAdapterDouble();
 		const sink = createSink(adapter);

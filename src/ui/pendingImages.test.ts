@@ -1,5 +1,19 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { fileToPendingImage, toImageContents } from "./pendingImages";
+import { stubWindowMembers } from "../testUtils/windowStub";
+
+/*
+ * Ids come from `window.crypto.randomUUID`, with a `Math.random` fallback behind
+ * optional chaining. Handing over the real `crypto` rather than an empty `window`
+ * keeps the assertions on the branch production takes: a bare `window` would pass
+ * while only ever exercising the fallback. Without any `window` the generator
+ * throws, which is why the file passed only under a full `bun test`.
+ */
+const restoreWindowCrypto = stubWindowMembers({ crypto: globalThis.crypto });
+
+afterAll(() => {
+	restoreWindowCrypto();
+});
 
 class StubFile extends File {
 	private readonly stagedBytes: Uint8Array;

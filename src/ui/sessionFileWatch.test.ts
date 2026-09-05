@@ -1,8 +1,20 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import type { App, EventRef } from "obsidian";
 import { installObsidianStub } from "../testUtils/obsidianStub";
+import { stubWindowTimers } from "../testUtils/windowStub";
 
 installObsidianStub();
+
+/*
+ * The watcher debounces through `window.setTimeout`, so a bare
+ * `bun test <this file>` has to provide one. Without it the file passed only
+ * under a full `bun test`, on a `window` some UI component test installed first.
+ */
+const restoreWindowTimers = stubWindowTimers();
+
+afterAll(() => {
+	restoreWindowTimers();
+});
 
 const { watchSessionFile } = await import("./sessionFileWatch");
 
