@@ -383,6 +383,90 @@ function deferredStreamFn(): {
 	return { streamFn, started, finish };
 }
 
+/** One assistant turn that is a single tool call. */
+function scriptedToolCallStream(model: Model<Api>, callId: string, toolName: string, toolArguments: Record<string, unknown>) {
+	const stream = createAssistantMessageEventStream();
+	const message: AssistantMessage = {
+		role: "assistant",
+		content: [{ type: "toolCall", id: callId, name: toolName, arguments: toolArguments }],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: {
+			input: 1_000,
+			output: 10,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 1_010,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		timestamp: Date.now(),
+		stopReason: "toolUse",
+	};
+	stream.push({ type: "done", reason: "toolUse", message });
+	stream.end(message);
+	return stream;
+}
+
+/**
+ * A script where the parent delegates once and then stops talking, leaving the
+ * child's own turn open until the test closes it.
+ *
+ * The parent's run therefore *finishes* while its child is still working —
+ * which is the state a focus switch has to survive. `wait_subagent` is
+ * deliberately not called: it reaches `window.setTimeout`, which this file has
+ * no DOM for.
+ */
+function delegatingStreamFn(): {
+	streamFn: StreamFn;
+	childStarted: () => boolean;
+	finishChild: (text: string) => void;
+} {
+	let spawned = false;
+	let child: { stream: ReturnType<typeof createAssistantMessageEventStream>; model: Model<Api> } | undefined;
+	const streamFn: StreamFn = (model, context) => {
+		// The subagent system prompt is the only thing that names a delegated task —
+		// same discriminator the service's own delegation test uses.
+		if (context.systemPrompt?.includes("delegated task") ?? false) {
+			const stream = createAssistantMessageEventStream();
+			child = { stream, model };
+			return stream;
+		}
+		if (!spawned) {
+			spawned = true;
+			return scriptedToolCallStream(model, "spawn_1", "spawn_subagent", { task: "Sweep the vault", role: "scout" });
+		}
+		return scriptedTextStream(model, "delegated");
+	};
+	const finishChild = (text: string): void => {
+		if (!child) {
+			throw new Error("No child run is waiting");
+		}
+		const { stream, model } = child;
+		child = undefined;
+		const message: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 1_000,
+				output: 10,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 1_010,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			timestamp: Date.now(),
+			stopReason: "stop",
+		};
+		stream.push({ type: "done", reason: "stop", message });
+		stream.end(message);
+	};
+	return { streamFn, childStarted: () => child !== undefined, finishChild };
+}
+
 /** An immediate echo script: every prompt gets `pong:<prompt>` back. */
 function echoStreamFn(): StreamFn {
 	return (model: Model<Api>, context: Context) => scriptedTextStream(model, `pong:${lastUserPromptText(context)}`);
@@ -594,6 +678,36 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 		expect(logs.get(pathA)).toContain("background reply");
 		await service.openSession(pathA);
 		expect(JSON.stringify(service.getSnapshot().messages)).toContain("background reply");
+	});
+
+	it("a subagent spawned by one session outlives a switch to another", async () => {
+		const { streamFn, childStarted, finishChild } = delegatingStreamFn();
+		const service = createService(new MemoryAdapter(), streamFn);
+		const { pathA, pathB } = await seedTwoSessions(service);
+		await service.openSession(pathA);
+
+		// A delegates and its own run finishes; the child keeps working.
+		await service.sendPrompt("delegate-a");
+		await waitFor(childStarted);
+		const registry = service.getSubagentRegistry();
+		expect(registry.liveCount()).toBe(1);
+
+		// A child's kill switch is linked to its parent RUN's signal, so a focus
+		// switch must not reach it — in either direction.
+		await service.openSession(pathB);
+		await settleTick();
+		expect(registry.liveCount()).toBe(1);
+		await service.openSession(pathA);
+		await settleTick();
+		expect(registry.liveCount()).toBe(1);
+
+		// It still reports, and the report is the child's own.
+		finishChild("Scout report: nothing to organize.");
+		await waitFor(() => registry.liveCount() === 0);
+		const entry = registry.all().find((candidate) => candidate.role === "scout");
+		expect(entry?.settled).toBe(true);
+		expect(entry?.error).toBeUndefined();
+		expect(JSON.stringify(entry?.result?.messages ?? [])).toContain("Scout report: nothing to organize.");
 	});
 
 	it("abort only kills the session it targets", async () => {
