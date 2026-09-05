@@ -73,7 +73,11 @@ rather than asserts, so it is for looking, not for gating.
 
 None of them are part of `npm run verify` — Chromium is not a project dependency —
 so the invariants worth keeping green in CI are mirrored as structural gates in
-`src/ui/panelA11y.test.ts` and `src/ui/transcriptOverflow.test.ts`. Override the
+`src/ui/panelA11y.test.ts` and `src/ui/transcriptOverflow.test.ts`. Motion needs
+one of those mirrors more than most: a still frame cannot tell a paused animation
+from a running one, so `check:css` reads the stylesheet for an `animation` whose
+keyframes do not exist (and for keyframes nothing names) — the half-done rename
+that silently stopped `.piem-chat__subagents-button--running` from breathing. Override the
 browser with `CHROME=` (`CHROMIUM_BIN=` for `measure-visual.mjs`); a snap-packaged
 Chromium cannot read a checkout under a dotted path (`~/.paseo/...`), which
 `PREVIEW_DIR=` works around.

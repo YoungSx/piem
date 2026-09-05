@@ -19,7 +19,7 @@ bun install          # once, or after pulling lockfile changes
 bun test             # unit + structural gates (happy-dom)
 npm run build        # tsc + esbuild → main.js
 npm run lint         # eslint with the same rules the official scanner runs
-npm run verify       # build + bundle/copy/version gates + bun test + lint
+npm run verify       # build + bundle/copy/css/version gates + bun test + lint
 ```
 
 `npm run verify` is what CI runs; verify locally first so CI is a
@@ -27,6 +27,12 @@ confirmation, not a discovery. The bundle-size gate (`check:bundle`) fails
 the build over 1.75 MiB — if your change pushed it over, shrink the change or
 trim a dependency rather than raising the ceiling; the ceiling only moves with
 an Obsidian-mandated artifact change, deliberately.
+
+The CSS gate (`check:css`) fails on an `animation` naming keyframes nothing
+defines, and on keyframes nothing names. Neither is a CSS error — the rule
+parses and the element just never moves — so a half-finished rename passes every
+other check and even looks right in a screenshot, because a still frame of a
+paused animation and a still frame of a running one are the same picture.
 
 Lint parity matters: the local `eslint` flat config is kept identical to the
 official community-plugin scanner's. Do not disable a rule for one path to
