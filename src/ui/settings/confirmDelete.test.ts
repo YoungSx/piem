@@ -29,9 +29,12 @@ describe("confirmDelete", () => {
 	function openModal(options: Partial<ConfirmDeleteOptions> = {}): {
 		title: string;
 		confirm: HTMLButtonElement;
+		cancel: HTMLButtonElement;
 		confirmed: () => number;
+		dismissed: () => number;
 	} {
 		let count = 0;
+		let dismissals = 0;
 		const app = document.createElement("div") as unknown as App;
 		openConfirmDelete(app, {
 			subject: "Provider \"My gateway\"",
@@ -40,14 +43,21 @@ describe("confirmDelete", () => {
 			onConfirm: () => {
 				count += 1;
 			},
+			onDismiss: () => {
+				dismissals += 1;
+			},
 			...options,
 		});
 		// The stub Modal appends its shell to the body and keeps the title as
 		// the shell's first child; the confirm button is the last one built.
 		const shell = document.body.lastElementChild as HTMLElement;
 		const title = shell.firstElementChild?.textContent ?? "";
-		const confirm = Array.from(shell.querySelectorAll("button")).at(-1) as HTMLButtonElement;
-		return { title, confirm, confirmed: () => count };
+		// Scoped to this modal's own shell: a closed dialog is removed, but a test
+		// that leaves one open would otherwise hand the next test its buttons.
+		const buttons = Array.from(shell.querySelectorAll("button"));
+		const confirm = buttons.at(-1) as HTMLButtonElement;
+		const cancel = buttons.find((button) => button.textContent === "confirmDelete.cancel") as HTMLButtonElement;
+		return { title, confirm, cancel, confirmed: () => count, dismissed: () => dismissals };
 	}
 
 	it("defaults to the destructive delete framing", () => {
@@ -80,8 +90,25 @@ describe("confirmDelete", () => {
 
 	it("cancel leaves the row untouched", () => {
 		const modal = openModal();
-		const cancel = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "confirmDelete.cancel");
-		cancel?.click();
+		modal.cancel.click();
 		expect(modal.confirmed()).toBe(0);
+	});
+
+	/**
+	 * The dismissal signal exists for callers that moved something before asking —
+	 * the MCP row's switch has already flipped by the time this dialog opens, and
+	 * only a dismissal tells it to flip back. Exactly one of the two callbacks may
+	 * run, or that caller would both restore and apply.
+	 */
+	it("dismissing reports itself, confirming does not", () => {
+		const cancelled = openModal();
+		cancelled.cancel.click();
+		expect(cancelled.dismissed()).toBe(1);
+		expect(cancelled.confirmed()).toBe(0);
+
+		const confirmed = openModal();
+		confirmed.confirm.click();
+		expect(confirmed.confirmed()).toBe(1);
+		expect(confirmed.dismissed()).toBe(0);
 	});
 });

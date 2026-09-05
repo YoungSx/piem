@@ -1,14 +1,15 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
-import { installObsidianStub } from "../../testUtils/obsidianStub";
+import { installObsidianStub, type ToggleStub } from "../../testUtils/obsidianStub";
 import { getT } from "../../i18n";
 
-installDom();
+const document = installDom();
 installObsidianDomHelpers();
 installObsidianStub();
 
 const { extensionsDefinitions } = await import("./extensionsDefinitions");
+const { Setting } = await import("obsidian");
 import { SettingsPanelState } from "./panelState";
 import type { SettingsPanelHost } from "./panelHost";
 import type { SkillRow } from "../../skills/skillManager";
@@ -167,5 +168,135 @@ describe("extensionsDefinitions", () => {
 		// section promising skills that can never load is noise.
 		const headings = definitions.map((entry) => (entry as { heading?: string }).heading);
 		expect(headings).not.toContain(en.t("skills.userHeading"));
+	});
+});
+
+/**
+ * The MCP row's enable switch, driven the way a user drives it.
+ *
+ * Obsidian's `ToggleComponent.setValue` calls the change callback whenever it
+ * changes the value, so this row's handler can re-enter itself — and the version
+ * these tests were written against did: it restored the switch with `setValue`
+ * from inside its own `onChange`, which ran the *enable* path while the disable
+ * dialog was still open, and opened a second dialog on every answer. In real
+ * Obsidian 1.13.7 that read as a switch that sprang back on and a question that
+ * would not go away.
+ *
+ * So the assertions are counts and positions rather than internal calls: how many
+ * dialogs one flip opened, where the switch sits afterwards, how many saves it
+ * cost, and what the flag on the settings object says.
+ */
+describe("the MCP enable toggle", () => {
+	const NAME = "Smoke";
+	const DIALOG_TITLE = en.t("confirmDelete.disableTitle", {
+		subject: en.t("confirmDelete.mcpServerSubject", { name: NAME }),
+	});
+
+	// Dialogs are the only thing these tests put in the body; clearing it keeps one
+	// test's open question from being counted by the next.
+	afterEach(() => {
+		document.body.replaceChildren();
+	});
+
+	function mount(enabled: boolean): {
+		toggle: ToggleStub;
+		dialogs: () => HTMLElement[];
+		buttons: () => HTMLButtonElement[];
+		flag: () => boolean | undefined;
+		saves: () => number;
+	} {
+		let saves = 0;
+		const server = { id: "mcp_1", name: NAME, url: "http://127.0.0.1:39991/mcp", token: "", secretRef: "", enabled };
+		const base = stubHost();
+		const host = stubHost({
+			settings: { ...base.settings, mcpServers: [server] },
+			save: async () => {
+				saves += 1;
+			},
+			mcp: {
+				states: () => [
+					{ id: server.id, name: server.name, url: server.url, enabled: server.enabled, status: "untested", toolCount: 0 },
+				],
+				test: async () => 0,
+			},
+		});
+		const lists = extensionsDefinitions(host, new SettingsPanelState()).filter(
+			(entry) => (entry as { type?: string }).type === "list",
+		) as Array<{ items?: Array<{ render?: (setting: unknown) => void }> }>;
+		const container = document.createElement("div");
+		// The stub records every control a row built; the real `Setting` type has no
+		// such surface, so the cast goes through `unknown` to reach the stub's.
+		const setting = new (Setting as unknown as new (el: HTMLElement) => { toggles: ToggleStub[] })(container);
+		// items[0] is the section note; the configured servers follow it.
+		lists[1]?.items?.[1]?.render?.(setting);
+		const dialogs = (): HTMLElement[] =>
+			Array.from(document.body.children).filter(
+				(el) => el.firstElementChild?.textContent === DIALOG_TITLE,
+			) as HTMLElement[];
+		return {
+			toggle: setting.toggles[0] as ToggleStub,
+			dialogs,
+			buttons: () => Array.from(dialogs()[0]?.querySelectorAll("button") ?? []),
+			flag: () => host.settings.mcpServers[0]?.enabled,
+			saves: () => saves,
+		};
+	}
+
+	it("asks once, and leaves the switch where the user put it", async () => {
+		const row = mount(true);
+		row.toggle.toggle(false);
+		await settle();
+
+		expect(row.dialogs().length).toBe(1);
+		// The flip is the pending intent, so it stands while the question is open.
+		expect(row.toggle.getValue()).toBe(false);
+		// And nothing is written until the question is answered.
+		expect(row.flag()).toBe(true);
+		expect(row.saves()).toBe(0);
+	});
+
+	it("confirming turns it off in one save, without reopening the question", async () => {
+		const row = mount(true);
+		row.toggle.toggle(false);
+		await settle();
+		const confirm = row.buttons().at(-1);
+		expect(confirm?.textContent).toBe(en.t("confirmDelete.disable"));
+
+		confirm?.click();
+		await settle();
+
+		expect(row.flag()).toBe(false);
+		expect(row.saves()).toBe(1);
+		expect(row.toggle.getValue()).toBe(false);
+		expect(row.dialogs().length).toBe(0);
+	});
+
+	it("dismissing puts the switch back and writes nothing", async () => {
+		const row = mount(true);
+		row.toggle.toggle(false);
+		await settle();
+		const cancel = row.buttons().find((button) => button.textContent === en.t("confirmDelete.cancel"));
+
+		cancel?.click();
+		await settle();
+
+		// The restore is programmatic, so it must not read as a fresh enable: the
+		// row goes back to what is configured, and no save follows it.
+		expect(row.toggle.getValue()).toBe(true);
+		expect(row.flag()).toBe(true);
+		expect(row.saves()).toBe(0);
+		expect(row.dialogs().length).toBe(0);
+	});
+
+	it("turning a disabled server on goes straight through", async () => {
+		const row = mount(false);
+		row.toggle.toggle(true);
+		await settle();
+
+		// Enabling restores rather than destroys, so it asks nothing.
+		expect(row.dialogs().length).toBe(0);
+		expect(row.flag()).toBe(true);
+		expect(row.saves()).toBe(1);
+		expect(row.toggle.getValue()).toBe(true);
 	});
 });

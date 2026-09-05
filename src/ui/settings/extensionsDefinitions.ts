@@ -531,6 +531,13 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
  * rebuild here would replace the row out from under the very toggle the user just
  * flipped, which is why this is the one part of the section that stays
  * imperative.
+ *
+ * Every programmatic move of the switch goes through `show`, and that fence is
+ * load-bearing: Obsidian's `ToggleComponent.setValue` calls the change callback
+ * whenever the value actually changes, so a `setValue` from inside `onChange`
+ * re-enters `onChange`. Without the fence one click on an enabled server ran the
+ * *enable* path again — the switch sprang back on while its own disable dialog
+ * was still open, and answering that dialog opened another one.
  */
 function configureMcpToggle(
 	setting: Setting,
@@ -541,7 +548,20 @@ function configureMcpToggle(
 	const { t } = host;
 	setting.addToggle((toggle) => {
 		toggle.setValue(state.enabled);
+		let correcting = false;
+		/** Moves the switch without the move being mistaken for a user's flip. */
+		const show = (value: boolean): void => {
+			correcting = true;
+			try {
+				toggle.setValue(value);
+			} finally {
+				correcting = false;
+			}
+		};
 		toggle.onChange(async (enabled) => {
+			if (correcting) {
+				return;
+			}
 			const apply = async (): Promise<void> => {
 				const server = host.settings.mcpServers.find((row) => row.id === state.id);
 				if (server) {
@@ -568,19 +588,22 @@ function configureMcpToggle(
 				await apply();
 				return;
 			}
+			// The switch stays off while the question is open — it is the flip the user
+			// just made — and the question owns it until answered: a live switch would
+			// let a second flip race the dialog's own answer. `apply` re-enables it,
+			// and a dismissal restores the configured position instead.
+			toggle.setDisabled(true);
 			openConfirmDelete(host.app, {
 				subject: t.t("confirmDelete.mcpServerSubject", { name: state.name }),
 				kind: "disable",
 				consequences: [t.t("mcp.disableConsequenceTools"), t.t("mcp.disableConsequenceToken")],
 				t,
-				onConfirm: async () => {
-					toggle.setValue(false);
-					await apply();
+				onConfirm: apply,
+				onDismiss: () => {
+					show(true);
+					toggle.setDisabled(false);
 				},
 			});
-			// The user declined; restore the toggle so the row keeps telling the truth
-			// about what is configured.
-			toggle.setValue(true);
 		});
 	});
 }
