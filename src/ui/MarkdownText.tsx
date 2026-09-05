@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { MarkdownRenderer, type App, type Component } from "obsidian";
 import { resolveTextFace, resolveTextRenderMode, type TextBlockKind } from "./markdownPolicy";
+import { routeMarkdownLinkClick } from "./markdownLinks";
 
 export interface MarkdownTextProps {
 	text: string;
@@ -69,6 +70,22 @@ export function MarkdownText({ text, kind, isStreaming = false, app, component, 
  * dependency would fire on every one. Already-rendered content keeps the path
  * that was current when it rendered, which is the right base for the links it
  * actually contains.
+ *
+ * The click listener lives in the same effect and closes over that same base, so
+ * a link resolves against the note the block was rendered about rather than
+ * whichever note happens to be open when it is clicked. The two only differ when
+ * the vault holds notes sharing a basename, and there the block's own base is the
+ * honest one — the model wrote `[[dup]]` while looking at one of them.
+ * {@link routeMarkdownLinkClick} covers why internal links need a listener at all
+ * and external ones need none.
+ *
+ * It is a plain `addEventListener` rather than React's `onClick` or the view's
+ * `registerDomEvent`, for one reason each. Everything it listens for was put in
+ * the container by Obsidian, not by React, so keeping the listener next to the
+ * render call that produced those nodes is what makes the two share a lifetime —
+ * and a base. `registerDomEvent` would tie the listener to the *view* instead, so
+ * a transcript that scrolled a thousand blocks past would leave a thousand
+ * registrations behind on a container each of them no longer owns.
  */
 function MarkdownContainer({ markdown, faceClass, app, component, sourcePath }: { markdown: string; faceClass: string; app: App; component: Component; sourcePath: string }): React.JSX.Element {
 	const ref = useRef<HTMLDivElement | null>(null);
@@ -82,10 +99,16 @@ function MarkdownContainer({ markdown, faceClass, app, component, sourcePath }: 
 			return undefined;
 		}
 		el.empty();
-		void MarkdownRenderer.render(app, markdown, el, sourcePathRef.current, component).catch((error: unknown) => {
+		const base = sourcePathRef.current;
+		void MarkdownRenderer.render(app, markdown, el, base, component).catch((error: unknown) => {
 			console.error("piem: markdown render failed", error);
 		});
+		const onClick = (event: MouseEvent): void => {
+			routeMarkdownLinkClick(app, event, base);
+		};
+		el.addEventListener("click", onClick);
 		return () => {
+			el.removeEventListener("click", onClick);
 			el.empty();
 		};
 	}, [app, component, markdown]);
