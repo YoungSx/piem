@@ -13,7 +13,22 @@ const { createRoot: createRootImpl } = await import("react-dom/client");
 
 let createRootSync: typeof createRoot;
 
-const app = {} as App;
+/*
+ * happy-dom hangs `MouseEvent` off its own window rather than installing it as a
+ * global, and validates dispatched events against that realm.
+ */
+const { window: domWindow } = globalThis as unknown as { window: { MouseEvent: typeof MouseEvent } };
+
+/** Navigations a click on a rendered link asked the workspace for. */
+const openedLinks: [linktext: string, sourcePath: string, newLeaf: unknown][] = [];
+
+const app = {
+	workspace: {
+		openLinkText: async (linktext: string, source: string, newLeaf: unknown): Promise<void> => {
+			openedLinks.push([linktext, source, newLeaf]);
+		},
+	},
+} as unknown as App;
 const component = {} as Component;
 const sourcePath = "Notes/active.md";
 
@@ -34,18 +49,22 @@ async function renderBlock(props: {
 	const root = createRootSync(host);
 	roots.set(host, root);
 	root.render(<MarkdownText text={props.text} kind={props.kind} isStreaming={props.isStreaming} app={app} component={component} sourcePath={sourcePath} />);
-	const markdown = host.querySelector(".piem-chat__markdown") ?? host.firstElementChild;
-	const container = (markdown ?? host) as HTMLElement;
 	if (!props.isStreaming && (props.kind === "user" || props.kind === "assistant" || props.kind === "thinking")) {
-		await flushRender(() => container.querySelector(".stub-rendered") !== null || markdownRenderMock.mock.calls.length > 0);
+		await flushRender(() => host.querySelector(".stub-rendered") !== null || markdownRenderMock.mock.calls.length > 0);
 	} else {
-		await flushRender(() => container.textContent !== "" || host.querySelector(".piem-chat__markdown, pre.piem-chat__text") !== null);
+		await flushRender(() => host.textContent !== "" || host.querySelector(".piem-chat__markdown, pre.piem-chat__text") !== null);
 	}
-	return { host, markdown: container };
+	// Looked up *after* the wait. `root.render` only schedules, so querying first
+	// returned nothing and quietly fell back to the host — which reads the same for
+	// any subtree assertion, and not at all the same for anything that appends to
+	// the container or depends on which element carries a listener.
+	const markdown = (host.querySelector(".piem-chat__markdown") ?? host.firstElementChild ?? host) as HTMLElement;
+	return { host, markdown };
 }
 
 beforeEach(() => {
 	createRootSync = createRootImpl;
+	openedLinks.length = 0;
 	markdownRenderMock.mockReset();
 	markdownRenderMock.mockImplementation(async ({ el }: { el: HTMLElement }) => {
 		const rendered = document.createElement("p");
@@ -182,6 +201,87 @@ describe("MarkdownText", () => {
 		expect(latest.sourcePath).toBe("Notes/elsewhere.md");
 	});
 });
+
+/*
+ * The link wiring, from the container's side. `routeMarkdownLinkClick` is tested
+ * on its own in `markdownLinks.test.ts`; what these three cases pin is that the
+ * handler is actually attached to the block that Obsidian renders into, and which
+ * source path it hands over — neither of which the unit tests can see.
+ *
+ * The anchors are appended by hand because the renderer is a stub here. That is
+ * the honest fixture anyway: in production the anchors are appended by Obsidian,
+ * not by React, and a handler that only saw React-managed children would pass a
+ * test that built them any other way.
+ */
+describe("MarkdownText link navigation", () => {
+	it("opens a vault link that was rendered into the block", async () => {
+		const { markdown } = await renderBlock({ text: "see [[Projects/beta]]", kind: "assistant" });
+
+		clickLink(markdown, { cls: "internal-link", dataHref: "Projects/beta" });
+
+		expect(openedLinks).toEqual([["Projects/beta", sourcePath, false]]);
+	});
+
+	it("leaves an external link in the block to the platform", async () => {
+		const { markdown } = await renderBlock({ text: "see [page](https://example.com/page)", kind: "assistant" });
+
+		const event = clickLink(markdown, { cls: "external-link", href: "https://example.com/page" });
+
+		expect(openedLinks).toEqual([]);
+		// Electron already routes these to the system browser off the anchor's own
+		// target="_blank"; preventing the default would take that away.
+		expect(event.defaultPrevented).toBe(false);
+
+		// Proves the empty list above is the handler declining and not the handler
+		// missing: the same container claims an internal link right after.
+		clickLink(markdown, { cls: "internal-link", dataHref: "Projects/beta" });
+		expect(openedLinks).toEqual([["Projects/beta", sourcePath, false]]);
+	});
+
+	it("resolves a link against the path the block was rendered with", async () => {
+		const { host, markdown } = await renderBlock({ text: "see [[dup]]", kind: "assistant" });
+
+		// Same text, different note. The block does not re-render, so its links still
+		// belong to the note that was open when they were drawn — which is the base
+		// that makes `[[dup]]` mean what the model meant by it.
+		rerenderWith(host, "see [[dup]]", "Archive/elsewhere.md");
+		await flushRender();
+		expect(markdownRenderMock).toHaveBeenCalledTimes(1);
+
+		clickLink(markdown, { cls: "internal-link", dataHref: "dup" });
+
+		expect(openedLinks).toEqual([["dup", sourcePath, false]]);
+	});
+
+	it("replaces the listener on a re-render instead of stacking one", async () => {
+		const { host, markdown } = await renderBlock({ text: "first", kind: "assistant" });
+
+		rerenderWith(host, "second");
+		await flushRender(() => markdownRenderMock.mock.calls.length > 1);
+
+		clickLink(markdown, { cls: "internal-link", dataHref: "Projects/beta" });
+
+		// A missed removeEventListener is visible here and nowhere else: the click
+		// would open the note once per render the block had been through.
+		expect(openedLinks).toHaveLength(1);
+	});
+});
+
+/** Appends one anchor the way Obsidian's renderer would, then clicks it. */
+function clickLink(container: HTMLElement, attrs: { cls: string; dataHref?: string; href?: string }): MouseEvent {
+	const anchor = document.createElement("a");
+	anchor.className = attrs.cls;
+	if (attrs.dataHref !== undefined) {
+		anchor.setAttribute("data-href", attrs.dataHref);
+	}
+	anchor.setAttribute("href", attrs.href ?? attrs.dataHref ?? "");
+	anchor.setAttribute("target", "_blank");
+	anchor.textContent = "link";
+	container.appendChild(anchor);
+	const event = new domWindow.MouseEvent("click", { bubbles: true, cancelable: true });
+	anchor.dispatchEvent(event);
+	return event;
+}
 
 function rerenderWith(host: HTMLElement, text: string, path: string = sourcePath): void {
 	rootOf(host)?.render(

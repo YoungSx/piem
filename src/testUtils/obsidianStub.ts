@@ -795,6 +795,27 @@ const obsidianStub = {
 		render: async (app: unknown, markdown: string, el: HTMLElement, sourcePath: string, component: unknown): Promise<void> =>
 			await markdownRenderMock({ app, markdown, el, sourcePath, component }),
 	},
+	/**
+	 * The one static of `Keymap` the panel reads.
+	 *
+	 * Reimplemented rather than stubbed to a constant because the modifier table
+	 * *is* the behaviour under test wherever it is consulted: a link handler that
+	 * always asked for the current tab would pass a `() => false` stub while
+	 * quietly dropping Cmd-click.
+	 */
+	Keymap: {
+		isModEvent: (event?: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean; button?: number } | null): "tab" | "split" | "window" | boolean => {
+			if (!event) {
+				return false;
+			}
+			const mod = event.ctrlKey === true || event.metaKey === true;
+			if (mod && event.altKey === true) {
+				return event.shiftKey === true ? "window" : "split";
+			}
+			// A middle click asks for a tab without any modifier held.
+			return mod || event.button === 1 ? "tab" : false;
+		},
+	},
 	Plugin: class Plugin {},
 	/**
 	 * Modal with the element scaffold Obsidian's real one builds in its
