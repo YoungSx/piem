@@ -11,7 +11,7 @@ import { DEFAULT_SESSION_RETENTION } from "../session/retention";
 import { DEFAULT_SESSION_DIR } from "../session/sessionDir";
 import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
 import type { PiemSettings } from "../settings";
-import type { ObsidianAgentService as ObsidianAgentServiceType } from "./ObsidianAgentService";
+import type { ObsidianAgentService as ObsidianAgentServiceType, PendingToolCall } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { spyLogger } from "../testUtils/logSpy";
 import { getT } from "../i18n";
@@ -815,8 +815,8 @@ describe("ObsidianAgentService", () => {
 		expect(JSON.stringify(after)).not.toContain("A brand new question");
 	});
 
-	it("reports pending tool calls by name, never the provider's call ids", async () => {
-		let snapshotDuringTool: { name: string; progress?: string }[] | undefined;
+	it("reports a pending call under both its name and pi's id", async () => {
+		let snapshotDuringTool: PendingToolCall[] | undefined;
 		const service = createService(new MemoryAdapter(), {
 			streamFn: createToolCallingStreamFn("ls", "toolu_bdrk_0152GcOpaqueId"),
 		});
@@ -828,9 +828,13 @@ describe("ObsidianAgentService", () => {
 
 		await service.sendPrompt("What folders do I have?");
 
-		// The id pi tracks is opaque to a reader; the panel has to name the tool.
-		expect(snapshotDuringTool).toEqual([{ name: "ls" }]);
-		// And the call clears once it finishes, so the status row does not stick.
+		// Two jobs, two fields. The name is what the panel draws — the id pi tracks
+		// is opaque to a reader, and rendering it was the defect that put names here.
+		// The id is what a transcript row matches its own `ToolCall.id` against, so
+		// dropping it left the renderer guessing from position: right about one call
+		// in flight, wrong about every turn that issued two.
+		expect(snapshotDuringTool).toEqual([{ id: "toolu_bdrk_0152GcOpaqueId", name: "ls" }]);
+		// And the call clears once it finishes, so the placeholder does not stick.
 		expect(service.getSnapshot().pendingToolCalls).toEqual([]);
 	});
 
@@ -866,7 +870,9 @@ describe("ObsidianAgentService", () => {
 
 		// Only the first non-blank line: the row has one line to spend, and the
 		// full output arrives with the tool result anyway.
-		expect(service.getSnapshot().pendingToolCalls).toEqual([{ name: "grep", progress: "42 files scanned" }]);
+		// The id rides along: it is never drawn, but a transcript row matches its own
+		// `ToolCall.id` against it to know whether it is one of the calls still out.
+		expect(service.getSnapshot().pendingToolCalls).toEqual([{ id: "toolu_streaming", name: "grep", progress: "42 files scanned" }]);
 
 		// The progress must not outlive the call that produced it.
 		await handle.handleAgentEvent(focusedRuntime, { type: "tool_execution_end", toolCallId: "toolu_streaming", toolName: "grep", result: {}, isError: false });

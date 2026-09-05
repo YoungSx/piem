@@ -395,12 +395,30 @@ function PendingReply(): React.JSX.Element {
 			aria-busy={true}
 			onMouseOver={suppressOwnTooltip}
 		>
-			<span className="piem-chat__typing" aria-hidden="true">
-				<span className="piem-chat__typing-dot" />
-				<span className="piem-chat__typing-dot" />
-				<span className="piem-chat__typing-dot" />
-			</span>
+			<TypingDots />
 		</article>
+	);
+}
+
+/**
+ * Three dots that say "still going" without saying what.
+ *
+ * Shared by the pending reply and the running-tools row. They are one signal in
+ * two seats — before the first token, and while a tool is out — and the panel
+ * shows them in the same place, so drawing them from two copies of the markup was
+ * an invitation to drift.
+ *
+ * Always `aria-hidden`: each caller carries its own words for a screen reader (a
+ * label on the reply, a live line beside the tools), and three empty spans have
+ * nothing of their own to announce.
+ */
+function TypingDots(): React.JSX.Element {
+	return (
+		<span className="piem-chat__typing" aria-hidden="true">
+			<span className="piem-chat__typing-dot" />
+			<span className="piem-chat__typing-dot" />
+			<span className="piem-chat__typing-dot" />
+		</span>
 	);
 }
 
@@ -440,12 +458,19 @@ export function MessageList({
 	 * every streamed token, so a memo keyed on it would recompute anyway.
 	 */
 	const liveRow = liveRowRef(messages, activeIndex);
+	/*
+	 * The calls still out, as a set the rows can query. Derived here rather than
+	 * per row so a transcript of two hundred rows does not scan the pending list
+	 * two hundred times, and derived from ids rather than names because two
+	 * concurrent `read` calls are two rows with one name between them.
+	 */
+	const runningToolCalls = new Set(pendingToolCalls.map((pending) => pending.id));
 	// Pairs first: the fold planner reads them, because a call whose result failed
 	// has to break a run the same way the failure itself always has.
 	const pairPlan = planToolPairs(messages);
-	const foldPlan = planTraceFolds(messages, { mode: traceExpand, showAgentDetails, liveRow, pairs: pairPlan });
+	const foldPlan = planTraceFolds(messages, { mode: traceExpand, showAgentDetails, pairs: pairPlan });
 	const compactionPlan = planCompactionRows({ messages, event: compactionEvent, retained: compactionRetained });
-	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, t };
+	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, runningToolCalls, t };
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
 	/*
@@ -616,14 +641,31 @@ export function MessageList({
 					/>
 				) : null}
 				{pendingToolCalls.length > 0 ? (
-					// No aria-label: it would replace the row's own text as the
-					// accessible name, and the running tool names — the part worth
-					// hearing — would never reach the screen reader. role="status"
-					// already makes the content itself the announcement.
+					/*
+					 * Something is still out — and visibly, that is all this says now.
+					 *
+					 * It used to name the running tools, from the same table and through
+					 * the same function the rows above it use, under a spinner turning at
+					 * the same rate as theirs. Two rows, one fact, and the tail was the
+					 * copy: the transcript read back to itself. The rows own "which tool,
+					 * and is it back" because they are where the tool is; what only a
+					 * fixed seat at the bottom can say is that the turn has not finished
+					 * even when the row that is working has scrolled out of sight.
+					 *
+					 * The names stay for the announcement. `role="status"` reports the
+					 * text inside the region, so the visually-hidden line is what a
+					 * screen reader hears and what changes as tools come and go — the
+					 * dots cannot carry that, which is why they are marked decorative
+					 * instead of being handed an `aria-label` that would have replaced
+					 * the names with a summary.
+					 */
 					<div className="piem-chat__tool-status" role="status">
-						<ObsidianIcon name="loader-circle" className="piem-chat__spinner" />
-						{t.t("chat.working")}
-						{pendingToolCalls.map((pending) => describePendingTool(pending, showAgentDetails, t)).join(", ")}
+						<TypingDots />
+						<span className="piem-chat__visually-hidden">
+							{t.t("chat.working", {
+								tools: pendingToolCalls.map((pending) => describePendingTool(pending, showAgentDetails, t)).join(", "),
+							})}
+						</span>
 					</div>
 				) : null}
 				{awaitsFirstToken(messages, isStreaming, pendingToolCalls.length > 0) ? <PendingReply /> : null}
@@ -1177,6 +1219,18 @@ interface MessageContext {
 	/** The block the model is writing right now; see {@link liveRowRef}. */
 	liveRow: TraceRowRef | null;
 	/**
+	 * The call ids pi still has out, straight from `agent.state.pendingToolCalls`.
+	 *
+	 * A tool row asks this instead of {@link liveRow}, and the difference is not a
+	 * refinement — it is a different question. `liveRow` answers "which block is
+	 * the model writing", which a turn issuing one call happens to answer
+	 * correctly and a turn issuing eight cannot: only the last block matches, so
+	 * the other seven read as finished while they are still out. Blocks that have
+	 * no id keep `liveRow` — a thought is not a call, and "the last block is still
+	 * growing" is exactly right for it.
+	 */
+	runningToolCalls: ReadonlySet<string>;
+	/**
 	 * Copy for the render helpers.
 	 *
 	 * Carried on the context rather than read through {@link useT}: these are
@@ -1297,7 +1351,7 @@ function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): Re
 		if (slot) {
 			return slot.head ? <FoldedTrace key={blockIndex} group={slot.group} context={context} /> : null;
 		}
-		return <ToolCallTrace key={blockIndex} call={content} live={live} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} />;
+		return <ToolCallTrace key={blockIndex} call={content} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} />;
 	});
 }
 
@@ -1316,6 +1370,16 @@ interface TraceProps {
 	nameIsIdentifier?: boolean;
 	/** Revealed content; `null` renders a plain row with no disclosure affordance. */
 	body?: React.ReactNode;
+	/**
+	 * Whether the row is still resolving, for assistive tech.
+	 *
+	 * The breath is the visual half of this and reaches nobody who cannot see it.
+	 * It is `aria-busy` rather than a live region on purpose: dozens of rows can be
+	 * out at once, and a region per row would announce a queue nobody asked to
+	 * hear. The tail placeholder is the announcement; this is what a reader
+	 * arriving at the row itself is told.
+	 */
+	busy?: boolean;
 	/**
 	 * The row's initial open state, from the expand mode the reader chose. An
 	 * `open` attribute on a `<details>` sets the default, not a lock — the reader
@@ -1347,7 +1411,7 @@ function traceNameClass(isIdentifier: boolean): string {
  * single `grep` could bury the model's actual prose. Everything mechanical now
  * collapses to a 1-line row the reader opens on demand.
  */
-function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, open = false, children }: TraceProps): React.JSX.Element {
+function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, busy = false, open = false, children }: TraceProps): React.JSX.Element {
 	const revealed = body === undefined ? children : body;
 	const classes = ["piem-chat__trace", className].filter(Boolean).join(" ");
 	const row = (
@@ -1358,11 +1422,18 @@ function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, 
 		</>
 	);
 
+	// `undefined` rather than `false` for a settled row: `aria-busy="false"` on
+	// every trace in a long transcript is markup that says nothing.
+	const ariaBusy = busy ? true : undefined;
 	if (!revealed) {
-		return <div className={`${classes} piem-chat__trace--flat`}>{row}</div>;
+		return (
+			<div className={`${classes} piem-chat__trace--flat`} aria-busy={ariaBusy}>
+				{row}
+			</div>
+		);
 	}
 	return (
-		<details className={classes} open={open}>
+		<details className={classes} open={open} aria-busy={ariaBusy}>
 			<summary className="piem-chat__trace-summary">{row}</summary>
 			<div className="piem-chat__trace-body">{revealed}</div>
 		</details>
@@ -1370,18 +1441,14 @@ function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, 
 }
 
 /**
- * One tool call, collapsed.
- *
- * A component rather than inline markup because a folded run draws the same
- * rows inside its body, from calls belonging to messages other than the one
- * being rendered — so the row cannot be a closure over the turn it came from.
- *
- * `live` spins the icon instead of settling on the tool's own glyph, so "the
- * turn is working" reads one way everywhere machine traffic appears. Always
- * false inside a fold: a running call is never folded.
- */
-/**
  * One tool invocation, as one row.
+ *
+ * A component rather than inline markup because a folded run draws the same rows
+ * inside its body, from calls belonging to messages other than the one being
+ * rendered — so the row cannot be a closure over the turn it came from. It reads
+ * its own running state off the context for the same reason: a fold used to hand
+ * every row it drew `live={false}`, which was true only while a running call
+ * could not be folded.
  *
  * The call and the result used to be a row each, drawing the same name from the
  * same table — so the transcript said "Wrote a note" under a wrench that reports
@@ -1389,11 +1456,12 @@ function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, 
  * one thing, and the two halves the reader wanted (which note, and did it work)
  * split across them with a truncation each.
  *
- * `result` is the message that answered this call, or `null` while the tool is
- * still out — which is also what a row looks like when the turn was interrupted
- * before the result arrived. `circle-slash` is what that state gets: asked and
- * never answered, the same glyph the transcript already uses for a reply the
- * reader stopped.
+ * `result` is the message that answered this call, or `null` — and the two ways a
+ * row gets there are now told apart. A call pi still has out is running; a call
+ * with no result and nothing running behind it is a turn interrupted before the
+ * answer arrived, and `circle-slash` is left to mean exactly that. Both used to
+ * be one state, so an interrupted call and seven concurrent ones drew the same
+ * row.
  *
  * A row that has its result wears `--result` so it keeps the height bound on its
  * body: the call's own payload is a few lines of JSON, but a grep's output is not,
@@ -1401,16 +1469,15 @@ function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, 
  */
 function ToolCallTrace({
 	call,
-	live,
 	result,
 	context,
 }: {
 	call: ToolCall;
-	live: boolean;
 	result: ToolResultMessage | null;
 	context: MessageContext;
 }): React.JSX.Element {
 	const showDetails = context.showAgentDetails;
+	const running = context.runningToolCalls.has(call.id);
 	const diff = result ? extractDiff(result.details) : null;
 	const payload = showDetails ? <pre className="piem-chat__text">{JSON.stringify(call.arguments, null, 2)}</pre> : null;
 	/*
@@ -1431,11 +1498,12 @@ function ToolCallTrace({
 	) : null;
 	return (
 		<Trace
-			icon={traceIcon(call.name, live, result)}
+			icon={traceIcon(call.name, running, result)}
 			name={describeTool(call.name, showDetails, context.t)}
 			nameIsIdentifier={isToolIdentifier(call.name, showDetails)}
 			detail={pairedDetail(call, result, diff, context.t)}
-			className={traceClasses(live, result)}
+			className={traceClasses(running, result)}
+			busy={running}
 			// A diff-bearing row opens itself under `highValue`: the critique called
 			// the undo story the panel's biggest gap, and what an edit changed is the
 			// one thing a reader answers by reading rather than by deciding to read.
@@ -1450,32 +1518,37 @@ function ToolCallTrace({
 }
 
 /**
- * The one glyph a tool row gets, spent on whichever of two questions is open.
+ * The one glyph a tool row gets, and the tool keeps it in three of four states.
  *
- * Three states outrank the tool's identity, because each is something the
- * reader has to act on: it is still going, it never came back, it broke. A row
- * that did none of those is a row that worked — and "it worked" is the default
- * a tick spent the slot restating, while the sentence beside it already said
- * so. So a settled, successful row gives the slot back to the tool, which is
- * the one thing about it the row was never able to show: reading a note and
- * trashing one used to be the same picture.
+ * Two states outrank the tool's identity, because each is something the reader
+ * has to act on and neither has anything to do with which tool it was: it never
+ * came back, or it broke. "It worked" is not one of them — a tick spent the slot
+ * restating what the sentence beside it already said — and neither, now, is "it
+ * is still going".
+ *
+ * That last one is the change. A spinner in this slot answered "is it working?",
+ * a question the row could answer without the glyph: something is moving. What
+ * it could not answer without the glyph is *what the wait is for* — and the wait
+ * is the moment that question matters most, because a search and a subagent are
+ * seconds and minutes apart. So a running row keeps the tool's own picture and
+ * lets the motion carry the state; the hourglass a `wait_subagent` row now shows
+ * is the honest picture of the wait, where the spinner was a picture of nothing.
  */
-function traceIcon(name: string, live: boolean, result: ToolResultMessage | null): IconName {
-	if (live) {
-		return "loader-circle";
+function traceIcon(name: string, running: boolean, result: ToolResultMessage | null): IconName {
+	if (result) {
+		return result.isError ? "alert-triangle" : toolIcon(name);
 	}
-	if (!result) {
-		return "circle-slash";
-	}
-	return result.isError ? "alert-triangle" : toolIcon(name);
+	// No result, for one of two reasons the row must not blur: pi still has the
+	// call out, or the turn ended without ever answering it.
+	return running ? toolIcon(name) : "circle-slash";
 }
 
-/** Modifier classes for a paired row: the body bound, the failure tint, the spinner. */
-function traceClasses(live: boolean, result: ToolResultMessage | null): string | undefined {
+/** Modifier classes for a paired row: the body bound, the failure tint, the breath. */
+function traceClasses(running: boolean, result: ToolResultMessage | null): string | undefined {
 	const classes = [
 		result ? "piem-chat__trace--result" : null,
 		result?.isError ? "piem-chat__trace--error" : null,
-		live ? "piem-chat__trace--live" : null,
+		running ? "piem-chat__trace--running" : null,
 	].filter(Boolean);
 	return classes.length > 0 ? classes.join(" ") : undefined;
 }
@@ -1583,11 +1656,21 @@ function ToolResultTrace({ message, context }: { message: ToolResultMessage; con
  * session file replayed from another build is not guaranteed to keep unique.
  */
 function FoldedTrace({ group, context }: { group: TraceFoldGroup; context: MessageContext }): React.JSX.Element {
+	/*
+	 * Whether anything inside is still out. One bit, not a count: the summary
+	 * beside it already says how many calls the fold swallowed, and "6 of 8 back"
+	 * is a progress report a reader did not ask a folded row for. What they ask a
+	 * folded row is whether this stretch of the turn is done, and the breath
+	 * answers exactly that — one animation for however many calls are behind it,
+	 * which is the whole reason the running calls are allowed to fold now.
+	 */
+	const running = group.rows.some((row) => row.kind === "call" && context.runningToolCalls.has(row.call.id));
 	return (
 		<Trace
 			icon={GENERIC_TOOL_ICON}
 			name={describeTraceFold(group.tallies, context.t)}
-			className="piem-chat__trace--fold"
+			className={running ? "piem-chat__trace--fold piem-chat__trace--running" : "piem-chat__trace--fold"}
+			busy={running}
 			/*
 			 * The rows it swallowed, paired the same way the transcript pairs them —
 			 * so opening a fold shows what the reader would have seen unfolded, and a
@@ -1605,7 +1688,6 @@ function FoldedTrace({ group, context }: { group: TraceFoldGroup; context: Messa
 						<ToolCallTrace
 							key={`${row.ref.message}:${row.ref.block}`}
 							call={row.call}
-							live={false}
 							result={pairedResult(context.pairPlan, row.ref.message, row.ref.block ?? -1)}
 							context={context}
 						/>

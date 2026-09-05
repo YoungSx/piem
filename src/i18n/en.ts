@@ -92,7 +92,15 @@ export const en = {
 		skipToComposer: "Skip to message box",
 		/** Reverse skip link: from the composer back to the transcript, the same bypass read backwards. */
 		skipToTranscript: "Back to conversation",
-		working: "Working: ",
+		/**
+		 * Announcement for the running-tools row at the tail of the transcript.
+		 *
+		 * Screen-reader only: the row draws three dots, and the tools it names are
+		 * already on the transcript rows above it, each carrying its own state. This
+		 * line exists because those rows cannot announce themselves — `role="status"`
+		 * reports the text inside the region, and this is that text.
+		 */
+		working: "Working: {tools}",
 		/**
 		 * The typing indicator shown between sending and the first token, in the
 		 * assistant's own position in the transcript.

@@ -1700,11 +1700,14 @@ button.piem-chat__context-open {
 }
 
 /*
- * A trace row still running — a thinking block being produced, a tool call
- * whose result has not landed. The loader icon replaces the settled glyph, so
- * "in flight" reads one way everywhere the transcript shows it. The muted tone
- * lifts it off the faint the settled rows use: a row that is working is the one
- * thing on screen worth catching the eye.
+ * A row whose glyph is a loader: a thought being produced, a tidy in progress.
+ * The icon is the spinner, so it turns, and the muted tone lifts it off the
+ * faint the settled rows use.
+ *
+ * Tool rows used to be here too and are not any more — see `--running` below.
+ * The rows that stayed are the ones with no picture of their own to show: a
+ * thought is a thought, and the loader is the only thing that slot could ever
+ * have held.
  *
  * The transform plumbing is the spinner's (see `piem-chat__spinner`): the span
  * needs a box and the SVG needs a fill-box origin, or the icon orbits a corner
@@ -1720,6 +1723,66 @@ button.piem-chat__context-open {
 
 	.piem-chat__trace--live .piem-chat__trace-icon {
 		animation: pi-spin 1.1s linear infinite;
+	}
+}
+
+/*
+ * A tool call the agent still has out — or a folded run holding one.
+ *
+ * The glyph here belongs to the tool, not to the state: an hourglass for a wait,
+ * an eye for a read, a wrench for a fold of mixed traffic. That is the point of
+ * this rule existing separately from `--live`. A spinner answered "is something
+ * happening", which the row could show without spending its only picture on it;
+ * what the reader cannot get any other way is *what the wait is for*, and the
+ * wait is when that matters most — a search is a second, a subagent is minutes.
+ *
+ * So the state moves off the glyph and onto three signals that stack, because
+ * one of them is motion and motion is the one a reader may have switched off:
+ *
+ *  1. The row's own text lifts from muted to normal. A brighter line is what
+ *     catches a scanning eye at 300px — a whole row, where the old spinner was
+ *     14 pixels — and it survives both reduced motion and colour blindness.
+ *  2. The glyph goes accent. That is already this plugin's word for "running":
+ *     the subagent panel's working dot is the same colour, so a reader who has
+ *     seen one surface reads the other without being taught.
+ *  3. It breathes.
+ *
+ * Opacity alone for the breath, so it composites instead of reflowing a row
+ * inside a scroller, and `piem-breathe` at the subagent dot's own 1.8s: one
+ * concept, one rate, however many surfaces show it.
+ */
+.piem-chat__trace--running.piem-chat__trace--flat,
+.piem-chat__trace--running > .piem-chat__trace-summary {
+	color: var(--text-normal);
+}
+
+.piem-chat__trace--running > .piem-chat__trace-summary > .piem-chat__trace-icon,
+.piem-chat__trace--running.piem-chat__trace--flat > .piem-chat__trace-icon {
+	color: var(--interactive-accent);
+}
+
+/*
+ * Shared with the subagent panel's working dot, which is the same fact about a
+ * different kind of worker. Defined here because the transcript is the first
+ * surface in this file to use it.
+ */
+@keyframes piem-breathe {
+
+	0%,
+	100% {
+		opacity: 1;
+	}
+
+	50% {
+		opacity: 0.35;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+
+	.piem-chat__trace--running > .piem-chat__trace-summary > .piem-chat__trace-icon,
+	.piem-chat__trace--running.piem-chat__trace--flat > .piem-chat__trace-icon {
+		animation: piem-breathe 1.8s ease-in-out infinite;
 	}
 }
 
@@ -1810,20 +1873,30 @@ button.piem-chat__context-open {
 	margin-block-end: 0;
 }
 
+/*
+ * The running-tools seat, which now holds the same three dots as the pending
+ * reply and therefore the same box.
+ *
+ * Deliberately identical to `.piem-chat__message--pending`: the two are one
+ * signal in two states of the same turn — waiting for the first token, then
+ * waiting for a tool — and they never show at once. Matching the box is what
+ * keeps the dots from jumping as the turn crosses from one to the other.
+ *
+ * No margin: this line reports what the turn is doing right now, so it belongs to
+ * the turn above it as much as a tool result does, and takes the column's 4px like
+ * every other row of one. It used to carry 8px of its own on top of an 8px gap,
+ * which set the turn's own progress further from the turn than the next speaker
+ * would have been.
+ *
+ * No padding either, and no `font-size` or `gap`: the pending card carries none of
+ * them, and here they went with the spinner and the tool names this row used to
+ * set. The column's own gap is what separates it from the row above.
+ */
 .piem-chat__tool-status {
 	align-items: center;
 	color: var(--text-muted);
 	display: inline-flex;
-	font-size: var(--font-ui-smaller);
-	gap: var(--size-4-1);
-	/*
-	 * No margin. This line reports what the turn is doing right now — it belongs to
-	 * the turn above it as much as a tool result does, so it takes the column's 4px
-	 * like every other row of one. It used to carry 8px of its own on top of an 8px
-	 * gap, which set the turn's own progress further from the turn than the next
-	 * speaker would have been.
-	 */
-	padding: var(--size-4-1) var(--size-4-2);
+	min-height: var(--size-4-6);
 }
 
 /* --- "jump to latest" button --- */
@@ -3907,23 +3980,15 @@ button.piem-chat__latest--asking {
  * Opacity, so it composites rather than reflows. Behind
  * `prefers-reduced-motion: no-preference` — with motion off the accent colour
  * and the status word say the same thing.
+ *
+ * `piem-breathe` is defined up in the transcript's trace rules, where a running
+ * tool row uses it for the same reason at the same rate. One rhythm for "still
+ * out", wherever the panel shows it.
  */
-@keyframes piem-subagent-breathe {
-
-	0%,
-	100% {
-		opacity: 1;
-	}
-
-	50% {
-		opacity: 0.35;
-	}
-}
-
 @media (prefers-reduced-motion: no-preference) {
 
 	.piem-subagents__dot--running {
-		animation: piem-subagent-breathe 1.8s ease-in-out infinite;
+		animation: piem-breathe 1.8s ease-in-out infinite;
 	}
 }
 
@@ -4387,7 +4452,7 @@ button.piem-chat__latest--asking {
 @media (prefers-reduced-motion: no-preference) {
 
 	.piem-chat__subagents-button--running .piem-chat__subagents-icon {
-		animation: piem-subagent-breathe 1.8s ease-in-out infinite;
+		animation: piem-breathe 1.8s ease-in-out infinite;
 	}
 }
 

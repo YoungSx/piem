@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { App, Component } from "obsidian";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { createRoot } from "react-dom/client";
 import { flushRender, installDom } from "../testUtils/dom";
 import { installObsidianStub, markdownRenderMock, setTooltipMock } from "../testUtils/obsidianStub";
@@ -143,7 +144,7 @@ describe("MessageList tidying seam", () => {
 		// Re-render with pending tools through the same host.
 		const root = roots.get(host)!;
 		root.render(
-			<MessageList messages={[]} isStreaming={false} pendingToolCalls={[{ name: "read" }, { name: "grep" }]} app={app} component={component} sourcePath="" />,
+			<MessageList messages={[]} isStreaming={false} pendingToolCalls={[pendingCall("read"), pendingCall("grep")]} app={app} component={component} sourcePath="" />,
 		);
 		await flushRender();
 
@@ -160,7 +161,7 @@ describe("MessageList tidying seam", () => {
 			<MessageList
 				messages={[]}
 				isStreaming={false}
-				pendingToolCalls={[{ name: "read" }, { name: "grep" }]}
+				pendingToolCalls={[pendingCall("read"), pendingCall("grep")]}
 				showAgentDetails
 				app={app}
 				component={component}
@@ -416,7 +417,7 @@ describe("MessageList pending reply", () => {
 	});
 
 	it("stands down while a tool runs, since the line above already reports it", async () => {
-		const host = renderMessages([userMessage("hi")], { isStreaming: true, pendingToolCalls: [{ name: "read" }] });
+		const host = renderMessages([userMessage("hi")], { isStreaming: true, pendingToolCalls: [pendingCall("read")] });
 		await flushRender();
 
 		expect(host.querySelector(".piem-chat__tool-status")).not.toBeNull();
@@ -866,31 +867,75 @@ describe("MessageList streaming marks", () => {
 		expect(host.querySelector(".piem-chat__block--live")).toBeNull();
 	});
 
-	it("spins the tool row whose result has not landed", async () => {
-		// A tool call is the last block while the model waits on it, so it earns
-		// the same running marker as a thinking row being produced.
-		const host = renderMessages([userMessage("hi"), assistantToolCall("read", { path: "Note.md" })], { isStreaming: true });
+	it("marks the tool row pi still has out, and leaves it the tool's own glyph", async () => {
+		// Running is read off the pending set by call id now, not inferred from the
+		// row's position in the streaming message. The glyph stays the tool's: a
+		// spinner answered "is something happening", which the breath says anyway,
+		// and spent the one slot that could have said what the wait is for. An
+		// hourglass on a `wait_subagent` row is that answer.
+		const host = renderMessages([userMessage("hi"), assistantToolCall("wait_subagent", { subagentId: "sub-1" })], {
+			isStreaming: true,
+			pendingToolCalls: [pendingCall("wait_subagent")],
+		});
 		await flushRender();
 
 		const trace = host.querySelector(".piem-chat__trace");
 		// Without agent details on, the call row has nothing to open and renders
-		// flat — the live class must reach it either way.
+		// flat — the running class must reach it either way.
 		expect(trace?.classList.contains("piem-chat__trace--flat")).toBe(true);
-		expect(trace?.classList.contains("piem-chat__trace--live")).toBe(true);
+		expect(trace?.classList.contains("piem-chat__trace--running")).toBe(true);
+		expect(trace?.getAttribute("aria-busy")).toBe("true");
+		expect(iconNames(trace)).toEqual(["hourglass"]);
 	});
 
-	it("settles the tool row once the turn is done", async () => {
-		const host = renderMessages([userMessage("hi"), assistantToolCall("read", { path: "Note.md" })], { isStreaming: false });
+	it("settles the tool row once pi has the result, whatever the turn is doing", async () => {
+		// Streaming still, and the call is the last block — the two facts the old
+		// rule read as "running". Only the pending set decides now, and it is empty.
+		const host = renderMessages([userMessage("hi"), assistantToolCall("read", { path: "Note.md" }), toolResultFor("read")], {
+			isStreaming: true,
+		});
 		await flushRender();
 
-		expect(host.querySelector("details.piem-chat__trace--live")).toBeNull();
+		expect(host.querySelector(".piem-chat__trace--running")).toBeNull();
+		expect(host.querySelector(".piem-chat__trace[aria-busy]")).toBeNull();
+	});
+
+	it("breathes the fold holding a running call, and every running row inside it", async () => {
+		// Two defects in one shape. A fold handed every row it drew `live={false}`,
+		// so opening one showed calls marked cut off while they were out; and running
+		// was the streaming message's last block, so only the third of three
+		// concurrent calls counted at all. One breath for the run — no count on the
+		// summary, which already says how many calls it swallowed.
+		const host = renderMessages([userMessage("hi"), assistantToolCalls("spawn_subagent", "spawn_subagent", "wait_subagent")], {
+			isStreaming: true,
+			pendingToolCalls: [pendingCall("spawn_subagent", 0), pendingCall("spawn_subagent", 1), pendingCall("wait_subagent")],
+		});
+		await flushRender();
+
+		const fold = host.querySelector(".piem-chat__trace--fold");
+		expect(fold?.classList.contains("piem-chat__trace--running")).toBe(true);
+		expect(fold?.getAttribute("aria-busy")).toBe("true");
+		expect(fold?.querySelectorAll(".piem-chat__trace--running")).toHaveLength(3);
+	});
+
+	it("leaves the tail placeholder saying only that something is out", async () => {
+		// It used to name the running tools under a spinner turning at the rows' own
+		// rate, from the same table the rows read — the transcript reading itself
+		// back. The names stay in the announcement, where three dots cannot go.
+		const host = renderMessages([userMessage("hi")], { isStreaming: true, pendingToolCalls: [pendingCall("read")] });
+		await flushRender();
+
+		const status = host.querySelector(".piem-chat__tool-status");
+		expect(status?.querySelector(".piem-chat__typing")).not.toBeNull();
+		expect(status?.querySelector("[data-icon]")).toBeNull();
+		expect(status?.querySelector(".piem-chat__visually-hidden")?.textContent).toBe("Working: Read a note");
 	});
 
 	it("lets the running-tools row speak its own content", async () => {
 		// The aria-label used to replace the row's text as the accessible name,
 		// so a screen reader heard "Tools running" and never the tool names the
 		// sighted reader sees right there.
-		const host = renderMessages([userMessage("hi")], { isStreaming: true, pendingToolCalls: [{ name: "read" }] });
+		const host = renderMessages([userMessage("hi")], { isStreaming: true, pendingToolCalls: [pendingCall("read")] });
 		await flushRender();
 
 		const status = host.querySelector(".piem-chat__tool-status");
@@ -1091,7 +1136,11 @@ describe("MessageList consecutive-tool folding", () => {
 		expect(receipt?.closest(".piem-chat__trace--fold")).toBeNull();
 	});
 
-	it("leaves the call still running outside the fold, spinning", async () => {
+	it("swallows the call still running and breathes instead of exempting it", async () => {
+		// The exemption it replaces kept the running call out of the fold, because a
+		// settled count where a spinner had been would report the run as finished.
+		// It was addressed at one row, so it never covered a turn that issued
+		// several; the fold carries the state itself now.
 		const host = renderMessages(
 			[
 				assistantToolCalls("read", "grep"),
@@ -1099,15 +1148,16 @@ describe("MessageList consecutive-tool folding", () => {
 				toolResultFor("grep"),
 				assistantToolCall("write", { path: "Note.md" }),
 			],
-			{ isStreaming: true },
+			{ isStreaming: true, pendingToolCalls: [pendingCall("write")] },
 		);
 		await flushRender();
 
 		const fold = host.querySelector(".piem-chat__trace--fold");
-		expect(fold?.classList.contains("piem-chat__trace--live")).toBe(false);
-		const live = host.querySelector(".piem-chat__trace--live");
-		expect(live?.querySelector(".piem-chat__trace-name")?.textContent).toBe("Wrote a note");
-		expect(live?.closest(".piem-chat__trace--fold")).toBeNull();
+		expect(fold?.classList.contains("piem-chat__trace--running")).toBe(true);
+		expect(host.querySelectorAll(".piem-chat__trace--fold")).toHaveLength(1);
+		// The write is inside it, still marked running, rather than standing alone.
+		const running = fold?.querySelector(".piem-chat__trace--running");
+		expect(running?.querySelector(".piem-chat__trace-name")?.textContent).toBe("Wrote a note");
 	});
 
 	it("keeps the summary in the reader's words while the rows inside it keep the raw ids", async () => {
@@ -1628,6 +1678,18 @@ function assistantToolCall(name: string, args: Record<string, unknown>): Assista
  */
 const callIds = new Map<string, number>();
 const resultIds = new Map<string, number>();
+
+/**
+ * The pending-call entry for the nth call of `name`, carrying the id
+ * {@link assistantToolCalls} handed that call.
+ *
+ * Reads the counter rather than advancing it: the fixture that created the call
+ * already did, and advancing again would name a call no message contains — which
+ * is exactly the state a row must read as "not running".
+ */
+function pendingCall(name: string, nth = 0): PendingToolCall {
+	return { id: `${name}#${nth}`, name };
+}
 
 function nextToolCallId(seq: Map<string, number>, name: string): string {
 	const nth = seq.get(name) ?? 0;

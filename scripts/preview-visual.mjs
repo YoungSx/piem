@@ -887,7 +887,11 @@ const LIGHT_TOKENS = `
 	--text-error: #c0304a;
 	--text-accent: #705dcf;
 	--text-on-accent: #fff;
-	--interactive-accent: #7c3aed;
+	/* Obsidian's default accent resolves to this, and to the same value in both
+	   themes: it is the user's chosen accent, not a theme colour. It was a step
+	   darker here (Tailwind's violet-600), which understated a glyph this token
+	   now tints rather than only a button it fills. */
+	--interactive-accent: #8b6cef;
 	--interactive-normal: #f2f3f5;
 	--interactive-hover: #e9e9e9;
 	--code-background: #f2f3f5;
@@ -965,6 +969,199 @@ ${grid("light")}
 }
 
 SCENARIOS["tidy-seam"] = () => seamPage();
+
+/*
+ * A tool row's four states, and what a running one is now made of.
+ *
+ * The row used to answer "is something happening" with a spinner, which is the
+ * one question it could answer without the glyph. So the glyph belongs to the
+ * tool in every state but the two the reader has to act on, and "still out" is
+ * carried by three stacked signals instead: the row's text lifts to
+ * `--text-normal`, the glyph goes accent, and it breathes.
+ *
+ * A contact sheet because the parts that can be wrong are comparative. Whether an
+ * hourglass reads as a wait needs the settled eye beside it; whether accent
+ * carries at 300px needs the muted rows around it; and whether the fold's one
+ * breath is legible for four calls needs the single-call row above it. Both
+ * themes, because accent is the one colour here that does not come from the text
+ * ramp.
+ *
+ * The breath is frozen at full opacity on this page. A screenshot would otherwise
+ * catch a random phase and report the tint as whatever opacity it happened to
+ * land on — and the frozen frame is also exactly what a reader with reduced
+ * motion sees, so this sheet checks that path at the same time. That the tint
+ * animates at all is a stylesheet question, not a picture one.
+ */
+const RUN_CELLS = [
+	{ id: "one", label: "one call out" },
+	{ id: "fold", label: "four out, folded into one row" },
+	{ id: "mixed", label: "two back, one still out" },
+	{ id: "settled", label: "back, and it worked" },
+	{ id: "cut", label: "asked, never answered" },
+	{ id: "failed", label: "it broke" },
+];
+
+/** The transcript and pending set for one cell. */
+function runFixture(id, language) {
+	const zh = language === "zh-cn";
+	const base = {
+		api: "openai-completions",
+		provider: "deepseek",
+		model: "deepseek-v4-pro",
+		usage: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+	const reply = (...calls) => ({ role: "assistant", content: calls, ...base });
+	const call = (callId, name, args) => ({ type: "toolCall", id: callId, name, arguments: args });
+	const back = (callId, toolName, text, isError = false) => ({
+		role: "toolResult",
+		toolCallId: callId,
+		toolName,
+		content: [{ type: "text", text }],
+		isError,
+		timestamp: Date.now(),
+	});
+	const ask = { role: "user", content: zh ? "把这三篇读书笔记核对一遍" : "Cross-check these three reading notes", timestamp: Date.now() };
+	const pending = (...entries) => entries.map(([callId, name]) => ({ id: callId, name }));
+
+	if (id === "one") {
+		return {
+			messages: [ask, reply(call("c-wait", "wait_subagent", { subagentId: "sub-1" }))],
+			pendingToolCalls: pending(["c-wait", "wait_subagent"]),
+		};
+	}
+	if (id === "fold") {
+		return {
+			messages: [
+				ask,
+				reply(
+					call("c-s1", "spawn_subagent", { task: "Books/Deep Work.md" }),
+					call("c-s2", "spawn_subagent", { task: "Books/Seeing.md" }),
+					call("c-s3", "spawn_subagent", { task: "Books/Hero.md" }),
+					call("c-wait", "wait_subagent", {}),
+				),
+			],
+			pendingToolCalls: pending(["c-s1", "spawn_subagent"], ["c-s2", "spawn_subagent"], ["c-s3", "spawn_subagent"], ["c-wait", "wait_subagent"]),
+		};
+	}
+	if (id === "mixed") {
+		return {
+			messages: [
+				ask,
+				reply(
+					call("c-r1", "read", { path: "Books/Deep Work.md" }),
+					call("c-r2", "read", { path: "Books/Seeing.md" }),
+					call("c-g", "grep", { pattern: "duplicate highlight" }),
+				),
+				back("c-r1", "read", "# Deep Work"),
+				back("c-r2", "read", "# Seeing"),
+			],
+			pendingToolCalls: pending(["c-g", "grep"]),
+		};
+	}
+	if (id === "settled") {
+		return {
+			messages: [ask, reply(call("c-r", "read", { path: "Books/Deep Work.md" })), back("c-r", "read", "# Deep Work\n\n* *Seeing* — 2026 edition")],
+			pendingToolCalls: [],
+		};
+	}
+	if (id === "cut") {
+		return { messages: [ask, reply(call("c-w", "write", { path: "Books/Deep Work.md" }))], pendingToolCalls: [] };
+	}
+	return {
+		messages: [
+			ask,
+			reply(call("c-r", "read", { path: "Books/Missing.md" })),
+			back("c-r", "read", zh ? "找不到这条笔记。" : "File not found.", true),
+		],
+		pendingToolCalls: [],
+	};
+}
+
+/** One transcript mount, serialized; `id` picks which of the six cells it is. */
+async function mountToolRun(id, language) {
+	const { messages, pendingToolCalls } = runFixture(id, language);
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const root = reactDomClient.createRoot(host);
+	root.render(
+		React.createElement(
+			TranslatorProvider,
+			{ language },
+			React.createElement(MessageList, {
+				messages,
+				isStreaming: pendingToolCalls.length > 0,
+				pendingToolCalls,
+				app: makeAppStub(memoryAdapter()),
+				component: {},
+				sourcePath: "",
+			}),
+		),
+	);
+	await flushRender();
+	await flushRender();
+	const element = host.firstElementChild;
+	const markup = element.outerHTML;
+	root.unmount();
+	host.remove();
+	return markup;
+}
+
+async function toolRunPage() {
+	const markup = new Map();
+	for (const { id } of RUN_CELLS) {
+		for (const language of ["zh-cn", "en"]) {
+			markup.set(`${id}:${language}`, await mountToolRun(id, language));
+		}
+	}
+	const grid = (theme) => `<section class="sheet sheet--${theme}">
+	<h2>${theme === "light" ? "Light theme (approximate colours)" : "Dark theme"}</h2>
+	${RUN_CELLS.map(
+		({ id, label }) => `<div class="sheet-row">
+		<h3>${label}</h3>
+		<div class="sheet-cells">${SEAM_COLUMNS.map(
+			({ language, width }) => `<figure style="width: ${width}px">
+			<figcaption>${language} · ${width}px</figcaption>
+			<div class="harness-leaf harness-leaf--run" style="width: ${width}px"><div class="view-content">${markup.get(`${id}:${language}`)}</div></div>
+		</figure>`,
+		).join("")}</div>
+	</div>`,
+	).join("")}
+</section>`;
+	const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>tool run states</title><style>
+:root {${TOKENS}}
+.sheet--light { ${LIGHT_TOKENS} }
+body { background: #191919; font-family: var(--font-interface); margin: 0; padding: 16px; }
+h2 { color: #ddd; font-size: 13px; font-weight: 500; margin: 0 0 10px; }
+h3 { color: #999; font-size: 11px; font-weight: 400; margin: 0 0 4px; }
+figcaption { color: #777; font-size: 10px; margin-bottom: 3px; }
+figure { margin: 0; }
+.sheet { background: var(--background-primary); border-radius: 8px; color: var(--text-normal); margin-bottom: 16px; padding: 14px; }
+.sheet--light h2 { color: #333; }
+.sheet--light h3, .sheet--light figcaption { color: #777; }
+.sheet-row { margin-bottom: 12px; }
+.sheet-cells { display: flex; gap: 14px; align-items: flex-start; }
+.harness-leaf { background: var(--background-primary); contain: strict; isolation: isolate; }
+.harness-leaf--run { height: 190px; }
+.view-content { height: 100%; width: 100%; }
+${styles}
+${OBSIDIAN_CORE_SHIM}
+body { background: #191919; }
+/* See the note above the cells: full opacity, so the sheet is reproducible and
+   doubles as the reduced-motion frame. Also stills the tail's dots, which bounce
+   on their own timer. */
+.sheet .piem-chat__trace--running .piem-chat__trace-icon,
+.sheet .piem-chat__typing-dot { animation-play-state: paused; }
+</style></head><body>
+${grid("dark")}
+${grid("light")}
+</body></html>`;
+	return { element: null, cleanup: async () => document.body.replaceChildren(), html, width: 300 + 300 + 560 + 3 * 14 + 60, height: 2500 };
+}
+
+SCENARIOS["tool-run"] = () => toolRunPage();
 
 /**
  * The provider form, and specifically its preset row.
@@ -1265,8 +1462,9 @@ const TOKENS = `
 	--text-accent: #a882ff;
 	--text-on-accent: #fff;
 	--text-success: #2a2;
-	--interactive-accent: #7c3aed;
-	--interactive-accent-hover: #6d28d9;
+	/* Obsidian's own default, hsl(254, 80%, 68%) — see the note in LIGHT_TOKENS. */
+	--interactive-accent: #8b6cef;
+	--interactive-accent-hover: #7a58ec;
 	--interactive-normal: #2a2a2a;
 	--interactive-hover: #333;
 	--code-background: #2a2a2a;

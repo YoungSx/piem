@@ -80,6 +80,17 @@ import {
 
 /** A tool call in flight, with whatever progress it has reported. */
 export interface PendingToolCall {
+	/**
+	 * The provider's call id, which is what makes this list answerable per row.
+	 *
+	 * It is never rendered — `toolu_bdrk_01...` in front of the user is the defect
+	 * that put names here in the first place — but the transcript needs it: a
+	 * `ToolCall` block carries the same string, so a row can ask whether it is one
+	 * of the calls still out instead of the renderer inferring it from position.
+	 * That inference (the last block of the streaming message) can only ever be
+	 * right about one call, so it went wrong the moment a turn issued two.
+	 */
+	id: string;
 	/** Tool id as pi names it (`grep`), which the UI translates for display. */
 	name: string;
 	/**
@@ -101,10 +112,12 @@ export interface ChatSnapshot {
 	/**
 	 * The tools running right now, newest progress included.
 	 *
-	 * Names, not the ids pi tracks in `agent.state.pendingToolCalls`: that Set
-	 * holds tool call ids, so rendering it put `toolu_bdrk_01...` in front of the
-	 * user. {@link ObsidianAgentService} keeps the id-to-name mapping from the
-	 * execution events and resolves it here.
+	 * Each entry carries both the id pi tracks in `agent.state.pendingToolCalls`
+	 * and the tool's name. The Set holds ids alone, so rendering it put
+	 * `toolu_bdrk_01...` in front of the user; {@link ObsidianAgentService} keeps
+	 * the id-to-name mapping from the execution events and resolves it here. The
+	 * id stays on the entry because the transcript matches rows against it — see
+	 * {@link PendingToolCall.id} — while only the name is ever drawn.
 	 *
 	 * `progress` carries what the tool has reported through pi's
 	 * `tool_execution_update` event, which a tool emits by calling the `onUpdate`
@@ -2619,17 +2632,18 @@ export class ObsidianAgentService {
 			messages,
 			streamingMessage: agent?.state.streamingMessage,
 			isStreaming: agent?.state.isStreaming ?? false,
-			// Names, not call ids: the ids are what pi tracks, but a reader needs
-			// the tool. An id with no captured name is dropped rather than shown
-			// raw, so a missed event cannot leak `toolu_…` into the panel.
+			// Both halves: the id pi tracks, and the tool name a reader needs. The
+			// id is for matching, never for display — an id with no captured name
+			// is dropped rather than shown raw, so a missed event cannot leak
+			// `toolu_…` into the panel.
 			pendingToolCalls: [...(agent?.state.pendingToolCalls ?? new Set<string>())]
-				.map((toolCallId) => {
-					const name = rt?.pendingToolNames.get(toolCallId);
+				.map((id) => {
+					const name = rt?.pendingToolNames.get(id);
 					if (name === undefined) {
 						return undefined;
 					}
-					const progress = rt?.pendingToolProgress.get(toolCallId);
-					return progress === undefined ? { name } : { name, progress };
+					const progress = rt?.pendingToolProgress.get(id);
+					return progress === undefined ? { id, name } : { id, name, progress };
 				})
 				.filter((pending): pending is PendingToolCall => pending !== undefined),
 			unpersistedMessages: [...(rt?.unpersistedMessages ?? [])],

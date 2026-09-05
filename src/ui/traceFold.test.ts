@@ -136,23 +136,23 @@ describe("planTraceFolds", () => {
 		expect(heads(plan_(messages, { showAgentDetails: true }))).toHaveLength(0);
 	});
 
-	it("never folds the call still running, and folds everything settled behind it", () => {
-		// The live row is the transcript's only sign that the turn is doing
-		// something in that spot; a settled count in its place would report the run
-		// as finished.
+	it("folds the calls still out along with the settled ones, in one run", () => {
+		// A running call used to be exempt, addressed at the streaming message's last
+		// block. That could only ever cover one call: a turn issuing eight left seven
+		// of them folded and reported as finished, which is the case the exemption
+		// existed to prevent. The fold breathes while it holds one — one animation for
+		// however many are behind it — so the exemption is gone and every call in the
+		// run is in the run.
 		const messages = [
 			assistant(call("grep")),
 			result("grep"),
-			assistant(call("read")),
-			result("read"),
-			assistant(call("write")),
+			assistant(call("spawn_subagent"), call("spawn_subagent"), call("wait_subagent")),
 		];
-		const plan = plan_(messages, { liveRow: { message: 4, block: 0 } });
+		const plan = plan_(messages);
 
 		const groups = heads(plan);
 		expect(groups).toHaveLength(1);
-		expect(rowKeys(groups[0]!)).toEqual(["0:0", "1:result", "2:0", "3:result"]);
-		expect(traceFoldSlot(plan, 4, 0)).toBeNull();
+		expect(rowKeys(groups[0]!)).toEqual(["0:0", "1:result", "2:0", "2:1", "2:2"]);
 	});
 
 	it("names the categories in a fixed order, not the order the calls arrived in", () => {

@@ -128,16 +128,6 @@ export interface TraceFoldOptions {
 	/** Whether raw tool ids and payloads are on show, which makes `ask_user` calls visible. */
 	showAgentDetails: boolean;
 	/**
-	 * The block the model is still writing, when a turn is in flight.
-	 *
-	 * It never folds. A call still running is the transcript's only sign that the
-	 * turn is doing something in that spot, and swallowing it would replace a
-	 * spinner with a settled count. Everything already finished behind it folds
-	 * as usual, so a long run stays one row plus the live one rather than growing
-	 * without bound.
-	 */
-	liveRow?: TraceRowRef | null;
-	/**
 	 * Which result answered which call, so a call whose result failed can break the
 	 * run the same way the failure itself does.
 	 *
@@ -188,16 +178,24 @@ export function planTraceFolds(messages: readonly AgentMessage[], options: Trace
 					return;
 				}
 				/*
-				 * Anything else visible interrupts the run: prose, a thought, the
-				 * question row agent details bring back, and the call still running.
-				 * A visible `ask_user` call has reached here rather than the guard
-				 * above, and it must break the run rather than join it — the payload
-				 * that mode exists to show is the whole reason the row is on screen.
+				 * Anything else visible interrupts the run: prose, a thought, and the
+				 * question row agent details bring back. A visible `ask_user` call has
+				 * reached here rather than the guard above, and it must break the run
+				 * rather than join it — the payload that mode exists to show is the
+				 * whole reason the row is on screen.
+				 *
+				 * A call still running does *not* break it any more. It used to: the
+				 * live row was the transcript's only sign that the turn was working in
+				 * that spot, and a fold would have replaced a spinner with a settled
+				 * count. Two things changed. The exemption could only ever cover one
+				 * call — it was addressed at the last block of the streaming message,
+				 * so a turn that issued eight left seven of them folded and silent —
+				 * and a fold that holds a running call now breathes, which is one
+				 * animation for however many calls are behind it instead of a row each.
 				 */
 				if (
 					block.type !== "toolCall" ||
 					block.name === ASK_USER_TOOL ||
-					isLiveRow(options.liveRow, index, blockIndex) ||
 					pairedResult(options.pairs ?? EMPTY_TOOL_PAIR_PLAN, index, blockIndex)?.isError
 				) {
 					flush();
@@ -336,10 +334,6 @@ function tallyCalls(rows: readonly TraceFoldRow[]): TraceFoldTally[] {
 		const count = counts.get(category);
 		return count ? [{ category, count }] : [];
 	});
-}
-
-function isLiveRow(live: TraceRowRef | null | undefined, message: number, block: number | null): boolean {
-	return live?.message === message && live.block === block;
 }
 
 function rowKey(message: number, block: number | null): string {
