@@ -329,6 +329,60 @@ function multiSessionStreamFn(): {
 	return { streamFn, entered, aborted };
 }
 
+/**
+ * A script whose runs finish only when the test says so, by prompt text.
+ *
+ * `hangingStream` above can only ever end in an abort, which cannot answer "did
+ * a background run's reply reach the right transcript". This one holds the
+ * stream open and hands back the closer, so a run can complete while the panel
+ * is looking somewhere else.
+ */
+function deferredStreamFn(): {
+	streamFn: StreamFn;
+	started: Set<string>;
+	finish: (prompt: string, text: string) => void;
+} {
+	const started = new Set<string>();
+	const held = new Map<string, { stream: ReturnType<typeof createAssistantMessageEventStream>; model: Model<Api> }>();
+	const streamFn: StreamFn = (model, context) => {
+		const prompt = lastUserPromptText(context);
+		if (!prompt.startsWith("slow-")) {
+			return scriptedTextStream(model, `pong:${prompt}`);
+		}
+		const stream = createAssistantMessageEventStream();
+		held.set(prompt, { stream, model });
+		started.add(prompt);
+		return stream;
+	};
+	const finish = (prompt: string, text: string): void => {
+		const pending = held.get(prompt);
+		if (!pending) {
+			throw new Error(`No run is waiting for ${prompt}`);
+		}
+		held.delete(prompt);
+		const message: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text }],
+			api: pending.model.api,
+			provider: pending.model.provider,
+			model: pending.model.id,
+			usage: {
+				input: 1_000,
+				output: 10,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 1_010,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			timestamp: Date.now(),
+			stopReason: "stop",
+		};
+		pending.stream.push({ type: "done", reason: "stop", message });
+		pending.stream.end(message);
+	};
+	return { streamFn, started, finish };
+}
+
 /** An immediate echo script: every prompt gets `pong:<prompt>` back. */
 function echoStreamFn(): StreamFn {
 	return (model: Model<Api>, context: Context) => scriptedTextStream(model, `pong:${lastUserPromptText(context)}`);
@@ -437,6 +491,37 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 		await stopRun(service, pathA);
 	});
 
+	it("switching away and back leaves the background run untouched", async () => {
+		const { streamFn, entered, aborted } = multiSessionStreamFn();
+		const service = createService(new MemoryAdapter(), streamFn);
+		const { pathA, pathB } = await seedTwoSessions(service);
+		await service.openSession(pathA);
+
+		await startHang(service, HANG_A, entered);
+		const agentWhileRunning = (service as unknown as { runtimes: Map<string, { agent: unknown }> }).runtimes.get(pathA)?.agent;
+
+		// Leave, then come back.
+		await service.openSession(pathB);
+		await settleTick();
+		await service.openSession(pathA);
+		await settleTick();
+
+		const agentAfterReturn = (service as unknown as { runtimes: Map<string, { agent: unknown }> }).runtimes.get(pathA)?.agent;
+		expect(agentAfterReturn).toBe(agentWhileRunning);
+
+		const states = (service as { getSessionRunStates?: () => SessionRunState[] }).getSessionRunStates!();
+		expect(states.find((entry) => entry.path === pathA)?.state).toBe("running");
+		// What the user sees on the way back: the run is still streaming, its
+		// request was never signalled, and nothing offers to "resume" the run that
+		// is right there in flight.
+		const back = service.getSnapshot();
+		expect(back.isStreaming).toBe(true);
+		expect(back.canResumeInterrupted ?? false).toBe(false);
+		expect(aborted.get(HANG_A)).toBe(false);
+
+		await stopRun(service, pathA);
+	});
+
 	it("switching back and forth keeps each session's events isolated", async () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter, echoStreamFn());
@@ -481,6 +566,34 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 		expect(fileWithB[0]![1]).toContain("pong:ping-b-1");
 		expect(fileWithB[0]![1]).toContain("pong:ping-b-2");
 		expect(fileWithB[0]![1]).not.toContain("pong:ping-a");
+	});
+
+	it("a run that lands while another session is focused reaches its own transcript", async () => {
+		const { streamFn, started, finish } = deferredStreamFn();
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter, streamFn);
+		const { pathA, pathB } = await seedTwoSessions(service);
+		await service.openSession(pathA);
+
+		// A's request is in flight when the panel walks away from it.
+		void service.sendPrompt("slow-a");
+		await waitFor(() => started.has("slow-a"));
+		await service.openSession(pathB);
+		expect(service.getActiveSessionPath()).toBe(pathB);
+
+		// The reply arrives with B on screen.
+		finish("slow-a", "background reply");
+		const states = (): SessionRunState[] => (service as { getSessionRunStates?: () => SessionRunState[] }).getSessionRunStates!();
+		await waitFor(() => states().find((entry) => entry.path === pathA)?.state === "idle");
+		await settleTick();
+
+		// It belongs to A: not in the transcript on screen, in A's log on disk, and
+		// on screen again the moment focus comes back.
+		expect(JSON.stringify(service.getSnapshot().messages)).not.toContain("background reply");
+		const logs = await sessionLogContents(adapter);
+		expect(logs.get(pathA)).toContain("background reply");
+		await service.openSession(pathA);
+		expect(JSON.stringify(service.getSnapshot().messages)).toContain("background reply");
 	});
 
 	it("abort only kills the session it targets", async () => {
