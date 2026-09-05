@@ -40,6 +40,23 @@ npm run build
 bun test
 ```
 
+Every test file has to pass **on its own**, not only inside the full run:
+`bun test src/logging/FileLogSink.test.ts` and `bun test src/agent/` have to be
+green too. `bun test` runs every file in one process, so a file that reaches
+`window` — timers, `crypto`, an event constructor — passes for free once any UI
+test has installed a DOM, then fails the moment someone runs it alone or by
+directory. Give the file what it needs with `stubWindowTimers` /
+`stubWindowMembers` from `src/testUtils/windowStub.ts` rather than a full
+`installDom`. Sweeping the whole repo costs about half a minute:
+
+```bash
+for f in $(find src scripts -name '*.test.ts*'); do bun test "$f" >/dev/null 2>&1 || echo "$f"; done
+```
+
+`src/bundleLoad.test.ts` is the one file that cannot be self-sufficient: it
+loads the built `main.js`, so it needs `npm run build` first — which
+`npm run verify` runs ahead of the tests anyway.
+
 ### Rendered layout check (opt-in, needs Chromium)
 
 `bun test` runs on happy-dom, which does no layout: it can assert that a rule

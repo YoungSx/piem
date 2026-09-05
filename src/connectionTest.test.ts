@@ -1,17 +1,20 @@
 import { describe, expect, it } from "bun:test";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai";
-import { testModelConnection, testProviderConnection } from "./connectionTest";
 import { DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS } from "./customEndpoint";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
 import { getT } from "./i18n";
 import { installObsidianStub } from "./testUtils/obsidianStub";
 
-// The wire-body tests below build their provider through the plugin's own
-// `createObsidianModels`, which reaches `obsidian` for its transport; the module
-// ships types only, so it has to be stubbed before that import resolves.
+// Both the module under test and the wire-body tests' `createObsidianModels`
+// reach `obsidian` for their transport, and that module ships types only — so the
+// stub has to be registered before either import resolves. Static imports would
+// resolve first: the file then passed only under a full `bun test`, riding on a
+// registration some earlier file had already done, and failed on its own with
+// "Cannot find package 'obsidian'".
 installObsidianStub();
 const { createObsidianModels } = await import("./net/streamFn");
+const { testModelConnection, testProviderConnection } = await import("./connectionTest");
 
 /** Verdicts are phrased through a translator, so each test states which language it reads. */
 const t = getT("en");

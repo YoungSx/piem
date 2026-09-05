@@ -34,8 +34,13 @@ function createNode(win: Window): WindowBoundNode & { migrateTo(next: Window): v
 	};
 }
 
-function focus(win: Window): void {
-	win.dispatchEvent(new Event("focus"));
+function focus(win: Window & typeof globalThis): void {
+	// The window's own `Event`, not the global one: happy-dom validates a dispatched
+	// event against its own realm's class, and under a bare `bun test <this file>`
+	// the global is Bun's — rejected as "parameter 1 is not of type 'Event'". These
+	// tests passed only when another file had installed a DOM and overwritten the
+	// global first, which is exactly the cross-realm confusion the module is about.
+	win.dispatchEvent(new win.Event("focus"));
 }
 
 describe("watchWindowFocus", () => {
