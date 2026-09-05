@@ -32,6 +32,16 @@ export interface ConfirmDeleteOptions {
 	 */
 	copySecret?: string;
 	onConfirm(): void | Promise<void>;
+	/**
+	 * Called when the dialog closes without confirming — Cancel, Escape, or a
+	 * click outside.
+	 *
+	 * A caller that moved something before asking needs this: the toggle that
+	 * opened a disable dialog has already flipped, and only a dismissal tells it
+	 * to flip back. Confirming reports through {@link onConfirm} alone, so a
+	 * caller can wire both and have exactly one of them run.
+	 */
+	onDismiss?(): void;
 }
 
 export function openConfirmDelete(app: App, options: ConfirmDeleteOptions): void {
@@ -40,6 +50,8 @@ export function openConfirmDelete(app: App, options: ConfirmDeleteOptions): void
 
 class ConfirmDeleteModal extends Modal {
 	private readonly options: ConfirmDeleteOptions;
+	/** Set before `close()`, so `onClose` can tell an answer from a dismissal. */
+	private confirmed = false;
 
 	constructor(app: App, options: ConfirmDeleteOptions) {
 		super(app);
@@ -81,6 +93,7 @@ class ConfirmDeleteModal extends Modal {
 					button.setButtonText(t.t("confirmDelete.delete")).setDestructive();
 				}
 				button.onClick(() => {
+					this.confirmed = true;
 					this.close();
 					void this.options.onConfirm();
 				});
@@ -89,5 +102,8 @@ class ConfirmDeleteModal extends Modal {
 
 	onClose(): void {
 		this.contentEl.empty();
+		if (!this.confirmed) {
+			this.options.onDismiss?.();
+		}
 	}
 }
