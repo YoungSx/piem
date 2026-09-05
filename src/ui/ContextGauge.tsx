@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { formatCost, formatTokens } from "../agent/usage";
 import type { ContextFill, UsageTotals } from "../agent/usage";
 import { IconButton } from "./ObsidianIcon";
@@ -28,18 +28,6 @@ import { useT } from "./TranslatorContext";
  */
 const RING_RADIUS = 6;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-
-/** How long the popover stays open after the pointer leaves, in ms. */
-const CLOSE_DELAY_MS = 150;
-
-/**
- * Why the popover is open, or null for closed.
- *
- * `"hover"` closes when the pointer leaves. `"press"` — a click, a tap, or
- * keyboard focus — stays until it is dismissed, because none of those have a
- * pointer-leave to end them.
- */
-type OpenReason = "hover" | "press" | null;
 
 export interface ContextGaugeProps {
 	/** Occupancy, or null before the first measurement. Null renders nothing. */
@@ -78,10 +66,19 @@ export interface ContextGaugeProps {
  *
  * A `<button>`, not the `role="progressbar"` this used to be. That loses a
  * machine-readable `aria-valuenow`, and it is a deliberate loss: at 16px the
- * numbers only exist inside the popover, and a popover reachable only by hover
- * is unreachable on a phone — which this panel runs on (`isDesktopOnly: false`).
- * Click, Tab and hover all open it, and the button's accessible name carries the
- * full readout so the value survives without the progressbar role.
+ * numbers only exist inside the popover, so the button's accessible name carries
+ * the full readout instead — the value survives without the role.
+ *
+ * A press opens it, and nothing else does: a click, a tap, or Enter/Space on the
+ * focused ring. Hover used to open it as well, and focus used to pin it, and the
+ * three could not be reconciled — the pointer and the press fire into one state
+ * in an order neither of them chooses. A tap arrives as `pointerover` *then*
+ * `click`, so hover opened the popover and the tap's own click shut it again; a
+ * mouse click arrives as `focus` *then* `click`, so opening on focus is closed by
+ * the very click that focused it. One trigger has no ordering left to lose:
+ * whatever opened it is what closes it. The keyboard keeps its way in, because
+ * Enter and Space on a `<button>` *are* clicks — that is what a disclosure is
+ * meant to answer to, and Tab-to-open is the part ARIA never asked for.
  *
  * Not an {@link IconButton}, but it wears the same two classes by hand. The
  * component is the wrong shape here — it renders a Lucide glyph via `setIcon`,
@@ -103,90 +100,43 @@ export function ContextGauge({
 }: ContextGaugeProps): React.JSX.Element | null {
 	const t = useT();
 	/*
-	 * Why the open state records *how* it opened, rather than just being a boolean.
+	 * A plain boolean, now that a press is the only way in.
 	 *
-	 * A hover-opened popover has to close when the pointer leaves; a pressed one
-	 * must not, or the popover would evaporate the moment the pointer travelled
-	 * toward the tidy button inside it. Collapsing both into one flag makes the
-	 * two closes indistinguishable, and something has to give: either a press does
-	 * not survive a pointer leave, or a hover never ends.
+	 * This used to record *how* it opened, because a hover-opened popover had to
+	 * close when the pointer left while a pressed one had to survive that — the
+	 * pointer travels through a gap on its way to the tidy button inside. With
+	 * hover gone there is one close rule, so there is nothing left for the state
+	 * to disambiguate.
 	 */
-	const [openedBy, setOpenedBy] = useState<OpenReason>(null);
-	const isOpen = openedBy !== null;
-	const closeTimer = useRef<number | undefined>(undefined);
+	const [isOpen, setIsOpen] = useState(false);
 	const wrapperRef = useRef<HTMLSpanElement | null>(null);
 	// Wires the ring to the popover it opens, for assistive tech that announces
 	// what a toggle controls. `useId` because nothing else guarantees a single
 	// panel per workspace: a stable literal would collide if two ever mounted.
 	const popoverId = useId();
 
-	// Clear a pending close on unmount, so a timer cannot fire into a gone tree.
-	useEffect(() => {
-		return () => {
-			window.clearTimeout(closeTimer.current);
-		};
-	}, []);
-
-	const closeNow = (): void => {
-		window.clearTimeout(closeTimer.current);
-		setOpenedBy(null);
-	};
+	const closeNow = (): void => setIsOpen(false);
 
 	/*
-	 * A pressed popover is dismissed by pressing elsewhere.
+	 * An open popover is dismissed by pressing elsewhere.
 	 *
 	 * Blur alone does not cover it: tapping outside does not reliably move focus
 	 * on iOS Safari, which leaves a touch reader with an open panel and nowhere
-	 * obvious to tap. The full rule — including the document it has to listen on
-	 * to survive a popout window — lives in `usePointerDownOutside`, shared with
-	 * `SubagentEntryIcon`.
+	 * obvious to tap. It matters more now than it did — with hover gone, there is
+	 * no pointer-leave doing this job for a mouse either. The full rule —
+	 * including the document it has to listen on to survive a popout window —
+	 * lives in `usePointerDownOutside`, shared with `SubagentEntryIcon`.
 	 */
-	usePointerDownOutside(wrapperRef, openedBy === "press", closeNow);
+	usePointerDownOutside(wrapperRef, isOpen, closeNow);
 
 	/*
-	 * Hover, for pointers that actually have one.
+	 * The one trigger: press to open, press again to close.
 	 *
-	 * React synthesizes `onPointerEnter` from `pointerover`, which a touch tap
-	 * fires on its way in — so a tap opened the popover here and the click that
-	 * followed toggled it straight back shut. Touch gets the press path only,
-	 * which is the one it can also close with.
+	 * Nothing here inspects `pointerType`. That check existed because touch fired
+	 * the hover path on its way in; with only the press path left, every input
+	 * takes the same route and there is no second opinion to reconcile.
 	 */
-	const openOnHover = (event: React.PointerEvent): void => {
-		if (event.pointerType === "touch") {
-			return;
-		}
-		window.clearTimeout(closeTimer.current);
-		// Never downgrades a press to a hover: a pressed popover has to outlive the
-		// pointer leaving it.
-		setOpenedBy((current) => current ?? "hover");
-	};
-
-	/*
-	 * Hover has to survive the trip from the ring to the button inside the
-	 * popover. Closing on `pointerleave` outright is the classic hover-menu
-	 * failure: the pointer crosses a gap, the popover unmounts, and the control it
-	 * holds can never be clicked. The handler is on the wrapper — which contains
-	 * the ring *and* the popover — and the close is deferred, so crossing the gap
-	 * re-enters before the timer fires.
-	 */
-	const closeOnLeave = (): void => {
-		if (openedBy !== "hover") {
-			return;
-		}
-		window.clearTimeout(closeTimer.current);
-		closeTimer.current = window.setTimeout(() => setOpenedBy((current) => (current === "hover" ? null : current)), CLOSE_DELAY_MS);
-	};
-
-	/*
-	 * Press pins it open; pressing again closes. A press over an already-hovered
-	 * popover pins rather than closes — closing what the pointer is resting on
-	 * would leave it shut for as long as the pointer stayed there, since the
-	 * `pointerover` that opened it has already been and gone.
-	 */
-	const togglePress = (): void => {
-		window.clearTimeout(closeTimer.current);
-		setOpenedBy((current) => (current === "press" ? null : "press"));
-	};
+	const toggle = (): void => setIsOpen((current) => !current);
 
 	// Null is "not measured yet", not "0% used". An empty ring would state the
 	// second, so there is nothing honest to draw until the first measurement.
@@ -205,11 +155,18 @@ export function ContextGauge({
 		<span
 			className={`piem-chat__context piem-chat__context--${level}`}
 			ref={wrapperRef}
-			onPointerEnter={openOnHover}
-			onPointerLeave={closeOnLeave}
-			// Keyboard focus pins, like a press: there is no pointer to leave, so a
-			// hover-style open would have nothing to close it.
-			onFocus={() => setOpenedBy("press")}
+			/*
+			 * No `onPointerEnter`/`onPointerLeave`, and deliberately no `onFocus`
+			 * either. Tab lands on the ring without opening anything; Enter or Space
+			 * then opens it through the click path. Opening on focus would not merely
+			 * be a stray ARIA behaviour, it would break the pointer: a mouse click
+			 * focuses before it clicks, so the focus-open and the click-toggle would
+			 * cancel out and the ring would look dead.
+			 *
+			 * `onBlur` stays. Focus leaving the ring *and* the popover is a keyboard
+			 * reader walking away from a floating panel that overlays the draft, and
+			 * nothing else would fold it up for them.
+			 */
 			onBlur={(event) => {
 				// Focus moving to the tidy button inside the popover must not close it.
 				if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -238,17 +195,18 @@ export function ContextGauge({
 				aria-controls={popoverId}
 				aria-label={contextGaugeName(fill, t)}
 				/*
-				 * Swallows the tooltip Obsidian hangs off this label on hover. The
-				 * popover already carries the full readout — same numbers, plus the
-				 * level, the caveat and the tidy action — and on a pointer device
-				 * both would open at once, the tooltip crowding the panel it
-				 * duplicates. The accessible name survives: the event stops here,
-				 * the attribute is never touched. The handler sits on the button,
-				 * not the wrapper, so the tidy button's deliberate disabled-reason
+				 * Swallows the tooltip Obsidian hangs off this label on hover. Kept
+				 * after hover stopped opening the popover, because the collision it
+				 * avoids is still there: the label is the whole readout, the pointer
+				 * is still resting on the ring once the popover is open, and the
+				 * tooltip would surface beside the panel repeating its own first
+				 * line. The accessible name survives — the event stops here, the
+				 * attribute is never touched. The handler sits on the button, not
+				 * the wrapper, so the tidy button's deliberate disabled-reason
 				 * tooltip inside the popover still reaches Obsidian.
 				 */
 				onMouseOver={suppressOwnTooltip}
-				onClick={togglePress}
+				onClick={toggle}
 			>
 				{/*
 				 * `stroke-dashoffset` rather than a width or an arc path: it paints
