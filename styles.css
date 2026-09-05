@@ -410,7 +410,10 @@ button.piem-chat__context-open {
  * The figures the ring cannot carry, plus the one action they imply.
  *
  * Opens upward from the ring and overlays the draft, which is where a control's
- * own disclosure belongs — close enough that the pointer can cross into it.
+ * own disclosure belongs. The gap below it used to be a hover corridor the
+ * pointer had to survive crossing; since only a press opens the popover, the gap
+ * answers to nothing but the eye, and it stays because a panel welded to its
+ * trigger reads as part of the send bar rather than as a layer above it.
  *
  * Anchored by `right: 0`, not `left: 0`. The ring sits a Send button in from the
  * trailing edge, so growing rightward pushed a 16rem panel through the sidebar's

@@ -76,7 +76,11 @@ async function pointerOut(element: Element, pointerType: string): Promise<void> 
 	await flushRender();
 }
 
-/** Waits past CLOSE_DELAY_MS, so a deferred close has actually had its chance. */
+/**
+ * Waits past the grace period hover used to get, so a deferred close would have
+ * had its chance to fire. Nothing schedules one any more; the wait is what makes
+ * "still open" evidence rather than a coincidence of timing.
+ */
 async function afterCloseDelay(): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 250));
 	await flushRender();
@@ -143,8 +147,8 @@ describe("ContextGauge ring", () => {
 	});
 
 	it("is a focusable button, not a progressbar a touch user cannot reach", async () => {
-		// The panel runs on phones (`isDesktopOnly: false`), so a popover reachable
-		// only by hover would put the numbers out of reach entirely.
+		// The panel runs on phones (`isDesktopOnly: false`). A progressbar has
+		// nothing to press, and pressing is now the only way the figures open.
 		const host = await renderGauge();
 
 		const gauge = host.querySelector(".piem-chat__context-gauge");
@@ -247,27 +251,40 @@ describe("ContextGauge open and close", () => {
 		document.body.replaceChildren();
 	});
 
-	it("opens on hover and closes once the pointer has been gone a moment", async () => {
+	it("ignores hover, so the readout appears only when it is asked for", async () => {
+		// Hover used to open it, and the pointer path is the one that went: two
+		// openers firing into one state could not be ordered (see the component
+		// doc), and hover is the affordance no touch or keyboard reader has.
 		const host = await renderGauge();
-		const wrapper = host.querySelector(".piem-chat__context")!;
 
-		await pointerOver(wrapper, "mouse");
-		expect(popover(host)).not.toBeNull();
+		await pointerOver(host.querySelector(".piem-chat__context")!, "mouse");
+		expect(popover(host)).toBeNull();
 
-		await pointerOut(wrapper, "mouse");
-		// Deferred, not immediate: the pointer has to be able to cross the gap
-		// between the ring and the tidy button inside the popover.
-		expect(popover(host)).not.toBeNull();
-
-		await afterCloseDelay();
+		await pointerOver(host.querySelector(".piem-chat__context-gauge")!, "mouse");
 		expect(popover(host)).toBeNull();
 	});
 
-	it("opens on a touch tap rather than toggling straight back shut", async () => {
-		// React synthesizes `onPointerEnter` from `pointerover`, which a touch tap
-		// fires on its way in. Treating that as a hover opened the popover before
-		// the click arrived, and the click then closed it — so a tap did nothing at
-		// all, on the one input that has no hover to fall back on.
+	it("opens on a click, even though the focus that click brings lands first", async () => {
+		// The ordering that rules focus-to-open out, asserted rather than argued: a
+		// mouse press focuses the button before it clicks it, so a gauge that opened
+		// on focus would be shut again by the click that focused it, and the ring
+		// would look dead to every pointer user.
+		const host = await renderGauge();
+		const gauge = host.querySelector<HTMLButtonElement>(".piem-chat__context-gauge")!;
+
+		gauge.focus();
+		await flushRender();
+		expect(popover(host)).toBeNull();
+
+		gauge.click();
+		await flushRender();
+		expect(popover(host)).not.toBeNull();
+	});
+
+	it("opens on a touch tap, the one input with no hover to fall back on", async () => {
+		// React synthesizes `onPointerEnter` from the bubbling `pointerover`, which
+		// a tap fires on its way in. That is why hover and press could not coexist
+		// here: the tap opened the popover as a hover and its own click shut it.
 		const host = await renderGauge();
 		const gauge = host.querySelector<HTMLButtonElement>(".piem-chat__context-gauge")!;
 
@@ -291,7 +308,7 @@ describe("ContextGauge open and close", () => {
 		expect(popover(host)).toBeNull();
 	});
 
-	it("keeps a pressed popover open when the pointer leaves", async () => {
+	it("stays open when the pointer leaves, which is no longer a close signal", async () => {
 		// Otherwise the popover evaporates as the pointer travels toward the tidy
 		// button it holds — and on touch there is no pointer to keep inside it.
 		const host = await renderGauge();
@@ -304,7 +321,7 @@ describe("ContextGauge open and close", () => {
 		expect(popover(host)).not.toBeNull();
 	});
 
-	it("dismisses a pressed popover on a press outside it", async () => {
+	it("dismisses on a press outside it, which is what replaces the pointer leaving", async () => {
 		// Tapping elsewhere does not reliably move focus on iOS Safari, so blur
 		// alone would leave a touch reader with an open panel and no way to shut it.
 		const host = await renderGauge();
@@ -323,14 +340,24 @@ describe("ContextGauge open and close", () => {
 		expect(popover(host)).toBeNull();
 	});
 
-	it("leaves a press outside a hover-opened popover alone, since the pointer closes that", async () => {
+	it("folds up once focus has left both the ring and the popover", async () => {
+		// The keyboard's counterpart to pressing outside. A reader who Tabs onward
+		// would otherwise leave a panel floating over the draft with nothing left
+		// that shuts it, now that no pointer leave does.
 		const host = await renderGauge();
-		await pointerOver(host.querySelector(".piem-chat__context")!, "mouse");
+		const gauge = host.querySelector<HTMLButtonElement>(".piem-chat__context-gauge")!;
+		const elsewhere = document.createElement("button");
+		document.body.appendChild(elsewhere);
 
-		document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+		gauge.focus();
+		gauge.click();
+		await flushRender();
+		expect(popover(host)).not.toBeNull();
+
+		elsewhere.focus();
 		await flushRender();
 
-		expect(popover(host)).not.toBeNull();
+		expect(popover(host)).toBeNull();
 	});
 });
 
