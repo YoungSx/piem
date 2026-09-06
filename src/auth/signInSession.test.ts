@@ -66,6 +66,8 @@ function interaction(): ProviderAuthInteraction {
 const XAI_ROW = { id: "row-xai", flowId: "xai" };
 const KEY_ROW = { id: "row-key", flowId: "" };
 const STALE_ROW = { id: "row-stale", flowId: "future-flow" };
+const ANTHROPIC_ROW = { id: "row-anthropic", flowId: "anthropic" };
+const OPENROUTER_ROW = { id: "row-openrouter", flowId: "openrouter" };
 
 /** Zero wait: the poll loop runs to its scripted success without spending intervals. */
 const NO_SLEEP = async () => {};
@@ -88,6 +90,68 @@ function scriptedFetch(replies: { body?: unknown }[]): FetchFn {
 }
 
 describe("createSignInSession", () => {
+	/**
+	 * The paste-flow sign-ins, end to end, through the session's own door.
+	 *
+	 * The device-code test below drives one scripted exchange over the poll
+	 * loop; this is its paste counterpart, and it exercises the other half of
+	 * the contract the dialog would carry: a `manual_code` prompt answered with
+	 * the URL a user's browser actually lands on, a real PKCE flow behind it,
+	 * and a credential written into the store. Both grants get one — a
+	 * token-pair row and a permanent-key row persist different shapes, and the
+	 * session must not care which.
+	 */
+	for (const [row, replies, expects] of [
+		[
+			ANTHROPIC_ROW,
+			[{ body: { access_token: "at-anthropic", refresh_token: "rt-anthropic", expires_in: 3600 } }],
+			{ access: "at-anthropic", refresh: "rt-anthropic" },
+		],
+		[
+			OPENROUTER_ROW,
+			[{ body: { key: "ork-1" } }],
+			// A permanent key has nothing to refresh: the credential records an empty
+			// string, which is pi's shape for "not a token pair".
+			{ access: "ork-1", refresh: "" },
+		],
+	] as const) {
+		it(`persists the ${row.flowId} credential a pasted login produced`, async () => {
+			let shownUrl = "";
+			const entries = new Map<string, Credential>();
+			const session = createSignInSession({
+				credentials: storeOver(entries),
+				fetch: scriptedFetch([...replies]),
+				canStore: () => true,
+			});
+			await session.actionsFor(row)!.signIn({
+				signal: new AbortController().signal,
+				// The authorize URL the flow announces carries the state the paste is
+				// checked against; reading it from the event rather than hardcoding
+				// keeps the test honest about what the flow actually sent.
+				notify: (event) => {
+					if (event.type === "auth_url") {
+						shownUrl = event.url;
+					}
+				},
+				// The dialog answers with the address the provider's page landed on —
+				// the shown URL rewritten to a code, which is what a user copies.
+				prompt: (asked) => {
+					expect(asked.type).toBe("manual_code");
+					const shown = new URL(shownUrl);
+					shown.searchParams.set("code", "pasted-code");
+					return Promise.resolve(shown.toString());
+				},
+			});
+			const stored = entries.get(row.id);
+			expect(stored?.type).toBe("oauth");
+			if (stored?.type === "oauth") {
+				expect(stored.access).toBe(expects.access);
+				expect(stored.refresh).toBe(expects.refresh);
+			}
+			expect(await session.actionsFor(row)!.isSignedIn()).toBe(true);
+		});
+	}
+
 	it("offers no actions for a key row or an unrecognized flow id", () => {
 		const session = createSignInSession({ credentials: storeOver(new Map()), fetch: scriptedFetch([]), canStore: () => true });
 		expect(session.actionsFor(KEY_ROW)).toBeUndefined();
