@@ -191,7 +191,11 @@ export default class PiemPlugin extends Plugin {
 					return undefined;
 				}
 				const note = (verb: string, error?: unknown) => {
-					const detail = () => ({ target: target.id, method: actions.method, ...(error ? { error: String(error) } : {}) });
+					const detail = () => ({
+						target: target.id,
+						method: actions.method,
+						...(error ? { error: describeAuthError(error) } : {}),
+					});
 					if (error) {
 						this.log.warn(`${verb} failed`, detail);
 					} else {
@@ -804,3 +808,8 @@ export default class PiemPlugin extends Plugin {
 }
 
 export { VIEW_TYPE_PIEM_CHAT };
+
+/** The message half of every auth-failure log line. */
+function describeAuthError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
