@@ -320,6 +320,16 @@ export const en = {
 		removeImage: "Remove image {index}",
 		/** Notice when a ![[...]] embed could not be read from the vault. */
 		imageNotFound: "Could not find {path} in the vault; it was not sent.",
+		/**
+		 * Answer to a click on a link whose note does not exist.
+		 *
+		 * The reader clicked to find out whether the note is there, so the first
+		 * clause answers exactly that. The second exists because the answer would
+		 * otherwise be a dead end: the reader wanted the note, and the fastest route
+		 * to it is the agent already holding the conversation — not a file they now
+		 * have to create and fill by hand.
+		 */
+		unresolvedLink: "“{link}” doesn’t exist yet. Ask Piem to create it.",
 		rowLabelSystem: "System",
 		rowLabelCommand: "Command",
 		rowLabelSummary: "Summary",
