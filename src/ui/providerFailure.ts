@@ -61,12 +61,11 @@ export interface ProviderFailure {
 /**
  * One family's recognisers.
  *
- * `status` is checked first within a rule because our own transport puts the
- * HTTP status at the front of the message (`apiHttp.ts`, `errorMessage`), which
- * makes it the one hard marker available here — everything else is wording, and
- * wording is provider-specific. `pattern` carries the cases a status cannot
- * settle: OpenAI answers `context_length_exceeded` with a 400, the same status
- * a content refusal uses.
+ * `status` is checked first within a rule because a status written by code is
+ * the one hard marker available here — everything else is wording, and wording
+ * is provider-specific. {@link hardStatus} owns the shapes it arrives in.
+ * `pattern` carries the cases a status cannot settle: OpenAI answers
+ * `context_length_exceeded` with a 400, the same status a content refusal uses.
  */
 interface FailureRule {
 	kind: ProviderFailureKind;
@@ -135,26 +134,53 @@ const RETRYABLE: ReadonlySet<ProviderFailureKind> = new Set<ProviderFailureKind>
 ]);
 
 /**
- * The HTTP status our transport prefixes onto a non-2xx message, or `undefined`
- * when the text does not start with one.
+ * The two shapes a status arrives in, each pinned to the code that writes it.
  *
- * Anchored at the start deliberately. A status found anywhere in the string
- * would read the `404` out of a URL in a provider's prose, and a wrong hard
- * marker is worse than no hard marker — it would outrank the wording rules that
- * would have classified the message correctly.
+ * `429 Rate limit reached for…` is ours (`apiHttp.ts`, `describeErrorBody`), and
+ * reaches here unchanged from `api/anthropic-messages.js` and from
+ * `api/openai-completions.js`. `OpenAI API error (429): 429 Rate limit
+ * reached for…` is pi's: `formatProviderError` prefixes the provider's name
+ * whenever an api passes one, which `api/openai-responses.js` does, and that
+ * displaces our status from the front of the string.
+ *
+ * The prefixed form is confined to the segment before the first colon so a
+ * `(404)` deeper in a provider's prose cannot pose as the marker.
  */
-function leadingStatus(message: string): number | undefined {
-	const found = /^\s*(\d{3})\b/.exec(message);
-	if (!found) {
-		return undefined;
+const HARD_STATUS_MARKERS: readonly RegExp[] = [/^\s*(\d{3})\b/, /^[^:]{0,64}\((\d{3})\)\s*:/];
+
+/**
+ * The HTTP status, when the string carries one as a hard marker rather than as
+ * prose — `undefined` when it does not.
+ *
+ * Both recognisers are anchored at the start deliberately. A status found
+ * anywhere in the string would read the `404` out of a URL in a provider's
+ * prose, and a wrong hard marker is worse than no hard marker: it would outrank
+ * the wording rules that would have classified the message correctly. Reading
+ * two pinned shapes is what keeps that anchoring affordable — the alternative
+ * that fits every protocol is a loose search, which is the one thing this must
+ * not do.
+ *
+ * Recognising only the leading form cost the families that have no wording to
+ * fall back on. A gateway answering `openai-responses` with a bare status
+ * arrives as `OpenAI API error (413): 413 status code (no body)`, where every
+ * `pattern` misses and the marker was unreachable — so a conversation too long
+ * for the model was reported as "the provider did not answer, and did not say
+ * why".
+ */
+function hardStatus(message: string): number | undefined {
+	for (const marker of HARD_STATUS_MARKERS) {
+		const found = marker.exec(message);
+		const status = found ? Number(found[1]) : Number.NaN;
+		if (status >= 400 && status <= 599) {
+			return status;
+		}
 	}
-	const status = Number(found[1]);
-	return status >= 400 && status <= 599 ? status : undefined;
+	return undefined;
 }
 
 /** Which family `message` belongs to. `unknown` when nothing recognises it. */
 export function classifyProviderFailure(message: string): ProviderFailureKind {
-	const status = leadingStatus(message);
+	const status = hardStatus(message);
 	for (const rule of RULES) {
 		if (status !== undefined && rule.status?.includes(status)) {
 			return rule.kind;
