@@ -11,7 +11,7 @@ const zh = getT("zh-cn");
  * An assistant turn that ended for `stopReason`; only that field and
  * `errorMessage` matter here.
  */
-function reply(stopReason: StopReason, errorMessage?: string): AssistantMessage {
+function reply(stopReason: StopReason, errorMessage?: string, usage?: Partial<AssistantMessage["usage"]>): AssistantMessage {
 	return {
 		role: "assistant",
 		content: [{ type: "text", text: "Half a sen" }],
@@ -25,6 +25,7 @@ function reply(stopReason: StopReason, errorMessage?: string): AssistantMessage 
 			cacheWrite: 0,
 			totalTokens: 0,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			...usage,
 		},
 		stopReason,
 		errorMessage,
@@ -74,6 +75,47 @@ describe("describeReplyCutoff", () => {
 		expect(cutoff?.notice).toBe("This reply hit the model's length limit and stopped early.");
 	});
 
+	/*
+	 * `length` has two causes, and pi's stop reason names the mechanism for both:
+	 * the model ran past its own output ceiling, or the context was so full the
+	 * provider granted only the room that was left as the output budget (pi-ai
+	 * clamps `maxTokens` down to `window - prompt - 4096` at request time). The
+	 * reader's next action differs — a shorter ask for one, tidying the context
+	 * for the other — so the classifier splits them off the persisted usage alone,
+	 * with no live compaction state that a reload could not reproduce.
+	 */
+	it("reads a length stop against the context window when one is given", () => {
+		// Room to spare: output stopped at its own ceiling, not the context's.
+		// (input 100k of a 1M window leaves ~896k of room; 4k of output is the
+		// model's habit.)
+		const roomy = reply("length", undefined, { input: 100_000, output: 4_000 });
+		expect(describeReplyCutoff(roomy, en, 1_000_000)?.kind).toBe("truncated");
+
+		// Consumed essentially the whole remaining room: the clamp granted the
+		// room as the budget, which is the starvation signature.
+		const starved = reply("length", undefined, { input: 990_000, output: 6_904 });
+		const cutoff = describeReplyCutoff(starved, en, 1_000_000);
+		expect(cutoff?.kind).toBe("starved");
+		expect(cutoff?.notice).toBe("Context is nearly full, so this reply had no room to finish. Tidy up and ask again.");
+		expect(cutoff?.icon).toBe("archive");
+	});
+
+	it("reads the clamp collapsing to its floor as starved too", () => {
+		// The extreme: the context overflowed the safety margin entirely, pi-ai
+		// clamped the budget to 1, and the reply stopped for length after a token.
+		// The `room <= output` comparison catches it with no special case, which
+		// matters — "ask for a shorter reply" is never the recovery here either.
+		const muted = reply("length", undefined, { input: 1_000_000, output: 1 });
+		expect(describeReplyCutoff(muted, en, 1_000_000)?.kind).toBe("starved");
+	});
+
+	it("stays truncated when no context window is known", () => {
+		// Tests and callers that never see a model read the pre-`starved` way:
+		// the mechanism is still told, only the cause stays the conservative one.
+		const starved = reply("length", undefined, { input: 990_000, output: 6_904 });
+		expect(describeReplyCutoff(starved, en)?.kind).toBe("truncated");
+	});
+
 	it("says nothing about a reply that ended on its own terms", () => {
 		expect(describeReplyCutoff(reply("stop"), en)).toBeNull();
 		expect(describeReplyCutoff(reply("toolUse"), en)).toBeNull();
@@ -120,6 +162,8 @@ describe("describeReplyCutoff", () => {
 		expect(describeReplyCutoff(steered, zh)?.notice).toBe("这条回复为你的下一条消息让了路。");
 		expect(describeReplyCutoff(reply("aborted"), zh)?.notice).toBe("你已停止这条回复。");
 		expect(describeReplyCutoff(reply("length"), zh)?.notice).toBe("这条回复达到模型的长度上限，提前结束了。");
+		const starved = reply("length", undefined, { input: 990_000, output: 6_904 });
+		expect(describeReplyCutoff(starved, zh, 1_000_000)?.notice).toBe("上下文快满了，这条回复没空间说完。整理一下再问。");
 		expect(describeReplyCutoff(reply("error", "504 Gateway Time-out"), zh)?.notice).toBe("供应商迟迟没有回话。");
 	});
 

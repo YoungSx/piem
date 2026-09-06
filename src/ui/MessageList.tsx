@@ -154,6 +154,13 @@ export interface MessageListProps {
 	 */
 	compactionRetained?: number;
 	/**
+	 * The active model's context window in tokens, so a `length` stop can be told
+	 * from the context squeezing its output budget — the same value the context
+	 * gauge renders against. Omitted (tests mounting the transcript without a
+	 * service) and every reply reads as `truncated`, the pre-`starved` reading.
+	 */
+	contextWindow?: number;
+	/**
 	 * Sends a tapped quick-action prompt as the user's own message.
 	 *
 	 * Supplying it turns the suggestions on; omitting it renders no row, which
@@ -443,6 +450,7 @@ export function MessageList({
 	isCompacting = false,
 	compactionEvent = null,
 	compactionRetained = 0,
+	contextWindow,
 	onQuickAction,
 	suggestedActions = [],
 	pendingQuestion = null,
@@ -470,7 +478,7 @@ export function MessageList({
 	const pairPlan = planToolPairs(messages);
 	const foldPlan = planTraceFolds(messages, { mode: traceExpand, showAgentDetails, pairs: pairPlan });
 	const compactionPlan = planCompactionRows({ messages, event: compactionEvent, retained: compactionRetained });
-	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, runningToolCalls, t };
+	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, runningToolCalls, contextWindow, t };
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
 	/*
@@ -715,7 +723,7 @@ export function MessageList({
 					{t.t("chat.skipToTranscript")}
 				</a>
 			) : null}
-			<TurnAnnouncer messages={messages} isStreaming={isStreaming} />
+			<TurnAnnouncer messages={messages} isStreaming={isStreaming} contextWindow={contextWindow} />
 		</div>
 	);
 }
@@ -747,7 +755,7 @@ function focusAnchor(event: React.MouseEvent<HTMLAnchorElement>, anchorId: strin
  * reader read the partial text again with each delta. This waits for the turn
  * to settle, then publishes the finished text into a dedicated region.
  */
-function TurnAnnouncer({ messages, isStreaming }: { messages: AgentMessage[]; isStreaming: boolean }): React.JSX.Element {
+function TurnAnnouncer({ messages, isStreaming, contextWindow }: { messages: AgentMessage[]; isStreaming: boolean; contextWindow?: number }): React.JSX.Element {
 	const t = useT();
 	const [announcement, setAnnouncement] = useState("");
 
@@ -759,8 +767,8 @@ function TurnAnnouncer({ messages, isStreaming }: { messages: AgentMessage[]; is
 		if (!latest || latest.role !== "assistant") {
 			return;
 		}
-		setAnnouncement(assistantSpeech(latest, t));
-	}, [messages, isStreaming, t]);
+		setAnnouncement(assistantSpeech(latest, t, contextWindow));
+	}, [messages, isStreaming, t, contextWindow]);
 
 	return (
 		<p className="piem-chat__visually-hidden" role="status" aria-live="polite" aria-atomic="true">
@@ -776,9 +784,9 @@ function TurnAnnouncer({ messages, isStreaming }: { messages: AgentMessage[]; is
  * mechanical traffic the transcript already collapses, and reading them aloud
  * would bury the answer.
  */
-function assistantSpeech(message: AssistantMessage, t: Translator): string {
+function assistantSpeech(message: AssistantMessage, t: Translator, contextWindow?: number): string {
 	const spoken = assistantText(message);
-	const cutoff = describeReplyCutoff(message, t);
+	const cutoff = describeReplyCutoff(message, t, contextWindow);
 	if (!cutoff) {
 		return spoken;
 	}
@@ -932,7 +940,7 @@ function MessageRow({
 	if (message.role !== "user" && message.role !== "assistant") {
 		return <HarnessTrace message={message} context={renderContext} />;
 	}
-	const cutoff = replyCutoff(message, renderContext.t);
+	const cutoff = replyCutoff(message, renderContext);
 	/*
 	 * An assistant turn with nothing left to draw draws nothing at all. Rendering
 	 * it anyway left an empty bubble — above the question card, when the turn was
@@ -1132,8 +1140,8 @@ function UnsavedWarning({ text }: { text: string }): React.JSX.Element {
  * Narrows to the assistant role here so the render site can stay a single
  * expression; a user message never carries a stop reason.
  */
-function replyCutoff(message: UserMessage | AssistantMessage, t: Translator): ReplyCutoff | null {
-	return message.role === "assistant" ? describeReplyCutoff(message, t) : null;
+function replyCutoff(message: UserMessage | AssistantMessage, context: MessageContext): ReplyCutoff | null {
+	return message.role === "assistant" ? describeReplyCutoff(message, context.t, context.contextWindow) : null;
 }
 
 /**
@@ -1216,6 +1224,8 @@ interface MessageContext {
 	 * other on its own.
 	 */
 	pairPlan: ToolPairPlan;
+	/** The active model's context window; see {@link MessageListProps.contextWindow}. */
+	contextWindow?: number;
 	/** The block the model is writing right now; see {@link liveRowRef}. */
 	liveRow: TraceRowRef | null;
 	/**
