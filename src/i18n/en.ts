@@ -1438,6 +1438,9 @@ export const en = {
 		close: "Close",
 		starting: "Asking the provider for a sign-in code…",
 		enterCode: "Open the sign-in page and enter this code:",
+		/** Above the paste field the pasted-code flows (Anthropic, OpenRouter) ask through. */
+		pastePrompt: "After signing in, paste the page's final address — or the code it showed — here:",
+		pasteSubmit: "Submit",
 		copyCode: "Copy code",
 		codeCopied: "Code copied.",
 		openPage: "Open this page to continue:",

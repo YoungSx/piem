@@ -823,6 +823,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		close: "关闭",
 		starting: "正在向提供方申请登录码…",
 		enterCode: "打开登录页面并输入此登录码：",
+		pastePrompt: "登录完成后，把页面最终跳转到的地址——或它显示的授权码——粘贴到这里：",
+		pasteSubmit: "提交",
 		copyCode: "复制登录码",
 		codeCopied: "登录码已复制。",
 		openPage: "请打开此页面继续：",
