@@ -330,6 +330,14 @@ export default class PiemPlugin extends Plugin {
 			credentials: this.requireCredentialStore(),
 		});
 		this.draftStore = DraftStore.forPlugin(this.app, this, this.requirePluginLogger().logger);
+		// A chat that loses its session file loses its draft file with it, or the
+		// draft outlives its conversation forever — retention eviction in
+		// particular removes sessions this window never opened, so nothing else
+		// would drop their files. The manager only announces; how (cache, dirty
+		// set, debouncer) stays the draft store's own business.
+		sessionManager.onSessionDeleted = (sessionId) => {
+			void this.draftStore?.clear(sessionId);
+		};
 
 		this.registerView(
 			VIEW_TYPE_PIEM_CHAT,
