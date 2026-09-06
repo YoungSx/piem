@@ -3,7 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { textResult, throwIfAborted } from "../tools/toolResult";
 import { statusOf, type SubagentEntry } from "./registry";
 import { linkSignals } from "./runner";
-import { SUBAGENT_CONCURRENCY_LIMIT, startChildRun, type SubagentToolsContext } from "./spawnTool";
+import { SUBAGENT_CONCURRENCY_LIMIT, resolveOwnerId, startChildRun, type SubagentToolsContext } from "./spawnTool";
 
 /**
  * The three tools that let a parent manage what it started, rather than only
@@ -39,7 +39,7 @@ const KillParameters = Type.Object({
  * and a thrown error would end the parent's turn under the service's
  * stop-on-tool-error rule.
  */
-export function createKillSubagentTool(context: SubagentToolsContext): AgentTool<typeof KillParameters> {
+export function createKillSubagentTool(context: SubagentToolsContext, inheritedOwnerId?: string): AgentTool<typeof KillParameters> {
 	return {
 		name: "kill_subagent",
 		label: "Stop subagent",
@@ -48,6 +48,7 @@ export function createKillSubagentTool(context: SubagentToolsContext): AgentTool
 		parameters: KillParameters,
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
+			const ownerId = resolveOwnerId(context, inheritedOwnerId);
 			const outcome = context.registry.kill(params.subagentId, signal);
 			const id = params.subagentId;
 			switch (outcome) {
@@ -69,7 +70,7 @@ export function createKillSubagentTool(context: SubagentToolsContext): AgentTool
 						reason: "not-yours",
 					});
 				default: {
-					const ids = knownIds(context, signal);
+					const ids = knownIds(context, signal, ownerId);
 					return textResult(
 						`No subagent ${id}.` + (ids.length ? ` This conversation spawned: ${ids.join(", ")}.` : " Nothing has been spawned here."),
 						{ subagentId: id, killed: false, reason: "not-found" },
@@ -89,7 +90,7 @@ const ListParameters = Type.Object({});
  * `wait_subagent` call whose window floor is ten seconds, so a parent could not
  * cheaply ask "is anything still going?" before deciding what to do next.
  */
-export function createListSubagentsTool(context: SubagentToolsContext): AgentTool<typeof ListParameters> {
+export function createListSubagentsTool(context: SubagentToolsContext, inheritedOwnerId?: string): AgentTool<typeof ListParameters> {
 	return {
 		name: "list_subagents",
 		label: "List subagents",
@@ -98,11 +99,15 @@ export function createListSubagentsTool(context: SubagentToolsContext): AgentToo
 		parameters: ListParameters,
 		execute: async (_toolCallId, _params, signal) => {
 			throwIfAborted(signal);
-			const entries = signal ? context.registry.forSignal(signal) : context.registry.all();
+			const ownerId = resolveOwnerId(context, inheritedOwnerId);
+			const entries = signal ? context.registry.forSignal(signal) : context.registry.forOwner(ownerId);
 			if (entries.length === 0) {
 				// Children of an earlier turn stay collectable by id, so naming them
 				// is the difference between "nothing exists" and "nothing here".
-				const elsewhere = context.registry.all();
+				// Scoped to this conversation: an id from another chat is one this
+				// model could then wait on, which would fold a stranger's report into
+				// a transcript that never asked for it.
+				const elsewhere = context.registry.forOwner(ownerId);
 				if (elsewhere.length === 0) {
 					return textResult("No subagents have been spawned.", { subagents: [] });
 				}
@@ -130,8 +135,8 @@ function describeState(entry: SubagentEntry): string {
 	return `${entry.id} (role: ${entry.role.name}): ${status}${tail}`;
 }
 
-function knownIds(context: SubagentToolsContext, signal: AbortSignal | undefined): string[] {
-	return (signal ? context.registry.forSignal(signal) : context.registry.all()).map((entry) => entry.id);
+function knownIds(context: SubagentToolsContext, signal: AbortSignal | undefined, ownerId: string): string[] {
+	return (signal ? context.registry.forSignal(signal) : context.registry.forOwner(ownerId)).map((entry) => entry.id);
 }
 
 const FollowUpParameters = Type.Object({
@@ -167,7 +172,7 @@ const FollowUpParameters = Type.Object({
  * writers on one history; the parent is told to collect or stop first, which is
  * also what it would have had to do anyway.
  */
-export function createFollowUpSubagentTool(context: SubagentToolsContext): AgentTool<typeof FollowUpParameters> {
+export function createFollowUpSubagentTool(context: SubagentToolsContext, inheritedOwnerId?: string): AgentTool<typeof FollowUpParameters> {
 	return {
 		name: "follow_up_subagent",
 		label: "Follow up with subagent",
@@ -176,6 +181,7 @@ export function createFollowUpSubagentTool(context: SubagentToolsContext): Agent
 		parameters: FollowUpParameters,
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
+			const ownerId = resolveOwnerId(context, inheritedOwnerId);
 			const id = params.subagentId;
 			// Re-arming a child makes it live again, so it answers to the same width
 			// cap a spawn does, and for the same reason: nothing else stops a parent
@@ -189,6 +195,7 @@ export function createFollowUpSubagentTool(context: SubagentToolsContext): Agent
 			}
 			const outcome = context.registry.resume({
 				id,
+				ownerId,
 				parentSignal: signal,
 				task: params.task,
 				startRun: (child) => {
@@ -207,6 +214,9 @@ export function createFollowUpSubagentTool(context: SubagentToolsContext): Agent
 								model: child.model,
 								thinkingLevel: child.thinkingLevel,
 								depth: child.depth,
+								// Same child, same owner: the tree it belongs to was fixed when
+								// it was spawned, and a re-task does not transplant it.
+								ownerId,
 								initialMessages: child.transcript,
 								signal: linked.signal,
 							}),
@@ -230,12 +240,15 @@ export function createFollowUpSubagentTool(context: SubagentToolsContext): Agent
 						{ subagentId: id, resumed: false, reason: "user-stopped" },
 					);
 				default: {
-					// Every id, not this run's: a follow-up is scoped by id across turns,
-					// so a list scoped to the current one would deny children the same
-					// call could have re-tasked.
-					const ids = context.registry.all().map((entry) => entry.id);
+					// Across turns, within this conversation: a follow-up's ordinary shape
+					// spans two runs — spawn, collect, report, then re-task on what the
+					// user said next — so a run-scoped list would refuse exactly the case
+					// this exists for. But conversation-scoped, never process-wide: the
+					// resume above just refused a stranger's id as unknown, and echoing
+					// other chats' ids here would point the model straight back at one.
+					const ids = context.registry.forOwner(ownerId).map((entry) => entry.id);
 					return textResult(
-						`No subagent ${id}.` + (ids.length ? ` This chat has spawned: ${ids.join(", ")}.` : " Nothing has been spawned here."),
+						`No subagent ${id}.` + (ids.length ? ` This conversation spawned: ${ids.join(", ")}.` : " Nothing has been spawned here."),
 						{ subagentId: id, resumed: false, reason: "not-found" },
 					);
 				}
