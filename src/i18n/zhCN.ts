@@ -386,6 +386,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		runStateRunning: "运行中",
 		runStateWaitingInput: "等待输入",
 		runStateError: "出错",
+		forkedFrom: "从「{title}」分叉",
 		renameChat: "重命名对话",
 		deleteChat: "删除对话",
 		cancel: "取消",

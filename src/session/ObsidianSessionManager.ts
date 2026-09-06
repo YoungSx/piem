@@ -44,6 +44,11 @@ export interface ActiveSessionInfo {
 	messageCount: number;
 	/** Opening user message; empty until the session has one. UI owns the fallback copy. */
 	firstMessage: string;
+	/**
+	 * Session this one forked from, straight from the jsonl header. pi fills it
+	 * on every fork; nothing else sets it. Absent for ordinary chats.
+	 */
+	parentSessionId?: string;
 }
 
 export interface SessionContext {
@@ -788,6 +793,7 @@ export class ObsidianSessionManager {
 			// Empty string, not a placeholder: sessionTitle's fallback to
 			// session.untitled only triggers on emptiness.
 			firstMessage: firstMessage ? extractMessageText(firstMessage.message) : "",
+			parentSessionId: metadata.parentSessionId,
 			modifiedTime: effectiveModifiedTime,
 		};
 	}

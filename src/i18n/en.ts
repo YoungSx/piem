@@ -743,6 +743,8 @@ export const en = {
 		runStateWaitingInput: "Waiting for input",
 		/** Status dot: the session's last turn ended in an error. */
 		runStateError: "Error",
+		/** Meta line on a picker row whose session forked from one still listed. */
+		forkedFrom: "forked from {title}",
 		renameChat: "Rename chat",
 		deleteChat: "Delete chat",
 		cancel: "Cancel",
