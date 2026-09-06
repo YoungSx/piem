@@ -302,7 +302,7 @@ describe("createObsidianModels for a subscription row", () => {
 	it("leaves a row with an unrecognised sign-in unconfigured rather than key-taking", () => {
 		// A vault written by a newer build. The row has no key, so falling back to
 		// one would report a failure against a field that is not the problem.
-		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "anthropic" })] });
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "future-flow" })] });
 		const auth = bundle.models.getProvider("p1")?.auth;
 		expect(auth?.apiKey).toBeUndefined();
 		expect(auth?.oauth).toBeUndefined();
