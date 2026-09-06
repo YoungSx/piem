@@ -701,6 +701,27 @@ button.piem-chat__context-open {
 	flex: 1 1 auto;
 	flex-direction: column;
 	min-height: 0;
+	/*
+	 * The seam between the plugin's layout and Obsidian's `.view-content`
+	 * (#339). The transcript's job is to hand the leftover space to the
+	 * messages list and never to scroll itself — the scrolling belongs to the
+	 * `auto` box inside it. Left at `visible`, a Chromium quirk lets the
+	 * messages scroller's scrollable-overflow region (as much as ten thousand
+	 * pixels of a long conversation) propagate up through this box and
+	 * `.piem-chat` into `view-content`, whose own `overflow: auto` then scrolls
+	 * the whole panel — header, composer and all — until the next relayout
+	 * latches it back. Observed live on the real runtime: with a tool-status
+	 * row in the list and a transcript taller than its box, `view-content`'s
+	 * scrollHeight jumped 574 → 13905; clipping this box pins it at 574, on and
+	 * off, deterministically.
+	 *
+	 * `clip` rather than `hidden`: this box must not become a second scroller.
+	 * Nothing scrolls it programmatically (the auto-follow writes to the
+	 * messages list, the skip-link focuses), and `clip` keeps it that way
+	 * instead of leaving a scroll container that could one day swallow a
+	 * `scrollIntoView` and drag the panel with it.
+	 */
+	overflow: clip;
 	position: relative;
 }
 
