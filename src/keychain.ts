@@ -80,3 +80,73 @@ const VALID_SECRET_ID = /^[a-z0-9-]{1,64}$/;
 export function isValidSecretId(value: string): boolean {
 	return VALID_SECRET_ID.test(value);
 }
+
+/**
+ * The plugin-owned slice of the same host store, which this plugin *does* write.
+ *
+ * Separate from {@link Keychain} because the two answer to different owners, and
+ * that difference is the whole reason the read-only rule above survives:
+ *
+ * - A {@link Keychain} entry is the **user's**. They create it in Obsidian's own
+ *   keychain tab, name it, and may share it between providers or plugins. We
+ *   hold a reference and nothing more, so writing or deleting one would be us
+ *   editing somebody else's record.
+ * - An entry reached through this interface is the **plugin's**. Nothing but an
+ *   OAuth login can produce its value — a refresh token is not something a user
+ *   can paste, and there is no id for them to pick — so the entry has no
+ *   existence outside the flow that created it. Logging out has to be able to
+ *   delete it, because leaving a live refresh token behind after the user asked
+ *   to be signed out is the failure, not the cleanup.
+ *
+ * Sync and total for the same reasons {@link Keychain} is: the host's API is
+ * synchronous, and resolution runs where a throw is expensive. Serialization and
+ * the async surface pi's `CredentialStore` wants are added a layer up, in
+ * `src/auth/credentialStore.ts`, so this stays a thin honest view of the host.
+ */
+export interface PluginSecretStore {
+	/**
+	 * Whether entries can actually be written here.
+	 *
+	 * False on the manual tier, where OAuth login is refused outright rather
+	 * than falling back to `data.json`: a refresh token is a long-lived
+	 * credential and `data.json` lives inside the synced vault.
+	 */
+	readonly available: boolean;
+	/** The stored value, or `""` when the id names nothing. */
+	read(id: string): string;
+	/**
+	 * Every id the host store holds, this plugin's and everyone else's.
+	 *
+	 * Unfiltered, exactly as {@link Keychain.list} is, because the namespace is
+	 * genuinely shared and a filter belongs to whoever knows what it is looking
+	 * for — here, the credential layer, which owns the id prefix.
+	 */
+	list(): string[];
+	/**
+	 * Stores a value, reporting whether the host took it.
+	 *
+	 * What `false` means is narrower than it looks, and the narrowness is the
+	 * point. Obsidian's `setSecret` returns `void` and hands the actual save to
+	 * `adapter.save(...)` without awaiting or checking it (verified against the
+	 * shipped 1.13.7 implementation), so **durability is not observable from a
+	 * plugin at all** — that is the same gap issue #145 hit, and it cannot be
+	 * closed from this side. What is observable is a refusal: `setSecret` throws
+	 * when the platform has no secure-storage backend and when the id is
+	 * malformed. So `false` means "the host declined this write", which is worth
+	 * reporting because it is otherwise silent, and `true` means "accepted, and
+	 * a read-back agrees" — not "on disk". The only test of durability is a
+	 * restart, which is why the acceptance criteria for OAuth demand one.
+	 */
+	write(id: string, value: string): boolean;
+	/** Removes an entry, reporting whether one was there. */
+	remove(id: string): boolean;
+}
+
+/** A plugin-owned store for hosts that cannot keep secrets outside the vault. */
+export const UNAVAILABLE_PLUGIN_SECRETS: PluginSecretStore = {
+	available: false,
+	read: () => "",
+	list: () => [],
+	write: () => false,
+	remove: () => false,
+};

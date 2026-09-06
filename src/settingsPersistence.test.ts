@@ -25,7 +25,7 @@ installDom();
 
 const { default: PiemPlugin } = await import("./main");
 const { NOOP_LOGGER } = await import("./logging/Logger");
-const { UNAVAILABLE_KEYCHAIN } = await import("./keychain");
+const { UNAVAILABLE_KEYCHAIN, UNAVAILABLE_PLUGIN_SECRETS } = await import("./keychain");
 
 type PluginInstance = InstanceType<typeof PiemPluginType>;
 
@@ -60,6 +60,10 @@ function pluginWithData(initial: unknown, options: HarnessOptions = {}): PluginH
 	const environment: SecretEnvironment = {
 		tier: () => (keychain.available ? "delegated" : "manual"),
 		keychain: () => keychain,
+		// Persistence never touches plugin-owned entries: OAuth credentials live in
+		// the keychain outright, so nothing about them round-trips through
+		// `data.json` for these tests to assert.
+		pluginSecrets: () => UNAVAILABLE_PLUGIN_SECRETS,
 	};
 
 	(plugin as unknown as { log: LoggerLike }).log = NOOP_LOGGER;

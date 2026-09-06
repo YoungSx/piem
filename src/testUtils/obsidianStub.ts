@@ -1276,9 +1276,15 @@ const obsidianStub = {
  *
  * The shape is the read surface the keychain adapter requires — `peekSecret`
  * (undocumented, 1.11.5+) and `listSecrets` — plus `isEncryptionAvailable`
- * (undocumented, 1.12.4+). There is no `setSecret` on purpose: the plugin never
- * writes to the keychain, and a mock that accepted writes would let a future
- * regression pass silently.
+ * (undocumented, 1.12.4+), `setSecret` (documented, 1.11.4+) and `deleteSecret`
+ * (undocumented, used by Obsidian's own keychain tab).
+ *
+ * The write members exist because plugin-owned entries need them (OAuth
+ * credentials; see `keychain.ts`), and the read-only rule for *user-owned*
+ * entries no longer depends on the mock withholding them: `Keychain` has no
+ * write member at all, so the adapter that serves API-key resolution cannot
+ * write whatever this store offers. That guarantee moved from the mock into the
+ * type, which is the stronger place for it.
  *
  * The failure modes are the ones the adapter is built around, each its own
  * switch rather than a single "broken" flag:
@@ -1289,13 +1295,24 @@ const obsidianStub = {
  * - `encryptionAvailable` — flips the tier between `delegated` and
  *   `delegated-unencrypted`; `undefined` models the method's absence (pre
  *   1.12.4), which the adapter reads as "not encrypted".
+ * - `throwOnWrite` / `throwOnDelete` — the real `setSecret` throws with no
+ *   secure-storage backend and on a malformed id, and `deleteSecret` reaches
+ *   the same adapter.
+ * - `dropWrites` — accepts a write and stores nothing. Not a mode the real host
+ *   documents, but the one thing a read-back can actually catch, so it is the
+ *   case that proves the confirmation is doing work.
  */
 export class SecretStorageMock {
 	readonly entries = new Map<string, string>();
 	throwOnRead = false;
 	throwOnList = false;
+	throwOnWrite = false;
+	throwOnDelete = false;
+	dropWrites = false;
 	encryptionAvailable: boolean | undefined = true;
 	peekCalls: string[] = [];
+	writeCalls: { id: string; value: string }[] = [];
+	deleteCalls: string[] = [];
 
 	constructor(initial: Record<string, string> = {}) {
 		for (const [id, value] of Object.entries(initial)) {
@@ -1328,8 +1345,57 @@ export class SecretStorageMock {
 		return [...this.entries.keys()];
 	}
 
+	/**
+	 * The write the plugin-owned store goes through.
+	 *
+	 * Mirrors the shipped implementation's two throws — no backend, malformed id —
+	 * because both are how a caller learns the host declined, and the id rule is
+	 * the one a generated entry id can trip.
+	 */
+	setSecret(id: string, secret: string): void {
+		this.writeCalls.push({ id, value: secret });
+		if (this.throwOnWrite) {
+			throw new Error("Secure storage is not available.");
+		}
+		if (!/^[a-z0-9-]+$/.test(id) || id.length > 64) {
+			throw new Error("Invalid secret ID");
+		}
+		if (this.dropWrites) {
+			return;
+		}
+		this.entries.set(id, secret);
+	}
+
+	/** Undocumented but shipped; returns whether an entry was actually there. */
+	deleteSecret(id: string): boolean {
+		this.deleteCalls.push(id);
+		if (this.throwOnDelete) {
+			throw new Error("Secure storage is not available.");
+		}
+		return this.entries.delete(id);
+	}
+
 	/** The host shape the keychain adapter reads its store off. */
 	asHost(): { secretStorage: unknown } {
 		return { secretStorage: this };
+	}
+
+	/**
+	 * A host whose store is readable but has no write members at all.
+	 *
+	 * Models the asymmetry the sign-in gate exists for — an Obsidian old enough to
+	 * read through but without the members the plugin-owned store needs. Spelled
+	 * as a projection rather than a flag because absence is what the probe tests:
+	 * `typeof store.setSecret === "function"` cannot be faked by a boolean.
+	 */
+	asReadOnlyHost(): { secretStorage: unknown } {
+		const store = this;
+		return {
+			secretStorage: {
+				peekSecret: (id: string) => store.peekSecret(id),
+				isEncryptionAvailable: () => store.isEncryptionAvailable(),
+				listSecrets: () => store.listSecrets(),
+			},
+		};
 	}
 }

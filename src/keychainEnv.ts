@@ -24,8 +24,8 @@
  * check and then throwing.
  */
 
-import { createObsidianKeychain, type SecretStorageHost } from "./obsidianKeychain";
-import { UNAVAILABLE_KEYCHAIN, type Keychain } from "./keychain";
+import { createObsidianKeychain, createObsidianPluginSecrets, type SecretStorageHost } from "./obsidianKeychain";
+import { UNAVAILABLE_KEYCHAIN, UNAVAILABLE_PLUGIN_SECRETS, type Keychain, type PluginSecretStore } from "./keychain";
 
 /** What this device offers for keys, for the settings panel's copy. */
 export type SecretStorageTier = "delegated" | "delegated-unencrypted" | "manual";
@@ -40,6 +40,21 @@ export interface SecretEnvironment {
 	 * unconditionally rather than branching first.
 	 */
 	keychain(): Keychain;
+	/**
+	 * The store the plugin writes its own credentials into.
+	 *
+	 * A second question, not a second spelling of {@link keychain}: the tier above
+	 * is decided by what can be *read*, because that is all an API-key binding
+	 * needs, while an OAuth credential also has to be created and deleted. A host
+	 * can be readable and still refuse both, so this resolves independently and
+	 * reports {@link PluginSecretStore.available} for the UI to gate sign-in on.
+	 *
+	 * {@link UNAVAILABLE_PLUGIN_SECRETS} when nothing can be stored, so callers
+	 * again resolve unconditionally. There is deliberately no `data.json`
+	 * fallback: a refresh token is long-lived and that file is inside the synced
+	 * vault, so the honest answer on such a host is that sign-in is unavailable.
+	 */
+	pluginSecrets(): PluginSecretStore;
 }
 
 export interface CreateSecretEnvironmentOptions {
@@ -59,6 +74,14 @@ export interface CreateSecretEnvironmentOptions {
 	 */
 	createKeychain?: (host: SecretStorageHost | null) => Keychain;
 	/**
+	 * Injectable for tests; defaults to {@link createObsidianPluginSecrets}.
+	 *
+	 * A separate seam from {@link createKeychain} so a test can model the real
+	 * asymmetry — a host that reads fine but refuses to write — which is the case
+	 * the sign-in gate exists for and the one a single probe would hide.
+	 */
+	createPluginSecrets?: (host: SecretStorageHost | null) => PluginSecretStore;
+	/**
 	 * Receives the reason this device fell back to manual keys. Injectable so
 	 * the module stays free of the logger; the plugin routes it to debug level,
 	 * where an "is my key in the keychain?" question gets a direct answer.
@@ -75,8 +98,23 @@ export interface CreateSecretEnvironmentOptions {
  * preferable to not loading.
  */
 export function createSecretEnvironment(options: CreateSecretEnvironmentOptions): SecretEnvironment {
-	const manual: SecretEnvironment = { tier: () => "manual", keychain: () => UNAVAILABLE_KEYCHAIN };
 	const log = options.log ?? ((): void => {});
+	// Resolved before the tier, and independently of it, so a host that reads but
+	// refuses to write still lands on `delegated` for API keys while reporting
+	// sign-in as unavailable. Its own try/catch for the same reason every probe
+	// here has one: this runs during onload.
+	let pluginSecrets: PluginSecretStore = UNAVAILABLE_PLUGIN_SECRETS;
+	try {
+		const createSecrets = options.createPluginSecrets ?? ((host) => createObsidianPluginSecrets(host, { log }));
+		pluginSecrets = createSecrets(options.host);
+	} catch (error) {
+		log(`Writable keychain probe failed; subscription sign-in stays unavailable. ${String(error)}`);
+	}
+	const manual: SecretEnvironment = {
+		tier: () => "manual",
+		keychain: () => UNAVAILABLE_KEYCHAIN,
+		pluginSecrets: () => pluginSecrets,
+	};
 	try {
 		const create = options.createKeychain ?? ((host) => createObsidianKeychain(host, { log }));
 		const keychain = create(options.host);
@@ -84,9 +122,11 @@ export function createSecretEnvironment(options: CreateSecretEnvironmentOptions)
 			// The adapter already logged why.
 			return manual;
 		}
-		return keychain.encrypted
-			? { tier: () => "delegated", keychain: () => keychain }
-			: { tier: () => "delegated-unencrypted", keychain: () => keychain };
+		return {
+			tier: () => (keychain.encrypted ? "delegated" : "delegated-unencrypted"),
+			keychain: () => keychain,
+			pluginSecrets: () => pluginSecrets,
+		};
 	} catch (error) {
 		log(`Keychain probe failed; keys stay in this vault's plugin config. ${String(error)}`);
 		return manual;
