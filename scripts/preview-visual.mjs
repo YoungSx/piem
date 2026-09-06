@@ -1133,6 +1133,7 @@ const RUN_CELLS = [
 	{ id: "settled", label: "back, and it worked" },
 	{ id: "cut", label: "asked, never answered" },
 	{ id: "failed", label: "it broke" },
+	{ id: "thinking", label: "a thought still forming" },
 ];
 
 /** The transcript and pending set for one cell. */
@@ -1203,6 +1204,19 @@ function runFixture(id, language) {
 	if (id === "cut") {
 		return { messages: [ask, reply(call("c-w", "write", { path: "Books/Deep Work.md" }))], pendingToolCalls: [] };
 	}
+	if (id === "thinking") {
+		// The thought itself is the block in flight: no call out, so the running
+		// treatment has to come from the live row alone — brain in the slot,
+		// accent, breath, the same three signals a tool row gets.
+		return {
+			messages: [
+				ask,
+				{ role: "assistant", content: [{ type: "thinking", thinking: zh ? "第三篇和第二篇确实在讲同一本书…" : "The third note really is the same book as the second…" }], ...base },
+			],
+			pendingToolCalls: [],
+			streaming: true,
+		};
+	}
 	return {
 		messages: [
 			ask,
@@ -1215,7 +1229,7 @@ function runFixture(id, language) {
 
 /** One transcript mount, serialized; `id` picks which of the six cells it is. */
 async function mountToolRun(id, language) {
-	const { messages, pendingToolCalls } = runFixture(id, language);
+	const { messages, pendingToolCalls, streaming } = runFixture(id, language);
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	const root = reactDomClient.createRoot(host);
@@ -1225,7 +1239,7 @@ async function mountToolRun(id, language) {
 			{ language },
 			React.createElement(MessageList, {
 				messages,
-				isStreaming: pendingToolCalls.length > 0,
+				isStreaming: streaming ?? pendingToolCalls.length > 0,
 				pendingToolCalls,
 				app: makeAppStub(memoryAdapter()),
 				component: {},

@@ -1746,20 +1746,20 @@ button.piem-chat__context-open {
 }
 
 /*
- * A row whose glyph is a loader: a thought being produced, a tidy in progress.
- * The icon is the spinner, so it turns, and the muted tone lifts it off the
- * faint the settled rows use.
+ * The last loader row: a tidy in progress. The icon is the spinner, so it
+ * turns, and the muted tone lifts it off the faint the settled rows use.
  *
- * Tool rows used to be here too and are not any more — see `--running` below.
- * The rows that stayed are the ones with no picture of their own to show: a
- * thought is a thought, and the loader is the only thing that slot could ever
- * have held.
+ * Tool rows left first — see `--running` below — and thinking followed them:
+ * it has a picture now (the brain, kept through both states) and wears the
+ * same running treatment, so compaction is the only row that still answers
+ * "is something happening" with a spinner, because the loader is the only
+ * thing its slot could ever have held.
  *
  * The transform plumbing is the spinner's (see `piem-chat__spinner`): the span
  * needs a box and the SVG needs a fill-box origin, or the icon orbits a corner
  * instead of turning on its centre.
  */
-.piem-chat__trace--live .piem-chat__trace-icon {
+.piem-chat__trace--seam.piem-chat__trace--live .piem-chat__trace-icon {
 	color: var(--text-muted);
 	transform-box: fill-box;
 	transform-origin: center;
@@ -1767,7 +1767,7 @@ button.piem-chat__context-open {
 
 @media (prefers-reduced-motion: no-preference) {
 
-	.piem-chat__trace--live .piem-chat__trace-icon {
+	.piem-chat__trace--seam.piem-chat__trace--live .piem-chat__trace-icon {
 		animation: pi-spin 1.1s linear infinite;
 	}
 }
