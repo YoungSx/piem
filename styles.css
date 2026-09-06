@@ -1690,13 +1690,30 @@ button.piem-chat__context-open {
 }
 
 .piem-chat__trace-icon {
-	--icon-size: var(--icon-s);
+	/*
+	 * `--icon-xs`, not `--icon-s`: the glyph stands beside `--font-ui-smaller`
+	 * text, and the same arithmetic the status chips and the desc toggle already
+	 * ran — a 16px glyph outweighed the 12px words it served — ends at 14px here
+	 * too. The row is a scan line, not a toolbar.
+	 */
+	--icon-size: var(--icon-xs);
 	color: var(--text-faint);
 	flex-shrink: 0;
 }
 
 .piem-chat__trace-name {
+	/*
+	 * Weight is the hierarchy this row has left to spend. The detail beside the
+	 * name already sits at the ramp's floor (12px) and at muted — the floor this
+	 * file's own contrast rule sets for meta text — so neither size nor colour
+	 * has a step to give, and without one "Read a note Books/Deep Work.md"
+	 * reads as one string. The name lifts to the ramp's second weight instead,
+	 * which separates the subject from its qualifier without moving any token a
+	 * state signal depends on: the running row still lifts colour (muted →
+	 * normal) and the error row still spends its one loud note on the glyph.
+	 */
 	flex-shrink: 0;
+	font-weight: var(--font-semibold);
 }
 
 /*
