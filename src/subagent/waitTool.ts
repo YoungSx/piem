@@ -170,8 +170,8 @@ export function createWaitSubagentTool(context: SubagentToolsContext, inheritedO
 				// than as forbidden. Collecting it would splice a chat the user never
 				// asked about into this transcript and this session log, and the model
 				// has no use for the difference: either way there is nothing here to
-				// wait on. Ids are process-wide and sequential, so a model that lost
-				// track of its own could otherwise reach a stranger's by guessing.
+				// wait on. Ids are process-wide, so a model that lost track of its own
+				// could otherwise reach a stranger's by trying the one it remembers.
 				if (!entry || entry.ownerId !== ownerId) {
 					const ids = known(signal).map((e) => e.id);
 					throw new Error(
