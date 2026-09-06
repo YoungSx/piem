@@ -719,6 +719,64 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 		expect(JSON.stringify(entry?.result?.messages ?? [])).toContain("Scout report: nothing to organize.");
 	});
 
+	it("deleting the neighbor session falls back to the live run without replacing it", async () => {
+		const { streamFn, entered, aborted } = multiSessionStreamFn();
+		const service = createService(new MemoryAdapter(), streamFn);
+		const { pathA, pathB } = await seedTwoSessions(service);
+		await service.openSession(pathA);
+
+		// A streams; the user opens B and deletes B, so focus auto-falls back to A.
+		await startHang(service, HANG_A, entered);
+		const agentWhileRunning = (service as unknown as { runtimes: Map<string, { agent: unknown }> }).runtimes.get(pathA)?.agent;
+		await service.openSession(pathB);
+		await service.deleteSession(pathB);
+		await settleTick();
+
+		expect(service.getActiveSessionPath()).toBe(pathA);
+		// The delete path re-ran startup on the way back; a returning runtime that
+		// already owns a live agent must keep it, not be rebuilt from the log tail.
+		const agentAfterFallback = (service as unknown as { runtimes: Map<string, { agent: unknown }> }).runtimes.get(pathA)?.agent;
+		expect(agentAfterFallback).toBe(agentWhileRunning);
+		expect(aborted.get(HANG_A)).toBe(false);
+
+		// What the user sees: the run still streaming, and no "resume the broken
+		// reply" banner over a run that is right there in flight.
+		const back = service.getSnapshot();
+		expect(back.isStreaming).toBe(true);
+		expect(back.canResumeInterrupted ?? false).toBe(false);
+
+		await stopRun(service, pathA);
+	});
+
+	it("deleting the neighbor session falls back to the live run without replacing it", async () => {
+		const { streamFn, entered, aborted } = multiSessionStreamFn();
+		const service = createService(new MemoryAdapter(), streamFn);
+		const { pathA, pathB } = await seedTwoSessions(service);
+		await service.openSession(pathA);
+
+		// A streams; the user opens B and deletes B, so focus auto-falls back to A.
+		await startHang(service, HANG_A, entered);
+		const agentWhileRunning = (service as unknown as { runtimes: Map<string, { agent: unknown }> }).runtimes.get(pathA)?.agent;
+		await service.openSession(pathB);
+		await service.deleteSession(pathB);
+		await settleTick();
+
+		expect(service.getActiveSessionPath()).toBe(pathA);
+		// The delete path re-ran startup on the way back; a returning runtime that
+		// already owns a live agent must keep it, not be rebuilt from the log tail.
+		const agentAfterFallback = (service as unknown as { runtimes: Map<string, { agent: unknown }> }).runtimes.get(pathA)?.agent;
+		expect(agentAfterFallback).toBe(agentWhileRunning);
+		expect(aborted.get(HANG_A)).toBe(false);
+
+		// What the user sees: the run still streaming, and no "resume the broken
+		// reply" banner over a run that is right there in flight.
+		const back = service.getSnapshot();
+		expect(back.isStreaming).toBe(true);
+		expect(back.canResumeInterrupted ?? false).toBe(false);
+
+		await stopRun(service, pathA);
+	});
+
 	it("abort only kills the session it targets", async () => {
 		const { streamFn, entered, aborted } = multiSessionStreamFn();
 		const service = createService(new MemoryAdapter(), streamFn);
