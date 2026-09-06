@@ -1,7 +1,7 @@
 {
 	"id": "piem",
 	"name": "Piem",
-	"version": "1.0.43",
+	"version": "1.0.44",
 	"minAppVersion": "1.13.0",
 	"description": "Run the Piem coding agent in a chat side panel, with tools scoped to your vault.",
 	"author": "Shangxin",
