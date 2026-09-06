@@ -1,6 +1,7 @@
 import type { DataAdapter } from "obsidian";
 import { err, FileError, ok, type FileInfo, type Result } from "@earendil-works/pi-agent-core";
 import { normalizeVaultPath } from "../vault/path";
+import { SessionLogRepairNet, type SessionDriftEvent } from "./sessionMutationLine";
 
 /**
  * The slice of pi's `FileSystem` that `JsonlSessionRepo` actually calls.
@@ -64,14 +65,21 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 	private readonly adapter: DataAdapter;
 	private readonly trash: (path: string) => Promise<void>;
 
+	private readonly repairNet: SessionLogRepairNet;
+
 	/**
 	 * `trash` is injected so the recoverability decision stays testable and in
 	 * one place. It receives paths that are real session logs; temporary files
 	 * never reach it (see {@link remove}).
+	 *
+	 * `onDrift` is the repair net's observability hook — every rewrite or skip
+	 * it performs is reported, so the sync-underneath-us story is visible in
+	 * the log rather than only in file shapes.
 	 */
-	constructor(adapter: DataAdapter, trash?: (path: string) => Promise<void>) {
+	constructor(adapter: DataAdapter, trash?: (path: string) => Promise<void>, onDrift?: (event: SessionDriftEvent) => void) {
 		this.adapter = adapter;
 		this.trash = trash ?? ((path) => trashSessionFile(adapter, path));
+		this.repairNet = new SessionLogRepairNet(onDrift);
 	}
 
 	/**
@@ -121,15 +129,37 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 			const target = this.normalize(path);
 			await this.ensureParentDirectory(target);
 			await this.adapter.write(target, toText(content));
+			await this.repairNet.refresh(target, () => this.statRaw(target));
 			return ok(undefined);
 		});
 	}
 
+	/**
+	 * The single choke point every pi append flows through — and therefore the
+	 * place the sync-drift repair net lives.
+	 *
+	 * The vault sync plugin can land a whole-file version between two of our
+	 * appends. pi's in-memory sequence would then write a seq the file already
+	 * carries, and the next load would reject the file as invalid — the whole
+	 * chat bricked. Before appending, the net compares the file's fingerprint
+	 * against what our last write left; on drift it reads the disk and rewrites
+	 * the incoming line to stay loadable (see `repairMutationLine`), dropping
+	 * bookkeeping lines it cannot rescue. The in-memory view stays stale either
+	 * way — recovering it is the merge layer's job, not this one's.
+	 */
 	async appendFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal): Promise<Result<void, FileError>> {
 		return this.run(path, abortSignal, async () => {
 			const target = this.normalize(path);
-			await this.ensureParentDirectory(target);
-			await this.adapter.append(target, toText(content));
+			const text = toText(content);
+			const decision = await this.repairNet.prepare(target, text, {
+				stat: () => this.statRaw(target),
+				read: () => this.adapter.read(target),
+			});
+			if (decision.line !== null) {
+				await this.ensureParentDirectory(target);
+				await this.adapter.append(target, decision.line);
+			}
+			await this.repairNet.refresh(target, () => this.statRaw(target), decision.appendedSeq);
 			return ok(undefined);
 		});
 	}
@@ -152,6 +182,11 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 			}
 			await this.ensureParentDirectory(destination);
 			await this.adapter.rename(source, destination);
+			// A rename rewrites the destination wholesale, so its seq bookkeeping
+			// is not inferable — the next append reads the disk once instead of
+			// trusting a stale count. The source's baseline dies with the file.
+			await this.repairNet.refresh(destination, () => this.statRaw(destination));
+			this.repairNet.forget(source);
 			return ok(undefined);
 		});
 	}
@@ -257,6 +292,7 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 				return ok(undefined);
 			}
 			await this.trash(target);
+			this.repairNet.forget(target);
 			return ok(undefined);
 		});
 	}
@@ -266,6 +302,12 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 		// readable: chats were stored under `.obsidian/plugins/piem/`, and the
 		// Sessions tab still counts what was left there.
 		return normalizeVaultPath(path, { allowPluginInternals: true });
+	}
+
+	/** Raw stat in the shape the repair net compares, or null when absent. */
+	private async statRaw(target: string): Promise<{ mtime: number; size: number } | null> {
+		const stat = await this.adapter.stat(target);
+		return stat ? { mtime: stat.mtime, size: stat.size } : null;
 	}
 
 	private async ensureParentDirectory(target: string): Promise<void> {
