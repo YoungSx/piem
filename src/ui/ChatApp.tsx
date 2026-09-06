@@ -7,7 +7,7 @@ import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import type { QuickAction } from "./quickActionSuggestions";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type DraftStore } from "../session/DraftStore";
-import { snapshotSubagents, type SubagentSnapshot } from "../subagent/inspectorModel";
+import { snapshotSubagents, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
 import type { ChatInputController } from "./ChatInputController";
 import { getActiveNotePath } from "./activeNotePath";
 import { ChatBanner } from "./ChatBanner";
@@ -79,12 +79,15 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// only for the turn the user is composing and clear on a successful send.
 	const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
 	/**
-	 * Every subagent this session spawned, rebuilt on registry events.
+	 * Every subagent the process holds, rebuilt on registry events.
 	 *
 	 * A second channel alongside the chat snapshot, because the two answer
 	 * different questions and change at different moments: the snapshot is this
 	 * conversation, and a spawn or a settlement happens inside a tool call the
 	 * snapshot has no reason to report.
+	 *
+	 * Registry-wide, then narrowed to this conversation for the icon below — the
+	 * monitor panel is the surface that wants all of them.
 	 */
 	const [subagents, setSubagents] = useState<readonly SubagentSnapshot[]>([]);
 	/**
@@ -148,6 +151,20 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// screen's suggestion effect must key on: a switch from note A to note B
 	// never flips presence, yet changes what the chips should be about.
 	const activeNotePath = snapshot.contextRefs.find((ref) => ref.kind === "active")?.path ?? null;
+	/*
+	 * The runs this conversation ordered, which is what the entry icon may count.
+	 *
+	 * The icon sits inside a conversation and its badge is read as that
+	 * conversation's, so a registry-wide count would report a background chat's
+	 * fan-out as this chat's — and the popover would then offer rows belonging to a
+	 * transcript the reader is not looking at. When this chat has delegated
+	 * nothing the icon is absent, even while another chat's children are running:
+	 * the honest signal for those is the monitor panel, not a badge here.
+	 */
+	const ownSubagents = useMemo(
+		() => (snapshot.session ? snapshotsForOwner(subagents, snapshot.session.path) : []),
+		[subagents, snapshot.session],
+	);
 	const hasActiveNote = activeNotePath !== null;
 	const [ask, setAsk] = useState<{ request: AskUserRequest | null; queued: number }>({ request: null, queued: 0 });
 
@@ -813,8 +830,8 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 							 * row on every turn that never delegated.
 							 */
 							trailing={
-								onOpenSubagents && subagents.length > 0 ? (
-									<SubagentEntryIcon snapshots={subagents} onOpen={onOpenSubagents} />
+								onOpenSubagents && ownSubagents.length > 0 ? (
+									<SubagentEntryIcon snapshots={ownSubagents} onOpen={onOpenSubagents} />
 								) : null
 							}
 						/>

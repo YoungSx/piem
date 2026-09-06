@@ -320,6 +320,7 @@ function snapshot(overrides: Partial<SubagentSnapshot>): SubagentSnapshot {
 		role: "general",
 		task: "Summarize the vault",
 		depth: 1,
+		ownerId: "chat-a",
 		modelId: "test-model",
 		thinkingLevel: "off",
 		status: "done",
