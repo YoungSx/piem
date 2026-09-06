@@ -36,6 +36,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 		refresh: () => {},
 		secretStorage: "manual",
 		readSecret: () => "",
+		signIn: undefined,
 		describeTarget: () => "target",
 		t: en,
 		contextWindow: () => 128_000,

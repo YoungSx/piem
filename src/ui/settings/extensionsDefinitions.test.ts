@@ -59,6 +59,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 		},
 		secretStorage: "manual",
 		readSecret: () => "",
+		signIn: undefined,
 		describeTarget: () => "target",
 		t: en,
 		contextWindow: () => 128_000,

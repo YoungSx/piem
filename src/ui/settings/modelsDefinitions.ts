@@ -22,9 +22,11 @@ import {
 import { openConfirmDelete } from "./confirmDelete";
 import { ModelModal } from "./ModelModal";
 import { ProviderModal } from "./ProviderModal";
+import { openSignInModal } from "./SignInModal";
 import { createEffectLine } from "./effectLine";
 import { describeMissingBuiltinModel, describeModelRow, describeProviderRow } from "./modelsCopy";
 import { rowAction, type SettingsPanelHost } from "./panelHost";
+import { signInTargetFor } from "../../auth/signInSession";
 import { sectionNote } from "./sectionNote";
 
 /**
@@ -189,6 +191,31 @@ function providerDefinition(host: SettingsPanelHost, provider: ProviderConfig): 
 		name: describeProviderConfig(provider),
 		desc: describeProviderRow(provider, boundModels.length, t),
 		render: (setting) => {
+			// A subscription row carries no key to edit, so its control is the
+			// sign-in dialog instead. Key rows get nothing here: their credential
+			// is managed through the edit form, and a second door to it would only
+			// invite two ideas about where a key is changed.
+			const actions = host.signIn?.actionsFor(signInTargetFor(provider));
+			if (actions) {
+				setting.addExtraButton((button) => {
+					rowAction(button, "key-round", t.t("signIn.rowAction"));
+					button.onClick(() =>
+						void actions.isSignedIn().then((signedIn) => {
+							openSignInModal({
+								app: host.app,
+								target: describeProviderConfig(provider),
+								method: actions.method,
+								signedIn,
+								canStore: host.signIn?.canStore() ?? false,
+								t,
+								signIn: (interaction) => actions.signIn(interaction),
+								signOut: () => actions.signOut(),
+								onChanged: () => host.refresh(),
+							});
+						}),
+					);
+				});
+			}
 			setting.addExtraButton((button) => {
 				rowAction(button, "pencil", t.t("settings.editProvider"));
 				button.onClick(() => openProviderModal(host, provider));

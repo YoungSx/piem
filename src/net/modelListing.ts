@@ -64,24 +64,44 @@ export function modelListingUrl(provider: ProviderConfig): string {
 }
 
 /**
+ * A credential to send in place of the row's own key.
+ *
+ * Deliberately shaped like the two fields pi's resolved auth carries, without
+ * importing its type: a subscription row keeps its token in the credential store,
+ * not in `provider.apiKey`, and this is how the caller that resolved it hands it
+ * down. Which of the two fields is filled is the flow's choice — xAI's token goes
+ * where an api key would, Kimi's arrives as its own `Authorization` header.
+ */
+export interface ListingCredential {
+	apiKey?: string;
+	headers?: Record<string, string>;
+}
+
+/**
  * Auth headers this protocol's SDK would send.
  *
  * A blank key sends no credential header at all rather than an empty one: a
  * keyless local server is a legitimate configuration, and an empty bearer token
  * would turn its healthy 200 into a 401.
+ *
+ * A supplied {@link ListingCredential} replaces the row's key rather than
+ * merging with it, and its own headers are applied last — a subscription row's
+ * `provider.apiKey` is either empty or stale, so blending the two could send a
+ * credential the row does not use.
  */
-export function providerAuthHeaders(provider: ProviderConfig): Record<string, string> {
+export function providerAuthHeaders(provider: ProviderConfig, credential?: ListingCredential): Record<string, string> {
 	const headers: Record<string, string> = { accept: "application/json" };
-	const apiKey = provider.apiKey.trim();
+	const apiKey = (credential ? credential.apiKey : provider.apiKey)?.trim();
 	if (provider.protocol === "anthropic-messages") {
 		headers["anthropic-version"] = ANTHROPIC_VERSION;
 		if (apiKey) {
 			headers["x-api-key"] = apiKey;
 		}
-		return headers;
-	}
-	if (apiKey) {
+	} else if (apiKey) {
 		headers.authorization = `Bearer ${apiKey}`;
+	}
+	for (const [name, value] of Object.entries(credential?.headers ?? {})) {
+		headers[name.toLowerCase()] = value;
 	}
 	return headers;
 }
@@ -158,11 +178,11 @@ function readErrorMessage(payload: unknown): string | undefined {
  */
 export async function probeModelListing(
 	provider: ProviderConfig,
-	options: { fetch: FetchFn; signal?: AbortSignal },
+	options: { fetch: FetchFn; signal?: AbortSignal; credential?: ListingCredential },
 ): Promise<ModelListingResult> {
 	const response = await options.fetch(modelListingUrl(provider), {
 		method: "GET",
-		headers: providerAuthHeaders(provider),
+		headers: providerAuthHeaders(provider, options.credential),
 		signal: options.signal,
 	});
 
