@@ -762,15 +762,19 @@ describe("spawn/wait extension", () => {
 		});
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
+			// Ids are random-suffixed (never sequential), so the first and second
+			// children are told apart by what spawn returns, not by position.
+			const first = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
+			const firstId = spawnedId(first);
 			mounted = [
 				{ name: "mcp_weather_lookup", label: "weather_lookup", description: "d", parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text" as const, text: "ok" }], details: undefined }) },
 			];
-			await toolNamed(tools, "spawn_subagent").execute("c2", { task: "Sweep again" }, undefined);
+			const second = await toolNamed(tools, "spawn_subagent").execute("c2", { task: "Sweep again" }, undefined);
+			const secondId = spawnedId(second);
 			// Children run in the background; the waits are what make their LLM
 			// requests — and so the observations — have happened.
-			await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
-			await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: "subagent-2" }, undefined);
+			await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: firstId }, undefined);
+			await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: secondId }, undefined);
 			// The child's set is rebuilt per spawn, so the second child — and only
 			// it — carries the mounted tool, riding alongside the delegation five.
 			expect(observations[0]!.toolNames).not.toContain("mcp_weather_lookup");
