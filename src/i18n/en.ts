@@ -1533,7 +1533,8 @@ export const en = {
 	 */
 	subagents: {
 		tabTitle: "Piem subagents",
-		panelAria: "Subagents in this chat",
+		/** The panel spans every chat, so its name cannot claim to be one chat's. */
+		panelAria: "Subagent runs",
 		/**
 		 * Two leaves, not one with the status substituted in: the running case
 		 * names a count that is changing and the settled case names a count that

@@ -911,7 +911,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 
 	subagents: {
 		tabTitle: "Piem 子代理",
-		panelAria: "此对话的子代理",
+		panelAria: "子代理运行记录",
 		entryRunning: "{count} 个子代理正在干活。打开子代理面板。",
 		entrySettled: "此对话共 {count} 个子代理。打开子代理面板。",
 		popoverAria: "此对话的子代理",

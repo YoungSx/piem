@@ -120,8 +120,13 @@ function toSnapshot(entry: SubagentEntry, now: number): SubagentSnapshot {
 /**
  * Snapshots every subagent the registry holds, in spawn order.
  *
+ * Every chat's, not one chat's: the registry is per-service, and the panel that
+ * consumes this is a tab rather than part of a conversation. Narrowing is the
+ * caller's job — {@link snapshotsForOwner} for a surface that lives inside one
+ * chat, {@link groupByOwner} for one that shows them all.
+ *
  * The registry never prunes — entries die with the service — so this is the
- * whole session's history, which is what the inspector is for.
+ * whole plugin session's history, which is what the inspector is for.
  */
 export function snapshotSubagents(registry: SubagentRegistry, now: number): SubagentSnapshot[] {
 	return registry.all().map((entry) => toSnapshot(entry, now));
