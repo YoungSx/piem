@@ -83,9 +83,12 @@ export interface PiemSettings {
 	 *
 	 * Persisted UI state rather than a preference: a phone that switched away
 	 * from the panel usually had it unloaded, and without this the reader who
-	 * folded the composer to read would unfold it again on every return. Desktop
-	 * never reads it — the fold control itself is mobile-only. Absent means
-	 * expanded, so vaults written before the field existed get today's behaviour.
+	 * folded the composer to read would unfold it again on every return. The
+	 * fold is mobile-only — no toggle renders on desktop, so ChatComposer clamps
+	 * the state off there. That clamp is what keeps a sync plugin harmless: a
+	 * data.json copied from a phone must not strand a desktop panel in a fold it
+	 * has no button to leave. Absent means expanded, so vaults written before
+	 * the field existed get today's behaviour.
 	 */
 	mobileComposerCollapsed?: boolean;
 	/**

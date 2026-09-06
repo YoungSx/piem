@@ -132,6 +132,11 @@ interface ChatComposerProps {
 	 * Stateful in the parent rather than here, because the state is persisted:
 	 * the panel's next mount has to open folded, which a component-local flag
 	 * would forget.
+	 *
+	 * A synced vault can carry a phone's folded state into a desktop data.json,
+	 * where the fold would stick with no toggle rendered to undo it — so the
+	 * state is clamped to {@link canFold}: wherever the toggle cannot render,
+	 * the composer must always be expanded.
 	 */
 	collapsed?: boolean;
 	/** Folds or unfolds the composer; its presence is also what renders the toggle. */
@@ -176,10 +181,19 @@ export function ChatComposer({
 	onSteerQueuedPrompt,
 	onEditQueuedPrompt,
 	onDiscardQueuedPrompt,
-	collapsed = false,
+	collapsed: collapsedProp = false,
 	onToggleCollapsed,
 }: ChatComposerProps): React.JSX.Element {
 	const t = useT();
+	/*
+	 * One predicate decides whether this composer can fold at all: the toggle
+	 * must be renderable. The state clamps to it rather than re-judging the
+	 * platform, so a composer whose toggle cannot appear — desktop, or a parent
+	 * that passes no handler — always opens expanded. A synced fold can never
+	 * strand a panel in a state it has no button to leave.
+	 */
+	const canFold = Platform.isMobile && onToggleCollapsed !== undefined;
+	const collapsed = canFold && collapsedProp;
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const onSendRef = useRef<() => void>(onSend);
 	const isBusy = isStreaming || isCompacting || isRewinding;
@@ -386,7 +400,7 @@ export function ChatComposer({
 					 * row is what remains; chevron-up opens, and the draft returns. Same
 					 * element both ways, so the press never drops focus mid-tap.
 					 */}
-					{Platform.isMobile && onToggleCollapsed ? (
+					{canFold ? (
 						<IconButton
 							icon={collapsed ? "chevron-down" : "chevron-up"}
 							label={t.t(collapsed ? "chat.expandComposer" : "chat.collapseComposer")}
