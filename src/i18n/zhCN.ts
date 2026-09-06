@@ -785,6 +785,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 
 	deletion: {
 		providerKeyRemoved: "基础 URL 和 API 密钥会从此笔记库的配置中移除。",
+		providerKeychainStays: "它指向的钥匙串条目会保留，只移除这一行对它的绑定。",
+		providerOauthSignOut: "会退出登录，并把存好的凭据从钥匙串中删除。",
 		providerOneModel: "由它提供服务的模型也会被移除：{names}。",
 		providerManyModels: "由它提供服务的 {count} 个模型也会被移除：{names}。",
 		modelProviderStays: "提供方及其密钥会保留，其他模型仍可正常使用。",

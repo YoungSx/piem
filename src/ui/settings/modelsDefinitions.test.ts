@@ -104,6 +104,53 @@ describe("modelsDefinitions", () => {
 		expect(reads).toBe(0);
 	});
 
+	/**
+	 * Deleting a signed-in subscription row is the one deletion that touches the
+	 * keychain: the stored credential is the plugin's own entry and outlives the
+	 * row unless confirm signs it out first. The dialog also probes the sign-in
+	 * state before opening (the sign-in button's pattern), so the copy names what
+	 * confirm will actually do — asserted here through the echoed key.
+	 */
+	it("signs an OAuth row out before removing it on confirmed delete", async () => {
+		const settings = host().settings;
+		settings.providers.push({ id: "p-sub", name: "Sub", baseUrl: "https://sub.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "xai" });
+		settings.models.push({ id: "m", providerId: "p-sub", modelApiId: "model", displayName: "Model", reasoning: false, supportsImages: false });
+		let signOuts = 0;
+		let saves = 0;
+		const signIn = {
+			canStore: () => true,
+			actionsFor: (target: { flowId: string }) =>
+				target.flowId
+					? { method: "xAI", isSignedIn: async () => true, signIn: async () => {}, signOut: async () => { signOuts += 1; } }
+					: undefined,
+		};
+		const current = host({
+			settings,
+			signIn: signIn as unknown as SettingsPanelHost["signIn"],
+			save: async () => { saves += 1; },
+		});
+		const list = modelsDefinitions(current).find(
+			(def) => (def as { heading?: string }).heading === en.t("settings.providersHeading"),
+		) as { items?: Array<{ render?: (setting: unknown) => void }> };
+		const setting = new (Setting as unknown as new (el: HTMLElement) => { extraButtons: Array<{ icon?: string; onClickHandler?: () => unknown }> })(document.createElement("div"));
+		list.items?.[1]?.render?.(setting);
+		const trash = setting.extraButtons.find((button) => button.icon === "trash-2");
+		trash?.onClickHandler?.();
+		await Promise.resolve();
+		// The probe resolved before the dialog opened, and the copy names the
+		// sign-out the confirm will perform.
+		const shell = document.body.lastElementChild as HTMLElement;
+		expect(shell.textContent).toContain(en.t("deletion.providerOauthSignOut"));
+		const confirm = Array.from(shell.querySelectorAll("button")).at(-1) as HTMLButtonElement;
+		confirm.click();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(signOuts).toBe(1);
+		expect(settings.providers).toHaveLength(0);
+		expect(settings.models).toHaveLength(0);
+		expect(saves).toBe(1);
+	});
+
 	it("draws the sign-in button only on a subscription row, key rows keep one door to their key", async () => {
 		const settings = host().settings;
 		settings.providers.push(

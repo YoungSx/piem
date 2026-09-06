@@ -122,21 +122,41 @@ describe("removeModel", () => {
 
 describe("describeProviderDeletion", () => {
 	it("names the models that go with it", () => {
-		const lines = describeProviderDeletion([model("m1", "p1"), model("m2", "p1")], en);
+		const lines = describeProviderDeletion([model("m1", "p1"), model("m2", "p1")], "inline", en);
 		expect(lines[1]).toBe("The 2 models served by it are removed too: m1, m2.");
 	});
 
 	it("uses the singular for one model", () => {
-		expect(describeProviderDeletion([model("m1", "p1")], en)[1]).toBe("The model served by it is removed too: m1.");
+		expect(describeProviderDeletion([model("m1", "p1")], "inline", en)[1]).toBe(
+			"The model served by it is removed too: m1.",
+		);
 	});
 
 	it("keeps the count and names when translated", () => {
-		const lines = describeProviderDeletion([model("m1", "p1"), model("m2", "p1")], zh);
+		const lines = describeProviderDeletion([model("m1", "p1"), model("m2", "p1")], "inline", zh);
 		expect(lines[1]).toBe("由它提供服务的 2 个模型也会被移除：m1, m2。");
 	});
 
 	it("says nothing about models when none are bound", () => {
-		expect(describeProviderDeletion([], en)).toHaveLength(1);
+		expect(describeProviderDeletion([], "inline", en)).toHaveLength(1);
+	});
+
+	it("keeps the keychain entry when the row holds a binding", () => {
+		const lines = describeProviderDeletion([], "ref", en);
+		expect(lines).toHaveLength(2);
+		expect(lines[1]).toBe(
+			"The keychain entry it points at stays — only this row's binding to it is removed.",
+		);
+	});
+
+	it("says the OAuth credential is signed out and deleted", () => {
+		const lines = describeProviderDeletion([], "oauth", en);
+		expect(lines).toHaveLength(2);
+		expect(lines[1]).toBe("You are signed out, and the saved credential is deleted from the keychain.");
+	});
+
+	it("adds no credential line beyond the plain-text one for an inline key", () => {
+		expect(describeProviderDeletion([], "inline", en)).toHaveLength(1);
 	});
 });
 

@@ -1387,6 +1387,10 @@ export const en = {
 	/** Consequences stated before a delete is confirmed. */
 	deletion: {
 		providerKeyRemoved: "The base URL and API key are removed from this vault's config.",
+		// The keychain entry itself is user-owned (the read-only `Keychain`
+		// interface has no remove), so only the row's binding dies here.
+		providerKeychainStays: "The keychain entry it points at stays — only this row's binding to it is removed.",
+		providerOauthSignOut: "You are signed out, and the saved credential is deleted from the keychain.",
 		providerOneModel: "The model served by it is removed too: {names}.",
 		providerManyModels: "The {count} models served by it are removed too: {names}.",
 		modelProviderStays: "The provider and its key stay, so other models keep working.",

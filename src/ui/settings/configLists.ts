@@ -68,8 +68,23 @@ function reassignActiveModel(lists: ConfigLists): void {
 	}
 }
 
+/**
+ * How the row being deleted holds its credential.
+ *
+ * The three shapes never coexist on disk (settingsSecrets' invariant), so the
+ * deletion dialog can name exactly one fate. Inline plaintext dies with the
+ * row; a keychain binding is dropped from the row but the entry is the user's
+ * and stays; an OAuth flow's stored credential is the plugin's own keychain
+ * entry and is signed out with it.
+ */
+export type ProviderCredentialShape = "inline" | "ref" | "oauth";
+
 /** What the user loses by deleting a provider, stated before they confirm. */
-export function describeProviderDeletion(boundModels: readonly ModelConfig[], t: Translator): string[] {
+export function describeProviderDeletion(
+	boundModels: readonly ModelConfig[],
+	shape: ProviderCredentialShape,
+	t: Translator,
+): string[] {
 	const lines = [t.t("deletion.providerKeyRemoved")];
 	if (boundModels.length > 0) {
 		const names = boundModels.map(describeModelConfig).join(", ");
@@ -78,6 +93,13 @@ export function describeProviderDeletion(boundModels: readonly ModelConfig[], t:
 				? t.t("deletion.providerOneModel", { names })
 				: t.t("deletion.providerManyModels", { count: boundModels.length, names }),
 		);
+	}
+	// Only the non-plain shapes need an extra sentence: the inline case is
+	// already stated by the first line (and answered by the copy button).
+	if (shape === "ref") {
+		lines.push(t.t("deletion.providerKeychainStays"));
+	} else if (shape === "oauth") {
+		lines.push(t.t("deletion.providerOauthSignOut"));
 	}
 	return lines;
 }

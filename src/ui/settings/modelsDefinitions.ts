@@ -187,15 +187,44 @@ function providersList(host: SettingsPanelHost): SettingDefinitionItem {
 function providerDefinition(host: SettingsPanelHost, provider: ProviderConfig): SettingGroupItem {
 	const { settings, t } = host;
 	const boundModels = modelsForProvider(settings.models, provider.id);
+	// A subscription row carries no key to edit, so its control is the
+	// sign-in dialog instead. Key rows get nothing here: their credential
+	// is managed through the edit form, and a second door to it would only
+	// invite two ideas about where a key is changed.
+	const actions = host.signIn?.actionsFor(signInTargetFor(provider));
+	// Deleting an OAuth row signs it out — the stored credential is the
+	// plugin's own keychain entry and has no life after its provider. Resolved
+	// before the dialog opens (the sign-in button's pattern) so the
+	// consequences name what will actually happen on confirm.
+	const deleteConsequences = (signedIn: boolean) =>
+		describeProviderDeletion(
+			boundModels,
+			actions ? (signedIn ? "oauth" : "inline") : provider.secretRef !== "" ? "ref" : "inline",
+			t,
+		);
+	const confirmDelete = (signedIn: boolean) => {
+		openConfirmDelete(host.app, {
+			subject: t.t("confirmDelete.providerSubject", { name: describeProviderConfig(provider) }),
+			consequences: deleteConsequences(signedIn),
+			t,
+			// copySecret only makes sense for a plaintext key this row owns; an
+			// OAuth row's credential lives in the keychain, not in data.json.
+			copySecret:
+				!actions && provider.secretRef === "" && provider.apiKey !== "" ? provider.apiKey : undefined,
+			onConfirm: async () => {
+				if (actions && signedIn) {
+					await actions.signOut();
+				}
+				removeProvider(settings, provider.id);
+				await host.save();
+				host.refresh();
+			},
+		});
+	};
 	return {
 		name: describeProviderConfig(provider),
 		desc: describeProviderRow(provider, boundModels.length, t),
 		render: (setting) => {
-			// A subscription row carries no key to edit, so its control is the
-			// sign-in dialog instead. Key rows get nothing here: their credential
-			// is managed through the edit form, and a second door to it would only
-			// invite two ideas about where a key is changed.
-			const actions = host.signIn?.actionsFor(signInTargetFor(provider));
 			if (actions) {
 				setting.addExtraButton((button) => {
 					rowAction(button, "key-round", t.t("signIn.rowAction"));
@@ -223,17 +252,13 @@ function providerDefinition(host: SettingsPanelHost, provider: ProviderConfig): 
 			setting.addExtraButton((button) => {
 				rowAction(button, "trash-2", t.t("settings.deleteProvider"));
 				button.onClick(() => {
-					openConfirmDelete(host.app, {
-						subject: t.t("confirmDelete.providerSubject", { name: describeProviderConfig(provider) }),
-						consequences: describeProviderDeletion(boundModels, t),
-						t,
-						copySecret: provider.secretRef === "" && provider.apiKey !== "" ? provider.apiKey : undefined,
-						onConfirm: async () => {
-							removeProvider(settings, provider.id);
-							await host.save();
-							host.refresh();
-						},
-					});
+					// Same async probe as the sign-in button: the dialog's copy and
+					// its onConfirm both depend on whether a credential is stored.
+					if (actions) {
+						void actions.isSignedIn().then(confirmDelete);
+					} else {
+						confirmDelete(false);
+					}
 				});
 			});
 		},
