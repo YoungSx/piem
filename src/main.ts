@@ -116,6 +116,11 @@ export default class PiemPlugin extends Plugin {
 			() => this.settings.mcpServers,
 			() => this.settings.networkTransport,
 			this.manifest.version,
+			undefined,
+			// Scoped so mounts, probes, and reconnects read as one story. The
+			// startup connect is fire-and-forget; without this its failures are
+			// invisible anywhere but the panel, and only while that is open.
+			this.log.child("mcp"),
 		);
 		return this.mcpBridge;
 	}

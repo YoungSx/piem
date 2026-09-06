@@ -20,6 +20,8 @@ afterAll(() => {
 
 const { createMcpServerConfig } = await import("./mcpConfig");
 const { createNoGetStreamFetch, McpManager } = await import("./mcpManager");
+import { spyLogger } from "../testUtils/logSpy";
+import type { LoggerLike } from "../logging/Logger";
 
 /** Test fixtures always carry a usable URL; the null branch is mcpConfig.test.ts's job. */
 function serverFixture(partial: Parameters<typeof createMcpServerConfig>[0]): McpServerConfig {
@@ -85,12 +87,14 @@ function makeManager(
 	servers: McpServerConfig[],
 	fetchFactory: (transport: "requestUrl" | "fetch") => FetchLike,
 	transport: "requestUrl" | "fetch" = "requestUrl",
+	logger?: LoggerLike,
 ): InstanceType<typeof McpManager> {
 	return new McpManager(
 		() => servers,
 		() => transport,
 		STUB_PLUGIN_VERSION,
 		fetchFactory,
+		logger,
 	);
 }
 
@@ -263,6 +267,68 @@ describe("McpManager", () => {
 
 		// The saved config stays untested: a probe must not poison the cache.
 		expect(manager.getServerStates()[0]?.status).toBe("untested");
+		await manager.dispose();
+	});
+
+	it("logs a passed test at info and a failed mount at warn", async () => {
+		// The probe's verdict lives only in the panel row, and the startup
+		// connect is fire-and-forget — the logger is the only trace either path
+		// leaves outside a settings tab that may never be open.
+		const spy = spyLogger();
+		const server = serverFixture({ name: "live", url: "https://live.example.com", token: "" });
+		const manager = makeManager(
+			[server],
+			() => async (url, init) => {
+				if ((init?.method ?? "GET").toUpperCase() === "GET") {
+					return new Response(null, { status: 405 });
+				}
+				const body = typeof init?.body === "string" ? init.body : "";
+				if (body.includes('"method":"initialize"')) {
+					return handshakeResponses("session-log-1")[0]!;
+				}
+				if (body.includes("notifications/initialized")) {
+					return new Response(null, { status: 202 });
+				}
+				return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			},
+			"requestUrl",
+			spy.logger,
+		);
+
+		await manager.testServer(server);
+		const pass = spy.records.find((record) => record.message.startsWith("MCP test passed"));
+		expect(pass?.level).toBe("info");
+		expect(pass?.detail).toEqual({ tools: 0, ms: expect.any(Number) });
+
+		await manager.connect();
+		const mount = spy.records.find((record) => record.message.startsWith("MCP server mounted"));
+		expect(mount?.level).toBe("info");
+
+		await manager.dispose();
+	});
+
+	it("warns when a mount fails, since the failing connect is fire-and-forget", async () => {
+		const spy = spyLogger();
+		const server = serverFixture({ name: "down", url: "https://down.example.com", token: "" });
+		const manager = makeManager(
+			[server],
+			() => async () => {
+				throw new Error("network unreachable");
+			},
+			"requestUrl",
+			spy.logger,
+		);
+
+		// Per-server failures are recorded, never thrown — see the class contract.
+		await manager.connect();
+		const warn = spy.records.find((record) => record.message.startsWith("MCP server mount failed"));
+		expect(warn?.level).toBe("warn");
+		expect(warn?.detail).toEqual({ error: "network unreachable" });
+		expect(manager.getServerStates()[0]?.status).toBe("error");
+
 		await manager.dispose();
 	});
 
