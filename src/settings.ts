@@ -1,10 +1,11 @@
 import { PluginSettingTab, type App, type SettingDefinitionItem } from "obsidian";
 import { getBuiltinModels } from "./net/builtinCatalog";
-import type { Model } from "@earendil-works/pi-ai";
+import type { CacheRetention, Model } from "@earendil-works/pi-ai";
 import type PiemPlugin from "./main";
 import { CUSTOM_ENDPOINT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./constants";
 import type { SecretEnvironment, SecretStorageTier } from "./keychainEnv";
 import type { NetworkTransport } from "./net/obsidianFetch";
+import { DEFAULT_CACHE_RETENTION, readCacheRetention } from "./net/cacheRetention";
 import {
 	buildConfiguredModel,
 	describeModelConfig,
@@ -55,6 +56,14 @@ export interface PiemSettings {
 	modelId: string;
 	providerApiKeys: Record<string, string>;
 	networkTransport: NetworkTransport;
+	/**
+	 * How long providers are asked to keep the prompt cache alive.
+	 *
+	 * Always resolved rather than optional: an absent value would mean "follow
+	 * pi", and pi's default is the five-minute cache tuned for a CLI loop, which
+	 * is the thing {@link DEFAULT_CACHE_RETENTION} exists to override.
+	 */
+	cacheRetention: CacheRetention;
 	/**
 	 * Whether the chat panel exposes agent-internal metrics — token counts,
 	 * spend, context-window occupancy and raw tool payloads.
@@ -150,6 +159,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	modelId: DEFAULT_MODEL_ID,
 	providerApiKeys: {},
 	networkTransport: "requestUrl",
+	cacheRetention: DEFAULT_CACHE_RETENTION,
 	showAgentDetails: false,
 	traceExpand: DEFAULT_TRACE_EXPAND,
 	language: "auto",
@@ -219,6 +229,10 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		modelId,
 		providerApiKeys: { ...providerApiKeys },
 		networkTransport,
+		// Absent in vaults written before the setting existed. Those get the hour
+		// rather than pi's five minutes, which is the point of the default — see
+		// `DEFAULT_CACHE_RETENTION` for the arithmetic behind that choice.
+		cacheRetention: readCacheRetention(data?.cacheRetention),
 		// Absent in vaults written before the setting existed; those users get the
 		// quiet default rather than inheriting the old always-verbose panel.
 		showAgentDetails: data?.showAgentDetails === true,

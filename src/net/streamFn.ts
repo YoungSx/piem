@@ -3,7 +3,7 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { createModels, createProvider } from "@earendil-works/pi-ai";
-import type { Api, Model, Models, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import type { Api, CacheRetention, Model, Models, Provider, ProviderStreams, StreamOptions } from "@earendil-works/pi-ai";
 import { createFetchForTransport, toFetchFunction, type FetchFn, type NetworkTransport } from "./obsidianFetch";
 import { CUSTOM_ENDPOINT_PROVIDER, DEFAULT_PROVIDER } from "../constants";
 import { isCustomEndpointActive, type CustomEndpointConfig } from "../customEndpoint";
@@ -12,7 +12,7 @@ import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "
 /**
  * Provider plumbing for the agent.
  *
- * Two concerns are resolved here:
+ * Three concerns are resolved here:
  *
  * 1. Provider dispatch uses the `Models` collection API rather than the
  *    deprecated `pi-ai/compat` entrypoint, whose docs state it is deleted with
@@ -21,6 +21,11 @@ import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "
  *    provider endpoints. `requestUrl` bypasses it but cannot stream, so the
  *    transport is selected per the user's setting and surfaced through
  *    {@link NetworkTransport} rather than decided silently.
+ * 3. Prompt cache retention is a plugin decision, not pi's: pi defaults to the
+ *    five-minute cache its CLI loop never outlives, and an Obsidian reader's
+ *    turns are minutes apart. {@link requestDefaults} is the one place the
+ *    user's preference is turned into a request field, so both the turn path and
+ *    the compaction path carry the same one — see `./cacheRetention`.
  *
  * Auth note: for ordinary turns the agent resolves the API key from plugin
  * settings and pi's loop forwards it as `options.apiKey`. pi-ai short-circuits
@@ -118,17 +123,44 @@ function createConfiguredProvider(id: string, name: string): Provider<WireProtoc
 }
 
 /**
- * Wraps a bundle so every request carries the Obsidian transport and API key.
+ * The stream options every provider request carries, whatever path reaches one.
  *
- * Compaction calls `models.completeSimple` internally and accepts neither an
- * API key nor a `fetch`, so the only way to reach it is to bake both into the
- * `Models` instance itself. The key is read per call so a settings change takes
- * effect without rebuilding anything.
+ * There are two such paths — the agent's turn (`resolveStreamFn` in
+ * `ObsidianAgentService`) and compaction's `completeSimple` (through
+ * {@link withRequestDefaults}) — and pi's own loop supplies neither of these
+ * fields, so each path has to add them itself. Naming the pair here is what
+ * keeps them from diverging: an earlier revision had the transport spelled out
+ * at both call sites, and adding retention to one of them is exactly how a
+ * setting ends up applying to replies but not to the summaries that replace
+ * them.
+ *
+ * Typed as a `Pick` of pi's own options rather than a local interface, so a field
+ * renamed upstream fails to compile here instead of being spread into a request
+ * that quietly ignores it.
  */
-export function withRequestDefaults(bundle: ObsidianModelsBundle, getApiKey: (provider: string) => string | undefined): Models {
-	const { models, fetch: fetchImpl } = bundle;
+export function requestDefaults(fetchImpl: FetchFn, cacheRetention: CacheRetention): Pick<StreamOptions, "fetch" | "cacheRetention"> {
 	// toFetchFunction: the one named FetchFn→pi-ai conversion at this seam.
-	const applyDefaults = (model: Model<Api>) => ({ apiKey: getApiKey(model.provider), fetch: toFetchFunction(fetchImpl) });
+	return { fetch: toFetchFunction(fetchImpl), cacheRetention };
+}
+
+/**
+ * Wraps a bundle so every request carries the Obsidian transport, API key, and
+ * cache retention.
+ *
+ * Compaction calls `models.completeSimple` internally and accepts none of the
+ * three, so the only way to reach it is to bake them into the `Models` instance
+ * itself. Both the key and the retention are read per call rather than captured,
+ * so a settings change takes effect without rebuilding anything — and a reader
+ * who turns retention down does not keep paying for hour-long cache writes on
+ * summaries until the plugin reloads.
+ */
+export function withRequestDefaults(
+	bundle: ObsidianModelsBundle,
+	getApiKey: (provider: string) => string | undefined,
+	getCacheRetention: () => CacheRetention,
+): Models {
+	const { models, fetch: fetchImpl } = bundle;
+	const applyDefaults = (model: Model<Api>) => ({ apiKey: getApiKey(model.provider), ...requestDefaults(fetchImpl, getCacheRetention()) });
 	return {
 		...models,
 		streamSimple: (model, context, streamOptions) => models.streamSimple(model, context, { ...streamOptions, ...applyDefaults(model) }),
@@ -136,12 +168,35 @@ export function withRequestDefaults(bundle: ObsidianModelsBundle, getApiKey: (pr
 	};
 }
 
-/** Builds the stream function used by the agent for ordinary turns. */
-export function createObsidianStreamFn(options: ObsidianModelsOptions): StreamFn {
+/**
+ * What a standalone stream function needs beyond provider registration.
+ *
+ * Separate from {@link ObsidianModelsOptions} because the two answer different
+ * questions: that one says which providers exist, this one says how a request
+ * goes out. Retention is required rather than defaulted, so
+ * `DEFAULT_CACHE_RETENTION` stays applied in exactly one place — the settings
+ * normalizer — and a caller that builds a stream function outside the settings
+ * path has to say what it wants rather than inherit a choice made for someone
+ * else.
+ */
+export interface ObsidianStreamFnOptions extends ObsidianModelsOptions {
+	/** How long providers are asked to keep the prompt cache alive. */
+	cacheRetention: CacheRetention;
+}
+
+/**
+ * Builds a stream function against a fixed provider registration.
+ *
+ * Frozen at construction, which is why the agent does not use it:
+ * `ObsidianAgentService.resolveStreamFn` resolves the bundle per request so a
+ * newly configured endpoint is reachable without rebuilding the agent. This
+ * form remains for callers that own a settled configuration.
+ */
+export function createObsidianStreamFn(options: ObsidianStreamFnOptions): StreamFn {
 	const { models, fetch: fetchImpl } = createObsidianModels(options);
 	return (model, context, streamOptions) =>
 		models.streamSimple(model, context, {
 			...streamOptions,
-			fetch: toFetchFunction(fetchImpl),
+			...requestDefaults(fetchImpl, options.cacheRetention),
 		});
 }

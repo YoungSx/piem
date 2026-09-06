@@ -154,6 +154,30 @@ export function contextCacheLine(usage: UsageTotals, t: Translator): string | un
 }
 
 /**
+ * The hour-long-write footnote, or undefined when no provider reported one.
+ *
+ * Shown, never added: these tokens are already inside the cache line's write
+ * figure — this only says which rate they were billed at. Anthropic charges
+ * twice base input for an hour-long cache write against 1.25x for a five-minute
+ * one, and `calculateCost` has already applied that split to the spend line
+ * above, so the note explains a number the reader can already see rather than
+ * introducing one.
+ *
+ * It is also the only feedback the retention setting has. `"long"` is a
+ * preference each provider maps or drops on its own, so a reader who chose it
+ * has no other way to learn whether it took — and a dropped preference is
+ * invisible, since it simply bills at the cheaper rate. The `> 0` gate means
+ * the line appears exactly when the hour-long write really happened: absent on
+ * every provider that omits the split, and absent on `"short"` and `"none"`.
+ */
+export function contextLongCacheNote(usage: UsageTotals, t: Translator): string | undefined {
+	if (!usage.cacheWrite1h) {
+		return undefined;
+	}
+	return t.t("chat.longCacheNote", { tokens: formatTokens(usage.cacheWrite1h) });
+}
+
+/**
  * The reasoning note as "incl. 1.2k reasoning", or undefined when the provider
  * reports no split.
  *

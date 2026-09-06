@@ -192,6 +192,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		/** Popover line for prompt-cache use: the hit rate plus the cached volume. */
 		cacheLine: "缓存 {percent}% · {tokens} {unit}",
 		/** Popover footnote for thinking models: reasoning tokens already inside the reply count. */
+		longCacheNote: "含 {tokens} 保留一小时，写入价 2 倍",
 		reasoningNote: "含推理 {tokens}",
 		commandMenuAria: "提示命令和技能",
 		commandKindTemplate: "提示",
@@ -522,6 +523,12 @@ export const zhCN: DeepPartial<EnCopy> = {
 		// 这两项是配置里的字面值（"requestUrl" | "fetch"），保持原样以便和配置、日志对上。
 		transportRequestUrl: "requestUrl（缓冲，各处可用）",
 		transportFetch: "fetch（流式，可能被拦截）",
+		cacheRetention: "提示缓存",
+		cacheRetentionDesc:
+			"服务商可以暂存提示里不变的那部分——系统指令、工具定义、技能——下一轮就只按大约十分之一的价格计费，而不是重新付全价。存一小时的存放费更高，但你去写笔记再回来时它还在；存五分钟便宜，可往往在你回来之前就过期了。「关闭」适合会拒绝缓存标记的端点。",
+		cacheRetentionLong: "一小时——适合写一会儿再回来问",
+		cacheRetentionShort: "五分钟——适合连续快问快答",
+		cacheRetentionNone: "关闭——不缓存提示",
 		webFetchName: "获取网页",
 		webFetchDesc:
 			"任务需要网页时，代理可以请求外部 URL。这些请求及其中的数据会离开笔记库和 Obsidian；上方的传输方式决定它们如何发出。",

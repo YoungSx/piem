@@ -347,6 +347,13 @@ export const en = {
 		contextEstimatedPrefix: "Estimated ",
 		/** Popover line for prompt-cache use: the hit rate plus the cached volume. */
 		cacheLine: "cache {percent}% · {tokens} {unit}",
+		/**
+		 * Popover footnote naming the part of the cache write billed at the hour-long
+		 * rate. Not an addition to the line above it — those tokens are already
+		 * counted there; this says what they cost, and is the only signal that the
+		 * `"long"` retention setting is in force.
+		 */
+		longCacheNote: "incl. {tokens} kept for an hour, at 2× the write price",
 		/** Popover footnote for thinking models: reasoning tokens already inside the reply count. */
 		reasoningNote: "incl. {tokens} reasoning",
 		/** Accessible name for the `/`-command autocomplete list. */
@@ -902,6 +909,16 @@ export const en = {
 			"Request URL bypasses browser restrictions everywhere but buffers responses — tokens appear all at once. Fetch streams incrementally but may be blocked.",
 		transportRequestUrl: "Request URL (buffered, works everywhere)",
 		transportFetch: "Fetch (streams, may be blocked)",
+		/**
+		 * Prompt cache retention. Named for what it does to the bill rather than for
+		 * the API field, since no reader has seen `cache_control.ttl`.
+		 */
+		cacheRetention: "Prompt cache",
+		cacheRetentionDesc:
+			"Providers can hold the unchanging part of a prompt — system instructions, tool definitions, skills — so the next turn is billed at about a tenth of the price instead of in full. Holding it an hour costs more to store but survives a break spent writing; five minutes stores cheaper and usually expires before you come back. Off suits an endpoint that rejects cache markers.",
+		cacheRetentionLong: "An hour — best if you leave and come back",
+		cacheRetentionShort: "Five minutes — best for rapid back-and-forth",
+		cacheRetentionNone: "Off — do not cache prompts",
 		/**
 		 * Disclosure for the agent's outbound HTTP tool, which is always available.
 		 *

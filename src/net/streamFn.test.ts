@@ -5,7 +5,7 @@ import { installObsidianStub, requestUrlMock } from "../testUtils/obsidianStub";
 installObsidianStub();
 
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
-const { createObsidianModels, createObsidianStreamFn } = await import("./streamFn");
+const { createObsidianModels, createObsidianStreamFn, withRequestDefaults } = await import("./streamFn");
 const { createFetchForTransport, toFetchFunction } = await import("./obsidianFetch");
 const { buildCustomEndpointModel } = await import("../customEndpoint");
 const { CUSTOM_ENDPOINT_PROVIDER } = await import("../constants");
@@ -50,6 +50,34 @@ async function streamViaRequestUrl(
 		throw new Error(`No request was issued; stream error: ${final.errorMessage}`);
 	}
 	return { ...captured, errorMessage: final.errorMessage };
+}
+
+/**
+ * Serves one canned SSE turn and keeps the request body that asked for it.
+ *
+ * Distinct from {@link streamViaRequestUrl}, which builds its own bundle and
+ * injects the transport by hand: these callers are testing the injection itself,
+ * so they have to drive the real entry points and only borrow the mock.
+ */
+function captureRequest(): { body: () => Record<string, unknown> } {
+	let last: Record<string, unknown> | undefined;
+	requestUrlMock.mockImplementation(async (params: unknown) => {
+		const p = params as { body: string };
+		last = JSON.parse(p.body) as Record<string, unknown>;
+		return {
+			status: 200,
+			headers: { "content-type": "text/event-stream" },
+			arrayBuffer: new TextEncoder().encode(sseBody("streamed")).buffer as ArrayBuffer,
+		};
+	});
+	return {
+		body: () => {
+			if (!last) {
+				throw new Error("no request was issued");
+			}
+			return last;
+		},
+	};
 }
 
 describe("createObsidianModels with a custom endpoint", () => {
@@ -114,17 +142,10 @@ describe("createObsidianModels without an active endpoint", () => {
 
 describe("createObsidianStreamFn with a custom endpoint", () => {
 	it("routes ordinary turns through the same registered provider", async () => {
-		requestUrlMock.mockImplementation(async (params: unknown) => {
-			const p = params as { url: string };
-			void p;
-			return {
-				status: 200,
-				headers: { "content-type": "text/event-stream" },
-				arrayBuffer: new TextEncoder().encode(sseBody("streamed")).buffer as ArrayBuffer,
-			};
-		});
+		// Only the canned response matters here; the body is asserted below.
+		captureRequest();
 
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT });
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long" });
 		const stream = await streamFn(
 			buildCustomEndpointModel(ENDPOINT),
 			{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
@@ -134,5 +155,73 @@ describe("createObsidianStreamFn with a custom endpoint", () => {
 		const final = await stream.result();
 		expect(final.stopReason).not.toBe("error");
 		expect(final.errorMessage).toBeUndefined();
+	});
+
+	/*
+	 * The retention setting is only worth anything if it reaches the request body,
+	 * and nothing between the settings panel and the provider would report a value
+	 * that got dropped on the way — a lost `cacheRetention` looks exactly like a
+	 * working one, just billed at the five-minute rate. So these assert the wire
+	 * form rather than the option object: `prompt_cache_retention` is what the
+	 * OpenAI-compatible adapter emits for `"long"`, and its absence is what `"none"`
+	 * and `"short"` produce.
+	 */
+	it("carries the long retention preference into the request body", async () => {
+		const captured = captureRequest();
+
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long" });
+		await (
+			await streamFn(
+				buildCustomEndpointModel(ENDPOINT),
+				{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+				{ apiKey: ENDPOINT.apiKey },
+			)
+		).result();
+
+		expect(captured.body()["prompt_cache_retention"]).toBe("24h");
+	});
+
+	it("omits it when the reader has turned prompt caching off", async () => {
+		const captured = captureRequest();
+
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "none" });
+		await (
+			await streamFn(
+				buildCustomEndpointModel(ENDPOINT),
+				{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+				{ apiKey: ENDPOINT.apiKey },
+			)
+		).result();
+
+		expect(captured.body()["prompt_cache_retention"]).toBeUndefined();
+		expect(captured.body()["prompt_cache_key"]).toBeUndefined();
+	});
+});
+
+/*
+ * Compaction reaches a provider through `completeSimple`, which takes no
+ * transport, no key, and no retention of its own — `withRequestDefaults` is the
+ * only thing that supplies them. It is a separate path from the turn above, and
+ * the reason to test it separately is that the two used to spell the defaults out
+ * independently: a summary billed at a different cache rate than the reply it
+ * replaces is the exact failure this pins.
+ */
+describe("withRequestDefaults", () => {
+	it("applies the retention getter to compaction's completeSimple, per call", async () => {
+		const captured = captureRequest();
+		const bundle = createObsidianModels({ transport: "requestUrl", customEndpoint: ENDPOINT });
+		let retention: "none" | "short" | "long" = "long";
+		const models = withRequestDefaults(bundle, () => ENDPOINT.apiKey, () => retention);
+		const context = { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }], timestamp: Date.now() }] };
+
+		await models.completeSimple(buildCustomEndpointModel(ENDPOINT), context);
+		expect(captured.body()["prompt_cache_retention"]).toBe("24h");
+
+		// Read per call, not captured when the wrapper was built: a reader who turns
+		// retention down mid-conversation must not keep paying the hour-long write
+		// rate on summaries until the plugin reloads.
+		retention = "none";
+		await models.completeSimple(buildCustomEndpointModel(ENDPOINT), context);
+		expect(captured.body()["prompt_cache_retention"]).toBeUndefined();
 	});
 });

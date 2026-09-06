@@ -27,6 +27,21 @@ export interface UsageTotals {
 	 */
 	cacheWrite?: number;
 	/**
+	 * The part of {@link cacheWrite} written with hour-long retention, summed.
+	 *
+	 * A subset of `cacheWrite`, so it annotates rather than adds — the same
+	 * relationship {@link reasoning} has to the output count. It is carried because
+	 * it is the only field that prices differently: Anthropic bills an hour-long
+	 * cache write at twice base input where a five-minute one is 1.25x, and pi's
+	 * `calculateCost` already splits the total on exactly this number. Surfacing it
+	 * is also the only way a reader can tell that the `"long"` retention they chose
+	 * is in force — a dropped preference bills at the cheaper rate and reports
+	 * nothing.
+	 *
+	 * Undefined unless a provider reported the split; only Anthropic does.
+	 */
+	cacheWrite1h?: number;
+	/**
 	 * Reasoning tokens, summed. A subset of the visible output, so adding it to
 	 * the other fields would double-count: it annotates, it never adds to
 	 * {@link tokens}. Some providers only report it on thinking models.
@@ -71,6 +86,7 @@ export function sumUsage(messages: AgentMessage[], extra: Usage[] = []): UsageTo
 			input: plus(totals.input, usage.input),
 			cacheRead: plus(totals.cacheRead, usage.cacheRead),
 			cacheWrite: plus(totals.cacheWrite, usage.cacheWrite),
+			cacheWrite1h: plus(totals.cacheWrite1h, usage.cacheWrite1h),
 			reasoning: plus(totals.reasoning, usage.reasoning),
 		}),
 		EMPTY_USAGE_TOTALS,
@@ -102,6 +118,7 @@ export function addUsageTotals(a: UsageTotals, b: UsageTotals): UsageTotals {
 		input: plus(a.input, b.input),
 		cacheRead: plus(a.cacheRead, b.cacheRead),
 		cacheWrite: plus(a.cacheWrite, b.cacheWrite),
+		cacheWrite1h: plus(a.cacheWrite1h, b.cacheWrite1h),
 		reasoning: plus(a.reasoning, b.reasoning),
 	};
 }

@@ -1,5 +1,5 @@
 import { type App, Notice, parseLinktext, TFile } from "obsidian";
-import { clampThinkingLevel, getSupportedThinkingLevels, type ImageContent, type Usage } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels, type ImageContent, type Models, type Usage } from "@earendil-works/pi-ai";
 import {
 	Agent,
 	collectEntriesForBranchSummary,
@@ -19,8 +19,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { PromptQueue, type QueuedPrompt } from "./promptQueue";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
-import { createObsidianModels, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
-import { toFetchFunction } from "../net/obsidianFetch";
+import { createObsidianModels, requestDefaults, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
 import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent } from "./compaction";
@@ -743,7 +742,7 @@ export class ObsidianAgentService {
 			// which takes neither an API key nor a `fetch`, so both have to be baked
 			// into the instance or a child compacts against `globalThis.fetch`
 			// without a key.
-			getModels: () => withRequestDefaults(this.requireModelsBundle(), (provider) => this.getApiKey(provider)),
+			getModels: () => this.modelsWithRequestDefaults(),
 			getCompactionSettings: (contextWindow) => this.resolveCompaction(contextWindow),
 			getApiKey: (provider) => this.getApiKey(provider),
 			getSkills: () => this.skills,
@@ -1746,7 +1745,7 @@ export class ObsidianAgentService {
 
 			const model = getSelectedModel(this.getSettings());
 			const result = await generateBranchSummary(collected.entries, {
-				models: withRequestDefaults(this.requireModelsBundle(), (provider) => this.getApiKey(provider)),
+				models: this.modelsWithRequestDefaults(),
 				model,
 				signal: controller.signal,
 				retry: DEFAULT_COMPACTION_RETRY,
@@ -3661,7 +3660,7 @@ export class ObsidianAgentService {
 		const outcome = await compactIfNeeded({
 			messages: agent.state.messages,
 			model,
-			models: withRequestDefaults(this.requireModelsBundle(), (provider) => this.getApiKey(provider)),
+			models: this.modelsWithRequestDefaults(),
 			thinkingLevel: agent.state.thinkingLevel,
 			previous: rt.lastCompaction,
 			// The same resolved settings the context meter reads, so the bar and the
@@ -3777,6 +3776,28 @@ export class ObsidianAgentService {
 	}
 
 	/**
+	 * The `Models` collection with this plugin's per-request defaults applied.
+	 *
+	 * Three callers need it — the agent's own `getModels`, branch summaries, and
+	 * compaction — and each one reaches a provider through `completeSimple`, which
+	 * takes no transport, no key, and no cache retention of its own. They shared a
+	 * spelled-out `withRequestDefaults(...)` call until a third default had to be
+	 * added to all three at once; one accessor means the fourth caller cannot be
+	 * the one that forgets.
+	 *
+	 * Not cached: every default inside is read per call so a settings change lands
+	 * without rebuilding the agent, and the bundle underneath has its own
+	 * invalidation rule in {@link requireModelsBundle}.
+	 */
+	private modelsWithRequestDefaults(): Models {
+		return withRequestDefaults(
+			this.requireModelsBundle(),
+			(provider) => this.getApiKey(provider),
+			() => this.getSettings().cacheRetention,
+		);
+	}
+
+	/**
 	 * Stream function for ordinary turns, resolved per request.
 	 *
 	 * An earlier revision captured `createObsidianStreamFn(...)` once inside
@@ -3797,7 +3818,10 @@ export class ObsidianAgentService {
 		}
 		return (model, context, streamOptions) => {
 			const { models, fetch: fetchImpl } = this.requireModelsBundle();
-			return models.streamSimple(model, context, { ...streamOptions, fetch: toFetchFunction(fetchImpl) });
+			// Read here, not captured above: `resolveStreamFn`'s result outlives any
+			// one settings revision, and a retention picked mid-conversation has to
+			// reach the next turn rather than the next reload.
+			return models.streamSimple(model, context, { ...streamOptions, ...requestDefaults(fetchImpl, this.getSettings().cacheRetention) });
 		};
 	}
 

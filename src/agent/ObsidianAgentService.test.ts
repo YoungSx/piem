@@ -324,6 +324,41 @@ describe("ObsidianAgentService", () => {
 		expect(params.headers.authorization).toBe("Bearer sk-custom");
 	});
 
+	it("carries the reader's prompt-cache retention into every turn, re-read per request", async () => {
+		// The turn path builds its own stream options (`resolveStreamFn`) rather than
+		// going through `withRequestDefaults`, so retention reaching a reply is a
+		// separate fact from retention reaching a compaction summary — and a dropped
+		// preference is invisible from the outside, since it simply bills at the
+		// cheaper rate. `prompt_cache_retention` is what the OpenAI-compatible adapter
+		// puts on the wire for "long".
+		const settings: PiemSettings = { ...DEFAULT_SETTINGS, providerApiKeys: { deepseek: "test-key" } };
+		const adapter = new MemoryAdapter();
+		const service = new ObsidianAgentService(
+			createFakeApp(asDataAdapter(adapter)),
+			() => settings,
+			new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test"),
+			// No `streamFn` override: injecting one would bypass the very seam under test.
+			{ loadUserSkills: NO_USER_SKILLS },
+		);
+		requestUrlMock.mockResolvedValue(sseResponse(replyChunks("hello")));
+		const lastBody = (): Record<string, unknown> =>
+			JSON.parse((requestUrlMock.mock.calls.at(-1)?.[0] as { body: string }).body) as Record<string, unknown>;
+
+		await service.sendPrompt("Hello");
+
+		expect(service.getSnapshot().errorMessage).toBeUndefined();
+		expect(lastBody()["prompt_cache_retention"]).toBe("24h");
+
+		// Changed without rebuilding the agent: the settings object is read per
+		// request, so turning caching off has to land on the next turn rather than on
+		// the next plugin load.
+		settings.cacheRetention = "none";
+		await service.sendPrompt("Hello again");
+
+		expect(service.getSnapshot().errorMessage).toBeUndefined();
+		expect(lastBody()["prompt_cache_retention"]).toBeUndefined();
+	});
+
 	it("switches back to an earlier session and restores its transcript", async () => {
 		const service = createService();
 		await service.sendPrompt("First conversation");
@@ -3677,6 +3712,7 @@ function createServiceWithMultimodalModel(
 		modelId: "claude-opus-5",
 		providerApiKeys: {},
 		networkTransport: "requestUrl",
+		cacheRetention: "long",
 		showAgentDetails: false,
 		traceExpand: "collapsed",
 		sendShortcut: "enter",
