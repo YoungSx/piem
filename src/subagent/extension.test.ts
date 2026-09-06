@@ -750,6 +750,46 @@ describe("spawn/wait extension", () => {
 		expect(names).toContain("wait_subagent");
 	});
 
+	it("spawned children run with the host's currently mounted external tools", async () => {
+		// Read per call, and mutated between the two spawns below: what matters is
+		// that a child sees what is mounted at the moment it is built, not a
+		// snapshot taken when the extension was wired.
+		let mounted: AgentTool[] = [];
+		const observations: ChildObservation[] = [];
+		const extension = createSubagentExtension({
+			...makeHost(observing(scriptedStreamFn([{ text: "done" }]), observations)),
+			getExternalTools: () => mounted,
+		});
+		const tools = extension.createTools();
+		try {
+			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
+			mounted = [
+				{ name: "mcp_weather_lookup", label: "weather_lookup", description: "d", parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text" as const, text: "ok" }], details: undefined }) },
+			];
+			await toolNamed(tools, "spawn_subagent").execute("c2", { task: "Sweep again" }, undefined);
+			// Children run in the background; the waits are what make their LLM
+			// requests — and so the observations — have happened.
+			await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
+			await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: "subagent-2" }, undefined);
+			// The child's set is rebuilt per spawn, so the second child — and only
+			// it — carries the mounted tool, riding alongside the delegation five.
+			expect(observations[0]!.toolNames).not.toContain("mcp_weather_lookup");
+			expect(observations[1]!.toolNames).toContain("mcp_weather_lookup");
+			expect(observations[1]!.toolNames).toContain("spawn_subagent");
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("a host without mounted tools leaves child sets unchanged", () => {
+		// The default host omits the getter; the shape a child sees must be
+		// exactly the pre-#310 one, not an empty-list-shaped near miss.
+		const extension = createSubagentExtension(makeHost(scriptedStreamFn([{ text: "done" }])));
+		const names = extension.createTools().map((tool) => tool.name);
+		expect(names).toContain("grep");
+		expect(names).not.toContain("mcp_weather_lookup");
+	});
+
 	it("spawn returns immediately with an id while the child runs", async () => {
 		const extension = createSubagentExtension(makeHost(hangingStreamFn()));
 		const spawn = toolNamed(extension.createTools(), "spawn_subagent");
@@ -963,6 +1003,56 @@ describe("spawn/wait extension", () => {
 		for (const name of ["spawn_subagent", "wait_subagent", "list_subagents", "kill_subagent", "follow_up_subagent"]) {
 			expect(grandchild!.toolNames).not.toContain(name);
 		}
+		extension.disposeAll();
+	});
+
+	it("the grandchild set carries the mounted external tools even though it drops the five", async () => {
+		const observations: ChildObservation[] = [];
+		// The delegation cap bounds how far the tree may grow; it must not read as
+		// a tool confiscation. External tools join every set, the leaf's included.
+		const mounted: AgentTool[] = [
+			{ name: "mcp_weather_lookup", label: "weather_lookup", description: "d", parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text" as const, text: "ok" }], details: undefined }) },
+		];
+		const parentStream = scriptedStreamFn([
+			{ toolCall: { id: "p1", name: "spawn_subagent", arguments: { task: "Sweep" } } },
+			{ toolCall: { id: "p2", name: "wait_subagent", arguments: {} } },
+			{ text: "Folded in." },
+		]);
+		const childStream = scriptedStreamFn([
+			{ toolCall: { id: "s1", name: "spawn_subagent", arguments: { task: "Narrow" } } },
+			{ toolCall: { id: "s2", name: "wait_subagent", arguments: {} } },
+			{ text: "Child report." },
+		]);
+		const grandchildStream = scriptedStreamFn([{ text: "Floor report." }]);
+		const dispatching: StreamFn = (model, context, options) => {
+			if (!(context.systemPrompt?.includes("delegated task") ?? false)) {
+				return parentStream(model, context, options);
+			}
+			const hasSpawn = (context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			return (hasSpawn ? childStream : grandchildStream)(model, context, options);
+		};
+		const extension = createSubagentExtension(
+			{ ...makeHost(observing(dispatching, observations)), getExternalTools: () => mounted },
+			{ waitPacing: TEST_PACING },
+		);
+		const agent = new Agent({
+			streamFn: dispatching,
+			convertToLlm,
+			initialState: {
+				systemPrompt: "You are the parent.",
+				model: MODEL,
+				thinkingLevel: "off" as never,
+				tools: extension.createTools(),
+				messages: [],
+			},
+		});
+		await agent.prompt("Delegate.");
+		const grandchild = observations.find(
+			(o) => o.systemPrompt?.includes("delegated task") && !o.toolNames.includes("spawn_subagent"),
+		);
+		expect(grandchild).toBeDefined();
+		expect(grandchild!.toolNames).not.toContain("spawn_subagent");
+		expect(grandchild!.toolNames).toContain("mcp_weather_lookup");
 		extension.disposeAll();
 	});
 

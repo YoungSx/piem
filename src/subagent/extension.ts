@@ -71,6 +71,19 @@ export interface SubagentHost {
 	 * ownership was recorded at all.
 	 */
 	getOwnerId?: () => string | undefined;
+	/**
+	 * The external tools — MCP servers today — mounted on the host's settings
+	 * right now, read at the moment a child is built.
+	 *
+	 * Synchronous and cache-backed by design: the host connects servers when a
+	 * conversation is built or reconfigured, and a child reads what is already
+	 * mounted rather than re-handshaking, so a spawn is never held hostage to a
+	 * dead endpoint's connect timeout. A server that went down between then and
+	 * now simply contributes nothing — "currently mounted", not "was mounted
+	 * once". Optional so a host with nothing configured — or a test — hands out
+	 * none, and children look exactly as they did before this existed.
+	 */
+	getExternalTools?: () => readonly AgentTool[];
 }
 
 /**
@@ -159,6 +172,10 @@ export function createSubagentExtension(
 				createFollowUpSubagentTool(context, ownerId),
 			);
 		}
+		// External tools join every set, at every depth — the delegation cap bounds
+		// how far the tree may grow, not what a leaf may call. Same order the parent
+		// assembles its own list in: vault tools, delegation, external last.
+		tools.push(...(host.getExternalTools?.() ?? []));
 		return tools;
 	}
 

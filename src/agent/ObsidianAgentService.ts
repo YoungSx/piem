@@ -542,6 +542,15 @@ export interface ObsidianAgentServiceOptions {
 	 * vault tools. Omitted (the default in tests) means no external tools.
 	 */
 	getExternalTools?: () => Promise<AgentTool[]>;
+	/**
+	 * The external tools already mounted — for handing to subagents.
+	 *
+	 * Synchronous, cache-backed, connect-free: the gather above owns connecting,
+	 * and a spawn must never be held hostage to a dead endpoint's handshake, so
+	 * children read what is mounted rather than re-gathering. Omitted (tests)
+	 * means children run without external tools, the pre-#310 behavior.
+	 */
+	getMountedExternalTools?: () => readonly AgentTool[];
 }
 
 interface CompactionRunOptions {
@@ -561,6 +570,8 @@ export class ObsidianAgentService {
 	private readonly persistSettings: (options?: { reconfigure?: boolean }) => Promise<void>;
 	/** See {@link ObsidianAgentServiceOptions.getExternalTools}. */
 	private readonly getExternalToolsFn: () => Promise<AgentTool[]>;
+	/** See {@link ObsidianAgentServiceOptions.getMountedExternalTools}. */
+	private readonly getMountedExternalToolsFn: (() => readonly AgentTool[]) | undefined;
 	private readonly listeners = new Set<SnapshotListener>();
 	/**
 	 * Single vault execution env shared by the file tools and the prompt-template
@@ -710,6 +721,7 @@ export class ObsidianAgentService {
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
 		this.persistSettings = options.persistSettings ?? ((options?: { reconfigure?: boolean }) => (options?.reconfigure === false ? Promise.resolve() : this.refreshConfiguration()));
 		this.getExternalToolsFn = options.getExternalTools ?? (async () => []);
+		this.getMountedExternalToolsFn = options.getMountedExternalTools;
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
@@ -754,6 +766,10 @@ export class ObsidianAgentService {
 			// the chat being read, or the monitor panel lists them under the wrong
 			// conversation and `list_subagents` offers them to the wrong model.
 			getOwnerId: () => this.toolRuntime?.sessionPath ?? this.current()?.sessionPath,
+			// What is mounted right now, connect-free — a spawn reads the cache the
+			// conversation builds ride, so a child never waits on (or resurrects) a
+			// dead server's handshake. Undefined in hosts without the gather.
+			getExternalTools: this.getMountedExternalToolsFn,
 		});
 	}
 
