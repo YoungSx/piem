@@ -3,7 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { textResult, throwIfAborted, type TextResultBudget } from "../tools/toolResult";
 import { sliceTextByLines, truncateToolOutputDetailed } from "../vault/truncate";
 import type { SubagentEntry } from "./registry";
-import type { SubagentToolsContext } from "./spawnTool";
+import { resolveOwnerId, type SubagentToolsContext } from "./spawnTool";
 
 /**
  * Wait pacing. The default and the floor are Codex's; the ceiling is gone.
@@ -148,7 +148,7 @@ function killedNote(entry: SubagentEntry): string {
  * settled child's text comes back as the content itself; several children
  * come back as one labeled digest.
  */
-export function createWaitSubagentTool(context: SubagentToolsContext): AgentTool<typeof WaitParameters> {
+export function createWaitSubagentTool(context: SubagentToolsContext, inheritedOwnerId?: string): AgentTool<typeof WaitParameters> {
 	return {
 		name: "wait_subagent",
 		label: "Wait for subagent",
@@ -157,15 +157,22 @@ export function createWaitSubagentTool(context: SubagentToolsContext): AgentTool
 		parameters: WaitParameters,
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
+			const ownerId = resolveOwnerId(context, inheritedOwnerId);
 			// Spawned entries always carry a real signal (the linked controller's),
 			// so an undefined one here can only come from a hostless caller — in
-			// that case scoping degrades to "everything", which keeps the tool
-			// usable outside a run.
-			const known = (s?: AbortSignal) => (s ? context.registry.forSignal(s) : context.registry.all());
+			// that case scoping degrades to this conversation's children, which
+			// keeps the tool usable outside a run without reaching into another chat.
+			const known = (s?: AbortSignal) => (s ? context.registry.forSignal(s) : context.registry.forOwner(ownerId));
 			let targets: SubagentEntry[];
 			if (params.subagentId !== undefined) {
 				const entry = context.registry.get(params.subagentId);
-				if (!entry) {
+				// An id belonging to another conversation is refused as unknown rather
+				// than as forbidden. Collecting it would splice a chat the user never
+				// asked about into this transcript and this session log, and the model
+				// has no use for the difference: either way there is nothing here to
+				// wait on. Ids are process-wide and sequential, so a model that lost
+				// track of its own could otherwise reach a stranger's by guessing.
+				if (!entry || entry.ownerId !== ownerId) {
 					const ids = known(signal).map((e) => e.id);
 					throw new Error(
 						`Unknown subagent id: ${params.subagentId}` +
@@ -178,8 +185,9 @@ export function createWaitSubagentTool(context: SubagentToolsContext): AgentTool
 				if (targets.length === 0) {
 					// Children of an earlier run are still collectable by id — the
 					// registry ignores signals on lookup — so "nothing was spawned"
-					// would be a lie whenever any entry exists at all.
-					const elsewhere = context.registry.all().map((e) => e.id);
+					// would be a lie whenever any entry exists at all. Only this
+					// conversation's, for the reason the id branch above refuses others.
+					const elsewhere = context.registry.forOwner(ownerId).map((e) => e.id);
 					throw new Error(
 						elsewhere.length
 							? `No subagents spawned in this turn. Earlier turns spawned: ${elsewhere.join(", ")} — wait on one by id.`

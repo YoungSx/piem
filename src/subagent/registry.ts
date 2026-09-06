@@ -90,6 +90,20 @@ export interface SubagentEntry extends SubagentRunHandle {
 	 * by that turn rather than by the one that has already ended.
 	 */
 	parentSignal: AbortSignal | undefined;
+	/**
+	 * Which conversation this child was spawned on behalf of, as an opaque id the
+	 * host chose — the plugin passes a chat session's path, this module never
+	 * interprets it.
+	 *
+	 * Coarser than {@link parentSignal} and load-bearing in a different place: a
+	 * signal identifies one *run*, so it cannot answer "did an earlier turn of
+	 * this same conversation spawn anything" — the question every id-less lookup
+	 * falls back to. Before this existed that fallback reached across every
+	 * conversation the process had open, which let one chat be told about, and
+	 * then collect, another chat's child. Every grandchild carries its root
+	 * conversation's id, so a whole tree belongs to the chat that started it.
+	 */
+	ownerId: string;
 	/** The task the spawn was given, verbatim — what the inspector shows first. */
 	task: string;
 	/**
@@ -198,6 +212,8 @@ export class SubagentRegistry {
 			id: string;
 			/** The signal of the run that called spawn — the identity an id-less wait scopes by. */
 			parentSignal: AbortSignal | undefined;
+			/** The conversation this child answers to; see {@link SubagentEntry.ownerId}. */
+			ownerId: string;
 			/** What the child runs as, resolved: role appendix, model, clamped level. */
 			role: SubagentRole;
 			model: Model<string>;
@@ -224,6 +240,7 @@ export class SubagentRegistry {
 			settled: false,
 			transcript: [],
 			parentSignal: spec.parentSignal,
+			ownerId: spec.ownerId,
 			task: spec.task,
 			followUps: [],
 			instructions: spec.instructions,
@@ -245,13 +262,18 @@ export class SubagentRegistry {
 	 * transcript. A new id per errand would make the parent track a chain and the
 	 * reader read the same child three times.
 	 *
-	 * Scoped by id alone, not by the calling run's signal the way `kill` is. A
-	 * follow-up's ordinary shape is "spawn, collect, report to the user, then
-	 * re-task on what the user said next", and those are two runs with two
-	 * signals — so signal scoping would refuse exactly the case this exists for.
-	 * `wait_subagent` already collects across turns by id, for the same reason.
-	 * Ownership does move: the run handing over the new errand becomes the one a
-	 * bare wait or list covers.
+	 * Scoped by id within the calling conversation, not by the calling run's
+	 * signal the way `kill` is. A follow-up's ordinary shape is "spawn, collect,
+	 * report to the user, then re-task on what the user said next", and those are
+	 * two runs with two signals — so signal scoping would refuse exactly the case
+	 * this exists for. `wait_subagent` already collects across turns by id, for
+	 * the same reason. What the id scope does not cross is a conversation: an id
+	 * belonging to another chat is refused as not-found, the same answer a
+	 * mistyped id gets, because the caller has no use for the difference and the
+	 * other chat has no consent to give.
+	 * Ownership of the child does move: the run handing over the new errand
+	 * becomes the one a bare wait or list covers, and it stays in the
+	 * conversation it was spawned into.
 	 *
 	 * A child the user stopped from the panel is not re-armed. That kill is the
 	 * user's circuit breaker, and a tool that could undo it would make the breaker
@@ -260,6 +282,8 @@ export class SubagentRegistry {
 	 */
 	resume(spec: {
 		id: string;
+		/** The conversation the caller belongs to; a child of another is not found. */
+		ownerId: string;
 		/** The signal of the run handing over the errand; it becomes the entry's owner. */
 		parentSignal: AbortSignal | undefined;
 		/** The new errand, recorded on the entry as well as sent to the child. */
@@ -268,7 +292,10 @@ export class SubagentRegistry {
 		startRun: (child: Readonly<SubagentEntry>) => SubagentRunHandle;
 	}): "resumed" | "not-found" | "still-running" | "user-stopped" {
 		const entry = this.entries.get(spec.id);
-		if (!entry) {
+		// A stranger's id and a missing one get the same answer: the caller cannot
+		// act on the difference, and telling it which ids exist elsewhere would
+		// turn the not-found guidance into a directory of other chats' children.
+		if (!entry || entry.ownerId !== spec.ownerId) {
 			return "not-found";
 		}
 		if (!entry.settled) {
@@ -394,11 +421,20 @@ export class SubagentRegistry {
 	 * touches only children still running and leaves settled entries exactly as
 	 * the record keeps them. Returns how many were killed, which is what lets the
 	 * button hide itself when there is nothing left to stop.
+	 *
+	 * @param ownerId Restricts the kill to one conversation's children. Omitted
+	 * means every live child the process holds.
 	 */
-	killAllLive(killedBy: "user"): number {
+	killAllLive(killedBy: "user", ownerId?: string): number {
 		let killed = 0;
 		for (const entry of this.entries.values()) {
 			if (entry.settled) {
+				continue;
+			}
+			// Scoped when the caller names an owner, because the panel's stop button
+			// must kill exactly the rows under it and no others. Unscoped is the
+			// whole-panel button, whose rows really are all of them.
+			if (ownerId !== undefined && entry.ownerId !== ownerId) {
 				continue;
 			}
 			entry.killedBy = killedBy;
@@ -452,6 +488,18 @@ export class SubagentRegistry {
 	/** Children of one run, in spawn order — what an id-less wait covers. */
 	forSignal(signal: AbortSignal): SubagentEntry[] {
 		return [...this.entries.values()].filter((entry) => entry.parentSignal === signal);
+	}
+
+	/**
+	 * Children of one conversation, in spawn order, across every run and depth.
+	 *
+	 * The scope every "what exists besides this turn" answer is built from — in
+	 * the tools that report ids to a model, and in the UI that lists runs to a
+	 * reader. Both used {@link all} before ownership was recorded, and both were
+	 * wrong in the same way for the same reason.
+	 */
+	forOwner(ownerId: string): SubagentEntry[] {
+		return [...this.entries.values()].filter((entry) => entry.ownerId === ownerId);
 	}
 
 	/** Every entry regardless of run; only for hosts that run without signals. */

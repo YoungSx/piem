@@ -1929,3 +1929,97 @@ describe("inspector data", () => {
 		}
 	});
 });
+
+describe("subagent ownership across conversations", () => {
+	/**
+	 * The same host as the suite above, plus the one getter that names the
+	 * conversation acting right now — which the test moves between calls, the way
+	 * a user switching chats moves it in the plugin.
+	 */
+	function makeOwnedHost(streamFn: StreamFn, owner: () => string): SubagentHost {
+		return {
+			createVaultTools: () => [],
+			getModel: () => MODEL,
+			getStreamFn: () => streamFn,
+			getThinkingLevel: () => "off" as never,
+			getSkills: () => [],
+			getOwnerId: owner,
+		};
+	}
+
+	it("hides one conversation's children from another, by listing and by id", async () => {
+		let owner = "chat-a";
+		const extension = createSubagentExtension(makeOwnedHost(hangingStreamFn(), () => owner), { waitPacing: TEST_PACING });
+		const tools = extension.createTools();
+		try {
+			await toolNamed(tools, "spawn_subagent").execute("call_1", { task: "Sweep A" }, undefined);
+
+			// B's own run: a fresh signal, so the run-scoped lookup finds nothing and
+			// the fallback — the thing that used to reach across every chat — decides
+			// what B is told.
+			owner = "chat-b";
+			const bRun = new AbortController().signal;
+			const listed = await toolNamed(tools, "list_subagents").execute("call_2", {}, bRun);
+			expect(textBlock(listed)).toBe("No subagents have been spawned.");
+			expect(textBlock(listed)).not.toContain("subagent-1");
+
+			// Ids are process-wide and sequential, so refusing to name it is only
+			// half the fence; the other half is refusing to hand it over on a guess.
+			expect(toolNamed(tools, "wait_subagent").execute("call_3", { subagentId: "subagent-1" }, bRun)).rejects.toThrow(
+				"Unknown subagent id: subagent-1",
+			);
+
+			// Nothing was taken away from the chat that owns it: an earlier turn's
+			// child is still nameable and still collectable there.
+			owner = "chat-a";
+			const aRun = new AbortController().signal;
+			const own = await toolNamed(tools, "list_subagents").execute("call_4", {}, aRun);
+			expect(textBlock(own)).toContain("subagent-1");
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("files a grandchild under the conversation that started the tree", async () => {
+		let owner = "chat-a";
+		// One stream closure per level: a fresh one per request would reset its
+		// script counter and replay step one forever.
+		const parentStream = scriptedStreamFn([{ text: "unused" }]);
+		const childStream = scriptedStreamFn([
+			{ toolCall: { id: "deep_1", name: "spawn_subagent", arguments: { task: "Deeper" } } },
+			{ text: "Child done." },
+		]);
+		const grandchildStream = scriptedStreamFn([{ text: "Floor done." }]);
+		const streamFn: StreamFn = (model, context, options) => {
+			const isDelegated = context.systemPrompt?.includes("delegated task") ?? false;
+			if (!isDelegated) {
+				return parentStream(model, context, options);
+			}
+			// A level that still has spawn is the child; the one that lost it to the
+			// depth cap is the grandchild.
+			if ((context.tools ?? []).some((tool) => tool.name === "spawn_subagent")) {
+				// The switch lands inside the child's own request, so by the time its
+				// spawn executes the host would answer "chat-b" — and nobody may ask it.
+				owner = "chat-b";
+				return childStream(model, context, options);
+			}
+			return grandchildStream(model, context, options);
+		};
+		const extension = createSubagentExtension(makeOwnedHost(streamFn, () => owner), { waitPacing: TEST_PACING });
+		try {
+			await toolNamed(extension.createTools(), "spawn_subagent").execute("call_1", { task: "Sweep A" }, undefined);
+			// The grandchild's spawn is two async hops away (the child's request, then
+			// its tool call), so the tree is polled into place — bounded, so a tree
+			// that never grows fails the assertion instead of hanging the suite.
+			for (let attempt = 0; attempt < 300 && extension.registry.all().length < 2; attempt += 1) {
+				await new Promise((resolve) => setTimeout(resolve, 2));
+			}
+
+			expect(extension.registry.all()).toHaveLength(2);
+			expect(extension.registry.forOwner("chat-a").map((entry) => entry.depth)).toEqual([1, 2]);
+			expect(extension.registry.forOwner("chat-b")).toEqual([]);
+		} finally {
+			extension.disposeAll();
+		}
+	});
+});

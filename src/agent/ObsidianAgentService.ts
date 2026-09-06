@@ -747,6 +747,13 @@ export class ObsidianAgentService {
 			getCompactionSettings: (contextWindow) => this.resolveCompaction(contextWindow),
 			getApiKey: (provider) => this.getApiKey(provider),
 			getSkills: () => this.skills,
+			// Which chat a delegation belongs to, resolved the same way — and for the
+			// same reason — as the thinking level above: the runtime whose tool is
+			// executing, never the one on screen. A background chat that delegates
+			// while the panel shows another must not have its children filed under
+			// the chat being read, or the monitor panel lists them under the wrong
+			// conversation and `list_subagents` offers them to the wrong model.
+			getOwnerId: () => this.toolRuntime?.sessionPath ?? this.current()?.sessionPath,
 		});
 	}
 

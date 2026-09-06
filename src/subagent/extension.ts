@@ -55,6 +55,22 @@ export interface SubagentHost {
 	getCompactionSettings?: (contextWindow: number) => CompactionSettings;
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	getSkills(): readonly Skill[];
+	/**
+	 * Which conversation a spawn started at the top level belongs to.
+	 *
+	 * Opaque here by design — the host knows it is a chat session, this module
+	 * only groups by it. Read synchronously inside a spawn's execute, which is
+	 * what lets a host answer "the conversation whose tool is running right now"
+	 * rather than "the one on screen"; the two differ the moment a background
+	 * chat delegates. Deeper levels never call it: the id travels down the tree
+	 * in a closure instead, because by then the host's notion of "right now" has
+	 * long since moved on.
+	 *
+	 * Optional so a host that never opens two conversations — or a test — keeps
+	 * every child under one anonymous owner, which is how this behaved before
+	 * ownership was recorded at all.
+	 */
+	getOwnerId?: () => string | undefined;
 }
 
 /**
@@ -113,25 +129,34 @@ export function createSubagentExtension(
 		getCompactionSettings: host.getCompactionSettings ? (window) => host.getCompactionSettings?.(window) : undefined,
 		getApiKey: host.getApiKey ? (provider) => host.getApiKey?.(provider) : undefined,
 		getSkills: () => host.getSkills(),
+		getOwnerId: host.getOwnerId ? () => host.getOwnerId?.() : undefined,
 		registry,
-		createChildTools: (childDepth: number) => buildTools(childDepth),
+		createChildTools: (childDepth: number, ownerId: string) => buildTools(childDepth, ownerId),
 		waitPacing: options?.waitPacing,
 	};
 
-	function buildTools(depth: number): AgentTool[] {
+	/**
+	 * @param ownerId The conversation this level's tools answer to, or undefined
+	 * at the top level, where each tool asks the host instead. A child level is
+	 * always given one, because the host can no longer name it by the time a
+	 * grandchild's tool runs.
+	 */
+	function buildTools(depth: number, ownerId?: string): AgentTool[] {
 		const tools = host.createVaultTools();
 		if (depth < SUBAGENT_DEPTH_LIMIT) {
 			// The five travel together: a level that may spawn must also be able to
 			// collect, enumerate, stop, and re-task what it spawned. Handing out spawn
 			// alone is what leaves a parent unable to manage its own fan-out — and
 			// handing out the first four leaves it unable to do anything with a child
-			// that stopped except start another from nothing.
+			// that stopped except start another from nothing. All five take the same
+			// owner scope, so what a level may collect is exactly what it may see,
+			// what it may stop, and what it may re-task.
 			tools.push(
-				createSpawnSubagentTool(context, depth),
-				createWaitSubagentTool(context),
-				createListSubagentsTool(context),
-				createKillSubagentTool(context),
-				createFollowUpSubagentTool(context),
+				createSpawnSubagentTool(context, depth, ownerId),
+				createWaitSubagentTool(context, ownerId),
+				createListSubagentsTool(context, ownerId),
+				createKillSubagentTool(context, ownerId),
+				createFollowUpSubagentTool(context, ownerId),
 			);
 		}
 		return tools;

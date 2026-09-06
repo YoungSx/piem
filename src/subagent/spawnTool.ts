@@ -66,7 +66,19 @@ export interface SubagentToolsContext {
 	 * child's depth — the depth cap only holds if it travels with every spawn,
 	 * so a depth-2 set must be buildable too (spawn/wait absent from it).
 	 */
-	createChildTools: (depth: number) => AgentTool[];
+	/**
+	 * The tool set one level deeper, bound to the conversation that owns the tree.
+	 *
+	 * The owner has to be passed rather than re-derived: a grandchild's tools run
+	 * long after the host stopped being able to say which conversation is acting,
+	 * so the id is captured here and travels down in a closure.
+	 */
+	createChildTools: (depth: number, ownerId: string) => AgentTool[];
+	/**
+	 * The conversation a top-level spawn belongs to, per the host. Absent when the
+	 * host does not distinguish conversations; see {@link OWNER_UNKNOWN}.
+	 */
+	getOwnerId?: () => string | undefined;
 	/**
 	 * Wait-window bounds. Only tests set this; production waits take the
 	 * Codex constants.
@@ -86,6 +98,12 @@ export interface ChildRunSpec {
 	depth: number;
 	/** Context to continue from; absent starts the child with an empty transcript. */
 	initialMessages?: readonly AgentMessage[];
+	/**
+	 * The conversation the whole subtree answers to, threaded down so every
+	 * descendant's tools scope to the chat that started the tree — not to
+	 * whatever is on screen when a grandchild happens to spawn.
+	 */
+	ownerId: string;
 	/** The child's linked signal — the run's kill switch. */
 	signal: AbortSignal;
 }
@@ -107,7 +125,7 @@ export function startChildRun(context: SubagentToolsContext, spec: ChildRunSpec)
 		task: spec.task,
 		role: spec.role,
 		instructions: spec.instructions,
-		tools: context.createChildTools(spec.depth),
+		tools: context.createChildTools(spec.depth, spec.ownerId),
 		skills: context.getSkills(),
 		model: spec.model,
 		streamFn: context.getStreamFn(),
@@ -214,7 +232,34 @@ function describeModelChoices(choices: readonly SubagentModelChoice[]): string {
  * {@link SUBAGENT_CONCURRENCY_LIMIT} — depth is a property of a tool set, but
  * how many children are alive is only knowable when a spawn is asked for.
  */
-export function createSpawnSubagentTool(context: SubagentToolsContext, depth: number): AgentTool<SpawnParameters> {
+/**
+ * The owner id every child gets when the host names no conversation.
+ *
+ * A single shared bucket rather than `undefined`, so ownership is one
+ * non-nullable field and every lookup is the same equality test. A host without
+ * conversations puts its whole tree here, which is exactly the one group it
+ * should be.
+ */
+export const OWNER_UNKNOWN = "";
+
+/**
+ * Resolves the conversation a level's tools answer to.
+ *
+ * An inherited id wins outright: a child level was told who it belongs to at
+ * build time, and asking the host again would answer with whatever conversation
+ * happens to be acting now — a different one, whenever a background chat
+ * delegated. Only the top level asks, and it asks inside the tool's synchronous
+ * prologue, while the host can still name the runtime whose tool is running.
+ */
+export function resolveOwnerId(context: SubagentToolsContext, inherited: string | undefined): string {
+	return inherited ?? context.getOwnerId?.() ?? OWNER_UNKNOWN;
+}
+
+/**
+ * @param inheritedOwnerId The conversation this level belongs to, when a parent
+ * level already resolved it. Undefined at the top level only.
+ */
+export function createSpawnSubagentTool(context: SubagentToolsContext, depth: number, inheritedOwnerId?: string): AgentTool<SpawnParameters> {
 	// Read once per construction, not per call: the schema is fixed for this tool
 	// instance, so a settings change reaches the next agent build rather than
 	// desynchronizing the advertised ids from the ones this schema accepts.
@@ -257,6 +302,10 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 			const requestedLevel = (params as { thinkingLevel?: ThinkingLevel }).thinkingLevel ?? context.getThinkingLevel();
 			const thinkingLevel = clampThinkingLevel(model, requestedLevel);
 			const id = context.registry.nextId();
+			// Resolved here, in the prologue, and then carried: everything below this
+			// line is either synchronous or a closure the registry calls at once, so
+			// this is the last moment the host can still be asked.
+			const ownerId = resolveOwnerId(context, inheritedOwnerId);
 			// The linked controller is the child's kill switch: it fires with the
 			// parent run's signal (panel stop) and with disposeAll, and the runner
 			// listens on it to abort the child `Agent`.
@@ -269,6 +318,7 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 				// The wait scope is the run that called spawn, not the child's own
 				// linked controller — the two signals are distinct by construction.
 				parentSignal: signal,
+				ownerId,
 				abort: linked.abort,
 				dispose: linked.dispose,
 				// Verbatim for the inspector, and for any later errand: what it was
@@ -288,6 +338,10 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 						model,
 						thinkingLevel,
 						depth: childDepth,
+						// The whole subtree inherits this conversation: a grandchild belongs
+						// to the chat that started the tree, not to whatever is on screen
+						// when it happens to spawn.
+						ownerId,
 						signal: linked.signal,
 					}),
 			});
