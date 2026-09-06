@@ -22,7 +22,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			sendShortcut: "enter", language: "en", sessionRetention: 0, sessionDir: "piem/chats",
 			userSkillsDir: "", mcpServers: [], logLevel: "info",
 		},
-		save: async () => {}, refresh: () => {}, secretStorage: "manual", readSecret: () => "",
+		save: async () => {}, refresh: () => {}, secretStorage: "manual", readSecret: () => "", signIn: undefined,
 		describeTarget: () => "target", t: en, contextWindow: () => 128_000,
 		countStoredSessions: async () => 0, missingBuiltinModel: () => undefined,
 		activeSessionDir: () => "piem/chats", openLogView: () => {}, countLegacySessions: async () => ({ count: 0, dir: "" }),

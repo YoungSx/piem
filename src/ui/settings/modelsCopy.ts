@@ -28,20 +28,31 @@ export function describeMissingBuiltinModel(
 }
 
 /**
- * Row description for a provider: protocol, key state, and how many models use
- * it.
+ * Row description for a provider: protocol, credential state, and how many
+ * models use it.
  *
- * Key state is three-way on purpose: bound-and-present, bound-but-dangling (the
- * entry was deleted from Obsidian's own UI, and the row is the only place that
- * can say so), and inline. A dangling binding shows as missing rather than
- * "no key" because the fix is not typing a key — it is re-picking an entry.
+ * Credential state follows the row's own axis. A subscription row
+ * (`oauthFlow` set) authenticates by sign-in, so its phrase is signed-in or
+ * not — a key field is not part of how it works, and asking about one would
+ * invite a key that would never be read. Key state on an ordinary row is
+ * three-way: bound-and-present, bound-but-dangling (the entry was deleted from
+ * Obsidian's own UI, and the row is the only place that can say so), and
+ * inline. A dangling binding shows as missing rather than "no key" because the
+ * fix is not typing a key — it is re-picking an entry.
  */
 export function describeProviderRow(provider: ProviderConfig, modelCount: number, t: Translator): string {
-	const key = provider.secretRef
+	const credential = provider.oauthFlow
+		? t.t("settings.rowCredentialPending")
+		: describeKeyRow(provider, t);
+	const models = t.t(modelCount === 1 ? "settings.modelCount" : "settings.modelsCount", { count: modelCount });
+	return `${provider.baseUrl} · ${wireProtocolLabel(provider.protocol, t)} · ${credential} · ${models}`;
+}
+
+/** The key-state phrase for an ordinary (key-authenticated) row. */
+function describeKeyRow(provider: ProviderConfig, t: Translator): string {
+	return provider.secretRef
 		? t.t(provider.apiKey.trim() ? "settings.keyBound" : "settings.keyMissing")
 		: t.t(provider.apiKey.trim() ? "settings.keySet" : "settings.noKey");
-	const models = t.t(modelCount === 1 ? "settings.modelCount" : "settings.modelsCount", { count: modelCount });
-	return `${provider.baseUrl} · ${wireProtocolLabel(provider.protocol, t)} · ${key} · ${models}`;
 }
 
 /** Row description for a model: its provider and the id sent to the server. */

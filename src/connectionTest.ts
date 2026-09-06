@@ -1,7 +1,8 @@
 import type { Models } from "@earendil-works/pi-ai";
 import type { Translator } from "./i18n";
 import { buildConfiguredModel, type ModelConfig, type ProviderConfig } from "./modelConfig";
-import { probeModelListing, type ModelListingResult } from "./net/modelListing";
+import { isOAuthFlowId } from "./auth/oauthFlows";
+import { probeModelListing, type ListingCredential, type ModelListingResult } from "./net/modelListing";
 import { createObsidianStreamingFetch, toFetchFunction, type FetchFn } from "./net/obsidianFetch";
 
 /**
@@ -82,6 +83,53 @@ function nameProvider(provider: ProviderConfig): string {
 	return provider.name || provider.baseUrl;
 }
 
+/** Whether this row is authenticated by a sign-in rather than a pasted key. */
+function usesSubscription(provider: ProviderConfig): boolean {
+	return isOAuthFlowId(provider.oauthFlow);
+}
+
+/**
+ * Whether a subscription row currently holds a credential.
+ *
+ * `checkAuth` rather than `getAuth`: it answers the question without rotating an
+ * expiring token, so pressing Test never spends a refresh. A store failure
+ * rejects, which the callers already turn into a red verdict carrying the
+ * store's own reason.
+ */
+async function isSignedIn(models: Models, provider: ProviderConfig, signal?: AbortSignal): Promise<boolean> {
+	return (await models.checkAuth(provider.id, { signal })) !== undefined;
+}
+
+/**
+ * The resolved credential for a subscription row, for a probe that bypasses pi.
+ *
+ * The listing endpoint is reached with a bare `fetch` rather than through a
+ * provider, so the token has to be resolved here. `getAuth` rather than
+ * `checkAuth` this time, because the probe needs the value — and it is also the
+ * call that performs the locked refresh, so a listing probe on a nearly-expired
+ * token renews it exactly as a real request would.
+ */
+async function resolveListingCredential(
+	models: Models,
+	provider: ProviderConfig,
+	signal?: AbortSignal,
+): Promise<ListingCredential | undefined> {
+	const resolved = await models.getAuth(provider.id, { signal });
+	if (!resolved) {
+		return undefined;
+	}
+	// pi's header map admits `null`, which its own request layer reads as "drop
+	// this header". A raw GET has nothing to drop, so those entries are omitted
+	// rather than sent as the string "null".
+	const headers: Record<string, string> = {};
+	for (const [name, value] of Object.entries(resolved.auth.headers ?? {})) {
+		if (typeof value === "string") {
+			headers[name] = value;
+		}
+	}
+	return { apiKey: resolved.auth.apiKey, headers };
+}
+
 /**
  * Sends a minimal request to one configured model and reports what happened.
  *
@@ -98,8 +146,15 @@ export async function testModelConnection(
 	t: Translator,
 	options: ConnectionTestOptions = {},
 ): Promise<ConnectionTestResult> {
-	if (!provider.apiKey.trim()) {
+	const subscription = usesSubscription(provider);
+	if (!subscription && !provider.apiKey.trim()) {
 		return { ok: false, detail: t.t("connectionTest.noKey") };
+	}
+	if (subscription && !(await isSignedIn(models, provider, options.signal))) {
+		// Same shape as the missing-key short-circuit, and the same reason: the 401
+		// this would otherwise produce is accurate and points at the server instead
+		// of at the sign-in the user has not done.
+		return { ok: false, detail: t.t("connectionTest.notSignedIn") };
 	}
 	if (!model.modelApiId.trim()) {
 		return { ok: false, detail: t.t("connectionTest.noModelId") };
@@ -113,7 +168,14 @@ export async function testModelConnection(
 			// `options.maxTokens ?? model.maxTokens`, so passing one here would
 			// silently replace the value the user configured — the one thing this
 			// probe exists to verify. See the note above the function.
-			{ apiKey: provider.apiKey.trim(), signal: options.signal, fetch: options.fetch === undefined ? undefined : toFetchFunction(options.fetch) },
+			// No `apiKey` for a subscription row: pi short-circuits credential
+			// resolution on any defined value, so passing one — even `""` — would skip
+			// the credential store and with it the OAuth refresh.
+			{
+				apiKey: subscription ? undefined : provider.apiKey.trim(),
+				signal: options.signal,
+				fetch: options.fetch === undefined ? undefined : toFetchFunction(options.fetch),
+			},
 		);
 		// A stream can terminate with an error message rather than throwing, so
 		// the reported stop reason decides the verdict, not the absence of a throw.
@@ -148,7 +210,12 @@ export async function testModelConnection(
  * key is the exact failure this module exists to prevent — so the verdict says
  * what *was* established and names the one action that closes the gap.
  */
-function describeListingResult(provider: ProviderConfig, listing: ModelListingResult, t: Translator): ConnectionTestResult {
+function describeListingResult(
+	provider: ProviderConfig,
+	listing: ModelListingResult,
+	credentialSent: boolean,
+	t: Translator,
+): ConnectionTestResult {
 	const target = nameProvider(provider);
 	// The server's own wording, relayed verbatim: it is the actionable part, and
 	// translating a message we did not write is not ours to do.
@@ -166,7 +233,16 @@ function describeListingResult(provider: ProviderConfig, listing: ModelListingRe
 		return { ok: true, detail: t.t("connectionTest.listingModels", { target, count: String(count) }) };
 	}
 	if (listing.status === 401 || listing.status === 403) {
-		const key = provider.apiKey.trim() ? "connectionTest.listingRejectedKey" : "connectionTest.listingNeedsKey";
+		// Four sentences rather than two, because "the key is wrong" and "you are not
+		// signed in" send the user to different places, and a subscription row has no
+		// key field to be told about.
+		const key = usesSubscription(provider)
+			? credentialSent
+				? "connectionTest.listingRejectedSignIn"
+				: "connectionTest.notSignedIn"
+			: credentialSent
+				? "connectionTest.listingRejectedKey"
+				: "connectionTest.listingNeedsKey";
 		return { ok: false, detail: t.t(key, { target, status: String(listing.status), relayed }) };
 	}
 	if (listing.status === 404 || listing.status === 405 || listing.status === 501) {
@@ -213,9 +289,33 @@ export async function testProviderConnection(
 		// `window` the method loses its receiver, and the factory already owns the
 		// wrapping every other caller goes through.
 		const fetchImpl = options.fetch ?? createObsidianStreamingFetch();
-		const listing = await probeModelListing(provider, { fetch: fetchImpl, signal: options.signal });
-		return describeListingResult(provider, listing, t);
+		// A subscription row keeps its token in the credential store, so this probe
+		// — which reaches the endpoint directly rather than through a provider — has
+		// to be handed the resolved credential.
+		const credential = usesSubscription(provider)
+			? await resolveListingCredential(models, provider, options.signal)
+			: undefined;
+		if (usesSubscription(provider) && !credential) {
+			return { ok: false, detail: t.t("connectionTest.notSignedIn") };
+		}
+		const listing = await probeModelListing(provider, { fetch: fetchImpl, signal: options.signal, credential });
+		return describeListingResult(provider, listing, hasCredential(provider, credential), t);
 	} catch (error) {
 		return { ok: false, detail: describeError(error, t) };
 	}
+}
+
+/**
+ * Whether the probe actually sent a credential.
+ *
+ * What "no credential" means differs by row, and the 401 message has to follow:
+ * a key row is missing a key, a subscription row is not signed in. Reading this
+ * off the credential the probe used rather than off the row keeps the verdict
+ * describing the request that was made.
+ */
+function hasCredential(provider: ProviderConfig, credential: ListingCredential | undefined): boolean {
+	if (usesSubscription(provider)) {
+		return credential !== undefined;
+	}
+	return provider.apiKey.trim() !== "";
 }

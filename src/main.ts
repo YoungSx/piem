@@ -8,7 +8,9 @@ import { persistedSettings, resolveSecretRefs } from "./settingsSecrets";
 import { NOOP_LOGGER, type LoggerLike } from "./logging/Logger";
 import { createSecretEnvironment, type SecretEnvironment } from "./keychainEnv";
 import { createKeychainCredentialStore } from "./auth/credentialStore";
+import { createSignInSession, type SignInSession } from "./auth/signInSession";
 import type { CredentialStore } from "@earendil-works/pi-ai";
+import { createObsidianRequestUrlFetch } from "./net/obsidianFetch";
 import { DraftStore } from "./session/DraftStore";
 import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
@@ -91,6 +93,12 @@ export default class PiemPlugin extends Plugin {
 	 * rebuilding the manager or dropping live connections.
 	 */
 	private mcpBridge: McpManager | null = null;
+	/**
+	 * The panel's sign-in facade, built on first ask. Stateless over its
+	 * closures — see {@link signInSession} — so caching buys identity, not
+	 * correctness.
+	 */
+	private signInBridge: SignInSession | null = null;
 
 	/** The MCP bridge, constructing it on first use. */
 	get mcpManager(): McpManager {
@@ -129,6 +137,25 @@ export default class PiemPlugin extends Plugin {
 			log: (message) => this.log.debug(message),
 		});
 		return this.credentialStore;
+	}
+
+	/**
+	 * The settings panel's sign-in operations, over the one credential store.
+	 *
+	 * Assembled here rather than in the tab because every input is a plugin
+	 * capability: the store is {@link requireCredentialStore}'s singleton, and
+	 * the transport is the pinned `requestUrl` fetch the token exchanges must
+	 * travel over. `available` is read live at every render rather than
+	 * captured, so a device whose keychain probe failed reports honestly each
+	 * time the dialog opens.
+	 */
+	get signInSession(): SignInSession {
+		this.signInBridge ??= createSignInSession({
+			credentials: this.requireCredentialStore(),
+			fetch: createObsidianRequestUrlFetch(),
+			canStore: () => this.requireSecretEnvironment().pluginSecrets().available,
+		});
+		return this.signInBridge;
 	}
 
 	/**

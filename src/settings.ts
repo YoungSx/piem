@@ -637,6 +637,11 @@ export class PiemSettingTab extends PluginSettingTab {
 			refresh: () => this.update(),
 			secretStorage: this.secretStorageTier,
 			readSecret: (id) => this.secretEnvironment?.keychain().read(id) ?? "",
+			// Built and cached on the plugin, over the one credential store the
+			// agent also reads through: a token the dialog just wrote must be the
+			// token the next request rotates. Undefined only where the tab was
+			// constructed without its plugin — the test harness.
+			signIn: this.plugin.signInSession,
 			openLogView: () => this.plugin.openLogView(),
 			describeTarget: () => describeModelTarget(this.plugin.settings, getT(language)),
 			t: getT(language),

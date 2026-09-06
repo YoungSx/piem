@@ -896,6 +896,8 @@ export const en = {
 		keyBound: "key in Obsidian's keychain",
 		keyMissing: "keychain entry missing",
 		noKey: "no key",
+		/** Credential phrase for a subscription row, which signs in instead. */
+		rowCredentialPending: "subscription sign-in",
 		modelCount: "{count} model",
 		modelsCount: "{count} models",
 		/**
@@ -1308,6 +1310,13 @@ export const en = {
 		listingModels: "Reached {target} — it lists {count} models.",
 		listingNeedsKey: "{target} requires an API key ({status}).{relayed}",
 		listingRejectedKey: "{target} rejected the API key ({status}).{relayed}",
+		/**
+		 * A subscription row has no key field, so it gets its own pair: one for
+		 * "you have not signed in", one for "the sign-in was refused". Sending the
+		 * user to an API key they were never asked for is the failure these avoid.
+		 */
+		notSignedIn: "Not signed in to this subscription yet.",
+		listingRejectedSignIn: "{target} rejected the sign-in ({status}). Sign in again.{relayed}",
 		listingUnsupported:
 			"Reached {target}, but it does not list models, so the key could not be checked. Add a model under this provider to test a real request.",
 		listingStatus: "{target} answered {status}.{relayed}",
@@ -1403,6 +1412,52 @@ export const en = {
 	},
 
 	/** Provider modal. */
+	/**
+	 * The subscription sign-in dialog and the row that opens it.
+	 *
+	 * Every string here avoids the word "key" on purpose. A subscription row has no
+	 * key field, so a message that mentions one sends the reader looking for
+	 * something nobody asked them for — which is the specific confusion these
+	 * replace.
+	 */
+	signIn: {
+		title: "Sign in to {target}",
+		method: "This provider is reached through {method}.",
+		signedIn: "Signed in. This provider is ready to use.",
+		signedOut: "Not signed in yet.",
+		/**
+		 * Shown where a sign-in cannot be stored at all. Deliberately final rather
+		 * than a retry prompt: nothing the user does in this vault will change it,
+		 * so the honest advice is the API key they can still use.
+		 */
+		unavailable:
+			"This device cannot store a sign-in outside the vault, so a subscription cannot be used here. Add this provider with an API key instead.",
+		start: "Sign in",
+		again: "Sign in again",
+		signOut: "Sign out",
+		close: "Close",
+		starting: "Asking the provider for a sign-in code…",
+		enterCode: "Open the sign-in page and enter this code:",
+		copyCode: "Copy code",
+		codeCopied: "Code copied.",
+		openPage: "Open this page to continue:",
+		openPageButton: "Open sign-in page",
+		waiting: "Waiting for you to approve it. This window can stay open.",
+		done: "Signed in.",
+		doneNotice: "Signed in to {target}.",
+		failed: "Sign-in failed. {message}",
+		signedOutNotice: "Signed out of {target}.",
+		signOutFailed: "Could not sign out. {message}",
+		/** Unreachable in this build; see `SignInModal`'s header for why it still exists. */
+		promptUnsupported: "This sign-in asked for something this version cannot show ({kind}).",
+		/** Row action in the provider list, and the row's own status phrase. */
+		rowAction: "Sign in or out",
+		rowSignedIn: "Signed in",
+		rowSignedOut: "Not signed in",
+		/** Shown in place of the key field once a subscription preset is chosen. */
+		modalNote: "This provider signs in instead of taking an API key. Save it, then use the sign-in action on its row.",
+	},
+
 	providerModal: {
 		addTitle: "Add provider",
 		editTitle: "Edit provider",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import type { Models } from "@earendil-works/pi-ai";
+import type { Credential, CredentialStore, Models } from "@earendil-works/pi-ai";
 import { DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS } from "./customEndpoint";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
 import { getT } from "./i18n";
@@ -434,5 +434,143 @@ describe("the request a chat probe puts on the wire", () => {
 		expect(body.model).toBe("deepseek-v4-flash");
 		expect(body.max_completion_tokens).toBeUndefined();
 		expect(body.messages).toEqual([{ role: "user", content: "Reply with the single word: ok" }]);
+	});
+});
+
+/**
+ * A `Models` collection for a subscription row: the same faux provider, but
+ * registered with `oauth` auth over a store the test seeds.
+ *
+ * Built through `createObsidianModels` rather than by hand so the case exercises
+ * the registration the plugin actually performs — an oauth-only provider, no
+ * api-key method, one credential store.
+ */
+function subscriptionModels(row: ProviderConfig, credential?: Credential): Models {
+	const held = new Map<string, Credential>(credential ? [[row.id, credential]] : []);
+	const credentials: CredentialStore = {
+		read: async (providerId) => held.get(providerId),
+		list: async () => [...held].map(([providerId, entry]) => ({ providerId, type: entry.type })),
+		modify: async (providerId, fn) => {
+			const next = await fn(held.get(providerId));
+			if (next !== undefined) {
+				held.set(providerId, next);
+			}
+			return held.get(providerId);
+		},
+		delete: async (providerId) => {
+			held.delete(providerId);
+		},
+	};
+	return createObsidianModels({ transport: "requestUrl", providers: [row], credentials }).models;
+}
+
+const SUBSCRIPTION_ROW = (): ProviderConfig =>
+	provider({ id: "sub-1", name: "Grok", baseUrl: "https://api.x.ai/v1", protocol: "openai-responses", apiKey: "", oauthFlow: "xai" });
+
+const SIGNED_IN: Credential = {
+	type: "oauth",
+	access: "at-live",
+	refresh: "rt-live",
+	expires: Date.now() + 3_600_000,
+};
+
+describe("a subscription row's connection test", () => {
+	it("reports a signed-out row as not signed in, never as missing a key", () => {
+		// The row has no key field, so "no API key for this provider" would send the
+		// user looking for one nobody asked them for.
+		const row = SUBSCRIPTION_ROW();
+		const models = subscriptionModels(row);
+		const model: ModelConfig = {
+			id: "m1",
+			providerId: row.id,
+			modelApiId: "grok-4",
+			displayName: "Grok",
+			reasoning: false,
+			supportsImages: false,
+		};
+		return testModelConnection(models, model, row, t).then((result) => {
+			expect(result.ok).toBe(false);
+			expect(result.detail).toBe("Not signed in to this subscription yet.");
+		});
+	});
+
+	it("does not short-circuit on the empty key field when a sign-in is configured", async () => {
+		// The guard that used to run first read `provider.apiKey`, which is empty for
+		// every subscription row — so without this branch the probe never ran at all.
+		const row = SUBSCRIPTION_ROW();
+		const models = subscriptionModels(row, SIGNED_IN);
+		const model: ModelConfig = {
+			id: "m1",
+			providerId: row.id,
+			modelApiId: "grok-4",
+			displayName: "Grok",
+			reasoning: false,
+			supportsImages: false,
+		};
+		const result = await testModelConnection(models, model, row, t);
+		// The faux provider is not registered for this row — `createObsidianModels`
+		// registers the real protocol apis — so the request fails at the transport
+		// rather than at the sign-in check. Either way it got past the guard, which
+		// is the whole assertion.
+		expect(result.detail).not.toBe("Not signed in to this subscription yet.");
+		expect(result.detail).not.toBe("No API key for this provider yet.");
+	});
+
+	it("still reports a missing model id before probing", async () => {
+		const row = SUBSCRIPTION_ROW();
+		const models = subscriptionModels(row, SIGNED_IN);
+		const model: ModelConfig = {
+			id: "m1",
+			providerId: row.id,
+			modelApiId: "",
+			displayName: "",
+			reasoning: false,
+			supportsImages: false,
+		};
+		expect((await testModelConnection(models, model, row, t)).detail).toBe("This model has no model ID yet.");
+	});
+
+	it("refuses the listing probe when the row is signed out", async () => {
+		// With no model to borrow, the provider test falls through to listing — which
+		// reaches the endpoint directly and so needs the token resolved first.
+		const row = SUBSCRIPTION_ROW();
+		const models = subscriptionModels(row);
+		const result = await testProviderConnection(models, row, [], t, {
+			fetch: async () => {
+				throw new Error("the listing probe must not run without a credential");
+			},
+		});
+		expect(result.detail).toBe("Not signed in to this subscription yet.");
+	});
+
+	it("sends the resolved subscription token on the listing probe", async () => {
+		const row = SUBSCRIPTION_ROW();
+		const models = subscriptionModels(row, SIGNED_IN);
+		let sent: Record<string, string> = {};
+		const result = await testProviderConnection(models, row, [], t, {
+			fetch: async (_input, init) => {
+				// `Headers.entries()` is outside this project's `lib`, so the map is
+				// collected through `forEach`, which is in it and lowercases names the
+				// same way.
+				new Headers(init?.headers).forEach((value, name) => {
+					sent[name] = value;
+				});
+				return new Response(JSON.stringify({ data: [{ id: "grok-4" }] }), { status: 200 });
+			},
+		});
+		// xAI's flow puts the token where an api key goes, so the OpenAI-shaped
+		// listing request carries it as a bearer.
+		expect(sent.authorization).toBe("Bearer at-live");
+		expect(result.ok).toBe(true);
+	});
+
+	it("tells a rejected sign-in apart from a rejected key", async () => {
+		const row = SUBSCRIPTION_ROW();
+		const models = subscriptionModels(row, SIGNED_IN);
+		const result = await testProviderConnection(models, row, [], t, {
+			fetch: async () => new Response("{}", { status: 401 }),
+		});
+		expect(result.detail).toContain("rejected the sign-in");
+		expect(result.detail).not.toContain("API key");
 	});
 });

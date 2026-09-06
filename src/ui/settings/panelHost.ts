@@ -1,5 +1,6 @@
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import type { App, ExtraButtonComponent } from "obsidian";
+import type { SignInSession } from "../../auth/signInSession";
 import type { CompactionConfig } from "../../agent/compactionSettings";
 import type { PromptQueueStrategy } from "../../agent/queueStrategy";
 import type { SkillLoadReport } from "../../agent/skillLoader";
@@ -58,6 +59,15 @@ export interface SettingsPanelHost {
 	 * resolver answers `""` and the picker is never shown anyway.
 	 */
 	readSecret(id: string): string;
+	/**
+	 * The subscription sign-in operations.
+	 *
+	 * Always present on a real tab: availability of the device's writable
+	 * keychain is the session's own `canStore()`, which the dialog renders as its
+	 * honest unavailable state. Undefined only for a tab assembled without a
+	 * plugin behind it — the test harness — where there is no store to ask.
+	 */
+	signIn: SignInSession | undefined;
 	/** Names whatever requests currently target, for the status line. */
 	describeTarget(): string;
 	/** Copy for the whole panel, resolved from {@link SettingsPanelSettings.language}. */

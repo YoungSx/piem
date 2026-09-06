@@ -3737,6 +3737,30 @@ button.piem-chat__latest--asking {
 }
 
 /*
+ * The sign-in code a device-code flow asks the user to type into the provider's
+ * own page.
+ *
+ * The one string in this plugin a person has to copy by eye and reproduce
+ * exactly, so it is set larger than the surrounding prose and given letter
+ * spacing: the failure mode is a misread `0` for an `O`, and a code typed wrong
+ * is a round trip through the provider's error page before anyone learns why.
+ * Centred because it is the thing the dialog is for.
+ *
+ * The monospace face and the chip fill come from Obsidian's own `code` styling —
+ * this only sizes and spaces it, so a theme that restyles inline code restyles
+ * this too rather than being overridden.
+ */
+.piem-sign-in-code {
+	text-align: center;
+}
+
+.piem-sign-in-code code {
+	font-size: var(--font-ui-large);
+	letter-spacing: 0.15em;
+	user-select: all;
+}
+
+/*
  * Verdict from a connection test, rendered under the row's description.
  *
  * The state is carried by the text colour alone — no fill. This block sits
