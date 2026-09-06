@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:
 import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { App, Component } from "obsidian";
 import { flushRender, installDom } from "../testUtils/dom";
-import { installObsidianStub, lastMenu, resetMenus } from "../testUtils/obsidianStub";
+import { installObsidianStub, lastMenu, platformMock, resetMenus } from "../testUtils/obsidianStub";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
 import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import type { QuickAction } from "./quickActionSuggestions";
@@ -452,6 +452,33 @@ async function pressSendShortcut(textarea: HTMLTextAreaElement, modifier: "metaK
 	textarea.dispatchEvent(new domWindow.KeyboardEvent("keydown", { key: "Enter", [modifier]: true, bubbles: true, cancelable: true }));
 	await flushRender();
 }
+
+/**
+ * The fold rides the snapshot, and the snapshot rides a synced data.json — so a
+ * phone's folded state can arrive on a desktop panel. These pin the route end to
+ * end: the state only folds where the toggle renders (mobile), and a desktop
+ * panel always opens with its draft mounted.
+ */
+describe("ChatApp composer fold", () => {
+	afterEach(() => {
+		platformMock.isMobile = false;
+	});
+
+	it("folds on mobile when the snapshot says so", async () => {
+		platformMock.isMobile = true;
+		const { host } = await mountChat({ snapshot: { mobileComposerCollapsed: true } });
+
+		expect(host.querySelector("textarea")).toBeNull();
+		expect(host.querySelector(".piem-chat__composer-toggle")).not.toBeNull();
+	});
+
+	it("never folds on desktop, even when the synced state says so", async () => {
+		const { host } = await mountChat({ snapshot: { mobileComposerCollapsed: true } });
+
+		expect(host.querySelector("textarea")).not.toBeNull();
+		expect(host.querySelector(".piem-chat__composer-toggle")).toBeNull();
+	});
+});
 
 describe("ChatApp keyboard submit without an API key", () => {
 	let mounted: Mounted | undefined;

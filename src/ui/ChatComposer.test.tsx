@@ -412,6 +412,30 @@ describe("ChatComposer fold toggle", () => {
 		expect(toggleButton(host)).toBeNull();
 	});
 
+	it("ignores a folded state on desktop, where no toggle exists to undo it", async () => {
+		// A synced vault can carry a phone's folded state into desktop data.json.
+		// The fold must obey the same mobile-only rule as the toggle itself:
+		// otherwise desktop shows a composer with the draft unmounted and no way
+		// back — the bug this clamp exists for.
+		platformMock.isMobile = false;
+		const host = await renderComposer({ collapsed: true, onToggleCollapsed: noop });
+
+		expect(host.querySelector("textarea")).not.toBeNull();
+		expect(host.querySelector(".piem-chat__composer-bar")).not.toBeNull();
+		expect(toggleButton(host)).toBeNull();
+	});
+
+	it("ignores a folded state whenever the toggle is absent, handler included", async () => {
+		// The clamp reads the toggle's own renderability, not the platform: a
+		// fold with no button to leave it is a fold the state may not enter,
+		// whatever put the parent in a position to pass one.
+		const host = await renderComposer({ collapsed: true });
+
+		expect(host.querySelector("textarea")).not.toBeNull();
+		expect(host.querySelector(".piem-chat__composer-bar")).not.toBeNull();
+		expect(toggleButton(host)).toBeNull();
+	});
+
 	it("unmounts the draft's rows when folded, and keeps the queue on screen", async () => {
 		const host = await renderComposer({ collapsed: true, queuedPrompts: queued, onToggleCollapsed: noop });
 
