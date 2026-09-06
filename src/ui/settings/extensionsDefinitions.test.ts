@@ -3,6 +3,7 @@ import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
 import { installObsidianStub, type ExtraButtonStub, type ToggleStub } from "../../testUtils/obsidianStub";
 import { getT } from "../../i18n";
+import { NOOP_LOGGER } from "../../logging/Logger";
 
 const document = installDom();
 installObsidianDomHelpers();
@@ -57,6 +58,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 		refresh: () => {
 			if (record) record.refreshes++;
 		},
+		logger: NOOP_LOGGER,
 		secretStorage: "manual",
 		readSecret: () => "",
 		signIn: undefined,

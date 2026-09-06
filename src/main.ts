@@ -100,6 +100,16 @@ export default class PiemPlugin extends Plugin {
 	 */
 	private signInBridge: SignInSession | null = null;
 
+	/**
+	 * The settings panel's log outlet, scoped so its probes, installs, and saves
+	 * read as one story in the log. `NOOP_LOGGER` is the field default, so a tab
+	 * assembled before `onload` finishes — impossible in practice, but the panel
+	 * must not be the thing that throws — still gets a logger it can call.
+	 */
+	get panelLogger(): LoggerLike {
+		return this.log.child("settings");
+	}
+
 	/** The MCP bridge, constructing it on first use. */
 	get mcpManager(): McpManager {
 		this.mcpBridge ??= new McpManager(
