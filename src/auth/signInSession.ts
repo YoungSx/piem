@@ -11,7 +11,7 @@
  * nothing to hold between dialog openings and nothing to refresh after one.
  */
 
-import type { CredentialStore, OAuthAuth, ProviderAuthInteraction } from "@earendil-works/pi-ai";
+import type { CredentialStore, ProviderAuthInteraction } from "@earendil-works/pi-ai";
 import { createOAuthAuth, isOAuthFlowId, oauthFlowName } from "./oauthFlows";
 import type { ProviderConfig } from "../modelConfig";
 import type { FetchFn } from "../net/obsidianFetch";
