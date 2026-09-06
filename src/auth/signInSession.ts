@@ -15,6 +15,7 @@ import type { CredentialStore, OAuthAuth, ProviderAuthInteraction } from "@earen
 import { createOAuthAuth, isOAuthFlowId, oauthFlowName } from "./oauthFlows";
 import type { ProviderConfig } from "../modelConfig";
 import type { FetchFn } from "../net/obsidianFetch";
+import type { DeviceCodeDeps } from "./deviceCode";
 
 /** One provider row, reduced to what a sign-in dialog needs to run. */
 export interface SignInTarget {
@@ -49,6 +50,12 @@ export interface SignInSessionOptions {
 	fetch: FetchFn;
 	/** Whether this device can write secrets at all, read live from the environment. */
 	canStore: () => boolean;
+	/**
+	 * Overrides the flow's wait between polls. Production leaves this unset —
+	 * the provider's own interval governs — and tests pass an immediate
+	 * resolve so a scripted exchange does not spend its wall-clock interval.
+	 */
+	sleep?: DeviceCodeDeps["sleep"];
 }
 
 export function createSignInSession(options: SignInSessionOptions) {
@@ -79,7 +86,7 @@ export function createSignInSession(options: SignInSessionOptions) {
 			const flowId = target.flowId;
 			// Fresh per opening, like the models bundle's own auth object: the flow
 			// is stateless over the transport, so there is nothing to save.
-			const oauth = () => createOAuthAuth(flowId, options.fetch);
+			const oauth = () => createOAuthAuth(flowId, options.fetch, options.sleep);
 			return {
 				method: oauthFlowName(flowId),
 				isSignedIn: () => readStored(target.id),
