@@ -591,8 +591,6 @@ export interface ObsidianAgentServiceOptions {
 interface CompactionRunOptions {
 	/** Summarize even when the context still fits; the command-palette path. */
 	force?: boolean;
-	/** Signal of the run a mid-run compaction belongs to, linked into the service's controller. */
-	signal?: AbortSignal;
 }
 
 export class ObsidianAgentService {
@@ -3987,7 +3985,7 @@ export class ObsidianAgentService {
 	 * finally so an abort or failure cannot leave the banner stuck.
 	 *
 	 * All three callers share this: before a prompt, on the command-palette path
-	 * (`force`), and between the turns of a run (`signal`). Sharing it is what
+	 * (`force`), and from the post-idle compaction resume. Sharing it is what
 	 * gives them one `isCompacting` lifecycle, one single-flight guard, and one
 	 * set of success side effects.
 	 *
@@ -3998,19 +3996,9 @@ export class ObsidianAgentService {
 			rt.compactionController = new AbortController();
 			rt.compaction = this.trackCompaction(rt, agent, rt.compactionController.signal, options.force === true);
 		}
-		// The run's signal is linked into this runtime's controller rather than
-		// replacing it, so a compaction between turns stays reachable from every
-		// existing cancel path — `abortSession()`, `dispose()` and `deleteSession()`
-		// all abort `compactionController` — while `agent.abort()` also cancels it
-		// through the run's own signal. `AbortSignal.any` would say this in one
-		// line but postdates the WebView versions `minAppVersion` admits.
-		const controller = rt.compactionController;
-		const stop = (): void => controller?.abort();
-		options.signal?.addEventListener("abort", stop, { once: true });
 		try {
 			return await rt.compaction;
 		} finally {
-			options.signal?.removeEventListener("abort", stop);
 			rt.compaction = null;
 			rt.compactionController = null;
 		}
