@@ -200,6 +200,10 @@ export default class PiemPlugin extends Plugin {
 				await this.mcpManager.connect();
 				return this.mcpManager.buildAgentTools();
 			},
+			// What is already mounted, connect-free — the subagent side reads this
+			// at spawn time so a child's set is the servers' current list without
+			// ever paying (or awaiting) a handshake itself.
+			getMountedExternalTools: () => this.mcpManager.buildAgentTools(),
 		});
 		this.draftStore = DraftStore.forPlugin(this.app, this, this.requirePluginLogger().logger);
 
