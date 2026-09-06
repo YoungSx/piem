@@ -324,6 +324,12 @@ async function mountChat(
 		 * after would miss the request entirely.
 		 */
 		suggestionsGate?: Promise<void>;
+		/**
+		 * Supplies the "open the monitor" callback, without which the entry icon is
+		 * never rendered at all — the panel treats its absence as "this host has no
+		 * monitor to open".
+		 */
+		withSubagentEntry?: boolean;
 	} = {},
 ): Promise<Mounted> {
 	const host = document.createElement("div");
@@ -353,6 +359,7 @@ async function mountChat(
 			// Omitted by default so the draft is plain component state; the tests that
 			// watch for a skipped `clearDraft` opt into the store.
 			draftStore={options.withDraftStore ? (draftStore as unknown as DraftStore) : undefined}
+			onOpenSubagents={options.withSubagentEntry ? () => undefined : undefined}
 		/>,
 	);
 	await flushRender();
@@ -366,6 +373,29 @@ async function mountChat(
 			await flushRender();
 		},
 	};
+}
+
+/**
+ * Records one settled subagent against a conversation, the way a spawn would.
+ *
+ * Goes through `registry.spawn` rather than reaching into its map, so the change
+ * event that drives the panel's re-render fires the way it does in production.
+ */
+function seedSubagent(registry: SubagentRegistry, ownerId: string): void {
+	registry.spawn({
+		id: registry.nextId(),
+		role: "general",
+		signal: new AbortController().signal,
+		parentSignal: undefined,
+		ownerId,
+		abort: () => undefined,
+		dispose: () => undefined,
+		start: () => Promise.resolve({ text: "done", turns: 1, usage: { tokens: 0, cost: 0, requests: 1 } as never, messages: [] }),
+		task: `task for ${ownerId}`,
+		depth: 1,
+		modelId: "test-model",
+		thinkingLevel: "off",
+	});
 }
 
 function composer(host: HTMLElement): HTMLTextAreaElement {
@@ -1431,6 +1461,43 @@ function nearFill(): NonNullable<ChatSnapshot["contextFill"]> {
 		heuristicOnly: false,
 	};
 }
+
+describe("ChatApp subagent entry icon", () => {
+	let mounted: Mounted | null = null;
+
+	afterEach(async () => {
+		await mounted?.unmount();
+		mounted = null;
+	});
+
+	it("counts the runs this conversation ordered, and not another's", async () => {
+		mounted = await mountChat({ withSubagentEntry: true });
+		const registry = mounted.service.getSubagentRegistry();
+
+		seedSubagent(registry, `chats/${SESSION_ID}.jsonl`);
+		// A background conversation's child. It is in the same registry — there is
+		// only one — and the icon must not fold it into this chat's count, nor offer
+		// its row in a popover belonging to a transcript it was never part of.
+		seedSubagent(registry, "chats/somewhere-else.jsonl");
+		await flushRender();
+
+		const badge = mounted.host.querySelector(".piem-chat__subagents-badge");
+		expect(badge?.textContent).toBe("1");
+		const button = mounted.host.querySelector<HTMLButtonElement>(".piem-chat__subagents-button");
+		expect(button?.getAttribute("aria-label")).toContain("1");
+	});
+
+	it("stays absent while only another conversation has delegated", async () => {
+		mounted = await mountChat({ withSubagentEntry: true });
+
+		seedSubagent(mounted.service.getSubagentRegistry(), "chats/somewhere-else.jsonl");
+		await flushRender();
+
+		// No icon at all, which is the honest report for a chat that delegated
+		// nothing: the monitor panel is where another chat's fan-out is visible.
+		expect(mounted.host.querySelector(".piem-chat__subagents-button")).toBeNull();
+	});
+});
 
 describe("ChatApp context wall", () => {
 	let mounted: Mounted | undefined;

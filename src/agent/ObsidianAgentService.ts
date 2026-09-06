@@ -2073,6 +2073,26 @@ export class ObsidianAgentService {
 	}
 
 	/**
+	 * The header of every conversation this process holds a runtime for.
+	 *
+	 * For a surface that has to *name* a conversation it is not showing — the
+	 * monitor panel, which groups delegated runs by the chat that ordered them.
+	 * Read off the runtimes rather than the store so it stays synchronous: the
+	 * panel renders on registry events, and an await there would make the labels
+	 * arrive a frame after the rows they belong to.
+	 *
+	 * A conversation whose runtime is gone (deleted, or never focused this
+	 * process) is simply absent, and the caller words that absence itself — the
+	 * registry keeps a settled run's record long after the chat that ordered it
+	 * stopped existing.
+	 */
+	getKnownSessions(): ActiveSessionInfo[] {
+		return [...this.runtimes.values()]
+			.map((rt) => rt.sessionInfo)
+			.filter((info): info is ActiveSessionInfo => info !== undefined);
+	}
+
+	/**
 	 * One entry per session the service knows about (issue #235).
 	 */
 	getSessionRunStates(): Array<{ path: string; state: SessionRunState }> {

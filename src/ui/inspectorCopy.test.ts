@@ -23,6 +23,7 @@ function snapshot(overrides: Partial<SubagentSnapshot> = {}): SubagentSnapshot {
 		role: "scout",
 		task: "Sweep Projects/ for stale notes",
 		depth: 1,
+		ownerId: "chat-a",
 		modelId: "deepseek-v4-pro",
 		thinkingLevel: "off",
 		status: "done",

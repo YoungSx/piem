@@ -24,6 +24,14 @@ export interface SubagentSnapshot {
 	instructions?: string;
 	/** Tree level: 1 is a direct child of the chat panel. */
 	depth: number;
+	/**
+	 * The conversation that ordered this run — see `SubagentEntry.ownerId`.
+	 *
+	 * Opaque to the inspector too: it groups and filters by it, and the label a
+	 * reader sees is resolved by the UI, which is the only layer that can turn a
+	 * session path into a conversation's name.
+	 */
+	ownerId: string;
 	/** The model the child actually runs on, post-resolution. */
 	modelId: string;
 	thinkingLevel: string;
@@ -89,6 +97,7 @@ function toSnapshot(entry: SubagentEntry, now: number): SubagentSnapshot {
 		followUps: entry.followUps.length > 0 ? [...entry.followUps] : undefined,
 		instructions: entry.instructions,
 		depth: entry.depth,
+		ownerId: entry.ownerId,
 		modelId: entry.model.id,
 		thinkingLevel: entry.thinkingLevel,
 		status: statusOf(entry),
@@ -116,6 +125,56 @@ function toSnapshot(entry: SubagentEntry, now: number): SubagentSnapshot {
  */
 export function snapshotSubagents(registry: SubagentRegistry, now: number): SubagentSnapshot[] {
 	return registry.all().map((entry) => toSnapshot(entry, now));
+}
+
+/** One conversation's runs, as the panel groups them. */
+export interface SubagentOwnerGroup {
+	ownerId: string;
+	snapshots: SubagentSnapshot[];
+}
+
+/**
+ * The runs one conversation ordered, in spawn order.
+ *
+ * What the chat panel's entry icon renders: the icon lives inside a
+ * conversation, so the count beside it has to be that conversation's or it
+ * reports someone else's work as this chat's.
+ */
+export function snapshotsForOwner(snapshots: readonly SubagentSnapshot[], ownerId: string): SubagentSnapshot[] {
+	return snapshots.filter((snapshot) => snapshot.ownerId === ownerId);
+}
+
+/**
+ * Groups runs by the conversation that ordered them, focused conversation first.
+ *
+ * Focused first because a reader who opened the panel while looking at a chat is
+ * almost always asking about that chat; the rest follow in the order they first
+ * delegated, which keeps the whole panel a record read forward — the same reason
+ * runs within a group stay oldest-first.
+ *
+ * A group is created only by a run belonging to it, so a conversation that never
+ * delegated never appears — including the focused one, whose absence is itself
+ * the honest answer to "what is this chat waiting on".
+ */
+export function groupByOwner(snapshots: readonly SubagentSnapshot[], focusedOwnerId?: string): SubagentOwnerGroup[] {
+	const groups = new Map<string, SubagentSnapshot[]>();
+	for (const snapshot of snapshots) {
+		const existing = groups.get(snapshot.ownerId);
+		if (existing) {
+			existing.push(snapshot);
+		} else {
+			groups.set(snapshot.ownerId, [snapshot]);
+		}
+	}
+	// Insertion order is first-spawn order, which `Map` preserves; the focused
+	// conversation is then lifted out of it rather than sorted for.
+	const ordered = [...groups.entries()].map(([ownerId, owned]) => ({ ownerId, snapshots: owned }));
+	const focusedIndex = focusedOwnerId === undefined ? -1 : ordered.findIndex((group) => group.ownerId === focusedOwnerId);
+	if (focusedIndex > 0) {
+		const [focused] = ordered.splice(focusedIndex, 1);
+		ordered.unshift(focused!);
+	}
+	return ordered;
 }
 
 /**
