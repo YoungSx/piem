@@ -1646,6 +1646,20 @@ export class ObsidianAgentService {
 	 */
 	private async beginRunOperation(rt: SessionRuntime, originalPrompt: readonly AgentMessage[]): Promise<void> {
 		const lane = rt.activeLane;
+		// The open-path model assertion, relocated here (see the open path's
+		// comment on why it must not fire at open time). Every run start funnels
+		// through this method, so a session whose recorded model drifted from the
+		// defaults gets its `model_change` append exactly when the user acts —
+		// never on a look-only open. Same best-effort contract as the ledger
+		// write below: a failed assertion logs and lets the send proceed.
+		try {
+			await this.sessionManager.ensureConfigurationFor(rt.sessionPath, this.getSessionDefaults(), lane);
+		} catch (error) {
+			this.log.debug("Model assertion at run start failed", () => ({
+				lane,
+				error: error instanceof Error ? error.message : String(error),
+			}));
+		}
 		rt.activeRunLedger = undefined;
 		// Claimed for the run's whole life: a sweep that fires while this session
 		// is in the background (a new chat, a create elsewhere) must not trash the
@@ -2506,7 +2520,11 @@ export class ObsidianAgentService {
 		// existing runtime whose log may have moved since.
 		await this.settleInterruptedRuns(rt, context);
 		rt.panelError = undefined;
-		await this.sessionManager.ensureConfigurationFor(path, this.getSessionDefaults(), rt.activeLane);
+		// Deliberately no `ensureConfigurationFor` here either. Opening is a pure
+		// read under whole-file last-writer-wins sync: an append fired at open
+		// time makes the stale local copy the newest writer on disk, and the sync
+		// plugin could then bury the other device's newer chat with it. The model
+		// assertion happens at run start instead — see `beginRunOperation`.
 		this.sessionInfo = info;
 		rt.sessionInfo = info;
 		this.notify();

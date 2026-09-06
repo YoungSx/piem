@@ -141,8 +141,13 @@ export class ObsidianSessionManager {
 	async continueRecentSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
 		const sessions = await this.listSessions();
 		if (sessions[0]) {
+			// Deliberately no `ensureConfiguration` here. Opening must stay a pure
+			// read: a vault sync plugin arbitrates whole files last-writer-wins, and
+			// an append fired at open time marks the local file newer, so the stale
+			// copy can win and bury the other device's newer chat. The model is
+			// asserted where the user actually acts — at run start, in
+			// `beginRunOperation` — not at open time.
 			await this.loadSession(sessions[0].path);
-			await this.ensureConfiguration(defaults);
 			return this.getActiveSessionInfo();
 		}
 		return this.createSession(defaults);
