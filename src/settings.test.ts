@@ -91,6 +91,35 @@ describe("normalizeSettings narrowing the network transport", () => {
 	});
 });
 
+describe("normalizeSettings with cacheRetention", () => {
+	it("gives a vault written before the setting existed the hour-long cache, not pi's five minutes", () => {
+		// The one setting where this plugin overrides a pi default on purpose: pi's
+		// "short" is tuned for turns seconds apart, and an Obsidian reader's are
+		// minutes apart, so a five-minute cache expires between every pair of them.
+		// Pinned here because it is a billing decision, not an implementation detail.
+		expect(normalizeSettings({}).cacheRetention).toBe("long");
+		expect(DEFAULT_SETTINGS.cacheRetention).toBe("long");
+	});
+
+	it("keeps an explicit preference", () => {
+		expect(normalizeSettings({ cacheRetention: "short" }).cacheRetention).toBe("short");
+		expect(normalizeSettings({ cacheRetention: "none" }).cacheRetention).toBe("none");
+		expect(normalizeSettings({ cacheRetention: "long" }).cacheRetention).toBe("long");
+	});
+
+	it("repairs a value no provider would understand", () => {
+		// It is spread straight into a provider request, so an unrecognised string
+		// would travel to a paid endpoint as-is.
+		expect(normalizeSettings({ cacheRetention: "1h" as never }).cacheRetention).toBe("long");
+		expect(normalizeSettings({ cacheRetention: null as never }).cacheRetention).toBe("long");
+		expect(normalizeSettings({ cacheRetention: "" as never }).cacheRetention).toBe("long");
+	});
+
+	it("round-trips, so loading and saving does not drift a reader's choice", () => {
+		expect(normalizeSettings(normalizeSettings({ cacheRetention: "none" })).cacheRetention).toBe("none");
+	});
+});
+
 describe("getSelectedModel priority", () => {
 	it("returns the custom endpoint model when base URL and model id are set", () => {
 		const settings = normalizeSettings({

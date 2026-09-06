@@ -70,6 +70,27 @@ export function modelsDefinitions(host: SettingsPanelHost): SettingDefinitionIte
 						},
 					},
 				},
+				{
+					// Sits with the transport rather than beside compaction, which is the
+					// other cost-shaped setting: both rows here answer for one request's
+					// wire form, while compaction answers for the conversation. A reader
+					// looking for what happens to a prompt after it leaves finds it here.
+					//
+					// Three options rather than a toggle because "off" is not the opposite
+					// of "on": the middle value is pi's own default and the cheaper store,
+					// and a boolean would have to pick which two of the three to offer.
+					name: t.t("settings.cacheRetention"),
+					desc: t.t("settings.cacheRetentionDesc"),
+					control: {
+						type: "dropdown",
+						key: "cacheRetention",
+						options: {
+							long: t.t("settings.cacheRetentionLong"),
+							short: t.t("settings.cacheRetentionShort"),
+							none: t.t("settings.cacheRetentionNone"),
+						},
+					},
+				},
 				{ name: t.t("settings.webFetchName"), desc: t.t("settings.webFetchDesc") },
 			],
 		},

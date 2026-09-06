@@ -17,7 +17,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 	return {
 		app: {} as SettingsPanelHost["app"],
 		settings: {
-			providers: [], models: [], networkTransport: "requestUrl", showAgentDetails: false, traceExpand: "collapsed",
+			providers: [], models: [], networkTransport: "requestUrl", cacheRetention: "long", showAgentDetails: false, traceExpand: "collapsed",
 			sendShortcut: "enter", language: "en", sessionRetention: 0, sessionDir: "piem/chats",
 			userSkillsDir: "", mcpServers: [], logLevel: "info",
 		},
@@ -79,6 +79,21 @@ describe("modelsDefinitions", () => {
 		// a model rides on rather than only by its name.
 		expect(models.search?.match({ name: "Model 3", desc: "openai · Provider" }, "provider")).toBe(true);
 		expect(models.search?.match({ name: "Model 3", desc: "openai · Provider" }, "anthropic")).toBe(false);
+	});
+
+	it("binds the prompt-cache row to the setting, with every level pi accepts", () => {
+		// The declarative `key` is a bare string Obsidian does not check against the
+		// settings object, so a typo here renders a working-looking dropdown that
+		// writes nowhere — see `controlKeys`. The option keys matter for the same
+		// reason in the other direction: they are the values written, so one that is
+		// not a `CacheRetention` would be silently refused on selection.
+		const network = modelsDefinitions(host()).find(
+			(def) => (def as { heading?: string }).heading === en.t("settings.networkHeading"),
+		) as { items?: Array<{ name?: string; control?: { type?: string; key?: string; options?: Record<string, string> } }> };
+		const row = network.items?.find((item) => item.name === en.t("settings.cacheRetention"));
+
+		expect(row?.control).toMatchObject({ type: "dropdown", key: "cacheRetention" });
+		expect(Object.keys(row?.control?.options ?? {})).toEqual(["long", "short", "none"]);
 	});
 
 	it("does not probe live target state while definitions are indexed", () => {

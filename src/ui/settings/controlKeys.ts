@@ -1,6 +1,7 @@
 import { isLanguageSetting } from "../../i18n";
 import { isLogLevelSetting } from "../../logging/logLevel";
 import { isSendShortcutSetting } from "../keyboard";
+import { isCacheRetentionSetting } from "../../net/cacheRetention";
 import { isTraceExpandSetting } from "../traceExpand";
 import type { NetworkTransport } from "../../net/obsidianFetch";
 import type { SettingsPanelSettings } from "./panelHost";
@@ -51,6 +52,7 @@ const CONTROL_KEYS = [
 	"sendShortcut",
 	"logLevel",
 	"networkTransport",
+	"cacheRetention",
 	"activeModelId",
 ] as const satisfies readonly (keyof SettingsPanelSettings)[];
 
@@ -112,6 +114,10 @@ export function writeControlValue(settings: SettingsPanelSettings, key: ControlK
 		case "networkTransport":
 			if (!isNetworkTransport(value)) return false;
 			settings.networkTransport = value;
+			return true;
+		case "cacheRetention":
+			if (!isCacheRetentionSetting(value)) return false;
+			settings.cacheRetention = value;
 			return true;
 		case "activeModelId":
 			if (typeof value !== "string") return false;

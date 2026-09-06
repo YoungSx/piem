@@ -22,6 +22,7 @@ function settings(overrides: Partial<SettingsPanelSettings> = {}): SettingsPanel
 		providers: [],
 		models: [],
 		networkTransport: "requestUrl",
+		cacheRetention: "long",
 		showAgentDetails: false,
 		traceExpand: "collapsed",
 		sendShortcut: "enter",
@@ -121,6 +122,22 @@ describe("writeControlValue", () => {
 
 		expect(writeControlValue(stored, "networkTransport", "fetch")).toBe(true);
 		expect(stored.networkTransport).toBe("fetch");
+	});
+
+	it("writes a retention level pi accepts, and refuses one it does not", () => {
+		const stored = settings({ cacheRetention: "long" });
+
+		// The rejected value is the API's own wire form, which is exactly the sort of
+		// thing that would be typed in by hand: pi's option is "long", and "1h" is
+		// what the provider receives.
+		expect(writeControlValue(stored, "cacheRetention", "1h")).toBe(false);
+		expect(stored.cacheRetention).toBe("long");
+
+		expect(writeControlValue(stored, "cacheRetention", "short")).toBe(true);
+		expect(stored.cacheRetention).toBe("short");
+
+		expect(writeControlValue(stored, "cacheRetention", "none")).toBe(true);
+		expect(stored.cacheRetention).toBe("none");
 	});
 
 	it("writes a trace-expand mode the panel renders, and refuses one it does not", () => {

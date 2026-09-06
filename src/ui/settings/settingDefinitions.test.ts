@@ -42,6 +42,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost
 			providers: [],
 			models: [],
 			networkTransport: "requestUrl",
+			cacheRetention: "long",
 			showAgentDetails: false,
 		traceExpand: "collapsed",
 			sendShortcut: "enter",

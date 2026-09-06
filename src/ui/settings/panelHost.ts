@@ -1,3 +1,4 @@
+import type { CacheRetention } from "@earendil-works/pi-ai";
 import type { App, ExtraButtonComponent } from "obsidian";
 import type { CompactionConfig } from "../../agent/compactionSettings";
 import type { SkillLoadReport } from "../../agent/skillLoader";
@@ -185,6 +186,7 @@ export interface SettingsPanelSettings {
 	providers: ProviderConfig[];
 	models: ModelConfig[];
 	networkTransport: NetworkTransport;
+	cacheRetention: CacheRetention;
 	showAgentDetails: boolean;
 	traceExpand: TraceExpandSetting;
 	sendShortcut: SendShortcut;

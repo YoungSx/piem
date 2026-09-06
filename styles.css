@@ -501,7 +501,10 @@ button.piem-chat__context-open {
 
 /* The reasoning footnote rides the same caveat tier as the note line above: it
  * annotates the spend line (reasoning tokens are already inside it) rather than
- * adding a figure of its own, so it stays prose-grey and untabular. */
+ * adding a figure of its own, so it stays prose-grey and untabular. The
+ * hour-long-cache footnote is the same shape for the same reason — it prices a
+ * share of the cache line rather than adding to it. */
+.piem-chat__context-long-cache,
 .piem-chat__context-reasoning {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);

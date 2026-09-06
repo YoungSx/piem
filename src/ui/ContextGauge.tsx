@@ -8,6 +8,7 @@ import {
 	contextCacheLine,
 	contextGaugeName,
 	contextLevel,
+	contextLongCacheNote,
 	contextPercent,
 	contextReasoningNote,
 	contextStateText,
@@ -267,11 +268,13 @@ function ContextPopover({
 	const level = contextLevel(fill);
 	const isBusy = isStreaming || isCompacting;
 	// Same tier as spend, but gated per line: a provider without a prompt cache
-	// reports the cache fields as 0 (not absent), and a provider without a
-	// thinking split omits `reasoning` — so each line answers for itself instead
-	// of assuming the session carries a breakdown at all.
+	// reports the cache fields as 0 (not absent), a provider without a thinking
+	// split omits `reasoning`, and only Anthropic reports the hour-long share of a
+	// cache write — so each line answers for itself instead of assuming the session
+	// carries a breakdown at all.
 	const detailsVisible = showAgentDetails && usage.requests > 0;
 	const cacheLine = detailsVisible ? contextCacheLine(usage, t) : undefined;
+	const longCacheNote = detailsVisible ? contextLongCacheNote(usage, t) : undefined;
 	const reasoningNote = detailsVisible ? contextReasoningNote(usage, t) : undefined;
 
 	return (
@@ -298,6 +301,7 @@ function ContextPopover({
 				</span>
 			) : null}
 			{cacheLine ? <span className="piem-chat__context-cache">{cacheLine}</span> : null}
+			{longCacheNote ? <span className="piem-chat__context-long-cache">{longCacheNote}</span> : null}
 			{reasoningNote ? <span className="piem-chat__context-reasoning">{reasoningNote}</span> : null}
 			{/*
 			 * Always rendered, disabled while busy rather than hidden. `compactNow`

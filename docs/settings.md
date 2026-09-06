@@ -48,6 +48,26 @@ for provider requests — the same channel your chat will ride, not a convenient
 substitute. A test that passes over `fetch` while your chats go through
 `requestUrl` would be a test of the wrong thing.
 
+**Prompt cache** decides how long a provider may hold the unchanging part of a
+prompt — system instructions, tool definitions, skills, the note you have open —
+so a follow-up reads it back at roughly a tenth of the price instead of paying in
+full.
+
+The default is **an hour**, and that is deliberately not what the underlying
+agent library defaults to. Five minutes is the right span for a terminal agent
+whose turns land seconds apart; it expires during the ten minutes you spend
+writing between two questions, and then the whole prompt is billed fresh again.
+An hour costs more to store — Anthropic charges twice base input for a one-hour
+cache write against 1.25× for a five-minute one — and the second follow-up pays
+that premium back. Pick **five minutes** if your sessions really are one question
+long, and **off** for an endpoint that rejects cache markers.
+
+Providers map the preference to whatever they support and ignore what they do
+not, so nothing here depends on which model you selected. With **Show agent
+details** on, the context ring's popover names the share written at the hour-long
+rate whenever a provider reports it — which is the only proof the setting took,
+since one that ignores it simply bills the cheaper way.
+
 ## Chat
 
 Behavior on top, storage underneath.

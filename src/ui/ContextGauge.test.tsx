@@ -424,6 +424,7 @@ describe("ContextGauge usage breakdown", () => {
 
 		const popover = await openPopover(host);
 		expect(popover?.querySelector(".piem-chat__context-cache")).toBeNull();
+		expect(popover?.querySelector(".piem-chat__context-long-cache")).toBeNull();
 		expect(popover?.querySelector(".piem-chat__context-reasoning")).toBeNull();
 	});
 
@@ -456,18 +457,45 @@ describe("ContextGauge usage breakdown", () => {
 		expect((await openPopover(host))?.querySelector(".piem-chat__context-reasoning")?.textContent).toContain("1.5k");
 	});
 
-	it("renders both lines in Chinese", async () => {
+	it("shows the hour-long-cache footnote once Anthropic reports that share", async () => {
+		// The reader's only feedback that the "long" retention setting took: a dropped
+		// preference just bills at the cheaper rate and says nothing.
+		const host = await renderGauge({
+			showAgentDetails: true,
+			usage: { tokens: 3_000, cost: 0.01, requests: 2, input: 300, cacheRead: 2_700, cacheWrite: 2_000, cacheWrite1h: 1_500 },
+		});
+
+		expect((await openPopover(host))?.querySelector(".piem-chat__context-long-cache")?.textContent).toContain("1.5k");
+	});
+
+	it("omits it for a provider that writes cache but reports no hour-long share", async () => {
+		// Every non-Anthropic adapter. The cache line still shows; only the rate
+		// footnote is absent, because no rate was reported.
+		const host = await renderGauge({
+			showAgentDetails: true,
+			usage: { tokens: 3_000, cost: 0.01, requests: 2, input: 300, cacheRead: 2_700, cacheWrite: 2_000 },
+		});
+
+		const popover = await openPopover(host);
+		expect(popover?.querySelector(".piem-chat__context-cache")).not.toBeNull();
+		expect(popover?.querySelector(".piem-chat__context-long-cache")).toBeNull();
+	});
+
+	it("renders every breakdown line in Chinese", async () => {
 		const host = await renderGauge(
 			{
 				showAgentDetails: true,
-				usage: { tokens: 3_000, cost: 0.01, requests: 2, input: 300, cacheRead: 2_700, reasoning: 1_500 },
+				usage: { tokens: 3_000, cost: 0.01, requests: 2, input: 300, cacheRead: 2_700, cacheWrite: 2_000, cacheWrite1h: 1_500, reasoning: 1_500 },
 			},
 			"zh-cn",
 		);
 
 		const popover = await openPopover(host);
-		expect(popover?.querySelector(".piem-chat__context-cache")?.textContent).toContain("缓存 90%");
+		// 54%, not the 90% of the read-only fixtures above: the hit rate's denominator
+		// is the billed prompt total, and this turn wrote 2k into the cache as well.
+		expect(popover?.querySelector(".piem-chat__context-cache")?.textContent).toContain("缓存 54%");
 		expect(popover?.querySelector(".piem-chat__context-reasoning")?.textContent).toContain("含推理 1.5k");
+		expect(popover?.querySelector(".piem-chat__context-long-cache")?.textContent).toContain("保留一小时");
 	});
 });
 

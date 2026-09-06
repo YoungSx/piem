@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ContextFill, UsageTotals } from "../agent/usage";
 import {
 	contextCacheLine,
+	contextLongCacheNote,
 	contextGaugeName,
 	contextLevel,
 	contextPercent,
@@ -185,6 +186,33 @@ describe("contextCacheLine", () => {
 
 	it("translates the frame, never the numbers", () => {
 		expect(contextCacheLine(usageTotals({ input: 300, cacheRead: 2_700 }), zh)).toBe("缓存 90% · 2.7k token");
+	});
+});
+
+describe("contextLongCacheNote", () => {
+	it("names the share billed at the hour-long rate, which the cache line above already counts", () => {
+		expect(contextLongCacheNote(usageTotals({ cacheWrite: 2_000, cacheWrite1h: 1_500 }), en)).toBe(
+			"incl. 1.5k kept for an hour, at 2× the write price",
+		);
+	});
+
+	it("stays undefined when the provider reports no split", () => {
+		// Every non-Anthropic adapter: cache writes happen, the hour-long share is
+		// simply not a number they have.
+		expect(contextLongCacheNote(usageTotals({ cacheWrite: 2_000 }), en)).toBeUndefined();
+	});
+
+	it("stays undefined on a reported zero, which is what short and off retention produce", () => {
+		// Anthropic sets the field on every turn, so 0 is the normal reading under
+		// `"short"` — and it is the reading that must show nothing, or the note stops
+		// being evidence that `"long"` took effect.
+		expect(contextLongCacheNote(usageTotals({ cacheWrite: 2_000, cacheWrite1h: 0 }), en)).toBeUndefined();
+	});
+
+	it("translates", () => {
+		expect(contextLongCacheNote(usageTotals({ cacheWrite: 2_000, cacheWrite1h: 1_500 }), zh)).toBe(
+			"含 1.5k 保留一小时，写入价 2 倍",
+		);
 	});
 });
 

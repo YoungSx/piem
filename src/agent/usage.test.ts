@@ -86,6 +86,36 @@ describe("sumUsage", () => {
 		expect(totals.tokens).toBe(965);
 	});
 
+	it("accumulates the hour-long share of cacheWrite without adding it to either total", () => {
+		// `cacheWrite1h` is a subset of `cacheWrite`, which is itself already
+		// excluded from the context count — so it must move neither number. It is
+		// carried because it is the only field priced differently (2x base input
+		// against 1.25x), and because it is the one signal that the reader's "long"
+		// retention preference reached the provider.
+		const messages = [
+			assistantMessage(usage({ input: 100, output: 10, cacheWrite: 500, cacheWrite1h: 500, totalTokens: 610, cost: 0 })),
+			assistantMessage(usage({ input: 50, output: 5, cacheWrite: 300, cacheWrite1h: 120, totalTokens: 355, cost: 0 })),
+		];
+
+		const totals = sumUsage(messages);
+
+		expect(totals.cacheWrite).toBe(800);
+		expect(totals.cacheWrite1h).toBe(620);
+		expect(totals.tokens).toBe(965);
+	});
+
+	it("keeps the hour-long share unreported when a provider omits it but still writes cache", () => {
+		// Every non-Anthropic adapter reports `cacheWrite` and omits the split. A
+		// summed 0 there would render as "0 kept for an hour" — a claim about a
+		// provider that never made one.
+		const messages = [assistantMessage(usage({ input: 100, output: 10, cacheWrite: 500, totalTokens: 610, cost: 0 }))];
+
+		const totals = sumUsage(messages);
+
+		expect(totals.cacheWrite).toBe(500);
+		expect(totals.cacheWrite1h).toBeUndefined();
+	});
+
 	it("leaves the breakdown undefined while no message reported it", () => {
 		// A provider that never exposes a reasoning split omits the key entirely;
 		// summing must not dress that up as a measured zero.
@@ -185,6 +215,7 @@ function usage(parts: {
 	output: number;
 	cacheRead?: number;
 	cacheWrite?: number;
+	cacheWrite1h?: number;
 	totalTokens: number;
 	cost: number;
 	reasoning?: number;
@@ -194,6 +225,8 @@ function usage(parts: {
 		output: parts.output,
 		cacheRead: parts.cacheRead ?? 0,
 		cacheWrite: parts.cacheWrite ?? 0,
+		// Absent unless asked: only Anthropic reports the hour-long share.
+		cacheWrite1h: parts.cacheWrite1h,
 		totalTokens: parts.totalTokens,
 		// Absent unless asked: mirrors the providers that never report a split.
 		reasoning: parts.reasoning,
