@@ -256,8 +256,50 @@ export class SessionRuntime {
 	 * the flag up anyway.
 	 */
 	queueInterrupt = false;
-	/** Mid-run compactions spent on the active run; the budget is per run. */
-	midRunCompactions = 0;
+	/**
+	 * Set by {@link shouldStopAfterTurn} when the context crossed the compaction
+	 * line at a tool-result boundary — pi's README pattern: end the run rather
+	 * than swap the context underneath it, compact outside the run, `continue()`
+	 * back in. Cleared the moment the post-idle resume acts on it, so a run that
+	 * ends by abort, error, or session switch cannot leave a stale claim behind.
+	 */
+	compactionPending = false;
+	/**
+	 * The futility latch guarding {@link shouldStopAfterTurn}, in three states:
+	 *
+	 * - `null` — healthy. The hook judges every boundary on `needsCompaction`
+	 *   as usual.
+	 * - `"awaiting"` — a tidy attempt just landed (succeeded *or* failed; either
+	 *   is an attempt). Every assistant usage still in the transcript reports
+	 *   the pre-compaction total, so no reading yet describes the compacted
+	 *   context. The first post-tidy reply to reach the hook is consumed to
+	 *   answer the question: its provider-reported `usage` is the compacted
+	 *   context's real floor.
+	 * - `"futile"` — that floor reading still sits over the line. A summary
+	 *   cannot shrink a transcript whose retained tail alone exceeds the line,
+	 *   so the hook stops ending the run for compaction entirely — the loop
+	 *   flows, the provider rules on whether the context fits, and the next
+	 *   prompt's own pre-prompt compaction covers it. The latch lifts only when
+	 *   another tidy attempt sets `"awaiting"` again.
+	 *
+	 * Replaces the old `MAX_MID_RUN_COMPACTIONS` counter, which needed a budget
+	 * precisely because it could not tell this case from a healthy one.
+	 */
+	compactionGate: "awaiting" | "futile" | null = null;
+	/**
+	 * Counts the stops the user chose, so tail work scheduled before a stop can
+	 * detect it.
+	 *
+	 * The compaction resume consumes its `compactionPending` claim before the
+	 * tidy request goes out, and the tidy holds an LLM call — a stop landing
+	 * mid-tidy clears a claim that no longer exists. The resume therefore
+	 * captures this counter when it starts and re-reads it after every await,
+	 * bailing when it moved; `replaceAgent` covers the same blind spot for
+	 * session switches by making `rt.agent !== agent` true instead. The
+	 * counter needs no reset — unlike a flag, comparing against a captured
+	 * value is the reset.
+	 */
+	stopEpoch = 0;
 	/** Holds the rewind and send preparation until agent_start; streaming then owns the turn. */
 	retryInFlight = false;
 

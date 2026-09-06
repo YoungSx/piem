@@ -25,8 +25,8 @@
  *
  * ## pi's steering queue is empty except for an instant
  *
- * The `afterTurn` timing is implemented by handing pi the waiting messages
- * *from* the turn-boundary hook (`prepareNextTurnWithContext`), which pi calls
+ * The `afterTurn` timing is implemented by offering pi the waiting messages
+ * *from* the turn-boundary hook (`shouldStopAfterTurn`), which pi calls
  * immediately before it polls its steering queue. Push then drain, in one
  * iteration of pi's own loop — so between boundaries pi holds nothing.
  *

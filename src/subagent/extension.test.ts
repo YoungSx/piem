@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { clampWait, clampWaitTimeoutMs, WAIT_DEFAULT_MS, WAIT_MIN_MS, type WaitPacing } from "./waitTool";
-import { resumableTranscript, runSubagent, SUBAGENT_MAX_COMPACTIONS } from "./runner";
+import { resumableTranscript, runSubagent } from "./runner";
 import { statusOf } from "./registry";
 import { SUBAGENT_CONCURRENCY_LIMIT } from "./spawnTool";
 import { createSubagentExtension, type SubagentHost } from "./extension";
@@ -574,23 +574,26 @@ describe("runSubagent", () => {
 		expect(result.usage.requests).toBe(result.turns);
 	});
 
-	it("spends at most its compaction budget however long the run goes", async () => {
+	it("stops compacting once the first post-tidy floor proves it futile", async () => {
 		let summaries = 0;
 		// Every turn reports a full context, so the threshold trips at every
-		// boundary — the pathological case the budget exists for.
+		// boundary — the pathological case. The futility latch is the bound:
+		// turn one tidies, and the very next reply's floor reading (still
+		// over the line) latches the run out of tidying for good — the
+		// provider decides whether the context fits instead.
 		const result = await runSubagent({
 			task: "t",
 			role,
 			tools: [noopTool()],
 			model: SMALL_WINDOW_MODEL,
-			streamFn: fullContextStreamFn(SUBAGENT_MAX_COMPACTIONS + 4),
+			streamFn: fullContextStreamFn(8),
 			thinkingLevel: "off" as never,
 			models: summarizingModels(() => {
 				summaries += 1;
 			}),
 		});
 		expect(result.text).toBe("Report.");
-		expect(summaries).toBe(SUBAGENT_MAX_COMPACTIONS);
+		expect(summaries).toBe(1);
 	});
 
 	it("finishes the run when compaction itself fails", async () => {

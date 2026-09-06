@@ -138,6 +138,25 @@ function waitFor(condition: () => boolean): Promise<void> {
 	});
 }
 
+/**
+ * Like {@link waitFor} but gives up after `timeoutMs`, so a tail that never
+ * settles fails the test instead of hanging it.
+ *
+ * The compaction resume is fire-and-forget work scheduled off `agent_end` —
+ * it lands after `sendPrompt` has already returned — so every assertion about
+ * its outcomes must poll for them. A regression that stops the resume from
+ * finishing is exactly the kind of hang this timeout turns into a red test.
+ */
+async function waitForSettled(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!condition()) {
+		if (Date.now() > deadline) {
+			throw new Error("Timed out waiting for the condition.");
+		}
+		await new Promise((r) => setTimeout(r, 1));
+	}
+}
+
 class UntrashableAdapter extends MemoryAdapter {
 	async trashSystem(): Promise<boolean> {
 		throw new Error("Trash is unavailable.");
@@ -1511,12 +1530,16 @@ describe("ObsidianAgentService", () => {
 		it("T1: compacts before the next request and the summary reaches it", async () => {
 			const { service, requests, snapshots } = await runMidRunService([THRESHOLD + 1_000, 1_010]);
 
-			expect(requests.length).toBe(2);
+			// The tidy runs after `sendPrompt` returns — it is scheduled off the
+			// run's end and holds its own LLM call — so the second request only
+			// exists once the resume has completed. Poll for it.
+			await waitForSettled(() => requests.length === 2);
 			expect(requests[0]?.messages[0]?.role).not.toBe("compactionSummary");
 			expect(requests[1]?.messages[0]?.role).toBe("user");
 			expect(JSON.stringify(requests[1]?.messages[0])).toContain("MID-RUN SUMMARY");
-			expect(service.getSnapshot().messages[0]?.role).toBe("compactionSummary");
+			await waitForSettled(() => service.getSnapshot().messages[0]?.role === "compactionSummary");
 			const last = snapshots[snapshots.length - 1];
+			expect(last?.isCompacting).toBe(false);
 			expect(last?.isStreaming).toBe(false);
 			expect(last?.errorMessage).toBeUndefined();
 		});
@@ -1534,10 +1557,24 @@ describe("ObsidianAgentService", () => {
 			expect(service.getSnapshot().messages[0]?.role).not.toBe("compactionSummary");
 		});
 
-		it("T3: raises the flag while the run is still streaming", async () => {
-			const { snapshots } = await runMidRunService([THRESHOLD + 1_000, 1_010]);
+		it("T3: raises the flag after the run ends, while the tidy streams outside it", async () => {
+			const { service, snapshots } = await runMidRunService([THRESHOLD + 1_000, 1_010]);
 
-			expect(snapshots.some((s) => s.isCompacting && s.isStreaming)).toBe(true);
+			// pi's README pattern puts the tidy outside the run: it starts once the
+			// run has ended and `continue()` re-enters afterwards, so the compaction
+			// and the streaming never overlap — the opposite of what the old
+			// mid-run swap did, and the assertion below is the proof it holds. The
+			// pre-prompt attempt also flashes `isCompacting` on an idle agent, so
+			// anchor past zero to catch the resume's own tidy.
+			await waitForSettled(() =>
+				snapshots.some(
+					(s) => s.isCompacting && !s.isStreaming && (s.compactionEvent?.anchor ?? 0) > 0,
+				),
+			);
+			expect(snapshots.some((s) => s.isCompacting && s.isStreaming)).toBe(false);
+			// The tail must settle: the resume re-enters with `continue()`, so the
+			// panel cannot be left mid-run when everything has landed.
+			await waitForSettled(() => !service.getSnapshot().isCompacting && !service.getSnapshot().isStreaming);
 			const last = snapshots[snapshots.length - 1];
 			expect(last?.isCompacting).toBe(false);
 			expect(last?.isStreaming).toBe(false);
@@ -1552,20 +1589,40 @@ describe("ObsidianAgentService", () => {
 			// with no position or a position with no row.
 			const { service, snapshots } = await runMidRunService([THRESHOLD + 1_000, 1_010]);
 
-			const inFlight = snapshots.find((snapshot) => snapshot.compactionEvent?.state === "running");
-			expect(inFlight?.isCompacting).toBe(true);
+			// The tidy is the resume's own request, so it runs after the run ends;
+			// the pre-prompt attempt also draws a running row (anchored at 0), so
+			// anchor past zero to catch the resume's.
+			await waitForSettled(() =>
+				snapshots.some(
+					(snapshot) => snapshot.compactionEvent?.state === "running" && snapshot.compactionEvent.anchor > 0,
+				),
+			);
+			const inFlight = snapshots.find(
+				(snapshot) => snapshot.compactionEvent?.state === "running" && snapshot.compactionEvent.anchor > 0,
+			)!;
+			expect(inFlight.isCompacting).toBe(true);
 			/*
-			 * The first attempt of a send is the pre-prompt one, and it runs before the
-			 * user's own message joins the transcript — so its anchor is the empty tail.
-			 * That is why a *running* row is drawn at "now" rather than at its anchor:
-			 * anchoring it would put "Tidying thoughts…" above the prompt that caused
-			 * it. The anchor earns its keep on the failure path, where the row must not
+			 * The tidy here is the resume's, not a pre-prompt one: it runs on the
+			 * finished transcript, with the user's message and the tool exchange
+			 * already in it — so its anchor sits past the turn that caused it. (A
+			 * pre-prompt attempt would anchor at 0, before that message joins; this
+			 * fixture's only attempt is the resume's.) That is why a *running* row is
+			 * drawn at "now" rather than at its anchor: anchoring it would put
+			 * "Tidying thoughts…" behind rows that arrived after it started. The
+			 * anchor earns its keep on the failure path, where the row must not
 			 * drift down as the run appends past it.
 			 */
-			expect(inFlight?.compactionEvent?.anchor).toBe(0);
-			const midRun = snapshots.find((snapshot) => snapshot.compactionEvent?.state === "running" && snapshot.isStreaming);
-			expect(midRun?.compactionEvent?.anchor).toBeGreaterThan(0);
+			expect(inFlight.compactionEvent?.anchor).toBeGreaterThan(0);
+			// The pre-prompt attempt's flash is real too: a running row anchored on
+			// the empty tail, drawn at "now" so it cannot land above the prompt
+			// that caused it.
+			expect(
+				snapshots.some((snapshot) => snapshot.compactionEvent?.state === "running" && snapshot.compactionEvent.anchor === 0),
+			).toBe(true);
 
+			// The tail settles: the running event is cleared, the summary has taken
+			// the first slot, and the retained count names a row the transcript has.
+			await waitForSettled(() => !service.getSnapshot().isCompacting && !service.getSnapshot().isStreaming);
 			const settled = service.getSnapshot();
 			expect(settled.compactionEvent).toBeNull();
 			expect(settled.messages[0]?.role).toBe("compactionSummary");
@@ -1582,12 +1639,16 @@ describe("ObsidianAgentService", () => {
 		it("T4: a failed compaction does not kill the run", async () => {
 			// 401 matches none of pi-ai's retryable patterns, so the summarization
 			// request fails on the first attempt instead of backing off for seconds.
-			const { requests, snapshots } = await runMidRunService([THRESHOLD + 1_000, 1_010], {
+			const { service, requests, snapshots } = await runMidRunService([THRESHOLD + 1_000, 1_010], {
 				requestUrl: async () => ({ status: 401, headers: {}, arrayBuffer: new ArrayBuffer(0) }),
 			});
 
-			expect(requests.length).toBe(2);
+			// The failing tidy is the resume's own request, after `sendPrompt` has
+			// returned; wait for the second request to appear before reading its
+			// context, and for the tail to settle before reading the row.
+			await waitForSettled(() => requests.length === 2);
 			expect(JSON.stringify(requests[1]?.messages[0])).not.toContain("MID-RUN SUMMARY");
+			await waitForSettled(() => !service.getSnapshot().isCompacting && !service.getSnapshot().isStreaming);
 			const last = snapshots[snapshots.length - 1];
 			// Reported on the transcript row the attempt already occupied, not in the
 			// banner and no longer on the notice channel: a compaction that fails does
@@ -1611,6 +1672,11 @@ describe("ObsidianAgentService", () => {
 			requestUrlMock.mockImplementation(async () => sseResponse([summaryChunk("MID-RUN SUMMARY"), usageChunk()]));
 			await service.sendPrompt("Read the vault");
 
+			// The tidy writes the entry after `sendPrompt` returns — wait for the
+			// resume's request (which only departs once the entry is appended) and
+			// for the tail to settle, so `live` below is the finished transcript.
+			await waitForSettled(() => requests.length === 2);
+			await waitForSettled(() => !service.getSnapshot().isCompacting && !service.getSnapshot().isStreaming);
 			const live = service.getSnapshot().messages;
 			expect(live[0]?.role).toBe("compactionSummary");
 
@@ -1650,7 +1716,6 @@ describe("ObsidianAgentService", () => {
 			// than through the helper, because the run cannot settle until the
 			// gate opens and the test must press stop while it is in flight.
 			let release: (() => void) | undefined;
-			let sawCompacting = false;
 			const gated = (): Promise<never> =>
 				new Promise((_, reject) => {
 					// AbortError is terminal: pi-ai never retries it, so the rejection
@@ -1666,14 +1731,15 @@ describe("ObsidianAgentService", () => {
 			requestUrlMock.mockImplementation(gated);
 			const settledPrompt = service.sendPrompt("Read the vault");
 
-			// Wait until the compaction is in flight, then press stop.
-			for (let i = 0; i < 200 && !sawCompacting; i += 1) {
-				sawCompacting = service.getSnapshot().isCompacting;
-				if (!sawCompacting) {
-					await new Promise((r) => setTimeout(r, 5));
-				}
-			}
-			expect(sawCompacting).toBe(true);
+			// Wait until the resume's tidy is in flight, then press stop. The
+			// pre-prompt attempt also flashes `isCompacting` for an instant (with an
+			// anchor of 0, before the user's message joins), so anchor on the
+			// transcript to catch the resume's own request.
+			await waitForSettled(
+				() =>
+					service.getSnapshot().isCompacting &&
+					(service.getSnapshot().compactionEvent?.anchor ?? 0) > 0,
+			);
 
 			// The gated mock pays no attention to its signal; release it and let
 			// the service's own abort path drive the outcome.
@@ -1682,16 +1748,20 @@ describe("ObsidianAgentService", () => {
 			await settledPrompt;
 
 			// A user who pressed stop is told the run stopped; the aborted
-			// compaction must not surface as a tidy-up failure on either channel.
+			// compaction must not surface as a tidy-up failure on either channel —
+			// and the stop landed inside the tidy's await, so the resume must
+			// withdraw rather than re-enter the agent the user just stopped.
+			await waitForSettled(() => {
+				const last = snapshots[snapshots.length - 1];
+				return !last?.isCompacting && !last?.isStreaming;
+			});
 			const last = snapshots[snapshots.length - 1];
 			expect(last?.isCompacting).toBe(false);
 			expect(last?.isStreaming).toBe(false);
 			expect(last?.errorMessage ?? "").not.toContain("tidy up");
 			expect(last?.noticeMessage ?? "").not.toContain("tidy up");
-			// The hook returns `undefined` on cancel, leaving pi's loop in charge:
-			// it keeps going until a streaming call observes the aborted signal and
-			// settles the run with stopReason "aborted". The summary must not have
-			// been applied either way.
+			expect(last?.compactionEvent?.state).not.toBe("failed");
+			// The summary must not have been applied either way.
 			expect(service.getSnapshot().messages[0]?.role).not.toBe("compactionSummary");
 		});
 	});
