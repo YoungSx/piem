@@ -283,6 +283,19 @@ function textBlock(result: { content: { type: string }[] }): string {
 	return (block as { type: "text"; text: string }).text;
 }
 
+/**
+ * The id a spawn call handed back, with its shape pinned here once so no test
+ * hardcodes one. Ids are random now — the old counted ones told a model it had
+ * spawned six when it had spawned none — so every test reads the id its own
+ * spawn returned and carries that forward.
+ */
+function spawnedId(result: { details?: unknown }): string {
+	const id = (result.details as { subagentId?: string }).subagentId;
+	// No i/l/o, no 0/1: the alphabet the registry draws from.
+	expect(id).toMatch(/^subagent-[a-hjkmnp-z2-9]{6}$/);
+	return id!;
+}
+
 describe("subagent roles", () => {
 	it("composes the base prompt with the role's instructions", () => {
 		const role = findSubagentRole("scout")!;
@@ -743,7 +756,7 @@ describe("spawn/wait extension", () => {
 		const controller = new AbortController();
 		try {
 			const result = await spawn.execute("call_1", { task: "Sweep" }, controller.signal);
-			expect(result.details).toMatchObject({ subagentId: "subagent-1", role: "general", status: "running" });
+			expect(result.details).toMatchObject({ subagentId: spawnedId(result), role: "general", status: "running" });
 			expect(controller.signal.aborted).toBe(false);
 		} finally {
 			// A hung child runs until something kills it; dispose is that teardown.
@@ -753,24 +766,25 @@ describe("spawn/wait extension", () => {
 
 	it("wait collects the report with accounting details", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "The vault is clean." }]));
-		await toolNamed(tools, "spawn_subagent").execute("call_1", { task: "Sweep" }, undefined);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("call_1", { task: "Sweep" }, undefined);
 		const result = await toolNamed(tools, "wait_subagent").execute("call_2", {}, undefined);
 		expect(textBlock(result)).toContain("The vault is clean.");
 		expect(result.details).toMatchObject({
 			status: "settled",
-			subagents: [{ subagentId: "subagent-1", role: "general", status: "done", turns: 1, usage: { requests: 1 } }],
+			subagents: [{ subagentId: spawnedId(spawned), role: "general", status: "done", turns: 1, usage: { requests: 1 } }],
 		});
 	});
 
 	it("an id-less wait covers every child of the run, spawned in parallel", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "done" }]));
-		await Promise.all([
+		const spawned = await Promise.all([
 			toolNamed(tools, "spawn_subagent").execute("c1", { task: "a", role: "scout" }, undefined),
 			toolNamed(tools, "spawn_subagent").execute("c2", { task: "b" }, undefined),
 		]);
 		const result = await toolNamed(tools, "wait_subagent").execute("c3", {}, undefined);
 		const subagents = (result.details as { subagents: Array<{ subagentId: string; role: string }> }).subagents;
-		expect(subagents.map((s) => s.subagentId)).toEqual(["subagent-1", "subagent-2"]);
+		// The list keeps spawn order, ids read back as each spawn minted them.
+		expect(subagents.map((s) => s.subagentId)).toEqual(spawned.map((r) => spawnedId(r)));
 		expect(subagents.map((s) => s.role)).toEqual(["scout", "general"]);
 	});
 
@@ -778,28 +792,31 @@ describe("spawn/wait extension", () => {
 		const controller = new AbortController();
 		const extension = createSubagentExtension(makeHost(hangingStreamFn()), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+		const id = spawnedId(spawned);
 		const running = await toolNamed(tools, "wait_subagent").execute("c2", { timeoutMs: 10 }, controller.signal);
-		expect(running.details).toMatchObject({ status: "running", subagentIds: ["subagent-1"] });
+		expect(running.details).toMatchObject({ status: "running", subagentIds: [id] });
 		// The child only ends when its signal does; the wait window closing was
 		// progress, never a kill. A dead run can't wait (its signal is aborted),
 		// so the outcome is read back by id — the way any later call reads it.
 		controller.abort();
-		const settled = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
+		const settled = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: id }, undefined);
 		expect(settled.details).toMatchObject({
 			status: "settled",
-			subagents: [{ subagentId: "subagent-1", status: "failed", error: "Subagent aborted" }],
+			subagents: [{ subagentId: id, status: "failed", error: "Subagent aborted" }],
 		});
 	});
 
 	it("wait refuses unknown ids and names what was spawned", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "done" }]));
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
+		// "subagent-9" cannot be anyone's id — the suffix is always six characters —
+		// so it works as an unknown probe without a second registry.
 		expect(toolNamed(tools, "wait_subagent").execute("c2", { subagentId: "subagent-9" }, undefined)).rejects.toThrow(
 			"Unknown subagent id: subagent-9",
 		);
 		expect(toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-9" }, undefined)).rejects.toThrow(
-			"subagent-1",
+			spawnedId(spawned),
 		);
 	});
 
@@ -821,12 +838,13 @@ describe("spawn/wait extension", () => {
 		const controller = new AbortController();
 		const extension = createSubagentExtension(makeHost(hangingStreamFn()));
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+		const id = spawnedId(spawned);
 		extension.disposeAll();
-		const settled = await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: "subagent-1" }, undefined);
+		const settled = await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: id }, undefined);
 		expect(settled.details).toMatchObject({
 			status: "settled",
-			subagents: [{ subagentId: "subagent-1", status: "failed", error: "Subagent aborted" }],
+			subagents: [{ subagentId: id, status: "failed", error: "Subagent aborted" }],
 		});
 	});
 
@@ -1028,10 +1046,11 @@ describe("spawn/wait extension", () => {
 		const extension = createSubagentExtension(makeHost(hangingStreamFn()), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a", role: "scout" }, controller.signal);
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a", role: "scout" }, controller.signal);
+			const id = spawnedId(spawned);
 			const listed = await toolNamed(tools, "list_subagents").execute("c2", {}, controller.signal);
-			expect(textBlock(listed)).toContain("subagent-1");
-			expect(listed.details).toMatchObject({ subagents: [{ subagentId: "subagent-1", role: "scout", status: "running" }] });
+			expect(textBlock(listed)).toContain(id);
+			expect(listed.details).toMatchObject({ subagents: [{ subagentId: id, role: "scout", status: "running" }] });
 		} finally {
 			extension.disposeAll();
 		}
@@ -1040,11 +1059,12 @@ describe("spawn/wait extension", () => {
 	it("list_subagents names children of earlier turns rather than claiming none exist", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "done" }]));
 		const earlier = new AbortController();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, earlier.signal);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, earlier.signal);
+		const id = spawnedId(spawned);
 		const laterTurn = new AbortController();
 		const listed = await toolNamed(tools, "list_subagents").execute("c2", {}, laterTurn.signal);
-		expect(textBlock(listed)).toContain("Earlier turns spawned: subagent-1");
-		expect(listed.details).toMatchObject({ subagents: [], earlierIds: ["subagent-1"] });
+		expect(textBlock(listed)).toContain(`Earlier turns spawned: ${id}`);
+		expect(listed.details).toMatchObject({ subagents: [], earlierIds: [id] });
 	});
 
 	it("kill_subagent stops a live child and its partial work survives", async () => {
@@ -1071,18 +1091,19 @@ describe("spawn/wait extension", () => {
 		const extension = createSubagentExtension(host, { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+			const id = spawnedId(spawned);
 			// Let the first turn land so there is prefatory text to salvage.
 			await new Promise((resolve) => setTimeout(resolve, 20));
-			const killed = await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: "subagent-1" }, controller.signal);
-			expect(killed.details).toMatchObject({ subagentId: "subagent-1", killed: true });
-			const collected = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, controller.signal);
+			const killed = await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: id }, controller.signal);
+			expect(killed.details).toMatchObject({ subagentId: id, killed: true });
+			const collected = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: id }, controller.signal);
 			expect(textBlock(collected)).toContain("Found two so far.");
 			expect(textBlock(collected)).toContain("kill_subagent");
 			expect(textBlock(collected)).toContain("INCOMPLETE");
 			expect(collected.details).toMatchObject({
 				status: "settled",
-				subagents: [{ subagentId: "subagent-1", status: "incomplete", incomplete: true }],
+				subagents: [{ subagentId: id, status: "incomplete", incomplete: true }],
 			});
 		} finally {
 			extension.disposeAll();
@@ -1091,13 +1112,14 @@ describe("spawn/wait extension", () => {
 
 	it("kill_subagent reports rather than throws on a settled child and an unknown id", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "done" }]));
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
+		const id = spawnedId(spawned);
 		await toolNamed(tools, "wait_subagent").execute("c2", {}, undefined);
-		const settled = await toolNamed(tools, "kill_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
+		const settled = await toolNamed(tools, "kill_subagent").execute("c3", { subagentId: id }, undefined);
 		expect(settled.details).toMatchObject({ killed: false, reason: "already-settled" });
 		const missing = await toolNamed(tools, "kill_subagent").execute("c4", { subagentId: "subagent-9" }, undefined);
 		expect(missing.details).toMatchObject({ killed: false, reason: "not-found" });
-		expect(textBlock(missing)).toContain("subagent-1");
+		expect(textBlock(missing)).toContain(id);
 	});
 
 	it("kill_subagent refuses a child of another run", async () => {
@@ -1106,8 +1128,8 @@ describe("spawn/wait extension", () => {
 		const mine = new AbortController();
 		const theirs = new AbortController();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, theirs.signal);
-			const refused = await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: "subagent-1" }, mine.signal);
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, theirs.signal);
+			const refused = await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: spawnedId(spawned) }, mine.signal);
 			expect(refused.details).toMatchObject({ killed: false, reason: "not-yours" });
 		} finally {
 			extension.disposeAll();
@@ -1143,18 +1165,19 @@ describe("spawn/wait extension", () => {
 		const extension = createSubagentExtension(host, { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+			const id = spawnedId(spawned);
 			// Let the first turn land so there is prefatory text to salvage.
 			await new Promise((resolve) => setTimeout(resolve, 20));
-			const outcome = extension.registry.kill("subagent-1", undefined, "user");
+			const outcome = extension.registry.kill(id, undefined, "user");
 			expect(outcome).toBe("killed");
-			const entry = extension.registry.get("subagent-1")!;
+			const entry = extension.registry.get(id)!;
 			expect(entry.killedBy).toBe("user");
 			// The kill is a synchronous abort; the unwind lands a tick later. Wait
 			// for it here so the wait below reads the settled entry instead of
 			// entering a wait window for a run that just ended.
 			await entry.promise.catch(() => undefined);
-			const collected = await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: "subagent-1" }, controller.signal);
+			const collected = await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: id }, controller.signal);
 			expect(textBlock(collected)).toContain("stopped by the user");
 			expect(textBlock(collected)).toContain("Found two so far.");
 			expect(textBlock(collected)).toContain("INCOMPLETE");
@@ -1171,18 +1194,20 @@ describe("spawn/wait extension", () => {
 		const tools = extension.createTools();
 		const controller = new AbortController();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "one" }, controller.signal);
-			await toolNamed(tools, "spawn_subagent").execute("c2", { task: "two" }, controller.signal);
+			const first = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "one" }, controller.signal);
+			const second = await toolNamed(tools, "spawn_subagent").execute("c2", { task: "two" }, controller.signal);
+			const firstId = spawnedId(first);
+			const secondId = spawnedId(second);
 			// Settle the first deterministically with a tool kill, then stop all:
 			// only the second is live, so the count is 1 and the settled entry's
 			// record is left naming the tool, not overwritten by the sweep.
-			extension.registry.kill("subagent-1", controller.signal);
-			await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, controller.signal);
+			extension.registry.kill(firstId, controller.signal);
+			await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: firstId }, controller.signal);
 			const killed = extension.registry.killAllLive("user");
 
 			expect(killed).toBe(1);
-			expect(extension.registry.get("subagent-1")!.killedBy).toBe("tool");
-			expect(extension.registry.get("subagent-2")!.killedBy).toBe("user");
+			expect(extension.registry.get(firstId)!.killedBy).toBe("tool");
+			expect(extension.registry.get(secondId)!.killedBy).toBe("user");
 		} finally {
 			extension.disposeAll();
 		}
@@ -1195,7 +1220,7 @@ describe("spawn/wait extension", () => {
 		const spawn = toolNamed(tools, "spawn_subagent");
 		try {
 			for (let i = 0; i < SUBAGENT_CONCURRENCY_LIMIT; i++) {
-				await spawn.execute(`c${i}`, { task: `task ${i}` }, controller.signal);
+				await spawn.execute(`c${i}`, { task: `task ${i}` }, undefined);
 			}
 			expect(spawn.execute("over", { task: "one too many" }, controller.signal)).rejects.toThrow(
 				`which is the limit (${SUBAGENT_CONCURRENCY_LIMIT})`,
@@ -1220,8 +1245,8 @@ describe("spawn/wait extension", () => {
 	it("a long report is not cut at pi's 2000-line file limit", async () => {
 		const long = Array.from({ length: 2_600 }, (_, i) => `line ${i + 1}`).join("\n");
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: long }]));
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Enumerate" }, undefined);
-		const result = await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: "subagent-1" }, undefined);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Enumerate" }, undefined);
+		const result = await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: spawnedId(spawned) }, undefined);
 		expect(textBlock(result)).toContain("line 2600");
 		expect(result.details).not.toMatchObject({ truncated: true });
 	});
@@ -1230,9 +1255,9 @@ describe("spawn/wait extension", () => {
 		// Wide enough to exceed pi's 50KB byte budget, so the cap really lands.
 		const long = Array.from({ length: 900 }, (_, i) => `line ${i + 1}: ${"x".repeat(80)}`).join("\n");
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: long }]));
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Enumerate" }, undefined);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Enumerate" }, undefined);
 		const wait = toolNamed(tools, "wait_subagent");
-		const first = await wait.execute("c2", { subagentId: "subagent-1" }, undefined);
+		const first = await wait.execute("c2", { subagentId: spawnedId(spawned) }, undefined);
 		expect(first.details).toMatchObject({ truncated: true, totalLines: 900 });
 		// Line numbers count the report's own lines, so page one starts at 1 — the
 		// header is outside the cap on purpose.
@@ -1243,9 +1268,10 @@ describe("spawn/wait extension", () => {
 		// Follow the offset the result names, rather than computing one.
 		let next = (first.details as { nextOffset?: number }).nextOffset;
 		expect(next).toBeGreaterThan(1);
+		const id = spawnedId(spawned);
 		let last = first;
 		for (let page = 0; page < 6 && next !== undefined; page++) {
-			last = await wait.execute(`page${page}`, { subagentId: "subagent-1", offset: next }, undefined);
+			last = await wait.execute(`page${page}`, { subagentId: id, offset: next }, undefined);
 			next = (last.details as { nextOffset?: number }).nextOffset;
 		}
 		// Paging terminates, and the final page reaches the report's last line.
@@ -1277,16 +1303,17 @@ describe("spawn/wait extension", () => {
 		const extension = createSubagentExtension(host, { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, controller.signal);
 			await new Promise((resolve) => setTimeout(resolve, 20));
-			await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: "subagent-1" }, controller.signal);
+			const id = spawnedId(spawned);
+			await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: id }, controller.signal);
 			const wait = toolNamed(tools, "wait_subagent");
-			const first = await wait.execute("c3", { subagentId: "subagent-1" }, controller.signal);
+			const first = await wait.execute("c3", { subagentId: id }, controller.signal);
 			expect(textBlock(first)).toContain("INCOMPLETE");
 			expect(textBlock(first)).toContain("kill_subagent");
 			const next = (first.details as { nextOffset?: number }).nextOffset;
 			expect(next).toBeGreaterThan(1);
-			const second = await wait.execute("c4", { subagentId: "subagent-1", offset: next }, controller.signal);
+			const second = await wait.execute("c4", { subagentId: id, offset: next }, controller.signal);
 			// The warning repeats rather than appearing once at the start.
 			expect(textBlock(second)).toContain("INCOMPLETE");
 		} finally {
@@ -1323,10 +1350,10 @@ describe("spawn/wait extension", () => {
 	it("an id-less wait in a later turn names the earlier children instead of denying them", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "done" }]));
 		const earlier = new AbortController();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, earlier.signal);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, earlier.signal);
 		const laterTurn = new AbortController();
 		expect(toolNamed(tools, "wait_subagent").execute("c2", {}, laterTurn.signal)).rejects.toThrow(
-			"Earlier turns spawned: subagent-1",
+			`Earlier turns spawned: ${spawnedId(spawned)}`,
 		);
 	});
 
@@ -1353,12 +1380,12 @@ describe("spawn/wait extension", () => {
 				{ waitPacing: TEST_PACING },
 			);
 			const spawned = extension.createTools();
-			await toolNamed(spawned, "spawn_subagent").execute("c1", { task: "a" }, undefined);
+			const spawnResult = await toolNamed(spawned, "spawn_subagent").execute("c1", { task: "a" }, undefined);
 			// Long enough for the child to settle and reject with nobody waiting.
 			await new Promise((resolve) => setTimeout(resolve, 60));
 			expect(rejections).toEqual([]);
 			// The failure is still there to be read, as data rather than a crash.
-			const collected = await toolNamed(spawned, "wait_subagent").execute("c2", { subagentId: "subagent-1" }, undefined);
+			const collected = await toolNamed(spawned, "wait_subagent").execute("c2", { subagentId: spawnedId(spawnResult) }, undefined);
 			expect(collected.details).toMatchObject({ subagents: [{ status: "failed" }] });
 			extension.disposeAll();
 		} finally {
@@ -1368,11 +1395,11 @@ describe("spawn/wait extension", () => {
 
 	it("words a clean silent child as no report, not as a failure", async () => {
 		const tools = toolsWithPacing(scriptedStreamFn([{ text: "" }]));
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Find the mole" }, undefined);
+		const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Find the mole" }, undefined);
 		const result = await toolNamed(tools, "wait_subagent").execute("c2", {}, undefined);
 		expect(textBlock(result)).toContain("finished with no report");
 		expect(textBlock(result)).not.toContain("failed");
-		expect(result.details).toMatchObject({ status: "settled", subagents: [{ subagentId: "subagent-1", status: "done" }] });
+		expect(result.details).toMatchObject({ status: "settled", subagents: [{ subagentId: spawnedId(spawned), status: "done" }] });
 	});
 });
 
@@ -1489,16 +1516,16 @@ describe("follow-up errands", () => {
 			{ waitPacing: TEST_PACING },
 		);
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep Projects/" }, undefined);
-		await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: "subagent-1" }, undefined);
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep Projects/" }, undefined))
+		await toolNamed(tools, "wait_subagent").execute("c2", { subagentId: childId }, undefined);
 
 		const followUp = await toolNamed(tools, "follow_up_subagent").execute(
 			"c3",
-			{ subagentId: "subagent-1", task: "Which of them are in Archive/?" },
+			{ subagentId: childId, task: "Which of them are in Archive/?" },
 			undefined,
 		);
-		expect(followUp.details).toMatchObject({ subagentId: "subagent-1", resumed: true, status: "running" });
-		const collected = await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: "subagent-1" }, undefined);
+		expect(followUp.details).toMatchObject({ subagentId: childId, resumed: true, status: "running" });
+		const collected = await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: childId }, undefined);
 
 		// The whole point: the second request carries the first errand and its
 		// answer, so the child is not paying to work them out again.
@@ -1509,7 +1536,7 @@ describe("follow-up errands", () => {
 		expect(textBlock(collected)).toContain("Two of them are in Archive/.");
 		// One row, one id, and the errand history on the entry.
 		expect(extension.registry.all()).toHaveLength(1);
-		expect(extension.registry.get("subagent-1")!.followUps).toEqual(["Which of them are in Archive/?"]);
+		expect(extension.registry.get(childId)!.followUps).toEqual(["Which of them are in Archive/?"]);
 	});
 
 	it("reports this errand's turns to the parent and the child's whole spend to the panel", async () => {
@@ -1520,12 +1547,12 @@ describe("follow-up errands", () => {
 			waitPacing: TEST_PACING,
 		});
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined))
 		await toolNamed(tools, "wait_subagent").execute("c2", {}, undefined);
-		await toolNamed(tools, "follow_up_subagent").execute("c3", { subagentId: "subagent-1", task: "b" }, undefined);
-		const collected = await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: "subagent-1" }, undefined);
+		await toolNamed(tools, "follow_up_subagent").execute("c3", { subagentId: childId, task: "b" }, undefined);
+		const collected = await toolNamed(tools, "wait_subagent").execute("c4", { subagentId: childId }, undefined);
 
-		expect(collected.details).toMatchObject({ subagents: [{ subagentId: "subagent-1", turns: 1 }] });
+		expect(collected.details).toMatchObject({ subagents: [{ subagentId: childId, turns: 1 }] });
 		const snapshot = snapshotSubagents(extension.registry, Date.now())[0]!;
 		expect(snapshot.turns).toBe(2);
 		expect(snapshot.usage?.requests).toBe(2);
@@ -1557,17 +1584,17 @@ describe("follow-up errands", () => {
 			{ waitPacing: TEST_PACING },
 		);
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep everything" }, undefined);
-		await extension.registry.get("subagent-1")!.promise.catch(() => undefined);
-		expect(statusOf(extension.registry.get("subagent-1")!)).toBe("failed");
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep everything" }, undefined))
+		await extension.registry.get(childId)!.promise.catch(() => undefined);
+		expect(statusOf(extension.registry.get(childId)!)).toBe("failed");
 
 		const resumed = await toolNamed(tools, "follow_up_subagent").execute(
 			"c2",
-			{ subagentId: "subagent-1", task: "Carry on from where you stopped." },
+			{ subagentId: childId, task: "Carry on from where you stopped." },
 			undefined,
 		);
 		expect(resumed.details).toMatchObject({ resumed: true });
-		const collected = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
+		const collected = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: childId }, undefined);
 
 		expect(textBlock(collected)).toContain("Recovered: 3 stale notes.");
 		// The dead run's own work came along, and the tool call nothing answered did
@@ -1581,15 +1608,15 @@ describe("follow-up errands", () => {
 		const extension = createSubagentExtension(makeHost(hangingStreamFn()), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
-			const refused = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: "subagent-1", task: "b" }, undefined);
+			const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined))
+			const refused = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: childId, task: "b" }, undefined);
 
 			expect(refused.details).toMatchObject({ resumed: false, reason: "still-running" });
 			expect(textBlock(refused)).toContain("wait_subagent");
 			expect(textBlock(refused)).toContain("kill_subagent");
 			// Nothing was recorded against the child, so the record still reads as one
 			// errand that is still going.
-			expect(extension.registry.get("subagent-1")!.followUps).toEqual([]);
+			expect(extension.registry.get(childId)!.followUps).toEqual([]);
 		} finally {
 			extension.disposeAll();
 		}
@@ -1604,14 +1631,14 @@ describe("follow-up errands", () => {
 		const extension = createSubagentExtension(makeHost(hangingStreamFn()), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
-			extension.registry.kill("subagent-1", undefined, "user");
-			await extension.registry.get("subagent-1")!.promise.catch(() => undefined);
-			const refused = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: "subagent-1", task: "b" }, undefined);
+			const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined))
+			extension.registry.kill(childId, undefined, "user");
+			await extension.registry.get(childId)!.promise.catch(() => undefined);
+			const refused = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: childId, task: "b" }, undefined);
 
 			expect(refused.details).toMatchObject({ resumed: false, reason: "user-stopped" });
 			expect(textBlock(refused)).toContain("Spawn a fresh subagent");
-			expect(extension.registry.get("subagent-1")!.settled).toBe(true);
+			expect(extension.registry.get(childId)!.settled).toBe(true);
 		} finally {
 			extension.disposeAll();
 		}
@@ -1624,14 +1651,14 @@ describe("follow-up errands", () => {
 		const extension = createSubagentExtension(makeHost(scriptedStreamFn([{ text: "done" }])), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		const earlier = new AbortController();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, earlier.signal);
-		await extension.registry.get("subagent-1")!.promise;
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, earlier.signal))
+		await extension.registry.get(childId)!.promise;
 
 		const later = new AbortController();
 		const missing = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: "subagent-9", task: "b" }, later.signal);
 
 		expect(missing.details).toMatchObject({ resumed: false, reason: "not-found" });
-		expect(textBlock(missing)).toContain("subagent-1");
+		expect(textBlock(missing)).toContain(childId);
 	});
 
 	it("re-tasks a child spawned in an earlier turn, and takes over its wait scope", async () => {
@@ -1647,11 +1674,11 @@ describe("follow-up errands", () => {
 		});
 		const tools = extension.createTools();
 		const firstTurn = new AbortController();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, firstTurn.signal);
-		await extension.registry.get("subagent-1")!.promise;
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, firstTurn.signal))
+		await extension.registry.get(childId)!.promise;
 
 		const secondTurn = new AbortController();
-		const resumed = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: "subagent-1", task: "b" }, secondTurn.signal);
+		const resumed = await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: childId, task: "b" }, secondTurn.signal);
 		expect(resumed.details).toMatchObject({ resumed: true });
 		// The bare wait — no id — is the one that reads ownership.
 		const collected = await toolNamed(tools, "wait_subagent").execute("c3", {}, secondTurn.signal);
@@ -1666,14 +1693,14 @@ describe("follow-up errands", () => {
 			waitPacing: TEST_PACING,
 		});
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
-		await extension.registry.get("subagent-1")!.promise;
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined))
+		await extension.registry.get(childId)!.promise;
 		expect(extension.registry.archiveSettled()).toBe(1);
 
-		await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: "subagent-1", task: "b" }, undefined);
+		await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: childId, task: "b" }, undefined);
 
-		expect(extension.registry.get("subagent-1")!.archived).toBeUndefined();
-		await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
+		expect(extension.registry.get(childId)!.archived).toBeUndefined();
+		await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: childId }, undefined);
 	});
 
 	it("times the current errand, not the child's whole life", async () => {
@@ -1683,13 +1710,13 @@ describe("follow-up errands", () => {
 		const extension = createSubagentExtension(makeHost(answerThenHang("First.")), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined);
-			await extension.registry.get("subagent-1")!.promise;
+			const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "a" }, undefined))
+			await extension.registry.get(childId)!.promise;
 			// Age the child by an hour without ageing the errand it is about to get.
-			extension.registry.get("subagent-1")!.spawnedAt -= 3_600_000;
+			extension.registry.get(childId)!.spawnedAt -= 3_600_000;
 
-			await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: "subagent-1", task: "b" }, undefined);
-			const entry = extension.registry.get("subagent-1")!;
+			await toolNamed(tools, "follow_up_subagent").execute("c2", { subagentId: childId, task: "b" }, undefined);
+			const entry = extension.registry.get(childId)!;
 			const snapshot = snapshotSubagents(extension.registry, entry.startedAt + 2_000)[0]!;
 
 			expect(entry.startedAt - entry.spawnedAt).toBeGreaterThanOrEqual(3_600_000);
@@ -1708,16 +1735,20 @@ describe("follow-up errands", () => {
 		const tools = extension.createTools();
 		const spawn = toolNamed(tools, "spawn_subagent");
 		try {
+			let firstId = "";
 			for (let i = 0; i < SUBAGENT_CONCURRENCY_LIMIT; i++) {
-				await spawn.execute(`c${i}`, { task: `task ${i}` }, undefined);
+				const id = spawnedId(await spawn.execute(`c${i}`, { task: `task ${i}` }, undefined));
+				if (i === 0) {
+					firstId = id;
+				}
 			}
 			// Settle one and replace it, so the cap is full again while a settled
 			// child sits there waiting to be re-tasked.
-			extension.registry.kill("subagent-1", undefined);
-			await extension.registry.get("subagent-1")!.promise.catch(() => undefined);
+			extension.registry.kill(firstId, undefined);
+			await extension.registry.get(firstId)!.promise.catch(() => undefined);
 			await spawn.execute("replacement", { task: "one more" }, undefined);
 
-			const refused = await toolNamed(tools, "follow_up_subagent").execute("f1", { subagentId: "subagent-1", task: "again" }, undefined);
+			const refused = await toolNamed(tools, "follow_up_subagent").execute("f1", { subagentId: firstId, task: "again" }, undefined);
 
 			expect(refused.details).toMatchObject({ resumed: false, reason: "at-capacity" });
 			expect(textBlock(refused)).toContain(`limit (${SUBAGENT_CONCURRENCY_LIMIT})`);
@@ -1744,17 +1775,17 @@ describe("archiving from the panel", () => {
 		const controller = new AbortController();
 		const events: string[] = [];
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("c1", { task: "one" }, controller.signal);
-			await toolNamed(tools, "spawn_subagent").execute("c2", { task: "two" }, controller.signal);
+			const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "one" }, controller.signal))
+			const secondId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c2", { task: "two" }, controller.signal))
 			// Settle the first deterministically, then tidy: the second is still
 			// hanging, which is the case the sweep must not touch.
-			extension.registry.kill("subagent-1", controller.signal);
-			await extension.registry.get("subagent-1")!.promise.catch(() => undefined);
+			extension.registry.kill(childId, controller.signal);
+			await extension.registry.get(childId)!.promise.catch(() => undefined);
 			const unsubscribe = extension.registry.subscribe(() => events.push("change"));
 
 			expect(extension.registry.archiveSettled()).toBe(1);
-			expect(extension.registry.get("subagent-1")!.archived).toBe(true);
-			expect(extension.registry.get("subagent-2")!.archived).toBeUndefined();
+			expect(extension.registry.get(childId)!.archived).toBe(true);
+			expect(extension.registry.get(secondId)!.archived).toBeUndefined();
 			// The panel renders from snapshots and never polls, so a sweep that
 			// emitted nothing would leave the list showing what it had just moved.
 			expect(events).toEqual(["change"]);
@@ -1776,14 +1807,14 @@ describe("archiving from the panel", () => {
 			waitPacing: TEST_PACING,
 		});
 		const tools = extension.createTools();
-		await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
-		await extension.registry.get("subagent-1")!.promise;
+		const childId = spawnedId(await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Sweep" }, undefined))
+		await extension.registry.get(childId)!.promise;
 
 		expect(extension.registry.archiveSettled()).toBe(1);
 		const listed = await toolNamed(tools, "list_subagents").execute("c2", {}, undefined);
-		const collected = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: "subagent-1" }, undefined);
+		const collected = await toolNamed(tools, "wait_subagent").execute("c3", { subagentId: childId }, undefined);
 
-		expect(textBlock(listed)).toContain("subagent-1");
+		expect(textBlock(listed)).toContain(childId);
 		expect(textBlock(collected)).toContain("The vault is clean.");
 	});
 });
@@ -1822,12 +1853,12 @@ describe("inspector data", () => {
 		const unsubscribe = extension.registry.subscribe(() => events.push("change"));
 		const controller = new AbortController();
 		try {
-			await toolNamed(extension.createTools(), "spawn_subagent").execute(
+			const spawned = await toolNamed(extension.createTools(), "spawn_subagent").execute(
 				"c1",
 				{ task: "Sweep", role: "scout", instructions: "Be brief." },
 				controller.signal,
 			);
-			const entry = extension.registry.get("subagent-1");
+			const entry = extension.registry.get(spawnedId(spawned));
 			// The resolved spec, not its names: this is what a later errand would have
 			// to run as, so the record keeps the role and the model themselves.
 			expect(entry?.task).toBe("Sweep");
@@ -1862,14 +1893,14 @@ describe("inspector data", () => {
 	it("snapshots copy entries without exposing the live handles", async () => {
 		const extension = createSubagentExtension(makeHost(scriptedStreamFn([{ text: "The report." }])));
 		try {
-			await toolNamed(extension.createTools(), "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
+			const spawned = await toolNamed(extension.createTools(), "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
 			await toolNamed(extension.createTools(), "wait_subagent").execute("c2", {}, undefined);
 			const now = Date.now();
 			const snapshots = snapshotSubagents(extension.registry, now);
 			expect(snapshots).toHaveLength(1);
 			const snapshot = snapshots[0]!;
 			expect(snapshot).toMatchObject({
-				id: "subagent-1",
+				id: spawnedId(spawned),
 				task: "Sweep",
 				depth: 1,
 				status: "done",
@@ -1952,7 +1983,8 @@ describe("subagent ownership across conversations", () => {
 		const extension = createSubagentExtension(makeOwnedHost(hangingStreamFn(), () => owner), { waitPacing: TEST_PACING });
 		const tools = extension.createTools();
 		try {
-			await toolNamed(tools, "spawn_subagent").execute("call_1", { task: "Sweep A" }, undefined);
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("call_1", { task: "Sweep A" }, undefined);
+			const id = spawnedId(spawned);
 
 			// B's own run: a fresh signal, so the run-scoped lookup finds nothing and
 			// the fallback — the thing that used to reach across every chat — decides
@@ -1961,12 +1993,13 @@ describe("subagent ownership across conversations", () => {
 			const bRun = new AbortController().signal;
 			const listed = await toolNamed(tools, "list_subagents").execute("call_2", {}, bRun);
 			expect(textBlock(listed)).toBe("No subagents have been spawned.");
-			expect(textBlock(listed)).not.toContain("subagent-1");
+			expect(textBlock(listed)).not.toContain(id);
 
-			// Ids are process-wide and sequential, so refusing to name it is only
-			// half the fence; the other half is refusing to hand it over on a guess.
-			expect(toolNamed(tools, "wait_subagent").execute("call_3", { subagentId: "subagent-1" }, bRun)).rejects.toThrow(
-				"Unknown subagent id: subagent-1",
+			// Refusing to name it is only half the fence; the other half is refusing
+			// to hand it over on a guess. "subagent-9" cannot exist — the suffix is
+			// always six characters — so it stands in for "an id you heard somewhere".
+			expect(toolNamed(tools, "wait_subagent").execute("call_3", { subagentId: "subagent-9" }, bRun)).rejects.toThrow(
+				"Unknown subagent id: subagent-9",
 			);
 
 			// Nothing was taken away from the chat that owns it: an earlier turn's
@@ -1974,7 +2007,7 @@ describe("subagent ownership across conversations", () => {
 			owner = "chat-a";
 			const aRun = new AbortController().signal;
 			const own = await toolNamed(tools, "list_subagents").execute("call_4", {}, aRun);
-			expect(textBlock(own)).toContain("subagent-1");
+			expect(textBlock(own)).toContain(id);
 		} finally {
 			extension.disposeAll();
 		}

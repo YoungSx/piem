@@ -449,7 +449,7 @@ function RunList({
  *
  * The task text is the title, not the role and not the id. A reader scanning for
  * a particular run remembers what they asked for; "scout" describes three of
- * them and `subagent-2` describes none.
+ * them and an opaque id like `subagent-k4tq2m` describes none.
  */
 function SubagentRow({ snapshot, onSelect }: { snapshot: SubagentSnapshot; onSelect: (id: string) => void }): React.JSX.Element {
 	const t = useT();

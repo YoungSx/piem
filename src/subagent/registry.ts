@@ -21,6 +21,22 @@ export interface SubagentRunHandle {
 	start: () => Promise<SubagentRunResult>;
 }
 
+/** A short lowercase token; no easily-confused glyphs (i/l/o, 0/1). */
+function randomSuffix(length: number): string {
+	const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+	const bytes = new Uint8Array(length);
+	// Web crypto, not node's: the plugin bundles for mobile too, where the Node
+	// module either is absent or shimmed into a silent undefined.
+	crypto.getRandomValues(bytes);
+	let out = "";
+	for (const byte of bytes) {
+		// `byte % alphabet.length` cannot exceed the alphabet, but noUncheckedIndexed
+		// makes the index read possibly-undefined, so `!` closes that.
+		out += alphabet[byte % alphabet.length]!;
+	}
+	return out;
+}
+
 /** One spawned subagent's bookkeeping, from spawn to settlement. */
 export interface SubagentEntry extends SubagentRunHandle {
 	id: string;
@@ -169,7 +185,6 @@ export function statusOf(entry: SubagentEntry): "running" | "done" | "incomplete
  */
 export class SubagentRegistry {
 	private entries = new Map<string, SubagentEntry>();
-	private counter = 0;
 	/**
 	 * Change listeners, notified on spawn and settlement.
 	 *
@@ -195,9 +210,20 @@ export class SubagentRegistry {
 		}
 	}
 
+	/**
+	 * Random, not counted. The counter was process-wide, so the first child a
+	 * conversation ever spawned could read `subagent-7` — a number telling the
+	 * model it had already spawned six, and inviting it to wait on ids that
+	 * were never its own. A short suffix keeps the id copyable (a wait and a
+	 * kill both take it back) and legible in transcripts, without any ordinal
+	 * meaning to misread.
+	 */
 	nextId(): string {
-		this.counter += 1;
-		return `subagent-${this.counter}`;
+		let id = "";
+		do {
+			id = `subagent-${randomSuffix(6)}`;
+		} while (this.entries.has(id));
+		return id;
 	}
 
 	/**
