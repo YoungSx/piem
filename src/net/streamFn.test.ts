@@ -157,7 +157,7 @@ describe("createObsidianStreamFn with a custom endpoint", () => {
 		// Only the canned response matters here; the body is asserted below.
 		captureRequest();
 
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long" });
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long", maxRetries: 2 });
 		const stream = await streamFn(
 			buildCustomEndpointModel(ENDPOINT),
 			{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
@@ -181,7 +181,7 @@ describe("createObsidianStreamFn with a custom endpoint", () => {
 	it("carries the long retention preference into the request body", async () => {
 		const captured = captureRequest();
 
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long" });
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long", maxRetries: 2 });
 		await (
 			await streamFn(
 				buildCustomEndpointModel(ENDPOINT),
@@ -196,7 +196,7 @@ describe("createObsidianStreamFn with a custom endpoint", () => {
 	it("omits it when the reader has turned prompt caching off", async () => {
 		const captured = captureRequest();
 
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "none" });
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "none", maxRetries: 2 });
 		await (
 			await streamFn(
 				buildCustomEndpointModel(ENDPOINT),
@@ -223,7 +223,7 @@ describe("withRequestDefaults", () => {
 		const captured = captureRequest();
 		const bundle = createObsidianModels({ transport: "requestUrl", customEndpoint: ENDPOINT });
 		let retention: "none" | "short" | "long" = "long";
-		const models = withRequestDefaults(bundle, () => ENDPOINT.apiKey, () => retention);
+		const models = withRequestDefaults(bundle, () => ENDPOINT.apiKey, () => retention, () => 2);
 		const context = { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }], timestamp: Date.now() }] };
 
 		await models.completeSimple(buildCustomEndpointModel(ENDPOINT), context);

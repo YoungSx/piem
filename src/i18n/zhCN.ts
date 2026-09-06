@@ -257,6 +257,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		opening: "正在打开对话…",
 		// 重发窗口：先为被舍弃的分支写摘要，再发新问题，消息流全程不报。
 		resending: "正在重发您的消息…",
+		// 回合级重试的退避：连接断了但一个字都没吐，消息流无处可报。
+		retrying: "正在重试（第 {attempt} 次，共 {maxAttempts} 次）…",
 		// 序数而非总数：轮次还在飞，总数尚不存在。
 		turnSteps: "第 {count} 步",
 	},
@@ -525,6 +527,15 @@ export const zhCN: DeepPartial<EnCopy> = {
 		queueStrategyWhenDesc: "「整段回答」不会动这条回复的计划；「当前请求」更快，但可能在一长串工具调用中途改掉它的计划。",
 		queueStrategyAfterRun: "整段回答结束",
 		queueStrategyAfterTurn: "当前这次请求结束",
+		// 重试入口，折叠进高级组。0 是真实答案——两层重试一起关——要先说清楚。
+		retryEntry: "网络重试",
+		retryEntryDesc: "请求模型失败且还没吐出一个字时，Piem 会隔一小会儿再试一次，读者几乎察觉不到；只有等得久了才会有提示。填 0 表示彻底关闭重试。",
+		retryAttempts: "重试次数",
+		retryAttemptsDesc: "失败的请求再试几次。0 为关闭重试，最多 {max} 次。",
+		retryDelay: "首次重试等待（毫秒）",
+		retryDelayDesc: "第一次重试等多久，单位毫秒；之后每次翻倍，到上限为止。范围 {min} 到 {max}。",
+		retryDisplayAttempts: "重试 {count} 次",
+		retryDisplayDelay: "首次等 {ms} 毫秒",
 		sendShortcutDesc: "用哪个键发送消息。无论选哪项，Ctrl+回车 和 ⌘+回车 都能发送。",
 		sendShortcutEnter: "回车（Shift+回车 换行）",
 		sendShortcutModEnter: "Ctrl+回车 或 ⌘+回车（回车用于换行）",

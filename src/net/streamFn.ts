@@ -44,6 +44,10 @@ import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "
  *    turns are minutes apart. {@link requestDefaults} is the one place the
  *    user's preference is turned into a request field, so both the turn path and
  *    the compaction path carry the same one — see `./cacheRetention`.
+ * 4. Request retrying is the same shape: pi-ai's request layer honours
+ *    `StreamOptions.maxRetries` but defaults it to zero, so without being named
+ *    here the layer would sit unused and every transient failure would surface
+ *    as a failed request rather than a re-issued one — see `./retrySettings`.
  *
  * Auth note: a row takes either a key or a subscription, and the two resolve
  * through different halves of pi's auth. For a key the agent reads it from plugin
@@ -216,9 +220,13 @@ function createConfiguredProvider(id: string, name: string, auth: ProviderAuth):
  * renamed upstream fails to compile here instead of being spread into a request
  * that quietly ignores it.
  */
-export function requestDefaults(fetchImpl: FetchFn, cacheRetention: CacheRetention): Pick<StreamOptions, "fetch" | "cacheRetention"> {
+export function requestDefaults(
+	fetchImpl: FetchFn,
+	cacheRetention: CacheRetention,
+	maxRetries: number,
+): Pick<StreamOptions, "fetch" | "cacheRetention" | "maxRetries"> {
 	// toFetchFunction: the one named FetchFn→pi-ai conversion at this seam.
-	return { fetch: toFetchFunction(fetchImpl), cacheRetention };
+	return { fetch: toFetchFunction(fetchImpl), cacheRetention, maxRetries };
 }
 
 /**
@@ -236,9 +244,13 @@ export function withRequestDefaults(
 	bundle: ObsidianModelsBundle,
 	getApiKey: (provider: string) => string | undefined,
 	getCacheRetention: () => CacheRetention,
+	getMaxRetries: () => number,
 ): Models {
 	const { models, fetch: fetchImpl } = bundle;
-	const applyDefaults = (model: Model<Api>) => ({ apiKey: getApiKey(model.provider), ...requestDefaults(fetchImpl, getCacheRetention()) });
+	const applyDefaults = (model: Model<Api>) => ({
+		apiKey: getApiKey(model.provider),
+		...requestDefaults(fetchImpl, getCacheRetention(), getMaxRetries()),
+	});
 	return {
 		...models,
 		streamSimple: (model, context, streamOptions) => models.streamSimple(model, context, { ...streamOptions, ...applyDefaults(model) }),
@@ -260,6 +272,8 @@ export function withRequestDefaults(
 export interface ObsidianStreamFnOptions extends ObsidianModelsOptions {
 	/** How long providers are asked to keep the prompt cache alive. */
 	cacheRetention: CacheRetention;
+	/** How many times a transient request failure is re-issued before surfacing. */
+	maxRetries: number;
 }
 
 /**
@@ -275,6 +289,6 @@ export function createObsidianStreamFn(options: ObsidianStreamFnOptions): Stream
 	return (model, context, streamOptions) =>
 		models.streamSimple(model, context, {
 			...streamOptions,
-			...requestDefaults(fetchImpl, options.cacheRetention),
+			...requestDefaults(fetchImpl, options.cacheRetention, options.maxRetries),
 		});
 }

@@ -4,6 +4,15 @@ import { MIN_COMPACTION_TOKENS, readTokenCount, type CompactionConfig } from "..
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "../../session/sessionDir";
 import { readRetentionLimit, UNLIMITED_SESSION_RETENTION } from "../../session/retention";
 import {
+	DEFAULT_RETRY_SETTINGS,
+	MAX_RETRY_ATTEMPTS,
+	MAX_RETRY_BASE_DELAY_MS,
+	MIN_RETRY_BASE_DELAY_MS,
+	readRetryAttempts,
+	readRetryDelay,
+	type RetryConfig,
+} from "../../net/retrySettings";
+import {
 	compactionGroupHint,
 	compactionGroupLabel,
 	compactionKeepCopy,
@@ -79,6 +88,7 @@ export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[
 		},
 		compactionPage(host),
 		queueingPage(host),
+		retryPage(host),
 		{
 			// A heading rather than a collapsible: storage is not advanced
 			// configuration, it is something every long-term user eventually needs
@@ -137,6 +147,133 @@ function queueingPage(host: SettingsPanelHost): SettingDefinitionItem {
 			},
 		],
 	};
+}
+
+/**
+ * The two retry dials, behind a navigable entry.
+ *
+ * Advanced configuration for the same reason the compaction fields are: the
+ * defaults are pi's own, and a reader whose connection is fine has no reason to
+ * know the layer exists. What earns the paragraph `desc` on the page rather than
+ * a line on the tab is the one thing that needs saying before the numbers do —
+ * `0` is a real answer, and it turns *both* retry layers off together, the
+ * per-request budget and the turn-level rescue, because they read the same
+ * number. Splitting them into two dials would let one layer retry and the other
+ * stay silent while both look configured.
+ *
+ * `displayValue` carries the pick onto the entry, matching the compaction page:
+ * a user who tuned this once reads the value without unfolding anything.
+ */
+function retryPage(host: SettingsPanelHost): SettingDefinitionItem {
+	const { settings, t } = host;
+
+	/** Writes one field, dropping it when cleared so the row falls back to the default. */
+	const update = async (patch: RetryConfig): Promise<void> => {
+		const next: RetryConfig = { ...settings.retry, ...patch };
+		for (const [key, value] of Object.entries(next)) {
+			if (value === undefined) {
+				delete next[key as keyof RetryConfig];
+			}
+		}
+		settings.retry = Object.keys(next).length > 0 ? next : undefined;
+		await host.save();
+	};
+
+	const row = (
+		name: string,
+		desc: string,
+		placeholder: string,
+		read: () => number | undefined,
+		parse: (raw: string) => number | undefined,
+		write: (value: number | undefined) => Promise<void>,
+	): SettingGroupItem => ({
+		name,
+		// The floor and ceiling are stated in the description rather than enforced
+		// on keystroke — rewriting the field while someone types the second digit
+		// fights the user, the same judgment the compaction rows make.
+		desc,
+		render: (setting) => configureRetryRow(setting, placeholder, read(), parse, write),
+	});
+
+	return {
+		type: "page",
+		name: t.t("settings.retryEntry"),
+		desc: t.t("settings.retryEntryDesc"),
+		// Read through a function, not captured: the entry is re-read on `update()`,
+		// and a value edited inside the page has to show on the entry the reader
+		// returns to.
+		displayValue: () => describeRetryValue(host),
+		items: [
+			row(
+				t.t("settings.retryAttempts"),
+				t.t("settings.retryAttemptsDesc", { max: MAX_RETRY_ATTEMPTS }),
+				String(DEFAULT_RETRY_SETTINGS.maxRetries),
+				() => settings.retry?.maxRetries,
+				readRetryAttempts,
+				(maxRetries) => update({ maxRetries }),
+			),
+			row(
+				t.t("settings.retryDelay"),
+				t.t("settings.retryDelayDesc", { min: MIN_RETRY_BASE_DELAY_MS, max: MAX_RETRY_BASE_DELAY_MS }),
+				String(DEFAULT_RETRY_SETTINGS.baseDelayMs),
+				() => settings.retry?.baseDelayMs,
+				readRetryDelay,
+				(baseDelayMs) => update({ baseDelayMs }),
+			),
+		],
+	};
+}
+
+/**
+ * What the retry entry shows without being opened.
+ *
+ * Empty when nothing is stored, which is the honest answer: both fields then
+ * follow the plugin's defaults, and naming a number the plugin did not choose
+ * would freeze it in the reader's mind as configuration they own.
+ */
+function describeRetryValue(host: SettingsPanelHost): string {
+	const { t } = host;
+	const retry = host.settings.retry;
+	const parts: string[] = [];
+	if (retry?.maxRetries !== undefined) {
+		parts.push(t.t("settings.retryDisplayAttempts", { count: retry.maxRetries }));
+	}
+	if (retry?.baseDelayMs !== undefined) {
+		parts.push(t.t("settings.retryDisplayDelay", { ms: retry.baseDelayMs }));
+	}
+	return parts.join(" · ");
+}
+
+/**
+ * One numeric retry field.
+ *
+ * Empty means "follow the default", which is why the placeholder is the default
+ * itself rather than a hint: the box shows what will be used when it is blank.
+ * Committed on blur, like every numeric row here. The parsers reject instead of
+ * clamping (so a mistyped entry falls back to the default rather than being
+ * silently renumbered), while the stored form is clamped by
+ * `normalizeRetryConfig` and every read clamps again — the field never has to
+ * guess at the range.
+ */
+function configureRetryRow(
+	setting: Setting,
+	placeholder: string,
+	value: number | undefined,
+	parse: (raw: string) => number | undefined,
+	onChange: (value: number | undefined) => Promise<void>,
+): void {
+	setting.addText((text) => {
+		text.inputEl.type = "number";
+		text.setPlaceholder(placeholder);
+		text.setValue(value === undefined ? "" : String(value));
+		text.inputEl.addEventListener("blur", () => {
+			const parsed = parse(text.inputEl.value);
+			// Reflect what was committed so a rejected entry is visible rather than
+			// leaving the box disagreeing with what was stored.
+			text.setValue(parsed === undefined ? "" : String(parsed));
+			void onChange(parsed);
+		});
+	});
 }
 
 /**

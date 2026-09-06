@@ -2,6 +2,7 @@ import type { CacheRetention } from "@earendil-works/pi-ai";
 import type { App, ExtraButtonComponent } from "obsidian";
 import type { SignInSession } from "../../auth/signInSession";
 import type { CompactionConfig } from "../../agent/compactionSettings";
+import type { RetryConfig } from "../../net/retrySettings";
 import type { PromptQueueStrategy } from "../../agent/queueStrategy";
 import type { SkillLoadReport } from "../../agent/skillLoader";
 import type { LogLevelSetting } from "../../logging/logLevel";
@@ -212,6 +213,7 @@ export interface SettingsPanelSettings {
 	sendShortcut: SendShortcut;
 	language: LanguageSetting;
 	compaction?: CompactionConfig;
+	retry?: RetryConfig;
 	sessionRetention: number;
 	sessionDir: string;
 	userSkillsDir: string;

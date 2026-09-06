@@ -13,6 +13,12 @@ export interface ChatStatusBarProps {
 	 * compacting, or a panel that has not started a turn yet.
 	 */
 	run?: TurnProgress | null;
+	/**
+	 * The turn retry now being waited out, once announced; `undefined` when the
+	 * turn is not inside a retry episode. Rides the status line because the wait
+	 * it names has no transcript row — see {@link ChatStatusInput.retry}.
+	 */
+	retry?: { attempt: number; maxAttempts: number };
 }
 
 /**
@@ -43,7 +49,7 @@ export interface ChatStatusBarProps {
  * screen-reader-only treatment, so an idle chat spends no height on an empty row
  * while its live region stays in the DOM. See `isQuiet`.
  */
-export function ChatStatusBar({ isInitializing, isRewinding, run }: ChatStatusBarProps): React.JSX.Element {
+export function ChatStatusBar({ isInitializing, isRewinding, run, retry }: ChatStatusBarProps): React.JSX.Element {
 	const t = useT();
 	/*
 	 * The elapsed readout reads the clock at render time, not from state: every
@@ -65,7 +71,7 @@ export function ChatStatusBar({ isInitializing, isRewinding, run }: ChatStatusBa
 		return () => window.clearInterval(timer);
 	}, [isRunning]);
 	const progress = run ? runProgressText(run, Date.now(), t) : null;
-	const status = chatStatusText({ isInitializing, isRewinding }, t);
+	const status = chatStatusText({ isInitializing, isRewinding, retry }, t);
 	/*
 	 * Nothing to show, but still something to keep: the bar collapses to the
 	 * screen-reader-only treatment rather than unmounting.

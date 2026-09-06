@@ -108,6 +108,16 @@ export interface ChatStatusInput {
 	 * wait reads as the panel having done nothing.
 	 */
 	isRewinding: boolean;
+	/**
+	 * The turn retry episode in flight, once it has crossed its grace period —
+	 * `undefined` while nothing is being retried.
+	 *
+	 * The wait it names is one the transcript cannot narrate: during the backoff
+	 * the stream has produced nothing, and after the retry lands the reply simply
+	 * continues — no row ever says the connection broke. A held notice that
+	 * outlives the backoff is the one trace of it.
+	 */
+	retry?: { attempt: number; maxAttempts: number };
 }
 
 /**
@@ -138,6 +148,9 @@ export function chatStatusText(input: ChatStatusInput, t: Translator): string | 
 	}
 	if (input.isRewinding) {
 		return t.t("chatStatus.resending");
+	}
+	if (input.retry) {
+		return t.t("chatStatus.retrying", { attempt: input.retry.attempt, maxAttempts: input.retry.maxAttempts });
 	}
 	return null;
 }

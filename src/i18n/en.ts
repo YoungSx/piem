@@ -481,6 +481,10 @@ export const en = {
 		// The retry/edit window: a branch summary request runs before the
 		// replacement send, and the transcript narrates none of it.
 		resending: "Resending your message…",
+		// The turn retry's backoff: the connection broke before anything streamed,
+		// so there is no transcript row to say so. Counting from 1, like the
+		// request layer's own wording does.
+		retrying: "Retrying (attempt {attempt} of {maxAttempts})…",
 		// Ordinal, not a total: the run is mid-flight, so no total exists to name.
 		turnSteps: "step {count}",
 	},
@@ -938,6 +942,21 @@ export const en = {
 			"The whole answer leaves the reply's plan intact. The current request is sooner, and can change a long run of tool calls halfway through it.",
 		queueStrategyAfterRun: "The whole answer is finished",
 		queueStrategyAfterTurn: "The current request is finished",
+		/**
+		 * The retry entry, folded into the advanced group (issue: the retry layer
+		 * shipped silent). `0` needs naming up front because it is a real answer —
+		 * it turns both retry layers off together — and a reader setting it to
+		 * zero should know that is what they are doing.
+		 */
+		retryEntry: "Network retries",
+		retryEntryDesc:
+			"How hard Piem tries when a request to the model fails before any text arrives: the attempt is replayed after a short wait, and the reader sees nothing unless the wait drags on. Zero turns retrying off.",
+		retryAttempts: "Retry attempts",
+		retryAttemptsDesc: "How many times a failed request is tried again. Zero disables retrying; the most allowed is {max}.",
+		retryDelay: "First retry wait (ms)",
+		retryDelayDesc: "How long the first retry waits, in milliseconds. Later retries double this, up to the cap. Between {min} and {max}.",
+		retryDisplayAttempts: "{count} retries",
+		retryDisplayDelay: "{ms} ms first wait",
 		/**
 		 * Names what the other key does under each option, because that is the
 		 * actual trade: whichever key does not send has to make a new line, and a
