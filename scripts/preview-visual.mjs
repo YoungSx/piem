@@ -404,6 +404,75 @@ async function mountChat({ streamFn, settings, drive, askUserBroker }) {
 
 const SCENARIOS = {};
 
+/*
+ * The mobile composer fold: the top row with its chevron, and what pressing
+ * that chevron leaves behind. Both states come from the real Platform flag and
+ * the real button, not a fixture — the fold's whole promise is what it keeps
+ * (the context row, the toggle, queued words) and what it drops (the draft),
+ * and a hand-written page could not be trusted to make that distinction.
+ *
+ * The contact-sheet shape is deliberate: `page()` renders one panel at three
+ * widths, but the fold is a mobile-only branch, so what needs comparing is the
+ * expanded against the folded panel side by side.
+ */
+SCENARIOS["chat-mobile-fold"] = async () => {
+	const { platformMock } = await import("../src/testUtils/obsidianStub.ts");
+	const previousMobile = platformMock.isMobile;
+	platformMock.isMobile = true;
+	try {
+		const { element: expanded, cleanup: cleanupExpanded } = await mountChat({
+			streamFn: scriptedStreamFn([CHIPS_JSON, "Here are five bullets from *Deep Work* — the first one is the thesis."]),
+			drive: async (service) => {
+				await settle(() => document.querySelectorAll(".piem-chat__quick-action").length >= 2);
+				// One exchanged turn, so the page shows a reading phone: a reply on
+				// screen and a composer worth folding away beneath it.
+				await service.sendPrompt("Summarize Books/Deep Work.md in five bullets");
+				await settle(() => service.getSnapshot().isStreaming === false && document.querySelector(".piem-chat__message--assistant") !== null);
+			},
+		});
+
+		document.body.replaceChildren();
+		const { element: folded, cleanup: cleanupFolded } = await mountChat({
+			streamFn: scriptedStreamFn([CHIPS_JSON, "Here are five bullets from *Deep Work* — the first one is the thesis."]),
+			settings: { ...makeSettings(), mobileComposerCollapsed: true },
+			drive: async (service) => {
+				await settle(() => document.querySelectorAll(".piem-chat__quick-action").length >= 2);
+				await service.sendPrompt("Summarize Books/Deep Work.md in five bullets");
+				await settle(() => service.getSnapshot().isStreaming === false && document.querySelector(".piem-chat__message--assistant") !== null);
+				// The folded panel must owe its shape to the persisted field —
+				// assert the draft rows are truly gone before the page is taken.
+				if (document.querySelector(".piem-chat__composer-bar") !== null || document.querySelector("textarea") !== null) {
+					throw new Error("the folded panel still renders the draft rows");
+				}
+			},
+		});
+
+		const cell = (panel, label) =>
+			`<figure><figcaption>${label}</figcaption><div class="harness-leaf harness-leaf--phone"><div class="view-content">${panel}</div></div></figure>`;
+		const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>mobile composer fold</title><style>
+:root {${TOKENS}}
+body { background: #191919; color: var(--text-normal); font-family: var(--font-interface); margin: 0; padding: 16px; display: flex; gap: 20px; align-items: flex-start; }
+figure { margin: 0; }
+figcaption { color: #777; font-size: 10px; margin-bottom: 3px; }
+/* The leaf at phone width — the only width the fold exists at. */
+.harness-leaf { background: var(--background-secondary); contain: strict; isolation: isolate; height: 640px; width: 390px; }
+.view-content { height: 100%; width: 100%; }
+${styles}
+${OBSIDIAN_CORE_SHIM}
+body { background: #191919; }
+</style></head><body>
+${cell(expanded.outerHTML, "expanded · 390px")}
+${cell(folded.outerHTML, "folded · 390px")}
+</body></html>`;
+		await cleanupExpanded();
+		await cleanupFolded();
+		return { element: null, cleanup: async () => {}, html, width: 2 * 390 + 2 * 20 + 32 + 40, height: 700 };
+	} finally {
+		platformMock.isMobile = previousMobile;
+	}
+};
+
 SCENARIOS["chat-empty"] = async () => {
 	const { element, cleanup } = await mountChat({
 		streamFn: scriptedStreamFn([CHIPS_JSON]),
@@ -1846,7 +1915,11 @@ async function main() {
 	mkdirSync(OUT_DIR, { recursive: true });
 	const CHAT_WIDTHS = [300, 390, 560];
 	const manifest = [];
+	// A filter for iterating on one page: everything else stays out of the run,
+	// so its (possibly unrelated) failures cannot crowd out the one in focus.
+	const only = process.env.PREVIEW_ONLY;
 	for (const [name, build] of Object.entries(SCENARIOS)) {
+		if (only && name !== only) continue;
 		try {
 			const built = await build();
 			const { element, cleanup } = built;
