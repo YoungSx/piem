@@ -411,7 +411,17 @@ async function testDraftProvider(host: SettingsPanelHost, draft: ProviderConfig)
 		transport: host.settings.networkTransport,
 		providers: [draft],
 	});
-	return testProviderConnection(models, draft, host.settings.models, host.t, { fetch: fetchImpl });
+	const started = Date.now();
+	try {
+		const result = await testProviderConnection(models, draft, host.settings.models, host.t, { fetch: fetchImpl });
+		logConnectionTest(host, { kind: "provider", target: draft.name, started, ok: result.ok, detail: result.detail });
+		return result;
+	} catch (error) {
+		// `attachTestButton` renders the throw, but nothing else records it — the
+		// modal closes and the failure is gone. Warn so the log tells the story too.
+		logConnectionTest(host, { kind: "provider", target: draft.name, started, ok: false, error });
+		throw error;
+	}
 }
 
 /** Same, for a model draft: the provider it names is resolved from saved settings. */
@@ -424,7 +434,57 @@ async function testDraftModel(host: SettingsPanelHost, draft: ModelConfig): Prom
 		transport: host.settings.networkTransport,
 		providers: [provider],
 	});
-	return testModelConnection(models, draft, provider, host.t, { fetch: fetchImpl });
+	const started = Date.now();
+	try {
+		const result = await testModelConnection(models, draft, provider, host.t, { fetch: fetchImpl });
+		logConnectionTest(host, {
+			kind: "model",
+			target: describeModelConfig(draft),
+			provider: provider.name,
+			started,
+			ok: result.ok,
+			detail: result.detail,
+		});
+		return result;
+	} catch (error) {
+		logConnectionTest(host, { kind: "model", target: describeModelConfig(draft), provider: provider.name, started, ok: false, error });
+		throw error;
+	}
+}
+
+/**
+ * Records one connection test in the log.
+ *
+ * A failure warns — `warn` is the default level, so the failed probe is visible
+ * without turning the dial — and a success lands at `info`, loud enough for the
+ * sessions that opt in without spamming every run. The detail names the row and
+ * carries the endpoint's own message, but never the draft: the key never enters
+ * this function's arguments, and the log must stay true to that.
+ */
+export function logConnectionTest(
+	host: SettingsPanelHost,
+	facts: {
+		kind: "provider" | "model";
+		target: string;
+		provider?: string;
+		started: number;
+		ok?: boolean;
+		detail?: string;
+		error?: unknown;
+	},
+): void {
+	const detail = () => ({
+		target: facts.target,
+		...(facts.provider ? { provider: facts.provider } : {}),
+		ms: Date.now() - facts.started,
+		...(facts.detail ? { detail: facts.detail } : {}),
+		...(facts.error !== undefined ? { error: String(facts.error) } : {}),
+	});
+	if (facts.error !== undefined || facts.ok === false) {
+		host.logger.warn(`Connection test failed (${facts.kind})`, detail);
+	} else if (facts.ok === true) {
+		host.logger.info(`Connection test passed (${facts.kind})`, detail);
+	}
 }
 
 function listingCacheFor(transport: NetworkTransport): ModelListingCache {
