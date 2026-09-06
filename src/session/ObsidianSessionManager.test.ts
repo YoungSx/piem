@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { DataAdapter, ListedFiles, Stat } from "obsidian";
-import { ObsidianSessionManager, type SessionPolicy } from "./ObsidianSessionManager";
+import { ObsidianSessionManager, sessionIdFromSessionPath, type SessionPolicy } from "./ObsidianSessionManager";
 import { UNLIMITED_SESSION_RETENTION } from "./retention";
 
 const CONFIG_DIR = `.${"obsidian"}`;
@@ -784,5 +784,49 @@ describe("ObsidianSessionManager stored search", () => {
 		const hits = await collect(new ObsidianSessionManager(adapter, SESSION_DIR, CWD), "still findable");
 
 		expect(hits.map((hit) => hit.path)).toEqual([healthy]);
+	});
+});
+
+describe("sessionIdFromSessionPath", () => {
+	it("recovers the id from a pi-shaped log path", () => {
+		// pi's own name: the timestamp half replaces `:` and `.` with `-`, so it
+		// holds no underscore and the id starts at the last one.
+		expect(sessionIdFromSessionPath(`${SESSION_DIR}/2026-09-06T08-09-10-123Z_abc123.jsonl`)).toBe("abc123");
+	});
+
+	it("returns null for anything pi did not name", () => {
+		expect(sessionIdFromSessionPath(`${SESSION_DIR}/hand-renamed.jsonl`)).toBe(null);
+		expect(sessionIdFromSessionPath(`${SESSION_DIR}/notes.md`)).toBe(null);
+		expect(sessionIdFromSessionPath(`${SESSION_DIR}/2026-09-06T08-09-10-123Z_.jsonl`)).toBe(null);
+	});
+});
+
+describe("ObsidianSessionManager delete announcement", () => {
+	it("tells the listener which session id was removed", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const created = await manager.createSession(DEFAULTS);
+		const deleted: string[] = [];
+		manager.onSessionDeleted = (sessionId) => deleted.push(sessionId);
+
+		await manager.deleteSession(created.path);
+
+		expect(deleted).toHaveLength(1);
+		expect(deleted[0]).toBe(created.id);
+	});
+
+	it("stays silent for a path pi did not name, rather than feeding a guess to the listener", async () => {
+		const memory = new MemoryAdapter();
+		const adapter = memory as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const created = await manager.createSession(DEFAULTS);
+		const renamed = created.path.replace(/[^/]+\.jsonl$/, "hand-renamed.jsonl");
+		await memory.rename(created.path, renamed);
+		const deleted: string[] = [];
+		manager.onSessionDeleted = (sessionId) => deleted.push(sessionId);
+
+		await manager.deleteSession(renamed);
+
+		expect(deleted).toHaveLength(0);
 	});
 });

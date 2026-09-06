@@ -111,6 +111,14 @@ export class ObsidianSessionManager {
 	private readonly claimed = new Set<string>();
 	/** Which hydrated session the legacy single-session API surface reads. */
 	private activePath: string | null = null;
+	/**
+	 * Told, best effort, when a session file has been removed. Manual deletes and
+	 * retention eviction both funnel through {@link deleteSession}, so this is
+	 * the one announcement side state living beside the session log — composer
+	 * drafts — can learn its chat is gone from. Fire and forget from here: the
+	 * listener owns its errors, and the manager holds no logger to report them.
+	 */
+	onSessionDeleted: ((sessionId: string) => void) | null = null;
 
 	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string) {
 		this.fs = new ObsidianSessionFileSystem(adapter);
@@ -239,6 +247,13 @@ export class ObsidianSessionManager {
 		this.claimed.delete(target);
 		if (this.activePath === target) {
 			this.activePath = null;
+		}
+		// Announced after the file is truly gone: a listener racing the removal
+		// would recreate state the caller just asked to bury. Best effort — the
+		// delete itself already succeeded and must not inherit a listener's throw.
+		const sessionId = sessionIdFromSessionPath(target);
+		if (sessionId) {
+			this.onSessionDeleted?.(sessionId);
 		}
 	}
 
@@ -816,6 +831,24 @@ function fixedSessionPolicy(sessionDir: string): SessionPolicy {
 export function getPluginSessionDir(app: App, plugin: Plugin): string {
 	const pluginDir = plugin.manifest.dir ?? `${app.vault.configDir}/plugins/${plugin.manifest.id}`;
 	return `${pluginDir}/sessions`;
+}
+
+/**
+ * Recovers a session's id from its log path, the inverse of pi's
+ * `sessionFileName` — `<ISO timestamp>_<id>.jsonl`, where the timestamp half
+ * holds no underscore, so the id starts at the last one. `null` for anything
+ * else: sessions not named by pi (hand-renamed, foreign) have no id to recover,
+ * and a listener keyed by id must not be fed a guess.
+ */
+export function sessionIdFromSessionPath(path: string): string | null {
+	const base = path.split("/").pop() ?? "";
+	if (!base.endsWith(".jsonl")) {
+		return null;
+	}
+	const stem = base.slice(0, -".jsonl".length);
+	const cut = stem.lastIndexOf("_");
+	const id = cut === -1 ? "" : stem.slice(cut + 1);
+	return id || null;
 }
 
 function extractMessageText(message: AgentMessage): string {

@@ -12,13 +12,18 @@ const { DraftStore } = await import("../session/DraftStore");
 const { useSessionDraft } = await import("./useSessionDraft");
 const { createRoot } = await import("react-dom/client");
 
-const DRAFT_PATH = "drafts.json";
+const SESSION_DIR = "sessions";
 
 class MemoryAdapter {
 	private readonly files = new Map<string, string>();
+	private readonly folders = new Set<string>();
 
 	async exists(path: string): Promise<boolean> {
-		return this.files.has(path);
+		return this.files.has(path) || this.folders.has(path);
+	}
+
+	async mkdir(path: string): Promise<void> {
+		this.folders.add(path);
 	}
 
 	async write(path: string, data: string): Promise<void> {
@@ -31,6 +36,19 @@ class MemoryAdapter {
 			throw new Error(`Missing file: ${path}`);
 		}
 		return content;
+	}
+
+	async remove(path: string): Promise<void> {
+		this.files.delete(path);
+	}
+
+	async rename(path: string, newPath: string): Promise<void> {
+		const content = this.files.get(path);
+		if (content === undefined) {
+			throw new Error(`Missing file: ${path}`);
+		}
+		this.files.delete(path);
+		this.files.set(newPath, content);
 	}
 }
 
@@ -143,7 +161,7 @@ describe("useSessionDraft", () => {
 });
 
 function createStore(): InstanceType<typeof DraftStore> {
-	return new DraftStore(new MemoryAdapter() as unknown as DataAdapter, DRAFT_PATH);
+	return new DraftStore(new MemoryAdapter() as unknown as DataAdapter, SESSION_DIR);
 }
 
 async function mount(

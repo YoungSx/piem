@@ -674,7 +674,16 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					onOpenSession={(path) => void service.openSession(path)}
 					onNewSession={() => void service.newSession()}
 					onRenameSession={(name) => void service.renameSession(name)}
-					onDeleteSession={(path) => void service.deleteSession(path)}
+					onDeleteSession={(path) => {
+						// Deleting the focused chat empties the composer with it: the
+						// scope switch that follows would otherwise hand the unsent
+						// text back to the store, and the draft file for a session
+						// that no longer exists would be written right back.
+						if (path === snapshot.session?.path) {
+							clearDraft();
+						}
+						void service.deleteSession(path);
+					}}
 					onSearchSessions={(text, options) => service.searchSessions(text, options)}
 					onExportSession={
 						() =>

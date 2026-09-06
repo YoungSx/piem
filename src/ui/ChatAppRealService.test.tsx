@@ -175,6 +175,19 @@ function memoryAdapter(): DataAdapter {
 		async trashLocal(path: string): Promise<void> {
 			files.delete(path);
 		},
+		// Draft files are removed directly, bypassing the session file system's
+		// trash step — side-car state, not a chat log.
+		async remove(path: string): Promise<void> {
+			files.delete(path);
+		},
+		async rename(path: string, newPath: string): Promise<void> {
+			const content = files.get(path);
+			if (content === undefined) {
+				throw new Error(`Missing file: ${path}`);
+			}
+			files.delete(path);
+			files.set(newPath, content);
+		},
 	} as unknown as DataAdapter;
 }
 
@@ -236,8 +249,9 @@ describe("ChatApp × real service (issue #168)", () => {
 		const adapter = options.yieldIO ? yieldingAdapter(memoryAdapter()) : memoryAdapter();
 		// The real view passes a DraftStore; the composer hook behaves
 		// differently with and without one, so the white-screen repro has to
-		// match production rather than the store-less harness.
-		const draftStore = new DraftStore(adapter, `${SESSION_DIR}/drafts.json`);
+		// match production rather than the store-less harness. The store now
+		// takes the session directory and keeps drafts under `drafts/`.
+		const draftStore = new DraftStore(adapter, SESSION_DIR);
 		const settings: PiemSettings = {
 			...DEFAULT_SETTINGS,
 			providers: [
