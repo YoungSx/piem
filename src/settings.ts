@@ -159,6 +159,16 @@ export interface PiemSettings {
 	 */
 	userSkillsDir: string;
 	/**
+	 * Names of skills turned off on the Skills tab, by name across all layers.
+	 *
+	 * A name, not a path or layer: the merge lets a vault skill override a
+	 * builtin of the same name, and the user's intent in disabling either is
+	 * "that name should not load", so the filter matches the merged output. An
+	 * entry naming nothing currently installed is harmless — it disables
+	 * nothing and is rewritten away only if the row is toggled again.
+	 */
+	disabledSkills: string[];
+	/**
 	 * Threshold below which log records are discarded.
 	 *
 	 * Read live by the logger through the settings closure, so a change on the
@@ -184,6 +194,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	sessionRetention: DEFAULT_SESSION_RETENTION,
 	sessionDir: DEFAULT_SESSION_DIR,
 	userSkillsDir: "",
+	disabledSkills: [],
 	logLevel: DEFAULT_LOG_LEVEL,
 	mcpServers: [],
 };
@@ -260,6 +271,13 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// clearing the field would lose the directory the user's desktop configured
 		// — see `normalizeUserSkillsDir` for why that shapes its return.
 		userSkillsDir: normalizeUserSkillsDir(data?.userSkillsDir) ?? "",
+		// Non-strings and duplicates from a hand-edited data.json are dropped
+		// rather than carried: the filter below reads this list on every skill
+		// load, and a Set would forgive both — but the persisted file is the one
+		// place the list should stay clean.
+		disabledSkills: Array.from(
+			new Set((Array.isArray(data?.disabledSkills) ? data.disabledSkills : []).filter((name): name is string => typeof name === "string")),
+		),
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
@@ -642,6 +660,10 @@ export class PiemSettingTab extends PluginSettingTab {
 					// folder reattaching between them. `refreshAgent` above is what
 					// makes this current, and the panel awaits it before every render.
 					lastSkillLoad: () => this.plugin.agentSkillLoad(),
+					// The agent's merged catalog before the disabled filter — the toggle
+					// sections render it, and a disabled skill keeps its row with the
+					// switch down so it can be turned back on.
+					catalog: () => this.plugin.agentSkillCatalog(),
 					// Probed rather than Platform.isDesktop: the same signal
 					// loadUserSkills skips on, so the panel and the loader can
 					// never disagree about whether this device has a node fs.

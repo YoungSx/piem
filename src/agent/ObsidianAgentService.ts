@@ -69,7 +69,16 @@ import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
 import { createSubagentExtension } from "../subagent/extension";
 import { OBSIDIAN_AGENT_SYSTEM_PROMPT } from "./systemPrompt";
-import { composeSystemPrompt, emptySkillLoadReport, expandSkill, findSkill, loadVaultSkills, mergeSkills, type SkillLoadReport } from "./skillLoader";
+import {
+	composeSystemPrompt,
+	emptySkillLoadReport,
+	expandSkill,
+	findSkill,
+	loadVaultSkills,
+	mergeSkillsWithSource,
+	type SkillCatalogEntry,
+	type SkillLoadReport,
+} from "./skillLoader";
 import { loadUserSkills, type UserSkillsLoad } from "../skills/userSkills";
 import type { Skill } from "@earendil-works/pi-agent-core";
 import { describeAgentEvent } from "./agentEventLog";
@@ -714,6 +723,16 @@ export class ObsidianAgentService {
 	 * finished load rather than awaiting one.
 	 */
 	private skills: Skill[] = [];
+	/**
+	 * The last merged set with provenance, before the disabled filter.
+	 *
+	 * The Skills tab lists every skill it can switch off — including disabled
+	 * ones, whose rows must keep rendering with the switch down — so the panel
+	 * needs the pre-filter catalog, and each row needs to know which layer it
+	 * came from to draw the right controls. Undefined entries never occur; the
+	 * field is reset alongside {@link skills} on every load and fallback.
+	 */
+	private skillCatalog: SkillCatalogEntry[] = [];
 	/**
 	 * Warnings from the last skill load, kept apart by layer.
 	 *
@@ -3587,7 +3606,14 @@ export class ObsidianAgentService {
 		// picks up the skills it wrote there, and a vault skill of the same
 		// name still wins.
 		const userLoad = await this.loadUserSkillsFn(this.getSettings().userSkillsDir);
-		const skills = mergeSkills(createBuiltinSkills(this.t()), userLoad.skills, vaultSkills);
+		const catalog = mergeSkillsWithSource(createBuiltinSkills(this.t()), userLoad.skills, vaultSkills);
+		this.skillCatalog = catalog;
+		// One filter point for every consumer — prompt, read_skill, slash
+		// commands, subagents all read `this.skills`. Filtering by name on the
+		// merged output (not per layer) is what makes a disabled "summarize"
+		// stay disabled even when a vault file of that name shadows the builtin.
+		const disabled = new Set(this.getSettings().disabledSkills);
+		const skills = catalog.map((entry) => entry.skill).filter((skill) => !disabled.has(skill.name));
 		this.skills = skills;
 		this.lastSkillLoad = { ...this.lastSkillLoad, vault: diagnostics, user: userLoad };
 		this.logCommandDiagnostics();
@@ -3650,7 +3676,9 @@ export class ObsidianAgentService {
 			await this.reloadSkills();
 		} catch (error) {
 			this.log.error("Skill load failed; continuing without skills", () => ({ error: String(error) }));
-			this.skills = createBuiltinSkills(this.t());
+			const builtins = mergeSkillsWithSource(createBuiltinSkills(this.t()));
+			this.skillCatalog = builtins;
+			this.skills = builtins.map((entry) => entry.skill).filter((skill) => !new Set(this.getSettings().disabledSkills).has(skill.name));
 			this.lastSkillLoad = emptySkillLoadReport();
 		}
 	}
@@ -3665,6 +3693,19 @@ export class ObsidianAgentService {
 	 */
 	getSkillLoad(): SkillLoadReport {
 		return this.lastSkillLoad;
+	}
+
+	/**
+	 * Every skill the last load merged in, with its layer, before the disabled
+	 * filter — the Skills tab's catalog.
+	 *
+	 * The panel rather than the agent owns the toggle UI, but the agent owns the
+	 * load: rows the filter removed must still appear, switch down, or a
+	 * disabled skill would become un-togglable — gone from the list it was
+	 * switched off in.
+	 */
+	getSkillCatalog(): SkillCatalogEntry[] {
+		return this.skillCatalog;
 	}
 
 	/**

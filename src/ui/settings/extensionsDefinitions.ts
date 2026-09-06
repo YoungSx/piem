@@ -121,16 +121,80 @@ function problemKey(diagnostic: SkillDiagnostic): string {
 	return `${path}|${message}`;
 }
 
-/** The Extensions tab's sections: vault skills, user skills, then MCP servers. */
+/** The Extensions tab's sections: built-in skills, vault skills, user skills, then MCP servers. */
 export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPanelState): SettingDefinitionItem[] {
 	revalidateSkills(host, state);
 	const snapshot = state.skillsSnapshot;
 	return [
+		builtinSkillsSection(host),
 		vaultSkillsList(host, state, snapshot),
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
 		mcpList(host),
 	];
+}
+
+/**
+ * The factory-shipped skills, each with its enable switch.
+ *
+ * A `group` rather than a `list`: these rows cannot be added, updated, or
+ * deleted — they are constants inside the plugin — so the only control they
+ * carry is the switch. The rows come from the agent's catalog, not from a
+ * builtin constant read here, for the same reason the reports below do: a
+ * vault skill named like a builtin shadows it in the merge, and the catalog is
+ * what says so — the shadowed builtin must not render a switch for a skill the
+ * agent no longer has, while the vault row below carries the real one.
+ *
+ * First on the tab, ahead of the vault list: these load for every install and
+ * are the switches a reader is most likely hunting for, while the vault section
+ * owns the import affordance that defines it.
+ */
+function builtinSkillsSection(host: SettingsPanelHost): SettingDefinitionItem {
+	const { t } = host;
+	const builtins = host.skills.catalog().filter((entry) => entry.source === "builtin");
+	return {
+		type: "group",
+		heading: t.t("skills.builtinHeading"),
+		items: [
+			sectionNote(t.t("skills.builtinDesc")),
+			...builtins.map(
+				(entry): SettingGroupItem => ({
+					name: entry.skill.name,
+					desc: entry.skill.description,
+					render: (setting) => configureSkillToggle(setting, host, entry.skill.name),
+				}),
+			),
+		],
+	};
+}
+
+/**
+ * One skill's enable switch, shared by all three layers' rows.
+ *
+ * The switch writes a name into `disabledSkills` and saves; the reload happens
+ * on the save path (`refreshConfiguration` re-reads skills like any other
+ * settings change), so there is one road from "switch flipped" to "the agent's
+ * list changed" and no local rebuild here — a rebuild would replace the row out
+ * from under the very switch the user just moved, the trap the MCP toggle's
+ * comment documents.
+ *
+ * Mounted before `onChange` is registered, so the initial `setValue` cannot
+ * read as a flip: Obsidian's `ToggleComponent.setValue` calls the change
+ * callback, and a callback attached first would save on every render. There is
+ * no reconciliation after that — the switch stays where the user left it and
+ * the save's own verdict is the reload — so unlike the MCP toggle this needs no
+ * correcting fence.
+ */
+function configureSkillToggle(setting: Setting, host: SettingsPanelHost, name: string): void {
+	setting.addToggle((toggle) => {
+		toggle.setValue(!host.settings.disabledSkills.includes(name));
+		toggle.onChange((enabled) => {
+			host.settings.disabledSkills = enabled
+				? host.settings.disabledSkills.filter((row) => row !== name)
+				: [...host.settings.disabledSkills, name];
+			void host.save();
+		});
+	});
 }
 
 /**
@@ -221,6 +285,10 @@ function vaultSkillRow(host: SettingsPanelHost, state: SettingsPanelState, row: 
 		name: row.name,
 		desc: describeSkillRow(row, t),
 		render: (setting) => {
+			// The switch rides ahead of the file actions, mirroring the toggle's
+			// place on the built-in rows: on/off is the question a reader answers
+			// most often, and Open/Update/Delete are the rarer errands.
+			configureSkillToggle(setting, host, row.name);
 			// The path always names a real file: pi only reports skills it actually
 			// loaded, so opening it needs no existence check beyond TFile's own.
 			setting.addButton((button) => {
@@ -335,6 +403,10 @@ function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, s
 									// length limit; past the budget the row folds instead of
 									// stretching the list.
 									setFoldableDescription(setting, skill.description, t);
+									// The same switch every other skill row carries — these are
+									// read-only as files, but whether the agent may use them is
+									// this panel's own setting.
+									configureSkillToggle(setting, host, skill.name);
 								},
 							}),
 						)),

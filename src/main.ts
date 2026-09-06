@@ -16,7 +16,8 @@ import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
 import { ObsidianAgentService } from "./agent/ObsidianAgentService";
 import { McpManager } from "./mcp/mcpManager";
-import { emptySkillLoadReport, type SkillLoadReport } from "./agent/skillLoader";
+import { emptySkillLoadReport, mergeSkillsWithSource, type SkillCatalogEntry, type SkillLoadReport } from "./agent/skillLoader";
+import { createBuiltinSkills } from "./agent/builtinSkills";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
 import { requestNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
@@ -528,6 +529,21 @@ export default class PiemPlugin extends Plugin {
 	 */
 	agentSkillLoad(): SkillLoadReport {
 		return this.agentService?.getSkillLoad() ?? emptySkillLoadReport();
+	}
+
+	/**
+	 * Every skill the agent's last load merged in, with provenance, for the
+	 * Skills tab's toggle rows.
+	 *
+	 * Falls back to the builtin catalog when there is no service — the same
+	 * reasoning as {@link agentSkillLoad}: the settings tab outlives a failed
+	 * `onload`, and its rows must name skills a fresh install actually ships.
+	 */
+	agentSkillCatalog(): SkillCatalogEntry[] {
+		if (!this.agentService) {
+			return mergeSkillsWithSource(createBuiltinSkills(getT(resolveLanguage(this.app.vault as LanguageHost, this.settings.language))));
+		}
+		return this.agentService.getSkillCatalog();
 	}
 
 	private async startNewChat(): Promise<void> {

@@ -55,6 +55,26 @@ describe("normalizeSettings drops the retired legacy layer", () => {
 	});
 });
 
+describe("normalizeSettings with disabledSkills", () => {
+	it("defaults to an empty list when data.json says nothing", () => {
+		expect(normalizeSettings({}).disabledSkills).toEqual([]);
+	});
+
+	it("keeps the skill names as stored and deduplicates them", () => {
+		const settings = normalizeSettings({ disabledSkills: ["summarize", "link-graph", "summarize"] });
+		expect(settings.disabledSkills).toEqual(["summarize", "link-graph"]);
+	});
+
+	it("drops non-string entries a hand-edited data.json may carry", () => {
+		expect(normalizeSettings({ disabledSkills: ["summarize", 42, null, true] as never }).disabledSkills).toEqual(["summarize"]);
+	});
+
+	it("round-trips: a normalized list survives a second pass", () => {
+		const once = normalizeSettings({ disabledSkills: ["summarize"] });
+		expect(normalizeSettings(once).disabledSkills).toEqual(["summarize"]);
+	});
+});
+
 describe("normalizeSettings narrowing the network transport", () => {
 	it("defaults to the buffered transport when data.json says nothing", () => {
 		// The default is the one that works from every origin without asking an

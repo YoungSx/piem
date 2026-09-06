@@ -4,7 +4,7 @@ import { installObsidianStub } from "../testUtils/obsidianStub";
 
 installObsidianStub();
 
-const { composeSystemPrompt, DEFAULT_SKILLS_DIR, emptySkillLoadReport, expandSkill, findSkill, loadVaultSkills, mergeSkills } =
+const { composeSystemPrompt, DEFAULT_SKILLS_DIR, emptySkillLoadReport, expandSkill, findSkill, loadVaultSkills, mergeSkills, mergeSkillsWithSource } =
 	await import("./skillLoader");
 
 /** Minimal ExecutionEnv over a fixed path→content map, matching pi's skill walk. */
@@ -155,6 +155,23 @@ describe("skill lookup and invocation", () => {
 		expect(invocation).toContain('<skill name="summarize" location="/Piem/skills/summarize/SKILL.md">');
 		expect(invocation).toContain("Vault body");
 		expect(invocation.endsWith('Focus on decisions "since Monday".')).toBe(true);
+	});
+
+	it("labels each merged skill with the layer it survived from", () => {
+		// The settings panel splits its rows by provenance, so the label has to
+		// track the winning layer — a shadowed builtin must not carry a builtin
+		// tag just because it entered the merge.
+		const user = { name: "portable", description: "User", content: "Portable body", filePath: "~/.pi/agent/skills/portable/SKILL.md" };
+
+		const merged = mergeSkillsWithSource([builtin], [user], [vault, extra]);
+
+		expect(
+			merged.map((entry) => [entry.skill.name, entry.source] as const),
+		).toEqual([
+			["portable", "user"],
+			["summarize", "vault"],
+			["custom", "vault"],
+		]);
 	});
 });
 

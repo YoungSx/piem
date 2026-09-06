@@ -29,6 +29,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			sessionRetention: 0,
 			sessionDir: "piem/chats",
 			userSkillsDir: "",
+			disabledSkills: [],
 			mcpServers: [],
 			logLevel: "info",
 		},
@@ -48,6 +49,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 		manifest: { version: "1.0.4" },
 		skills: {
 			list: async () => ({ rows: [] }) as unknown as Awaited<ReturnType<SettingsPanelHost["skills"]["list"]>>,
+			catalog: () => [],
 			fetchSource: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["fetchSource"]>>,
 			install: async () => {},
 			update: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["update"]>>,
