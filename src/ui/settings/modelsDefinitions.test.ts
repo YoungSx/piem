@@ -9,6 +9,7 @@ installObsidianDomHelpers();
 installObsidianStub();
 
 const { modelsDefinitions } = await import("./modelsDefinitions");
+const { Setting } = await import("obsidian");
 import type { SettingsPanelHost } from "./panelHost";
 
 const en = getT("en");
@@ -101,6 +102,39 @@ describe("modelsDefinitions", () => {
 		let reads = 0;
 		modelsDefinitions(host({ describeTarget: () => { reads++; return "target"; } }));
 		expect(reads).toBe(0);
+	});
+
+	it("draws the sign-in button only on a subscription row, key rows keep one door to their key", async () => {
+		const settings = host().settings;
+		settings.providers.push(
+			{ id: "p-sub", name: "Sub", baseUrl: "https://sub.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "xai" },
+			{ id: "p-key", name: "Key", baseUrl: "https://key.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "" },
+		);
+		// A minimal stand-in: this test pins where the button is drawn, not what the
+		// session does — `signInSession.test.ts` owns that. What `actionsFor` accepts
+		// mirrors the facade's own contract for one known flow.
+		const signIn = {
+			canStore: () => true,
+			actionsFor: (target: { flowId: string }) =>
+				target.flowId
+					? { method: "xAI", isSignedIn: async () => false, signIn: async () => {}, signOut: async () => {} }
+					: undefined,
+		};
+		const defs = modelsDefinitions(host({ settings, signIn: signIn as unknown as SettingsPanelHost["signIn"] }));
+		const list = defs.find((def) => (def as { heading?: string }).heading === en.t("settings.providersHeading")) as {
+			items?: Array<{ render?: (setting: unknown) => void }>;
+		};
+		// items[0] is the section note; the providers follow it.
+		const rendered = list.items?.slice(1).map((item) => {
+			const setting = new (Setting as unknown as new (el: HTMLElement) => { extraButtons: Array<{ icon?: string }> })(document.createElement("div"));
+			item.render?.(setting);
+			return setting.extraButtons.map((button) => button.icon);
+		});
+		// The button is the only difference between the two rows' controls — the
+		// edit and delete pair is shared, so asserting the full sets keeps the
+		// subscription row from silently dropping one of them too.
+		expect(rendered?.[0]).toEqual(["key-round", "pencil", "trash-2"]);
+		expect(rendered?.[1]).toEqual(["pencil", "trash-2"]);
 	});
 
 	it("keeps active-model changes local so its dropdown does not lose focus", () => {

@@ -28,7 +28,7 @@
 
 import type { OAuthAuth } from "@earendil-works/pi-ai";
 import type { FetchFn } from "../net/obsidianFetch";
-import { createDeviceCodeOAuth, type DeviceCodeFlow } from "./deviceCode";
+import { createDeviceCodeOAuth, type DeviceCodeDeps, type DeviceCodeFlow } from "./deviceCode";
 
 /**
  * Stable identifier for one sign-in, persisted on a provider row.
@@ -96,8 +96,8 @@ export function isOAuthFlowId(value: unknown): value is OAuthFlowId {
  * create it. Construction is a closure over a table row, so there is nothing to
  * save.
  */
-export function createOAuthAuth(id: OAuthFlowId, fetchImpl: FetchFn): OAuthAuth {
-	return createDeviceCodeOAuth(OAUTH_FLOWS[id], { fetch: fetchImpl });
+export function createOAuthAuth(id: OAuthFlowId, fetchImpl: FetchFn, sleep?: DeviceCodeDeps["sleep"]): OAuthAuth {
+	return createDeviceCodeOAuth(OAUTH_FLOWS[id], { fetch: fetchImpl, sleep });
 }
 
 /** Display name for one sign-in, for panel copy that has to name the account. */
