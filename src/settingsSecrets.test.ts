@@ -37,7 +37,7 @@ function keychainWith(entries: Record<string, string> = {}): Keychain {
 /** A normalized settings blob holding one ref-bound provider. */
 function withProvider(overrides: Partial<PiemSettings["providers"][number]>): PiemSettings {
 	return normalizeSettings({
-		providers: [{ id: "prov-1", name: "A", baseUrl: "https://a.example.com", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", ...overrides }],
+		providers: [{ id: "prov-1", name: "A", baseUrl: "https://a.example.com", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "", ...overrides }],
 	});
 }
 
@@ -79,7 +79,7 @@ describe("resolveSecretRefs", () => {
 
 	it("leaves inline credentials alone — there the plaintext is the storage", () => {
 		const settings = normalizeSettings({
-			providers: [{ id: "prov-1", name: "A", baseUrl: "https://a.example.com", protocol: "openai-completions", apiKey: "sk-inline", secretRef: "", source: "user" }],
+			providers: [{ id: "prov-1", name: "A", baseUrl: "https://a.example.com", protocol: "openai-completions", apiKey: "sk-inline", secretRef: "", source: "user", oauthFlow: "" }],
 			mcpServers: [{ id: "mcp-a", name: "A", url: "https://a.example.com", token: "tok-inline", secretRef: "", enabled: true }],
 		});
 
@@ -122,7 +122,7 @@ describe("persistedSettings", () => {
 
 	it("keeps inline credentials verbatim — there the plaintext is the storage", () => {
 		const settings = normalizeSettings({
-			providers: [{ id: "prov-1", name: "A", baseUrl: "https://a.example.com", protocol: "openai-completions", apiKey: "sk-inline", secretRef: "", source: "user" }],
+			providers: [{ id: "prov-1", name: "A", baseUrl: "https://a.example.com", protocol: "openai-completions", apiKey: "sk-inline", secretRef: "", source: "user", oauthFlow: "" }],
 			mcpServers: [{ id: "mcp-a", name: "A", url: "https://a.example.com", token: "tok-inline", secretRef: "", enabled: true }],
 		});
 

@@ -27,6 +27,7 @@ function provider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
 		apiKey: "sk-1",
 		secretRef: "",
 		source: "user",
+		oauthFlow: "",
 		...overrides,
 	};
 }
@@ -100,6 +101,7 @@ describe("normalizeProviderConfig", () => {
 			apiKey: "sk-1",
 			secretRef: "",
 			source: "user",
+			oauthFlow: "",
 		});
 	});
 
@@ -119,6 +121,18 @@ describe("normalizeProviderConfig", () => {
 		expect(normalizeProviderConfig({ id: "p1", baseUrl: "https://x", source: "partner" })?.source).toBe("partner");
 		expect(normalizeProviderConfig({ id: "p1", baseUrl: "https://x", source: "subscription" })?.source).toBe("subscription");
 		expect(normalizeProviderConfig({ id: "p1", baseUrl: "https://x", source: "nonsense" })?.source).toBe("user");
+	});
+
+	it("reads a row with no sign-in as an API-key row", () => {
+		expect(normalizeProviderConfig({ id: "p1", baseUrl: "https://x" })?.oauthFlow).toBe("");
+		expect(normalizeProviderConfig({ id: "p1", baseUrl: "https://x", oauthFlow: 7 })?.oauthFlow).toBe("");
+	});
+
+	it("keeps a sign-in id this build cannot serve rather than erasing it", () => {
+		// The same rule as a dangling `secretRef`: a vault written by a newer build
+		// degrades to a row that will not run here, not to a row whose sign-in was
+		// silently thrown away on the next save.
+		expect(normalizeProviderConfig({ id: "p1", baseUrl: "https://x", oauthFlow: "anthropic" })?.oauthFlow).toBe("anthropic");
 	});
 });
 

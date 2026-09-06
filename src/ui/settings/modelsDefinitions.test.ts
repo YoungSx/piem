@@ -43,7 +43,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 describe("modelsDefinitions", () => {
 	it("exposes provider and model collections as mutable lists", () => {
 		const settings = host().settings;
-		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user" });
+		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "" });
 		settings.models.push({ id: "m", providerId: "p", modelApiId: "model", displayName: "Model", reasoning: false, supportsImages: false });
 		const defs = modelsDefinitions(host({ settings }));
 		const lists = defs.filter((def) => (def as { type?: string }).type === "list") as Array<{
@@ -63,7 +63,7 @@ describe("modelsDefinitions", () => {
 
 	it("offers the list's own search once the models outgrow a glance", () => {
 		const settings = host().settings;
-		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user" });
+		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "" });
 		for (let i = 0; i < 8; i++) {
 			settings.models.push({ id: `m${i}`, providerId: "p", modelApiId: `model-${i}`, displayName: `Model ${i}`, reasoning: false, supportsImages: false });
 		}
@@ -105,7 +105,7 @@ describe("modelsDefinitions", () => {
 
 	it("keeps active-model changes local so its dropdown does not lose focus", () => {
 		const settings = host().settings;
-		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user" });
+		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "" });
 		settings.models.push(
 			{ id: "m1", providerId: "p", modelApiId: "one", displayName: "One", reasoning: false, supportsImages: false },
 			{ id: "m2", providerId: "p", modelApiId: "two", displayName: "Two", reasoning: false, supportsImages: false },

@@ -1,3 +1,4 @@
+import type { OAuthFlowId } from "../auth/oauthFlows";
 import type { ProviderConfig, WireProtocol } from "../modelConfig";
 
 /**
@@ -62,6 +63,15 @@ export interface ProviderPreset {
 	/** Root of the API, exact to the segment the protocol's shim appends onto. */
 	baseUrl: string;
 	protocol: WireProtocol;
+	/**
+	 * The subscription sign-in this endpoint is reached through, if any.
+	 *
+	 * A fourth thing a preset owns, and the one that makes two entries able to
+	 * share a URL: xAI serves the same host and protocol to an API key and to a
+	 * Grok subscription, and only the auth method tells those rows apart. Absent
+	 * means the endpoint takes a key the user pastes.
+	 */
+	oauthFlow?: OAuthFlowId;
 }
 
 /**
@@ -70,6 +80,22 @@ export interface ProviderPreset {
  * the order is the one the vendor list has always been written in.
  */
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
+	// Subscription sign-ins first: they need no key at all, so a user who has one
+	// should not have to read past sixteen key-taking rows to find it.
+	{
+		id: "xai-subscription",
+		name: "xAI (SuperGrok / X Premium)",
+		baseUrl: "https://api.x.ai/v1",
+		protocol: "openai-responses",
+		oauthFlow: "xai",
+	},
+	{
+		id: "kimi-coding",
+		name: "Kimi For Coding",
+		baseUrl: "https://api.kimi.com/coding",
+		protocol: "anthropic-messages",
+		oauthFlow: "kimi-coding",
+	},
 	{ id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com", protocol: "anthropic-messages" },
 	{ id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", protocol: "openai-responses" },
 	{
@@ -158,22 +184,35 @@ function canonicalBaseUrl(baseUrl: string): string | undefined {
 	return `${parsed.protocol}//${parsed.host.toLowerCase()}${path}${parsed.search}`;
 }
 
+/** The three fields that decide which preset a row is. */
+export type ProviderPresetKey = Pick<ProviderConfig, "baseUrl" | "protocol" | "oauthFlow">;
+
 /**
  * The preset a draft currently matches, or undefined for a hand-typed endpoint.
  *
- * Both fields have to agree: an OpenRouter URL switched to Anthropic Messages is
- * no longer the OpenRouter preset, and reporting it as one would let the
- * dropdown claim a configuration the form is not actually holding. That is the
- * whole job of this function — the dropdown opens on its answer, so an edited
- * row shows which preset it came from, and a hand-typed one shows "Custom".
+ * All three fields have to agree, and each for its own reason. An OpenRouter URL
+ * switched to Anthropic Messages is no longer the OpenRouter preset, and
+ * reporting it as one would let the dropdown claim a configuration the form is
+ * not holding. The sign-in joined them because it is the only thing separating
+ * two rows that are otherwise identical: xAI serves the same host and protocol
+ * to an API key and to a Grok subscription, so without it the dropdown would
+ * pick whichever of the two comes first in the table and quietly relabel the
+ * other.
+ *
+ * That is the whole job of this function — the dropdown opens on its answer, so
+ * an edited row shows which preset it came from, and a hand-typed one shows
+ * "Custom".
  */
-export function matchProviderPreset(baseUrl: string, protocol: WireProtocol): ProviderPreset | undefined {
-	const canonical = canonicalBaseUrl(baseUrl);
+export function matchProviderPreset(key: ProviderPresetKey): ProviderPreset | undefined {
+	const canonical = canonicalBaseUrl(key.baseUrl);
 	if (canonical === undefined) {
 		return undefined;
 	}
 	return PROVIDER_PRESETS.find(
-		(preset) => preset.protocol === protocol && canonicalBaseUrl(preset.baseUrl) === canonical,
+		(preset) =>
+			preset.protocol === key.protocol &&
+			(preset.oauthFlow ?? "") === key.oauthFlow &&
+			canonicalBaseUrl(preset.baseUrl) === canonical,
 	);
 }
 
@@ -191,10 +230,23 @@ export function matchProviderPreset(baseUrl: string, protocol: WireProtocol): Pr
  * The credential is deliberately untouched. It is almost certainly wrong for the
  * new endpoint, but clearing a just-pasted key on a stray dropdown change costs
  * more than the stale key does — the connection test says so immediately, and the
- * field is right there.
+ * field is right there. A subscription preset makes that harmless rather than
+ * merely cheap: the provider it produces advertises no api-key auth at all, so a
+ * leftover key cannot be sent, and switching back reveals the field still holding
+ * it.
  */
 export function applyProviderPreset(draft: ProviderConfig, preset: ProviderPreset): ProviderConfig {
-	return { ...draft, name: preset.name, baseUrl: preset.baseUrl, protocol: preset.protocol };
+	return {
+		...draft,
+		name: preset.name,
+		baseUrl: preset.baseUrl,
+		protocol: preset.protocol,
+		// Written unconditionally in both directions, including back to `""`.
+		// Leaving a stale sign-in behind when someone switches from a subscription
+		// preset to a key-taking one would produce a row that ignores the key they
+		// are about to paste — the same class of lie as a stale base URL.
+		oauthFlow: preset.oauthFlow ?? "",
+	};
 }
 
 /** Looks a preset up by dropdown value; undefined for {@link CUSTOM_PRESET_ID}. */

@@ -94,7 +94,7 @@ export class ProviderModal extends Modal {
 		this.draft = options.provider ? { ...options.provider } : emptyProviderConfig();
 		// An edited row reports the preset it came from, so the form never claims a
 		// hand-typed gateway is one of ours — or hides that a saved row is Anthropic.
-		this.presetChoice = matchProviderPreset(this.draft.baseUrl, this.draft.protocol)?.id ?? CUSTOM_PRESET_ID;
+		this.presetChoice = matchProviderPreset(this.draft)?.id ?? CUSTOM_PRESET_ID;
 		this.originalDraft = JSON.stringify(normalizeProviderDraft(this.draft));
 		this.guard = new DiscardGuard(() => {
 			this.status?.showError(options.t.t("discard.warning"));
@@ -315,7 +315,7 @@ export class ProviderModal extends Modal {
 	 * change where it points.
 	 */
 	private syncPresetChoice(): void {
-		const id = matchProviderPreset(this.draft.baseUrl, this.draft.protocol)?.id ?? CUSTOM_PRESET_ID;
+		const id = matchProviderPreset(this.draft)?.id ?? CUSTOM_PRESET_ID;
 		if (id === this.presetChoice) {
 			return;
 		}

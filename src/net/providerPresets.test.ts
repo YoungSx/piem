@@ -42,12 +42,18 @@ describe("provider presets", () => {
 		}
 	});
 
-	it("keeps ids and endpoints unique, so the dropdown cannot shadow a row", () => {
+	it("keeps ids and configurations unique, so the dropdown cannot shadow a row", () => {
 		const ids = PROVIDER_PRESETS.map((preset) => preset.id);
-		const endpoints = PROVIDER_PRESETS.map((preset) => `${preset.protocol} ${preset.baseUrl}`);
+		// The endpoint alone is no longer the identity: xAI's key row and its
+		// subscription row are the same host and protocol, and the sign-in is what
+		// separates them. Two entries agreeing on all three would make
+		// `matchProviderPreset` pick whichever came first and relabel the other.
+		const configurations = PROVIDER_PRESETS.map(
+			(preset) => `${preset.protocol} ${preset.baseUrl} ${preset.oauthFlow ?? ""}`,
+		);
 
 		expect(new Set(ids).size).toBe(ids.length);
-		expect(new Set(endpoints).size).toBe(endpoints.length);
+		expect(new Set(configurations).size).toBe(configurations.length);
 		// The custom row's value must not collide with a real preset's.
 		expect(ids).not.toContain(CUSTOM_PRESET_ID);
 	});
@@ -98,35 +104,50 @@ describe("provider presets", () => {
 describe("matchProviderPreset", () => {
 	it("recognizes each preset from its own values", () => {
 		for (const preset of PROVIDER_PRESETS) {
-			expect(matchProviderPreset(preset.baseUrl, preset.protocol)?.id).toBe(preset.id);
+			expect(matchProviderPreset({ ...preset, oauthFlow: preset.oauthFlow ?? "" })?.id).toBe(preset.id);
 		}
 	});
 
 	it("requires the protocol to agree, not just the URL", () => {
 		// Same endpoint, different wire format: a different configuration, and one
 		// that would fail at send time. The dropdown must not claim the preset.
-		expect(matchProviderPreset("https://openrouter.ai/api/v1", "anthropic-messages")).toBeUndefined();
+		expect(matchProviderPreset({ baseUrl: "https://openrouter.ai/api/v1", protocol: "anthropic-messages", oauthFlow: "" })).toBeUndefined();
 	});
 
 	it("forgives a trailing slash and host case, which reach the same server", () => {
-		expect(matchProviderPreset("https://openrouter.ai/api/v1/", "openai-completions")?.id).toBe("openrouter");
-		expect(matchProviderPreset("https://OpenRouter.ai/api/v1", "openai-completions")?.id).toBe("openrouter");
+		expect(matchProviderPreset({ baseUrl: "https://openrouter.ai/api/v1/", protocol: "openai-completions", oauthFlow: "" })?.id).toBe("openrouter");
+		expect(matchProviderPreset({ baseUrl: "https://OpenRouter.ai/api/v1", protocol: "openai-completions", oauthFlow: "" })?.id).toBe("openrouter");
 	});
 
 	it("does not forgive path case, which does not", () => {
 		// `/API/V1` is a different path to the server, and one it rejects. Reporting
 		// it as the preset would hide a typo behind a confident label.
-		expect(matchProviderPreset("https://openrouter.ai/API/V1", "openai-completions")).toBeUndefined();
+		expect(matchProviderPreset({ baseUrl: "https://openrouter.ai/API/V1", protocol: "openai-completions", oauthFlow: "" })).toBeUndefined();
 	});
 
 	it("answers nothing for a blank or unparseable URL rather than throwing", () => {
-		expect(matchProviderPreset("", "openai-completions")).toBeUndefined();
-		expect(matchProviderPreset("   ", "openai-completions")).toBeUndefined();
-		expect(matchProviderPreset("api.openai.com/v1", "openai-completions")).toBeUndefined();
+		expect(matchProviderPreset({ baseUrl: "", protocol: "openai-completions", oauthFlow: "" })).toBeUndefined();
+		expect(matchProviderPreset({ baseUrl: "   ", protocol: "openai-completions", oauthFlow: "" })).toBeUndefined();
+		expect(matchProviderPreset({ baseUrl: "api.openai.com/v1", protocol: "openai-completions", oauthFlow: "" })).toBeUndefined();
 	});
 
 	it("keeps a hand-typed gateway custom", () => {
-		expect(matchProviderPreset("https://my-gateway.example.com/v1", "openai-completions")).toBeUndefined();
+		expect(matchProviderPreset({ baseUrl: "https://my-gateway.example.com/v1", protocol: "openai-completions", oauthFlow: "" })).toBeUndefined();
+	});
+
+	it("tells two presets apart when only the sign-in differs", () => {
+		// xAI serves the same host and protocol to a pasted key and to a Grok
+		// subscription. Without the sign-in in the key, whichever entry came first
+		// in the table would claim both rows and silently relabel the other.
+		const key = { baseUrl: "https://api.x.ai/v1", protocol: "openai-responses" } as const;
+		expect(matchProviderPreset({ ...key, oauthFlow: "" })?.id).toBe("xai");
+		expect(matchProviderPreset({ ...key, oauthFlow: "xai" })?.id).toBe("xai-subscription");
+	});
+
+	it("keeps a row custom when it names a sign-in no preset uses at that endpoint", () => {
+		expect(
+			matchProviderPreset({ baseUrl: "https://api.x.ai/v1", protocol: "openai-responses", oauthFlow: "kimi-coding" }),
+		).toBeUndefined();
 	});
 });
 
@@ -175,5 +196,34 @@ describe("applyProviderPreset", () => {
 		expect(applied.apiKey).toBe("sk-typed");
 		expect(applied.id).toBe(withKey.id);
 		expect(applied.source).toBe("user");
+	});
+
+	it("writes the sign-in a subscription preset owns", () => {
+		const applied = applyProviderPreset(emptyProviderConfig(), findProviderPreset("kimi-coding")!);
+
+		expect(applied.oauthFlow).toBe("kimi-coding");
+		expect(applied.baseUrl).toBe("https://api.kimi.com/coding");
+		expect(applied.protocol).toBe("anthropic-messages");
+	});
+
+	it("clears the sign-in when switching to a preset that takes a key", () => {
+		// The dangerous direction. A leftover sign-in would leave a row that ignores
+		// the key the user is about to paste — the same class of lie as a stale base
+		// URL, and harder to spot because nothing on the form would say so.
+		const subscription = applyProviderPreset(emptyProviderConfig(), findProviderPreset("xai-subscription")!);
+		expect(subscription.oauthFlow).toBe("xai");
+
+		expect(applyProviderPreset(subscription, findProviderPreset("xai")!).oauthFlow).toBe("");
+	});
+
+	it("leaves a leftover key harmless on a subscription row", () => {
+		// Deliberately not cleared, for the same reason as above — and safe, because
+		// the provider a signed-in row produces advertises no api-key auth at all,
+		// so there is nothing that could send it.
+		const withKey: ProviderConfig = { ...emptyProviderConfig(), apiKey: "sk-typed" };
+		const applied = applyProviderPreset(withKey, findProviderPreset("xai-subscription")!);
+
+		expect(applied.apiKey).toBe("sk-typed");
+		expect(applied.oauthFlow).toBe("xai");
 	});
 });

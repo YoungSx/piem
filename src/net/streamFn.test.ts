@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { Model } from "@earendil-works/pi-ai";
+import type { Credential, CredentialStore, Model } from "@earendil-works/pi-ai";
+import type { ProviderConfig } from "../modelConfig";
 import { installObsidianStub, requestUrlMock } from "../testUtils/obsidianStub";
 
 installObsidianStub();
@@ -9,6 +10,7 @@ const { createObsidianModels, createObsidianStreamFn, withRequestDefaults } = aw
 const { createFetchForTransport, toFetchFunction } = await import("./obsidianFetch");
 const { buildCustomEndpointModel } = await import("../customEndpoint");
 const { CUSTOM_ENDPOINT_PROVIDER } = await import("../constants");
+const { buildConfiguredModel } = await import("../modelConfig");
 
 const ENDPOINT = { baseUrl: "https://gw.internal/v1", apiKey: "sk-custom", modelId: "qwen3-32b" };
 
@@ -19,6 +21,16 @@ function sseBody(text: string): string {
 	const usage =
 		'data: {"id":"c1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\n';
 	return `${chunk({ role: "assistant", content: text }, null)}${chunk({}, "stop")}${usage}data: [DONE]\n\n`;
+}
+
+/** SSE body for a minimal completed OpenAI Responses turn. */
+function responsesSseBody(): string {
+	const created = { type: "response.created", response: { id: "r1", status: "in_progress" } };
+	const completed = {
+		type: "response.completed",
+		response: { id: "r1", status: "completed", output: [], usage: { input_tokens: 1, output_tokens: 1 } },
+	};
+	return `data: ${JSON.stringify(created)}\n\ndata: ${JSON.stringify(completed)}\n\ndata: [DONE]\n\n`;
 }
 
 /** Captures the request the provider stack issues against the endpoint. */
@@ -223,5 +235,140 @@ describe("withRequestDefaults", () => {
 		retention = "none";
 		await models.completeSimple(buildCustomEndpointModel(ENDPOINT), context);
 		expect(captured.body()["prompt_cache_retention"]).toBeUndefined();
+	});
+});
+
+/** A configured row, minus whatever a case is about to override. */
+function row(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
+	return {
+		id: "p1",
+		name: "Subscription row",
+		baseUrl: "https://api.x.ai/v1",
+		protocol: "openai-responses",
+		apiKey: "",
+		secretRef: "",
+		source: "user",
+		oauthFlow: "",
+		...overrides,
+	};
+}
+
+/** A credential store holding one prepared credential, and nothing else. */
+function storeWith(credentials: Record<string, Credential>): CredentialStore {
+	const held = new Map(Object.entries(credentials));
+	return {
+		read: async (providerId) => held.get(providerId),
+		list: async () => [...held].map(([providerId, credential]) => ({ providerId, type: credential.type })),
+		modify: async (providerId, fn) => {
+			const next = await fn(held.get(providerId));
+			if (next !== undefined) {
+				held.set(providerId, next);
+			}
+			return held.get(providerId);
+		},
+		delete: async (providerId) => {
+			held.delete(providerId);
+		},
+	};
+}
+
+const LIVE_TOKEN: Credential = {
+	type: "oauth",
+	access: "at-live",
+	refresh: "rt-live",
+	// Comfortably past pi's five-minute refresh window, so resolution uses the
+	// stored token instead of trying to rotate it.
+	expires: Date.now() + 3_600_000,
+};
+
+describe("createObsidianModels for a subscription row", () => {
+	it("offers the sign-in as the row's only auth method", () => {
+		// Not alongside an api key: pi short-circuits on any defined
+		// `options.apiKey`, so a key left in the row from before the switch would
+		// otherwise outrank the subscription without saying so.
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "xai", apiKey: "sk-stale" })] });
+		const auth = bundle.models.getProvider("p1")?.auth;
+		expect(auth?.oauth?.isSubscription).toBe(true);
+		expect(auth?.apiKey).toBeUndefined();
+	});
+
+	it("keeps an api key as the only method for a row with no sign-in", () => {
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row()] });
+		const auth = bundle.models.getProvider("p1")?.auth;
+		expect(auth?.apiKey).toBeDefined();
+		expect(auth?.oauth).toBeUndefined();
+	});
+
+	it("leaves a row with an unrecognised sign-in unconfigured rather than key-taking", () => {
+		// A vault written by a newer build. The row has no key, so falling back to
+		// one would report a failure against a field that is not the problem.
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "anthropic" })] });
+		const auth = bundle.models.getProvider("p1")?.auth;
+		expect(auth?.apiKey).toBeUndefined();
+		expect(auth?.oauth).toBeUndefined();
+	});
+
+	it("resolves request auth from the stored credential", async () => {
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [row({ oauthFlow: "xai" })],
+			credentials: storeWith({ p1: LIVE_TOKEN }),
+		});
+		expect(await bundle.models.getAuth("p1")).toEqual({ auth: { apiKey: "at-live" }, source: "OAuth" });
+	});
+
+	it("reports a signed-out row as unconfigured", async () => {
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [row({ oauthFlow: "xai" })],
+			credentials: storeWith({}),
+		});
+		expect(await bundle.models.getAuth("p1")).toBeUndefined();
+		expect(await bundle.models.checkAuth("p1")).toBeUndefined();
+	});
+
+	it("reports a signed-in row as authenticated by its subscription", async () => {
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [row({ oauthFlow: "xai" })],
+			credentials: storeWith({ p1: LIVE_TOKEN }),
+		});
+		expect(await bundle.models.checkAuth("p1")).toEqual({ source: "OAuth", type: "oauth" });
+	});
+
+	it("cannot be signed in at all without a credential store, which is what a draft test wants", async () => {
+		// The default store is in-memory and always empty, so a throwaway collection
+		// built to probe one draft reports every subscription as signed out rather
+		// than borrowing the session's real credentials.
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "xai" })] });
+		expect(await bundle.models.getAuth("p1")).toBeUndefined();
+	});
+
+	it("sends the subscription token on a real request, with no key in play", async () => {
+		let captured: Record<string, string> = {};
+		requestUrlMock.mockImplementation(async (params: unknown) => {
+			captured = (params as { headers?: Record<string, string> }).headers ?? {};
+			return {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+				arrayBuffer: new TextEncoder().encode(responsesSseBody()).buffer as ArrayBuffer,
+			};
+		});
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [row({ oauthFlow: "xai" })],
+			credentials: storeWith({ p1: LIVE_TOKEN }),
+		});
+		const model = buildConfiguredModel(
+			{ id: "m1", providerId: "p1", modelApiId: "grok-4", displayName: "Grok", reasoning: false, supportsImages: false },
+			row({ oauthFlow: "xai" }),
+		);
+		const stream = bundle.models.streamSimple(
+			model,
+			{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+			{ fetch: toFetchFunction(createFetchForTransport("requestUrl")) },
+		);
+		await stream.result();
+		expect(captured.authorization).toBe("Bearer at-live");
 	});
 });

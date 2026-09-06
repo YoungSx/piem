@@ -143,7 +143,16 @@ describe("saveSettings", () => {
 		await plugin.saveSettings();
 
 		const persisted = saved().value as { providers: Record<string, unknown>[] };
-		expect(persisted.providers[0]).toEqual({ id: "p1", name: "A", baseUrl: "https://x/v1", protocol: "openai-completions", apiKey: "", secretRef: "gateway-key", source: "user" });
+		expect(persisted.providers[0]).toEqual({
+			id: "p1",
+			name: "A",
+			baseUrl: "https://x/v1",
+			protocol: "openai-completions",
+			apiKey: "",
+			secretRef: "gateway-key",
+			source: "user",
+			oauthFlow: "",
+		});
 		expect(plugin.settings.providers[0]?.apiKey).toBe("sk-vaulted");
 	});
 

@@ -3,8 +3,26 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { createModels, createProvider } from "@earendil-works/pi-ai";
-import type { Api, CacheRetention, Model, Models, Provider, ProviderStreams, StreamOptions } from "@earendil-works/pi-ai";
-import { createFetchForTransport, toFetchFunction, type FetchFn, type NetworkTransport } from "./obsidianFetch";
+import type {
+	Api,
+	CacheRetention,
+	CredentialStore,
+	Model,
+	Models,
+	Provider,
+	ProviderAuth,
+	ProviderStreams,
+	StreamOptions,
+} from "@earendil-works/pi-ai";
+import { pluginAuthContext } from "../auth/authContext";
+import { createOAuthAuth, isOAuthFlowId } from "../auth/oauthFlows";
+import {
+	createFetchForTransport,
+	createObsidianRequestUrlFetch,
+	toFetchFunction,
+	type FetchFn,
+	type NetworkTransport,
+} from "./obsidianFetch";
 import { CUSTOM_ENDPOINT_PROVIDER, DEFAULT_PROVIDER } from "../constants";
 import { isCustomEndpointActive, type CustomEndpointConfig } from "../customEndpoint";
 import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "../modelConfig";
@@ -27,11 +45,20 @@ import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "
  *    user's preference is turned into a request field, so both the turn path and
  *    the compaction path carry the same one — see `./cacheRetention`.
  *
- * Auth note: for ordinary turns the agent resolves the API key from plugin
- * settings and pi's loop forwards it as `options.apiKey`. pi-ai short-circuits
- * credential resolution on an explicit request key, so no environment variables
- * or credential files are consulted and the default in-memory credential store
- * stays empty.
+ * Auth note: a row takes either a key or a subscription, and the two resolve
+ * through different halves of pi's auth. For a key the agent reads it from plugin
+ * settings and pi forwards it as `options.apiKey`, which short-circuits
+ * credential resolution entirely — no environment variable, no credential file,
+ * and the credential store untouched. For a subscription there is no key to
+ * forward, so resolution falls through to the store, where the OAuth credential
+ * lives and pi performs its locked refresh.
+ *
+ * That is why a subscription row is registered with `oauth` auth and *no*
+ * `apiKey` auth at all. The short-circuit fires on any defined `options.apiKey`,
+ * so a stale key left in the row's field — from before the user switched it to a
+ * subscription — would otherwise take precedence over the token they just signed
+ * in with, silently. Omitting the method makes that unrepresentable rather than
+ * merely unlikely.
  */
 export interface ObsidianModelsBundle {
 	/** Providers registered and ready for dispatch. */
@@ -46,11 +73,35 @@ export interface ObsidianModelsOptions {
 	providers?: readonly ProviderConfig[];
 	/** Legacy single-endpoint form, registered under the synthetic provider id. */
 	customEndpoint?: CustomEndpointConfig | null;
+	/**
+	 * Where subscription credentials are read and rotated.
+	 *
+	 * Optional, and its absence is meaningful rather than a default: without it pi
+	 * falls back to an in-memory store, so no row can be signed in and every
+	 * subscription reports itself unconfigured. That is the right answer for a
+	 * throwaway collection built to test one draft, and the wrong one for the
+	 * agent — which must hand in **the same instance every time**, because the
+	 * bundle is rebuilt whenever a provider row changes and a store per rebuild
+	 * would put each refresh behind a different lock.
+	 */
+	credentials?: CredentialStore;
 }
 
 /** Builds the `Models` collection with the builtin fallback registered, plus the user's configured endpoints. */
 export function createObsidianModels(options: ObsidianModelsOptions): ObsidianModelsBundle {
-	const models = createModels();
+	const models = createModels({
+		credentials: options.credentials,
+		// Injected because pi's default reads `process.env` and probes the
+		// filesystem — neither of which this plugin wants to resolve a credential
+		// from. See `src/auth/authContext.ts`.
+		authContext: pluginAuthContext(),
+	});
+	// Pinned to `requestUrl` regardless of the user's transport, and separate from
+	// the bundle's own `fetch` for that reason. A token exchange is a single-shot
+	// JSON round trip, so streaming buys nothing — and xAI's token endpoint sends
+	// no CORS headers at all, so the streaming path cannot even read the reply.
+	// Same rule `web_fetch`, skill import and the models.dev index already follow.
+	const oauthFetch = createObsidianRequestUrlFetch();
 	// The fallback pair an unconfigured vault resolves to (see
 	// {@link ../net/builtinCatalog}) names {@link DEFAULT_PROVIDER}, so something
 	// has to answer for that id or `streamSimple` throws "Unknown provider"
@@ -59,17 +110,18 @@ export function createObsidianModels(options: ObsidianModelsOptions): ObsidianMo
 	// than pi-ai's own `deepseekProvider`: that factory would drag DeepSeek's
 	// model catalog into the bundle, and the two differ in nothing that matters
 	// here — both dispatch on `model.api` and resolve auth from the request key.
-	models.setProvider(createConfiguredProvider(DEFAULT_PROVIDER, "DeepSeek"));
+	models.setProvider(createConfiguredProvider(DEFAULT_PROVIDER, "DeepSeek", apiKeyAuth("DeepSeek")));
 	// Configured endpoints are in no catalog, so their providers have to be
 	// registered here — `streamSimple` throws "Unknown provider" otherwise.
 	for (const provider of options.providers ?? []) {
-		models.setProvider(createConfiguredProvider(provider.id, describeProviderConfig(provider)));
+		const name = describeProviderConfig(provider);
+		models.setProvider(createConfiguredProvider(provider.id, name, authForRow(provider, name, oauthFetch)));
 	}
 	// A legacy endpoint that predates migration keeps working under the
 	// synthetic id, unless a configured provider already claims it.
 	const claimed = new Set((options.providers ?? []).map((provider) => provider.id));
 	if (isCustomEndpointActive(options.customEndpoint) && !claimed.has(CUSTOM_ENDPOINT_PROVIDER)) {
-		models.setProvider(createConfiguredProvider(CUSTOM_ENDPOINT_PROVIDER, "Custom endpoint"));
+		models.setProvider(createConfiguredProvider(CUSTOM_ENDPOINT_PROVIDER, "Custom endpoint", apiKeyAuth("Custom endpoint")));
 	}
 	return { models, fetch: createFetchForTransport(options.transport) };
 }
@@ -92,34 +144,60 @@ function createProtocolApis(): Record<WireProtocol, ProviderStreams> {
 }
 
 /**
- * Provider backing one user-configured endpoint.
+ * Api-key auth that resolves only from the credential pi hands it.
  *
- * Auth resolves only from the credential pi hands it — the plugin always
- * passes an explicit key per request (`withRequestDefaults` for compaction,
- * the agent's `getApiKey` for turns), which pi-ai forwards as a synthetic
- * api_key credential. Resolving to nothing without one keeps ambient env
- * vars out of the picture and lets a missing key surface as the plugin's own
- * settings error rather than a silent env fallback.
+ * Nothing ambient: no environment variable, no credential file. A missing key
+ * therefore surfaces as this plugin's own settings error, naming the empty field
+ * in front of the user, rather than as a request that mysteriously succeeded
+ * against somebody else's shell.
  */
-function createConfiguredProvider(id: string, name: string): Provider<WireProtocol> {
-	return createProvider<WireProtocol>({
-		id,
-		name,
-		auth: {
-			apiKey: {
-				name: `${name} API key`,
-				resolve: async ({ credential }) => {
-					const apiKey = credential?.type === "api_key" ? credential.key?.trim() : undefined;
-					if (!apiKey) {
-						return undefined;
-					}
-					return { auth: { apiKey }, source: "plugin settings" };
-				},
+function apiKeyAuth(name: string): ProviderAuth {
+	return {
+		apiKey: {
+			name: `${name} API key`,
+			resolve: async ({ credential }) => {
+				const apiKey = credential?.type === "api_key" ? credential.key?.trim() : undefined;
+				if (!apiKey) {
+					return undefined;
+				}
+				return { auth: { apiKey }, source: "plugin settings" };
 			},
 		},
-		models: [],
-		api: createProtocolApis(),
-	});
+	};
+}
+
+/**
+ * The auth methods one configured row offers, which is exactly one of three
+ * answers.
+ *
+ * A row with no sign-in takes a key. A row naming a sign-in this build performs
+ * gets `oauth` **instead of** `apiKey`, never alongside it — the file header
+ * explains why, but the short version is that pi short-circuits on any defined
+ * `options.apiKey`, so offering both would let a key left over from before the
+ * switch outrank the subscription silently.
+ *
+ * A row naming a sign-in this build does *not* recognise gets neither, and that
+ * is deliberate rather than an oversight. pi then reports the provider as
+ * unconfigured, which is true. Falling back to a key would be worse than useless:
+ * the row has no key to fall back to, and the resulting error would point the
+ * user at a field that is not the problem.
+ */
+function authForRow(provider: ProviderConfig, name: string, oauthFetch: FetchFn): ProviderAuth {
+	if (!provider.oauthFlow) {
+		return apiKeyAuth(name);
+	}
+	return isOAuthFlowId(provider.oauthFlow) ? { oauth: createOAuthAuth(provider.oauthFlow, oauthFetch) } : {};
+}
+
+/**
+ * Provider backing one endpoint, whatever authenticates it.
+ *
+ * Every registration in this file goes through here, so all three of them share
+ * one api map and one model list; only {@link ProviderAuth} differs, and
+ * {@link authForRow} is where that choice is made.
+ */
+function createConfiguredProvider(id: string, name: string, auth: ProviderAuth): Provider<WireProtocol> {
+	return createProvider<WireProtocol>({ id, name, auth, models: [], api: createProtocolApis() });
 }
 
 /**
