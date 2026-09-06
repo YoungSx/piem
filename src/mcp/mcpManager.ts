@@ -4,6 +4,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { TSchema } from "typebox";
 import { createFetchForTransport, type NetworkTransport } from "../net/obsidianFetch";
+import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { throwIfAborted } from "../tools/toolResult";
 import { truncateToolOutput } from "../vault/truncate";
 import { toAgentToolResult } from "./mcpContent";
@@ -280,12 +281,17 @@ export class McpManager {
 	 * runtime state, but a test has no network to ride, so it injects a fetch
 	 * double here — asked per request category (`requestUrl` for mounting, the
 	 * user's choice for tool calls) — and the manager cannot tell the difference.
+	 *
+	 * `logger` is optional and defaults to no-op, the same injection shape: the
+	 * startup connect is fire-and-forget, so without a logger a failed mount is
+	 * invisible — the panel shows the error row, but only while it is open.
 	 */
 	constructor(
 		servers: () => McpServerConfig[],
 		transport: () => NetworkTransport,
 		private readonly pluginVersion: string,
 		private readonly fetchFactory: (transport: NetworkTransport) => FetchLike = (t) => createFetchForTransport(t),
+		private readonly logger: LoggerLike = NOOP_LOGGER,
 	) {
 		this.servers = servers;
 		this.transport = transport;
@@ -354,9 +360,21 @@ export class McpManager {
 	 * the save.
 	 */
 	async testServer(server: McpServerConfig): Promise<number> {
-		const { client, tools } = await this.openMountedClient(server);
-		await this.closeClient(client);
-		return tools.length;
+		const started = Date.now();
+		try {
+			const { client, tools } = await this.openMountedClient(server);
+			await this.closeClient(client);
+			// Mirrors the connection tests' shape: pass at info, failure and throw
+			// at warn. The probe result is otherwise only the panel's verdict row.
+			this.logger.info(`MCP test passed: ${serverLabel(server)}`, () => ({ tools: tools.length, ms: Date.now() - started }));
+			return tools.length;
+		} catch (error) {
+			this.logger.warn(`MCP test failed: ${serverLabel(server)}`, () => ({
+				ms: Date.now() - started,
+				error: error instanceof Error ? error.message : String(error),
+			}));
+			throw error;
+		}
 	}
 
 	/** Closes every client. Idempotent; safe at plugin unload. */
@@ -422,6 +440,9 @@ export class McpManager {
 			if (existing && existing.client !== client) {
 				await this.closeClient(existing.client);
 			}
+			// Info rather than debug: a mount is rare (load, config change, retry)
+			// and is the anchor for every later "why is this tool missing" question.
+			this.logger.info(`MCP server mounted: ${serverLabel(server)}`, () => ({ tools: tools.length }));
 		} catch (error) {
 			// A failed mount leaves no client of its own worth keeping: the caller
 			// closed it, and only a previous entry's client survives here so
@@ -437,6 +458,12 @@ export class McpManager {
 				error: error instanceof Error ? error.message : String(error),
 				connection: { url: server.url, token: server.token },
 			});
+			// Warn, not error: the panel already reports this row, and the startup
+			// connect is fire-and-forget — this is the only trace a failed boot
+			// mount leaves. Retried on the next connect, so it is degraded, not dead.
+			this.logger.warn(`MCP server mount failed: ${serverLabel(server)}`, () => ({
+				error: error instanceof Error ? error.message : String(error),
+			}));
 		}
 	}
 
