@@ -282,7 +282,7 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 				// Named as a pacing problem rather than a fault, because that is what
 				// it is and the recovery is obvious: collect something first.
 				throw new Error(
-					`${live} subagents are already running, which is the limit (${SUBAGENT_CONCURRENCY_LIMIT}). Collect one with wait_subagent or stop one with kill_subagent, then spawn again.`,
+					`${live} subagents are already running, which is the limit (${SUBAGENT_CONCURRENCY_LIMIT}). The limit covers every conversation in this vault, so some of those may not be yours — check with list_subagents. Collect one with wait_subagent or stop one with kill_subagent, then spawn again.`,
 				);
 			}
 			// A model the schema advertised but the host can no longer resolve means
