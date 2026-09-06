@@ -288,6 +288,54 @@ function mutablePolicy(sessionDir: string, retentionLimit: number): SessionPolic
 const DEFAULTS = { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" } as const;
 
 /**
+ * The open path must stay a pure read — under whole-file last-writer-wins sync
+ * an append at open time would make the stale local copy the newest writer and
+ * let the sync plugin bury the other device's newer chat with it. The model
+ * assertion instead rides on run start (`ensureConfigurationFor`), and these
+ * tests pin both halves of that contract.
+ */
+describe("ObsidianSessionManager open-zero-write contract", () => {
+	it("opens without writing, even when the recorded model diverges from the defaults", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const info = await manager.createSession(DEFAULTS);
+
+		// A different defaults set is exactly the case that used to append a
+		// `model_change` right here, on the open path.
+		const next = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const before = await adapter.read(info.path);
+		const beforeStat = await adapter.stat(info.path);
+
+		await next.continueRecentSession({ provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" });
+
+		const afterStat = await adapter.stat(info.path);
+		expect(afterStat?.size).toBe(beforeStat?.size);
+		expect(afterStat?.mtime).toBe(beforeStat?.mtime);
+		expect(await adapter.read(info.path)).toBe(before);
+	});
+
+	it("appends the model assertion exactly once per divergence, at run start", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const info = await manager.createSession(DEFAULTS);
+		const next = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await next.continueRecentSession({ provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" });
+		const baseline = (await adapter.read(info.path)).length;
+
+		// First run start after the divergence: exactly one `model_change`.
+		await next.ensureConfigurationFor(info.path, { provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" }, "main");
+		const withChange = await adapter.read(info.path);
+		expect(withChange.slice(baseline)).toContain('"type":"model_change"');
+		const afterFirst = withChange.length;
+
+		// Idempotent: the file's model now matches the defaults, so a second run
+		// start must not append again.
+		await next.ensureConfigurationFor(info.path, { provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" }, "main");
+		expect(await adapter.read(info.path)).toHaveLength(afterFirst);
+	});
+});
+
+/**
  * Creates a chat and stamps it with an explicit recency.
  *
  * `getSessionModifiedTime` takes the newest timestamp in the log, and every chat
