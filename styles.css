@@ -1847,7 +1847,12 @@ button.piem-chat__context-open {
 	height: 1em;
 	margin-inline-start: 2px;
 	background: currentColor;
-	vertical-align: text-bottom;
+	/* Anchor to the baseline: text-bottom includes the font's descent, whose
+	 * extra space in CJK fonts makes the caret hang below the visible text.
+	 * -0.185em is the min-max pick across CJK/Latin faces at 15-20px, measured
+	 * by `scripts/measure-caret.mjs`: worst centre offset 1.3px, versus ~3.5px
+	 * for the old text-bottom. */
+	vertical-align: -0.185em;
 }
 
 @media (prefers-reduced-motion: no-preference) {
