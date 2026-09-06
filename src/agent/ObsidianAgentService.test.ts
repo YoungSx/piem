@@ -4140,6 +4140,7 @@ function createServiceWithMultimodalModel(
 		sessionRetention: DEFAULT_SESSION_RETENTION,
 		sessionDir: DEFAULT_SESSION_DIR,
 		userSkillsDir: "",
+		disabledSkills: [],
 		mcpServers: [],
 		logLevel: DEFAULT_LOG_LEVEL,
 	};

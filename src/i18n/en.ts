@@ -1003,6 +1003,18 @@ export const en = {
 	skills: {
 		heading: "Skills",
 		desc: "Instructions the agent can load on request. They are files in your vault — edit them like any note, and the next message picks up the change.",
+		/**
+		 * The section heading for the switch rows, and the shared toggle copy.
+		 *
+		 * "Takes effect on the next message" is the honest boundary: a live
+		 * conversation's prompt is rewritten on the save, so the wording of the
+		 * next turn is the first thing the switch governs — an ongoing run that
+		 * already read a skill keeps the instructions it loaded.
+		 */
+		builtinHeading: "Built-in skills",
+		builtinDesc:
+			"Included with Piem and kept outside your vault. A switch turned off here removes that skill from the agent's list, taking effect on the next message.",
+		enabledLabel: "Enabled",
 		import: "Import from URL",
 		empty: "No skills yet. Import one from a URL, or create a folder in Piem/skills with a SKILL.md inside.",
 		importedFrom: "Imported from {url}",

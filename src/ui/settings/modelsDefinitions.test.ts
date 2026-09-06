@@ -23,7 +23,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			providers: [], models: [], networkTransport: "requestUrl", cacheRetention: "long", showAgentDetails: false, traceExpand: "collapsed",
 			promptQueueStrategy: "afterRun",
 			sendShortcut: "enter", language: "en", sessionRetention: 0, sessionDir: "piem/chats",
-			userSkillsDir: "", mcpServers: [], logLevel: "info",
+			userSkillsDir: "", disabledSkills: [], mcpServers: [], logLevel: "info",
 		},
 		save: async () => {}, refresh: () => {}, secretStorage: "manual", readSecret: () => "", signIn: undefined,
 		logger: NOOP_LOGGER,
@@ -33,6 +33,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 		manifest: { version: "1.0.4" },
 		skills: {
 			list: async () => ({ rows: [] }) as unknown as Awaited<ReturnType<SettingsPanelHost["skills"]["list"]>>,
+			catalog: () => [],
 			fetchSource: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["fetchSource"]>>,
 			install: async () => {}, update: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["update"]>>,
 			remove: async () => {}, refreshAgent: async () => {},

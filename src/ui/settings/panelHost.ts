@@ -4,7 +4,7 @@ import type { SignInSession } from "../../auth/signInSession";
 import type { CompactionConfig } from "../../agent/compactionSettings";
 import type { RetryConfig } from "../../net/retrySettings";
 import type { PromptQueueStrategy } from "../../agent/queueStrategy";
-import type { SkillLoadReport } from "../../agent/skillLoader";
+import type { SkillCatalogEntry, SkillLoadReport } from "../../agent/skillLoader";
 import type { LogLevelSetting } from "../../logging/logLevel";
 import type { LoggerLike } from "../../logging/Logger";
 import type { McpServerConfig } from "../../mcp/mcpConfig";
@@ -172,6 +172,17 @@ export interface McpHost {
 export interface SkillsHost {
 	/** Lists the skills installed under the vault's skills folder. */
 	list(): Promise<SkillInventory>;
+	/**
+	 * Every skill the agent's last load merged in, before the disabled filter,
+	 * each with the layer it came from.
+	 *
+	 * A disabled skill must keep its row — switch down — or it could never be
+	 * switched back on, so this is the catalog the toggle sections render,
+	 * distinct from {@link list}, which reads the vault's files alone. Read
+	 * rather than awaited: {@link refreshAgent} has already made it current by
+	 * the time the panel asks.
+	 */
+	catalog(): SkillCatalogEntry[];
 	/** Fetches a pasted URL for preview, writing nothing. */
 	fetchSource(url: string): Promise<FetchedSource>;
 	/** Writes one previewed skill into the vault. */
@@ -229,6 +240,8 @@ export interface SettingsPanelSettings {
 	sessionRetention: number;
 	sessionDir: string;
 	userSkillsDir: string;
+	/** Names of skills switched off; read by the toggle rows, written by them too. */
+	disabledSkills: string[];
 	mcpServers: McpServerConfig[];
 	logLevel: LogLevelSetting;
 }

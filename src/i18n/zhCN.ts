@@ -551,6 +551,11 @@ export const zhCN: DeepPartial<EnCopy> = {
 	skills: {
 		heading: "技能",
 		desc: "代理可以按需加载的指令。它们是笔记库里的文件——像普通笔记一样编辑，下一条消息就会生效。",
+		// 「下一条消息」是诚实的边界：保存会重写运行中会话的提示词，下一轮开始
+		// 才是新开关管的事；已经读到某技能指令的那一轮运行不受影响。
+		builtinHeading: "内置技能",
+		builtinDesc: "随 Piem 出厂自带，不在你的笔记库里。关掉开关会把该技能从代理的技能列表移除，下一条消息起生效。",
+		enabledLabel: "启用",
 		import: "从 URL 导入",
 		empty: "还没有技能。从 URL 导入一个，或在 Piem/skills 里建一个包含 SKILL.md 的文件夹。",
 		importedFrom: "导入自 {url}",

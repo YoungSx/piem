@@ -41,19 +41,30 @@ export async function loadVaultSkills(
 }
 
 /**
- * Combines skill layers, the last layer winning per name.
+ * Where a merged skill came from.
  *
- * Layers are passed in ascending precedence — builtins, then user-level, then
- * vault — so a user file can replace a builtin and a vault skill can replace
- * either. This keeps the two-layer contract the plugin already had (vault
- * beats builtin) and slots user-level between them. The winner is emitted at
- * its own layer's position, matching the old behavior where a vault skill that
- * overrode a builtin appeared with the vault set; skills with fresh names keep
- * layer order, so the prompt listing stays stable as layers are added.
+ * The settings panel splits rows by layer because the layers' consequences
+ * differ — a vault row can be opened in the editor, a user-level one only
+ * named, a builtin one exists only inside the plugin — so the merge has to
+ * record which layer won, not merely emit the winner.
  */
-export function mergeSkills(...layers: Skill[][]): Skill[] {
+export type SkillSource = "builtin" | "user" | "vault";
+
+/** One merged skill plus the layer it survived from. */
+export interface SkillCatalogEntry {
+	skill: Skill;
+	source: SkillSource;
+}
+
+/**
+ * {@link mergeSkills} with provenance: the same last-layer-wins merge, but each
+ * emitted skill remembers which layer it came from, so a vault skill that
+ * overrides a builtin is catalogued as `vault` — and the builtin it replaced
+ * does not appear anywhere, matching the prompt listing it fed.
+ */
+export function mergeSkillsWithSource(...layers: Skill[][]): SkillCatalogEntry[] {
 	const emitted = new Set<string>();
-	const merged: Skill[] = [];
+	const merged: SkillCatalogEntry[] = [];
 	for (let i = 0; i < layers.length; i++) {
 		const layer = layers[i];
 		if (!layer) {
@@ -72,10 +83,37 @@ export function mergeSkills(...layers: Skill[][]): Skill[] {
 				continue;
 			}
 			emitted.add(skill.name);
-			merged.push(skill);
+			merged.push({ skill, source: layerIndexToSource(i) });
 		}
 	}
 	return merged;
+}
+
+/**
+ * Maps a layer's position to its source label. Callers pass layers in the
+ * fixed ascending-precedence order — builtins, user-level, vault — so the
+ * index is the source; anything past the vault layer is a caller bug and
+ * degrades to `vault`, the most user-actionable reading.
+ */
+function layerIndexToSource(index: number): SkillSource {
+	if (index === 0) return "builtin";
+	if (index === 1) return "user";
+	return "vault";
+}
+
+/**
+ * Combines skill layers, the last layer winning per name.
+ *
+ * Layers are passed in ascending precedence — builtins, then user-level, then
+ * vault — so a user file can replace a builtin and a vault skill can replace
+ * either. This keeps the two-layer contract the plugin already had (vault
+ * beats builtin) and slots user-level between them. The winner is emitted at
+ * its own layer's position, matching the old behavior where a vault skill that
+ * overrode a builtin appeared with the vault set; skills with fresh names keep
+ * layer order, so the prompt listing stays stable as layers are added.
+ */
+export function mergeSkills(...layers: Skill[][]): Skill[] {
+	return mergeSkillsWithSource(...layers).map((entry) => entry.skill);
 }
 
 /** Exact, case-sensitive lookup, matching prompt-template command routing. */

@@ -51,6 +51,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 			sessionRetention: 0,
 			sessionDir: "piem/chats",
 			userSkillsDir: "",
+			disabledSkills: [],
 			mcpServers: [],
 			logLevel: "info",
 		},
@@ -76,6 +77,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 				if (record) record.lists++;
 				return { rows };
 			},
+			catalog: () => [],
 			fetchSource: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["fetchSource"]>>,
 			install: async () => {},
 			update: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["update"]>>,
@@ -154,16 +156,20 @@ describe("extensionsDefinitions", () => {
 
 	it("does not claim the skills folder is empty before it has been read", async () => {
 		const state = new SettingsPanelState();
+		// The built-in section leads the page as a group; the vault folder is the
+		// first list, so it is selected by type rather than by position.
+		const vaultList = (host: SettingsPanelHost) =>
+			extensionsDefinitions(host, state).filter((entry) => (entry as { type?: string }).type === "list")[0] as {
+				items: Array<{ name: string }>;
+			};
 
 		// First build, before any read resolves: an empty sentence here would claim
 		// the folder holds nothing when nobody has looked in it.
-		const first = extensionsDefinitions(stubHost(), state)[0] as { items: Array<{ name: string }> };
-		expect(first.items[0]?.name).toBe(en.t("skills.desc"));
+		expect(vaultList(stubHost()).items[0]?.name).toBe(en.t("skills.desc"));
 
 		// Once a read has landed and come back with no rows, saying so is earned.
 		await settle();
-		const second = extensionsDefinitions(stubHost(), state)[0] as { items: Array<{ name: string }> };
-		expect(second.items[0]?.name).toContain(en.t("skills.empty"));
+		expect(vaultList(stubHost()).items[0]?.name).toContain(en.t("skills.empty"));
 	});
 
 	it("hides the user-level section where its folders cannot exist", async () => {
@@ -403,5 +409,91 @@ describe("the MCP retry button", () => {
 		await settle();
 
 		expect(verdictText(container)).toBe(en.t("mcp.statusError", { error: "still down" }));
+	});
+});
+
+/**
+ * The built-in section and the per-skill disable switch.
+ *
+ * The switch's whole contract is one array on the settings object: removing the
+ * name enables, appending it disables. The panel renders the agent's catalog
+ * rather than the folder, so a disabled skill keeps its row — a switch that
+ * vanished with its own flip could never be turned back on. And the mount must
+ * not save: `setValue` is called to reflect stored state before the change
+ * callback is registered, so a fresh render writes nothing.
+ */
+describe("the built-in skills section", () => {
+	const summarize = { name: "summarize", description: "Summarize", content: "body", filePath: "/__piem_builtin_skills__/summarize/SKILL.md" };
+	const custom = { name: "custom", description: "Custom", content: "body", filePath: "/Piem/skills/custom/SKILL.md" };
+	const catalog: SettingsPanelHost["skills"]["catalog"] = () => [
+		{ skill: summarize, source: "builtin" },
+		{ skill: custom, source: "vault" },
+	];
+
+	function mount(disabled: string[] = []) {
+		let saves = 0;
+		const base = stubHost();
+		const host = stubHost({
+			settings: { ...base.settings, disabledSkills: [...disabled] },
+			save: async () => {
+				saves += 1;
+			},
+			skills: { ...base.skills, catalog },
+		});
+		// The built-in group leads the page; its first item is the section note.
+		const group = extensionsDefinitions(host, new SettingsPanelState())[0] as {
+			heading?: string;
+			items: Array<{ name?: string; render?: (setting: unknown) => void }>;
+		};
+		return { group, host, saves: () => saves };
+	}
+
+	function renderRow(group: { items: Array<{ name?: string; render?: (setting: unknown) => void }> }, name: string): ToggleStub {
+		const container = document.createElement("div");
+		const setting = new (Setting as unknown as new (el: HTMLElement) => { toggles: ToggleStub[] })(container);
+		const row = group.items.find((item) => item.name === name);
+		if (!row) throw new Error(`no builtin row named ${name}`);
+		row.render?.(setting);
+		return setting.toggles[0] as ToggleStub;
+	}
+
+	it("splits the built-in rows from the vault list", async () => {
+		const { group } = mount();
+		await settle();
+
+		expect(group.heading).toBe(en.t("skills.builtinHeading"));
+		// Only the built-in layer belongs here: the vault skill rides in the
+		// folder's own list below, not in a row that delete could never remove.
+		expect(group.items.map((item) => item.name)).toEqual([en.t("skills.builtinDesc"), summarize.name]);
+	});
+
+	it("flipping the switch writes the disabled list and saves", async () => {
+		const { group, host, saves } = mount();
+		const toggle = renderRow(group, summarize.name);
+		expect(toggle.getValue()).toBe(true);
+
+		toggle.toggle(false);
+		await settle();
+
+		expect(host.settings.disabledSkills).toEqual(["summarize"]);
+		expect(saves()).toBe(1);
+		expect(toggle.getValue()).toBe(false);
+
+		toggle.toggle(true);
+		await settle();
+
+		expect(host.settings.disabledSkills).toEqual([]);
+		expect(saves()).toBe(2);
+	});
+
+	it("renders a disabled skill with its switch down, without saving on mount", async () => {
+		const { group, host, saves } = mount(["summarize"]);
+		const toggle = renderRow(group, summarize.name);
+
+		// The switch reflects stored state and the mount itself writes nothing —
+		// `setValue` runs before the change callback exists to hear it.
+		expect(toggle.getValue()).toBe(false);
+		expect(host.settings.disabledSkills).toEqual(["summarize"]);
+		expect(saves()).toBe(0);
 	});
 });
