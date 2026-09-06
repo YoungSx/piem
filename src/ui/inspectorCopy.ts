@@ -3,6 +3,7 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { formatCost, formatTokens } from "../agent/usage";
 import type { SubagentSnapshot } from "../subagent/inspectorModel";
 import type { Translator } from "../i18n";
+import { summarizeToolPayload } from "./traceSummary";
 
 /**
  * Copy and shaping rules for the subagent inspector.
@@ -198,7 +199,11 @@ export function processSteps(messages: readonly AgentMessage[], t: Translator): 
 				} else if (content.type === "thinking") {
 					steps.push(step(t.t("subagents.line.thinking"), content.thinking));
 				} else if (content.type === "toolCall") {
-					steps.push(step(t.t("subagents.line.toolCall", { tool: content.name }), ""));
+					// The argument, the same rule the transcript's collapsed rows use: a
+					// path answers "which note?", a pattern answers "searching for what?".
+					// The call keeps its own row (the result holds the next one), so a
+					// reader gets what → what came back in two lines rather than one.
+					steps.push(step(t.t("subagents.line.toolCall", { tool: content.name }), summarizeToolPayload(content.arguments)));
 				}
 			}
 			continue;

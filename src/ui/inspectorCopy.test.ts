@@ -218,8 +218,18 @@ describe("the process record is a sequence, one line per step", () => {
 		expect(processSteps(messages, t).at(-1)).toMatchObject({ label: "grep failed", isError: true });
 	});
 
-	it("leaves a tool call's own row textless, since its arguments are not the step", () => {
-		expect(processSteps(messages, t)[3]).toMatchObject({ label: "Ran ls", text: "", clipped: false });
+	it("carries the argument the chat transcript's collapsed rows would show", () => {
+		// Same preferred-argument rule as the main transcript: a path answers
+		// "which note?" without the reader opening anything.
+		expect(processSteps(messages, t)[3]).toMatchObject({ label: "Ran ls", text: "Projects", clipped: false });
+	});
+
+	it("leaves the row textless when the call has no summarizable argument", () => {
+		const bare: AgentMessage[] = [
+			{ role: "assistant", content: [{ type: "toolCall", id: "c9", name: "think", arguments: {} }], usage: {}, timestamp: 1 } as unknown as AgentMessage,
+		];
+
+		expect(processSteps(bare, t)[0]).toMatchObject({ label: "Ran think", text: "", clipped: false });
 	});
 
 	it("clips a long step and says it clipped", () => {

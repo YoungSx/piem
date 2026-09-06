@@ -413,7 +413,9 @@ describe("the detail page answers in the order a reader asks", () => {
 			selectedId: "subagent-1",
 		});
 
-		expect(text(host)).toContain("kept when the run ends");
+		// Ongoing, not absent: steps are being filed as turns land, so the empty
+		// record reads as "recording", not as a run that left nothing.
+		expect(text(host)).toContain("Recording this run's steps");
 	});
 
 	it("hands focus to the back control, which is what replaced the row that was pressed", async () => {

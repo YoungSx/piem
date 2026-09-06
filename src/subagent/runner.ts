@@ -67,6 +67,22 @@ export interface SubagentRunOptions {
 	signal?: AbortSignal;
 	/** Escape hatch for tests and logging; the runner itself stays event-blind. */
 	onEvent?: (event: AgentEvent) => void;
+	/**
+	 * Progress transcription for the monitor panel: the agent's whole context at
+	 * each turn boundary.
+	 *
+	 * Deliberately not folded into {@link onEvent} — that option is a generic
+	 * escape hatch whose shape follows pi's event union, while this one carries a
+	 * single, panel-shaped payload (the live transcript, not an event to decode).
+	 * Two options with two jobs read better than one option whose callers filter.
+	 *
+	 * The payload is the state's live `messages` array as a shallow copy: the
+	 * state keeps appending to its own array, and a caller that stored the
+	 * reference would find its "snapshot" growing under it. Callers may still
+	 * hold the copy as-is; {@link SubagentRunResult.messages} at settlement is
+	 * the authoritative, settled version of the same conversation.
+	 */
+	onProgress?: (messages: readonly AgentMessage[]) => void;
 }
 
 export interface SubagentRunResult {
@@ -396,6 +412,19 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		const onEvent = options.onEvent;
 		agent.subscribe((event) => {
 			onEvent(event);
+		});
+	}
+	if (options.onProgress) {
+		// Per-turn, not per-event: turn_end fires after every tool result is already
+		// in `agent.state.messages` (agent-loop emits it once the batch has landed),
+		// so one callback per turn sees an honest whole — no partial tool batches,
+		// no mid-stream deltas. Message-end granularity would triple the callback
+		// rate for rows the process record renders only after this boundary anyway.
+		const onProgress = options.onProgress;
+		agent.subscribe((event) => {
+			if (event.type === "turn_end") {
+				onProgress([...agent.state.messages]);
+			}
 		});
 	}
 

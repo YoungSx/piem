@@ -18,12 +18,17 @@ import { TranslatorProvider } from "./TranslatorContext";
  * {@link SubagentInspectorApp} stays a function of its props, which is what lets
  * the tests drive list and detail without an Obsidian workspace.
  *
- * Snapshots are rebuilt on registry events, not on a timer — a spawn and a
- * settlement are the only moments the list's content changes. The one thing an
- * event cannot cover is a running child's elapsed time, which grows between
- * them; a per-second repaint of a whole sidebar for one number is the wrong
- * trade, so a live row's duration is its age at the last event and the status
- * word beside it says the run is not over.
+ * Snapshots are rebuilt on registry events, not on a timer — a spawn, a
+ * settlement, and each turn a live child completes are the moments the list's
+ * content changes. (That third one is recent: the runner files its live context
+ * per turn via {@link SubagentRegistry.recordProgress}, which is what makes the
+ * detail page's process record fill in while the child works. Turn-boundary
+ * rate, not token rate — a busy child repaints the panel once per turn, which
+ * is the trade a monitor pays to not be blind.) The one thing an event cannot
+ * cover is a running child's elapsed time, which grows between them; a
+ * per-second repaint of a whole sidebar for one number is the wrong trade, so
+ * a live row's duration is its age at the last event and the status word
+ * beside it says the run is not over.
  */
 export class PiemSubagentView extends ItemView {
 	private readonly service: ObsidianAgentService;

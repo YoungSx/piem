@@ -219,6 +219,10 @@ export function createFollowUpSubagentTool(context: SubagentToolsContext, inheri
 								ownerId,
 								initialMessages: child.transcript,
 								signal: linked.signal,
+								// Same live process record a spawn gets: the panel watches the
+								// child's new errand turn by turn, appending onto the history
+								// it already shows.
+								onProgress: (messages) => context.registry.recordProgress(id, messages),
 							}),
 					};
 				},

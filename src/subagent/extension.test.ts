@@ -574,6 +574,37 @@ describe("runSubagent", () => {
 		expect(result.usage.requests).toBe(result.turns);
 	});
 
+	it("hands the whole context to onProgress once per turn", async () => {
+		// The monitor panel's live process record rides this hook. What it needs
+		// from the contract: one callback per turn (not per event), each payload a
+		// snapshot of the transcript as the turn left it — tool results included,
+		// and each copy stable against later growth.
+		const frames: number[] = [];
+		const copies: AgentMessage[][] = [];
+		await runSubagent({
+			task: "t",
+			role,
+			tools: [recordingTool("grep", [])],
+			model: MODEL,
+			streamFn: scriptedStreamFn([
+				{ toolCall: { id: "call_1", name: "grep" } },
+				{ text: "Found it." },
+			]),
+			thinkingLevel: "off" as never,
+			onProgress: (messages) => {
+				frames.push(messages.length);
+				copies.push([...messages]);
+			},
+		});
+		// Turn 1 ends with task + assistant tool-call + tool result = 3; turn 2
+		// adds the assistant's final answer = 4. Never a per-event sprinkle.
+		expect(frames).toEqual([3, 4]);
+		// Each frame is its own copy: an earlier callback's array must not grow
+		// when the agent appends to its own state afterwards.
+		expect(copies[0]).toHaveLength(3);
+		expect(copies[1]).toHaveLength(4);
+	});
+
 	it("stops compacting once the first post-tidy floor proves it futile", async () => {
 		let summaries = 0;
 		// Every turn reports a full context, so the threshold trips at every
@@ -1982,6 +2013,59 @@ describe("inspector data", () => {
 			// its own spawn time, and asserting a gap would fail on a fast machine
 			// while testing the clock rather than the bookkeeping.
 			expect(entry?.settledAt).toBeGreaterThanOrEqual(entry!.spawnedAt);
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("files each turn of a live run into the entry and seals at settlement", async () => {
+		// The wiring under test is the whole chain the monitor rides: the runner's
+		// per-turn hook → the registry's recordProgress → the entry the panel
+		// snapshots. Transcript lengths at every registry event tell the story —
+		// spawn (0), each completed turn, then the settlement overwrite.
+		const extension = createSubagentExtension(
+			makeHost(
+				scriptedStreamFn([
+					{ toolCall: { id: "call_1", name: "grep", arguments: { path: "Archive/" } } },
+					{ text: "Found it." },
+				]),
+			),
+		);
+		try {
+			const lengths: number[] = [];
+			const unsubscribe = extension.registry.subscribe(() => {
+				lengths.push(extension.registry.all()[0]?.transcript.length ?? -1);
+			});
+			const spawned = await toolNamed(extension.createTools(), "spawn_subagent").execute("c1", { task: "Sweep" }, undefined);
+			await extension.registry.get(spawnedId(spawned))!.promise;
+			unsubscribe();
+			// The user turn is 1; turn 1 ends with prompt + tool call + result = 3;
+			// turn 2 adds the report = 4. Growth mid-run is the whole point — the
+			// process record must not wait for settlement to exist.
+			expect(lengths).toEqual([0, 3, 4, 4]);
+
+			// Sealed at settlement: a late stray call — a kill racing the last turn,
+			// say — must not overwrite the authoritative transcript or wake the panel.
+			const before = extension.registry.get(spawnedId(spawned))!.transcript;
+			let notified = false;
+			const stray = extension.registry.subscribe(() => {
+				notified = true;
+			});
+			extension.registry.recordProgress(spawnedId(spawned), []);
+			stray();
+			expect(notified).toBe(false);
+			expect(extension.registry.get(spawnedId(spawned))!.transcript).toBe(before);
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("recordProgress is a no-op for an id the registry does not hold", () => {
+		const extension = createSubagentExtension(makeHost(hangingStreamFn()));
+		try {
+			// A stranger's id — another chat's, or a mistyped one — gets silence,
+			// not an entry invented for it.
+			expect(() => extension.registry.recordProgress("subagent-nowhere", [])).not.toThrow();
 		} finally {
 			extension.disposeAll();
 		}

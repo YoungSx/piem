@@ -1023,7 +1023,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		reportNone: "它在写出报告之前就失败了。",
 		failureLabel: "哪里出了问题",
 		processCount: "{count} 步",
-		processPending: "过程记录会在这次运行结束时留下。",
+		processPending: "正在记录这一轮的步骤……",
 		processNone: "什么都没留下：这次运行还没动手就结束了。",
 		line: {
 			user: "指令",
