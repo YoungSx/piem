@@ -80,8 +80,29 @@ export interface ProviderConfig {
 	 * Where this provider came from. Only `user` exists today; the field is
 	 * present so partner and subscription entries can be distinguished later
 	 * without migrating stored data again. Non-user rows are not user-editable.
+	 *
+	 * Deliberately *not* how a subscription sign-in is recorded — see
+	 * {@link oauthFlow}. This field answers "who provisioned this row", and a row
+	 * the user added by picking a preset and signing in is still theirs to edit
+	 * and delete.
 	 */
 	source: ProviderSource;
+	/**
+	 * Which subscription sign-in authenticates this endpoint, or `""` for a key.
+	 *
+	 * The auth method is a second axis from the endpoint: xAI serves the same URL
+	 * and protocol to an API key and to a Grok subscription, so the row has to say
+	 * which of the two it holds. When set, the credential lives in the keychain
+	 * under this plugin's own entry (`src/auth/credentialStore.ts`) and
+	 * {@link apiKey}/{@link secretRef} are unused.
+	 *
+	 * Typed as a string rather than the flow-id union on purpose. A value this
+	 * build does not recognise is kept as written and validated where it is used,
+	 * for the same reason a dangling `secretRef` is kept: a vault written by a
+	 * newer build should degrade to "this row cannot be served here", not lose the
+	 * sign-in on the next save.
+	 */
+	oauthFlow: string;
 }
 
 export type ProviderSource = "user" | "partner" | "subscription";
@@ -147,7 +168,7 @@ function readProviderSource(value: unknown): ProviderSource {
 
 /** A blank provider for the "add provider" form to fill in. */
 export function emptyProviderConfig(): ProviderConfig {
-	return { id: uuidv7(), name: "", baseUrl: "", protocol: DEFAULT_WIRE_PROTOCOL, apiKey: "", secretRef: "", source: "user" };
+	return { id: uuidv7(), name: "", baseUrl: "", protocol: DEFAULT_WIRE_PROTOCOL, apiKey: "", secretRef: "", source: "user", oauthFlow: "" };
 }
 
 /** A blank model bound to `providerId`. */
@@ -195,6 +216,10 @@ export function normalizeProviderConfig(data: unknown): ProviderConfig | undefin
 		// panel reports, and dropping it would silently lose the binding.
 		secretRef: isValidSecretId(secretRef) ? secretRef : "",
 		source: readProviderSource(raw.source),
+		// Unvalidated on purpose: see {@link ProviderConfig.oauthFlow}. An id this
+		// build cannot serve is still the user's sign-in, and blanking it here would
+		// erase it the next time the vault is saved.
+		oauthFlow: readTrimmedString(raw.oauthFlow),
 	};
 }
 
@@ -359,6 +384,8 @@ export function migrateCustomEndpoint(
 		apiKey: endpoint.apiKey,
 		secretRef: "",
 		source: "user",
+		// The legacy form only ever held a typed key; there was no sign-in to carry.
+		oauthFlow: "",
 	};
 	const model: ModelConfig = {
 		id: uuidv7(),

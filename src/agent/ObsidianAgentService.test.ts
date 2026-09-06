@@ -3067,7 +3067,7 @@ describe("switching the active model", () => {
 /** Two models behind one named provider, with the first selected. */
 function configureTwoModels(settings: PiemSettings): void {
 	settings.providers = [
-		{ id: "p1", name: "My gateway", baseUrl: "https://gw/v1", protocol: "openai-completions", apiKey: "gw-key", secretRef: "", source: "user" },
+		{ id: "p1", name: "My gateway", baseUrl: "https://gw/v1", protocol: "openai-completions", apiKey: "gw-key", secretRef: "", source: "user", oauthFlow: "" },
 	];
 	settings.models = [
 		{ id: "m1", providerId: "p1", modelApiId: "qwen-plus", displayName: "Qwen Plus", reasoning: false, supportsImages: false },
@@ -3986,6 +3986,7 @@ function createServiceWithMultimodalModel(
 				apiKey: "test-key",
 				secretRef: "",
 				source: "user",
+				oauthFlow: "",
 			},
 		],
 		models: [

@@ -22,7 +22,7 @@ const zh = getT("zh-cn");
  */
 
 function provider(id: string, name = id): ProviderConfig {
-	return { id, name, baseUrl: `https://${id}.test/v1`, protocol: "openai-completions", apiKey: "k", secretRef: "", source: "user" };
+	return { id, name, baseUrl: `https://${id}.test/v1`, protocol: "openai-completions", apiKey: "k", secretRef: "", source: "user", oauthFlow: "" };
 }
 
 function model(id: string, providerId: string): ModelConfig {

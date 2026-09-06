@@ -7,6 +7,8 @@ import { PiemLogView } from "./logging/logView";
 import { persistedSettings, resolveSecretRefs } from "./settingsSecrets";
 import { NOOP_LOGGER, type LoggerLike } from "./logging/Logger";
 import { createSecretEnvironment, type SecretEnvironment } from "./keychainEnv";
+import { createKeychainCredentialStore } from "./auth/credentialStore";
+import type { CredentialStore } from "@earendil-works/pi-ai";
 import { DraftStore } from "./session/DraftStore";
 import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
@@ -78,6 +80,10 @@ export default class PiemPlugin extends Plugin {
 	 */
 	private secretEnvironment: SecretEnvironment | null = null;
 	/**
+	 * One credential store for the session; see {@link requireCredentialStore}.
+	 */
+	private credentialStore: CredentialStore | null = null;
+	/**
 	 * The MCP client bridge. `onload` warms it with a fire-and-forget connect,
 	 * which is also the first "ask" — the manager itself only pays for the
 	 * servers, not the construction. Reads the server list and the transport
@@ -105,6 +111,24 @@ export default class PiemPlugin extends Plugin {
 	private requireSecretEnvironment(): SecretEnvironment {
 		this.secretEnvironment ??= createSecretEnvironment({ host: this.app, log: (message) => this.log.debug(message) });
 		return this.secretEnvironment;
+	}
+
+	/**
+	 * Where subscription credentials live, resolved once for the whole session.
+	 *
+	 * Cached for a reason beyond thrift: the store serializes OAuth refresh per
+	 * provider, and two instances would be two locks — so two concurrent requests
+	 * could each rotate the same refresh token and one rotation would already be
+	 * revoked when it landed. Everything that touches a subscription therefore
+	 * reads through this one accessor: the agent's models bundle, and the settings
+	 * panel's sign-in.
+	 */
+	private requireCredentialStore(): CredentialStore {
+		this.credentialStore ??= createKeychainCredentialStore({
+			secrets: this.requireSecretEnvironment().pluginSecrets(),
+			log: (message) => this.log.debug(message),
+		});
+		return this.credentialStore;
 	}
 
 	/**
@@ -204,6 +228,8 @@ export default class PiemPlugin extends Plugin {
 			// at spawn time so a child's set is the servers' current list without
 			// ever paying (or awaiting) a handshake itself.
 			getMountedExternalTools: () => this.mcpManager.buildAgentTools(),
+			// The one instance for the session; see `requireCredentialStore`.
+			credentials: this.requireCredentialStore(),
 		});
 		this.draftStore = DraftStore.forPlugin(this.app, this, this.requirePluginLogger().logger);
 

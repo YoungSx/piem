@@ -155,6 +155,7 @@ describe("repro 253: send with staged image clears the cards", () => {
 					apiKey: "test-key",
 					secretRef: "",
 					source: "user" as const,
+					oauthFlow: "",
 				},
 			],
 			models: [

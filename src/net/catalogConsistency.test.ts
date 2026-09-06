@@ -65,6 +65,7 @@ describe("builtin fallback", () => {
 					apiKey: "sk-mine",
 					secretRef: "",
 					source: "user",
+					oauthFlow: "",
 				},
 			],
 		});

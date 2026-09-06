@@ -69,6 +69,9 @@ const VENDOR_BY_HOST: Record<string, VendorId> = {
 	"api.mistral.ai": "mistral",
 	"api.moonshot.ai": "moonshotai",
 	"api.moonshot.cn": "moonshotai",
+	// Kimi is Moonshot's product brand, which the alias table below already says;
+	// the coding-subscription endpoint lives on its own host.
+	"api.kimi.com": "moonshotai",
 	"api.x.ai": "xai",
 	"api.z.ai": "zai",
 	"open.bigmodel.cn": "zai",

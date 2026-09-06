@@ -1,5 +1,12 @@
 import { type App, Notice, parseLinktext, TFile } from "obsidian";
-import { clampThinkingLevel, getSupportedThinkingLevels, type ImageContent, type Models, type Usage } from "@earendil-works/pi-ai";
+import {
+	clampThinkingLevel,
+	getSupportedThinkingLevels,
+	type CredentialStore,
+	type ImageContent,
+	type Models,
+	type Usage,
+} from "@earendil-works/pi-ai";
 import {
 	Agent,
 	collectEntriesForBranchSummary,
@@ -551,6 +558,19 @@ export interface ObsidianAgentServiceOptions {
 	 * means children run without external tools, the pre-#310 behavior.
 	 */
 	getMountedExternalTools?: () => readonly AgentTool[];
+	/**
+	 * Where subscription credentials are read and rotated.
+	 *
+	 * Injected because it must be **one instance for the whole session**: the
+	 * models bundle below is rebuilt whenever a provider row changes, and a store
+	 * created per rebuild would put each OAuth refresh behind a different lock —
+	 * which is the double-spend that lock exists to prevent. The plugin owns the
+	 * single instance because it also owns the keychain the store writes through.
+	 *
+	 * Omitted (the default in tests) leaves pi's in-memory store in place, so no
+	 * subscription row can be signed in and every one reports itself unconfigured.
+	 */
+	credentials?: CredentialStore;
 }
 
 interface CompactionRunOptions {
@@ -572,6 +592,8 @@ export class ObsidianAgentService {
 	private readonly getExternalToolsFn: () => Promise<AgentTool[]>;
 	/** See {@link ObsidianAgentServiceOptions.getMountedExternalTools}. */
 	private readonly getMountedExternalToolsFn: (() => readonly AgentTool[]) | undefined;
+	/** See {@link ObsidianAgentServiceOptions.credentials}. */
+	private readonly credentials: CredentialStore | undefined;
 	private readonly listeners = new Set<SnapshotListener>();
 	/**
 	 * Single vault execution env shared by the file tools and the prompt-template
@@ -722,6 +744,7 @@ export class ObsidianAgentService {
 		this.persistSettings = options.persistSettings ?? ((options?: { reconfigure?: boolean }) => (options?.reconfigure === false ? Promise.resolve() : this.refreshConfiguration()));
 		this.getExternalToolsFn = options.getExternalTools ?? (async () => []);
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
+		this.credentials = options.credentials;
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
@@ -3992,7 +4015,12 @@ export class ObsidianAgentService {
 		// first and the model id second keep a bundle built while the endpoint
 		// still counted as inactive — so `custom` was never registered.
 		const settings = this.getSettings();
-		const providerKey = settings.providers.map((provider) => `${provider.id}|${provider.baseUrl}|${provider.protocol}`).join(",");
+		// `oauthFlow` joins the key because it decides which auth method gets
+		// registered — a row switched between a key and a subscription needs a new
+		// provider, not the old one with a different credential.
+		const providerKey = settings.providers
+			.map((provider) => `${provider.id}|${provider.baseUrl}|${provider.protocol}|${provider.oauthFlow}`)
+			.join(",");
 		const legacyKey = `${settings.customEndpoint?.baseUrl ?? ""}|${settings.customEndpoint?.modelId ?? ""}`;
 		const bundleKey = `${settings.networkTransport}:${providerKey}:${legacyKey}`;
 		if (!this.modelsBundle || this.modelsBundleKey !== bundleKey) {
@@ -4000,6 +4028,9 @@ export class ObsidianAgentService {
 				transport: settings.networkTransport,
 				providers: settings.providers,
 				customEndpoint: settings.customEndpoint,
+				// Deliberately outside the cache key: the store is one instance for
+				// the session, so a rebuild must reuse it rather than key on it.
+				credentials: this.credentials,
 			});
 			this.modelsBundleKey = bundleKey;
 		}

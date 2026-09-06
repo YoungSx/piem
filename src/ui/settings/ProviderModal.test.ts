@@ -236,6 +236,7 @@ describe("ProviderModal preset row", () => {
 			apiKey: "sk-existing",
 			secretRef: "",
 			source: "user",
+			oauthFlow: "",
 		};
 		const { content, close } = openForm(saved);
 
@@ -256,6 +257,7 @@ describe("ProviderModal preset row", () => {
 			apiKey: "",
 			secretRef: "",
 			source: "user",
+			oauthFlow: "",
 		};
 		const { content, close } = openForm(gateway);
 

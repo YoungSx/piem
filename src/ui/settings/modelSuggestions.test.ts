@@ -29,6 +29,7 @@ function provider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
 		apiKey: "sk-1",
 		secretRef: "",
 		source: "user",
+		oauthFlow: "",
 		...overrides,
 	};
 }
