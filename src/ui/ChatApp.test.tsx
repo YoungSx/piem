@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { App, Component } from "obsidian";
 import { flushRender, installDom } from "../testUtils/dom";
 import { installObsidianStub, lastMenu, resetMenus } from "../testUtils/obsidianStub";
@@ -9,6 +9,7 @@ import type { QuickAction } from "./quickActionSuggestions";
 import type { DraftStore } from "../session/DraftStore";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { SubagentRegistry } from "../subagent/registry";
+import { findSubagentRole } from "../subagent/roles";
 
 installObsidianStub();
 const document = installDom();
@@ -384,8 +385,7 @@ async function mountChat(
 function seedSubagent(registry: SubagentRegistry, ownerId: string): void {
 	registry.spawn({
 		id: registry.nextId(),
-		role: "general",
-		signal: new AbortController().signal,
+		role: findSubagentRole("general")!,
 		parentSignal: undefined,
 		ownerId,
 		abort: () => undefined,
@@ -393,9 +393,24 @@ function seedSubagent(registry: SubagentRegistry, ownerId: string): void {
 		start: () => Promise.resolve({ text: "done", turns: 1, usage: { tokens: 0, cost: 0, requests: 1 } as never, messages: [] }),
 		task: `task for ${ownerId}`,
 		depth: 1,
-		modelId: "test-model",
+		model: testModel(),
 		thinkingLevel: "off",
 	});
+}
+
+/** Model shape only — the seeded child is settled before anything reads it. */
+function testModel(): Model<Api> {
+	return {
+		id: "test-model",
+		name: "Test Model",
+		api: "openai-completions",
+		provider: "test",
+		baseUrl: "https://example.invalid",
+		reasoning: false,
+		contextWindow: 100_000,
+		maxTokens: 4_096,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	} as unknown as Model<Api>;
 }
 
 function composer(host: HTMLElement): HTMLTextAreaElement {

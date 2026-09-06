@@ -55,11 +55,18 @@ async function renderInspector(
 	return render(
 		<SubagentInspector
 			snapshots={[]}
+			// The fixture's own conversation, so the default scope — this chat only —
+			// shows the snapshots a test hands it rather than filtering them all out.
+			focusedOwnerId="chat-a"
+			describeOwner={(ownerId) => `chat named ${ownerId}`}
+			showAllChats={false}
+			onShowAllChats={() => undefined}
 			showAgentDetails={false}
 			selectedId={null}
 			onSelect={() => undefined}
 			onStop={() => undefined}
-			onStopAll={() => undefined}
+			onStopChat={() => undefined}
+			onStopEverything={() => undefined}
 			onArchiveFinished={() => undefined}
 			app={app}
 			component={component}
@@ -154,7 +161,7 @@ describe("one-way glass with a pressure valve", () => {
 		// is possible — and absent against a finished history, where it could only
 		// ever do nothing.
 		let stopAllCalls = 0;
-		const running = await renderInspector({ snapshots: [snapshot({ status: "running", report: undefined }), snapshot({ id: "b" })], onStopAll: () => (stopAllCalls += 1) });
+		const running = await renderInspector({ snapshots: [snapshot({ status: "running", report: undefined }), snapshot({ id: "b" })], onStopChat: () => (stopAllCalls += 1) });
 		const stopAll = running.querySelector<HTMLButtonElement>(".piem-subagents__stop-all");
 
 		expect(stopAll).not.toBeNull();
@@ -494,8 +501,11 @@ describe("selection requests from outside the tree", () => {
 				snapshots={[snapshot({ id: "a", task: "First" }), snapshot({ id: "b", task: "Second" })]}
 				showAgentDetails={false}
 				selectionRequest={{ id: "b", token: 1 }}
+				focusedOwnerId="chat-a"
+				describeOwner={(ownerId) => `chat named ${ownerId}`}
 				onStop={() => undefined}
-				onStopAll={() => undefined}
+				onStopChat={() => undefined}
+				onStopEverything={() => undefined}
 				onArchiveFinished={() => undefined}
 				app={app}
 				component={component}
@@ -512,8 +522,11 @@ describe("selection requests from outside the tree", () => {
 				snapshots={[snapshot()]}
 				showAgentDetails={false}
 				selectionRequest={null}
+				focusedOwnerId="chat-a"
+				describeOwner={(ownerId) => `chat named ${ownerId}`}
 				onStop={() => undefined}
-				onStopAll={() => undefined}
+				onStopChat={() => undefined}
+				onStopEverything={() => undefined}
 				onArchiveFinished={() => undefined}
 				app={app}
 				component={component}
@@ -521,5 +534,139 @@ describe("selection requests from outside the tree", () => {
 		);
 
 		expect(host.querySelector(".piem-subagents__list")).not.toBeNull();
+	});
+});
+
+describe("the panel spans every chat and says which one it is showing", () => {
+	it("shows only the focused chat by default, and offers the rest", async () => {
+		const host = await renderInspector({
+			snapshots: [snapshot({ id: "mine", task: "Sweep mine" }), snapshot({ id: "theirs", task: "Sweep theirs", ownerId: "chat-b" })],
+		});
+
+		expect(text(host)).toContain("Sweep mine");
+		expect(text(host)).not.toContain("Sweep theirs");
+		// The toggle is the only thing that says the other run exists at all, so it
+		// has to be present the moment one does.
+		expect(host.querySelector(".piem-subagents__scope")).not.toBeNull();
+	});
+
+	it("keeps the toggle away when every run belongs to the focused chat", async () => {
+		const host = await renderInspector({ snapshots: [snapshot({ id: "a" }), snapshot({ id: "b" })] });
+
+		// Nothing to switch to: a control whose two states render the same list is
+		// a question the reader cannot answer wrongly, and should not be asked.
+		expect(host.querySelector(".piem-subagents__scope")).toBeNull();
+	});
+
+	it("names the other chats' runs in the empty state rather than reading as quiet", async () => {
+		const host = await renderInspector({ snapshots: [snapshot({ ownerId: "chat-b", status: "running" })] });
+
+		// The failure this replaces: an empty panel while a background chat's
+		// subagent is working, which reads as "nothing is running".
+		expect(text(host)).toContain("Nothing was handed off in this chat");
+		expect(text(host)).toContain("1");
+		expect(host.querySelector(".piem-subagents__scope")).not.toBeNull();
+	});
+
+	it("groups by chat with the focused one first, and names each group", async () => {
+		const host = await renderInspector({
+			showAllChats: true,
+			snapshots: [
+				snapshot({ id: "theirs", task: "Sweep theirs", ownerId: "chat-b" }),
+				snapshot({ id: "mine", task: "Sweep mine" }),
+			],
+		});
+
+		const names = Array.from(host.querySelectorAll(".piem-subagents__group-name")).map((node) => node.textContent);
+		// Focused first even though its run was spawned second: a reader who opened
+		// the panel from a chat is almost always asking about that chat.
+		expect(names).toEqual(["This chat", "chat named chat-b"]);
+		expect(text(host)).toContain("Sweep mine");
+		expect(text(host)).toContain("Sweep theirs");
+	});
+
+	it("gives each group a stop that can only reach its own chat", async () => {
+		const stopped: string[] = [];
+		const host = await renderInspector({
+			showAllChats: true,
+			onStopChat: (ownerId) => stopped.push(ownerId),
+			snapshots: [
+				snapshot({ id: "mine", status: "running", report: undefined }),
+				snapshot({ id: "theirs", status: "running", report: undefined, ownerId: "chat-b" }),
+			],
+		});
+
+		const groupStops = Array.from(host.querySelectorAll<HTMLButtonElement>(".piem-subagents__group-head .piem-subagents__stop-all"));
+		expect(groupStops).toHaveLength(2);
+		groupStops[1]!.click();
+		// The second group's button reached the second group's chat, and nothing else.
+		expect(stopped).toEqual(["chat-b"]);
+	});
+
+	it("states the reach of the unscoped stop instead of calling it 'all'", async () => {
+		let everything = 0;
+		const host = await renderInspector({
+			showAllChats: true,
+			onStopEverything: () => (everything += 1),
+			snapshots: [
+				snapshot({ id: "mine", status: "running", report: undefined }),
+				snapshot({ id: "theirs", status: "running", report: undefined, ownerId: "chat-b" }),
+			],
+		});
+
+		const noticeStop = host.querySelector<HTMLButtonElement>(".piem-subagents__notice .piem-subagents__stop-all");
+		// "Stop all" beside three chats' rows is the label that ends work the reader
+		// never thought about; the count and the chat count are the fence.
+		expect(noticeStop?.textContent).toBe("Stop all 2 (2 chats)");
+		noticeStop!.click();
+		expect(everything).toBe(1);
+	});
+
+	it("attributes a detail page only when the run belongs to another chat", async () => {
+		const mine = await renderInspector({ snapshots: [snapshot()], selectedId: "subagent-1" });
+		expect(text(mine)).not.toContain("Ordered by");
+
+		const theirs = await renderInspector({
+			snapshots: [snapshot({ ownerId: "chat-b" })],
+			showAllChats: true,
+			selectedId: "subagent-1",
+		});
+		// Without this line, a run reached from the All chats list is
+		// indistinguishable from the reader's own — and the stop button in the bar
+		// above it would be pressed against a chat they were not thinking about.
+		expect(text(theirs)).toContain("Ordered by chat named chat-b");
+	});
+
+	it("switches scope from the toggle, and starts scoped on every open", async () => {
+		const host = await render(
+			<SubagentInspectorApp
+				snapshots={[snapshot({ id: "theirs", task: "Sweep theirs", ownerId: "chat-b" })]}
+				focusedOwnerId="chat-a"
+				describeOwner={(ownerId) => `chat named ${ownerId}`}
+				showAgentDetails={false}
+				selectionRequest={null}
+				onStop={() => undefined}
+				onStopChat={() => undefined}
+				onStopEverything={() => undefined}
+				onArchiveFinished={() => undefined}
+				app={app}
+				component={component}
+			/>,
+		);
+
+		// Opens on the focused chat, which has delegated nothing.
+		expect(text(host)).not.toContain("Sweep theirs");
+
+		const allChatsOption = (): HTMLButtonElement =>
+			Array.from(host.querySelectorAll<HTMLButtonElement>(".piem-subagents__scope-option"))[1]!;
+		const pressed = allChatsOption();
+		pressed.click();
+		await flushRender();
+
+		expect(text(host)).toContain("Sweep theirs");
+		expect(allChatsOption().getAttribute("aria-pressed")).toBe("true");
+		// The toggle survives its own press rather than being rebuilt by it, which is
+		// what keeps a keyboard reader on the control they just used.
+		expect(allChatsOption()).toBe(pressed);
 	});
 });

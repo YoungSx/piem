@@ -4077,7 +4077,103 @@ button.piem-chat__latest--asking {
 	text-wrap: pretty;
 }
 
+/*
+ * The scope switch, between the notice and the record.
+ *
+ * A segmented pair rather than a checkbox: naming both scopes is what tells a
+ * reader what the panel is currently leaving out. Quiet by default — the panel is
+ * a record, and the switch is a lens on it, not an action — so the active half is
+ * marked by the hover surface and full-strength text rather than by the accent,
+ * which in a sidebar this narrow would read as the loudest thing on screen.
+ */
+.piem-subagents__scope {
+	align-self: flex-start;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	display: flex;
+	overflow: hidden;
+}
+
+/* Under the empty state, whose own copy is centred. */
+.piem-subagents__scope--centered {
+	align-self: center;
+}
+
+.piem-subagents__scope-option {
+	background: none;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	margin: 0;
+	padding: var(--size-2-1) var(--size-4-2);
+	white-space: nowrap;
+}
+
+.piem-subagents__scope-option.is-active {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+@media (hover: hover) {
+	.piem-subagents__scope-option:not(.is-active):hover {
+		background: var(--background-modifier-hover);
+		color: var(--text-normal);
+	}
+}
+
+/*
+ * One chat's section of the record.
+ *
+ * The header carries the chat's name and that chat's own stop control, which is
+ * the whole point of grouping: a control inside a group can only mean the rows
+ * under it. Sections are separated by space rather than rules — the rows already
+ * have their own separators, and a second line weight would fight them.
+ */
+.piem-subagents__group {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.piem-subagents__group-head {
+	align-items: baseline;
+	color: var(--text-muted);
+	display: flex;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	gap: var(--size-4-1);
+	justify-content: space-between;
+	/* The panel's own column gap spaces the sections; a margin here would stack. */
+	margin: 0;
+}
+
+/*
+ * The name may be a whole opening message, so it truncates rather than pushing
+ * its own stop control off a 300px sidebar.
+ */
+.piem-subagents__group-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* --- detail --- */
+
+/*
+ * Which chat ordered a run, under its task — present only when that is not the
+ * chat the reader came from, so the line means "this one is not yours" every time
+ * it appears.
+ */
+.piem-subagents__origin {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin: var(--size-2-1) 0 0;
+}
+
+
 
 .piem-subagents__detail {
 	display: flex;

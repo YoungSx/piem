@@ -704,7 +704,7 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 		// It still reports, and the report is the child's own.
 		finishChild("Scout report: nothing to organize.");
 		await waitFor(() => registry.liveCount() === 0);
-		const entry = registry.all().find((candidate) => candidate.role === "scout");
+		const entry = registry.all().find((candidate) => candidate.role.name === "scout");
 		expect(entry?.settled).toBe(true);
 		expect(entry?.error).toBeUndefined();
 		expect(JSON.stringify(entry?.result?.messages ?? [])).toContain("Scout report: nothing to organize.");
