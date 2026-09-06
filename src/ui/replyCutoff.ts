@@ -43,8 +43,16 @@ import { describeProviderFailure } from "./providerFailure";
 
 /** A reply that ended early, and why. `null` means it ended normally. */
 export interface ReplyCutoff {
-	/** Which cause, so the caller can pick copy and an icon without re-deriving it. */
-	kind: "stopped" | "steered" | "truncated" | "failed";
+	/**
+	 * Which cause, so the caller can pick copy and an icon without re-deriving it.
+	 *
+	 * `length` splits into two kinds — `truncated` and `starved` — because the
+	 * stop reason names the mechanism, not the cause: the model can hit its own
+	 * output ceiling, or the context can be so full the provider only had a sliver
+	 * of output budget left. The reader's next action differs ("ask for shorter"
+	 * vs "tidy the context"), so one sentence cannot serve both.
+	 */
+	kind: "stopped" | "steered" | "truncated" | "starved" | "failed";
 	/** Line shown under the message. */
 	notice: string;
 	/**
@@ -105,11 +113,17 @@ export function markReplySteered(message: AgentMessage): void {
  * {@link markReplySteered}, in which case their own next message is what ended
  * it.
  *
- * `length` is the provider hitting the output-token ceiling — pi treats it as
+ * `length` is the provider cutting the reply short — pi treats it as
  * significant enough to fail every tool call in the message (`agent-loop.js`,
  * `failToolCallsFromTruncatedMessage`, whose comment notes that truncated
  * arguments can still parse), so the text beside those calls is no more
- * trustworthy and the reader has to be told.
+ * trustworthy and the reader has to be told. It splits into two causes, and the
+ * split needs no new data from pi: the provider's own `usage` reports what the
+ * reply consumed. When the context had room left, what got consumed was the
+ * model's own output ceiling (`truncated`); when the context was nearly full,
+ * the output budget the provider granted was a sliver of that room
+ * (`starved`) — and then the copy is not "the model ran long" but "tidy the
+ * context", because a shorter ask would starve again.
  *
  * `error` is a provider failure — a timeout, a refusal, a dropped connection.
  * pi leaves the partial message in place with the provider's text on
@@ -123,7 +137,11 @@ export function markReplySteered(message: AgentMessage): void {
  * Every other reason — `stop`, `toolUse`, `deferred`, `pending` — returns
  * `null`: a normal end needs no notice.
  */
-export function describeReplyCutoff(message: AssistantMessage, t: Translator): ReplyCutoff | null {
+export function describeReplyCutoff(
+	message: AssistantMessage,
+	t: Translator,
+	contextWindow?: number,
+): ReplyCutoff | null {
 	if (message.stopReason === "aborted") {
 		if ((message as SteeredAssistantMessage).steeredAway === true) {
 			return {
@@ -143,6 +161,16 @@ export function describeReplyCutoff(message: AssistantMessage, t: Translator): R
 		};
 	}
 	if (message.stopReason === "length") {
+		if (isContextStarved(message, contextWindow)) {
+			return {
+				kind: "starved",
+				notice: t.t("chat.replyStarved"),
+				spoken: t.t("chat.replyStarvedSpoken"),
+				// The glyph the context-wall banner and the tidy button already
+				// carry, so the sentence points at the action by shape alone.
+				icon: "archive",
+			};
+		}
 		return {
 			kind: "truncated",
 			notice: t.t("chat.replyTruncated"),
@@ -176,4 +204,47 @@ export function describeReplyCutoff(message: AssistantMessage, t: Translator): R
 		};
 	}
 	return null;
+}
+
+/**
+ * Whether a `length` stop was the context leaving no room to write, not the
+ * model running long.
+ *
+ * pi clamps the output budget at request time: what is sent is
+ * `min(requested, max(1, contextWindow - promptTokens - CONTEXT_SAFETY_TOKENS))`
+ * (`pi-ai` `simple-options.js`, `clampMaxTokensToContext`). A nearly full
+ * context clamps that down to roughly the room that is left, so a reply that
+ * stops for `length` after consuming about all of it was starved by the
+ * context — while a reply with room to spare consumed its own output ceiling,
+ * which is the model's habit, not the context's.
+ *
+ * `output` is compared against `room` rather than against the requested limit
+ * for the same reason the module does not read `isRecoverableLength`: the
+ * requested limit is not in the persisted message, and the provider-reported
+ * usage is. `cacheRead` rides with `input` because pi-ai normalizes `input` to
+ * exclude cached tokens, and the clamp counts them both.
+ *
+ * False positives cost one wrong sentence under one reply; the alternative —
+ * reading the compaction gate's live state from the UI — would make a
+ * persisted transcript lie after a reload. The threshold is exact, not tight:
+ * `output >= room` is the signature of the clamp, since the granted budget is
+ * the room itself. The clamp collapsing all the way to 1 (room at or below
+ * zero, the upstream bug where a near-full context mutes the model) lands on
+ * the same branch, which is where that extreme belongs — the reader must tidy
+ * either way.
+ *
+ * `CONTEXT_SAFETY_TOKENS` is pi-ai's own constant, mirrored here rather than
+ * imported because the module does not export it. If pi-ai changes its value,
+ * this copy disagrees by that delta — check `dist/api/simple-options.js` on
+ * upgrade.
+ */
+const CONTEXT_SAFETY_TOKENS = 4096;
+
+function isContextStarved(message: AssistantMessage, contextWindow?: number): boolean {
+	if (!contextWindow || contextWindow <= 0) {
+		return false;
+	}
+	const { input, cacheRead, output } = message.usage;
+	const room = contextWindow - input - cacheRead - CONTEXT_SAFETY_TOKENS;
+	return room <= output;
 }

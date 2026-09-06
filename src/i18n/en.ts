@@ -195,6 +195,16 @@ export const en = {
 		/** Appended to spoken text, so it continues the sentence in lower case. */
 		replyTruncatedSpoken: "this reply hit the model's length limit and stopped early.",
 		/**
+		 * The other `length` cause: the context was nearly full, so the provider
+		 * only granted a sliver of output budget and the reply stopped for length
+		 * having written about all of it. Says what to do rather than what broke —
+		 * "tidy up" is the word the context-wall banner and its button already use,
+		 * so the sentence, the glyph (`archive`), and the action agree.
+		 */
+		replyStarved: "Context is nearly full, so this reply had no room to finish. Tidy up and ask again.",
+		/** Appended to spoken text, so it continues the sentence in lower case. */
+		replyStarvedSpoken: "context is nearly full, so this reply had no room to finish. tidy up and ask again.",
+		/**
 		 * Why a turn ended in a provider failure, one family per sentence.
 		 *
 		 * Named by what the reader should do next rather than by protocol shape:

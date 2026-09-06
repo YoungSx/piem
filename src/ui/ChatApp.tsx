@@ -733,6 +733,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					isCompacting={snapshot.isCompacting}
 					compactionEvent={snapshot.compactionEvent}
 					compactionRetained={snapshot.compactionRetained}
+					contextWindow={snapshot.contextFill?.contextWindow}
 					onQuickAction={handleQuickAction}
 					suggestedActions={suggestedActions}
 					pendingQuestion={ask.request}

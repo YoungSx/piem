@@ -107,6 +107,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 		editingCancel: "取消编辑",
 		replyTruncated: "这条回复达到模型的长度上限，提前结束了。",
 		replyTruncatedSpoken: "这条回复达到模型的长度上限，提前结束了。",
+		// 另一种 length 成因：上下文快满，供应商只批了很小的输出额度。「整理」
+		// 与上下文墙横幅和按钮用同一个词，图标也是同一个（archive）。
+		replyStarved: "上下文快满了，这条回复没空间说完。整理一下再问。",
+		replyStarvedSpoken: "上下文快满了，这条回复没空间说完。整理一下再问。",
 		providerFailure: {
 			auth: "供应商拒绝了这个密钥。到设置里核对一下再问。",
 			authSpoken: "供应商拒绝了这个密钥。到设置里核对一下再问。",
