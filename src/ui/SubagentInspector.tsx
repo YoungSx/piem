@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { App, Component } from "obsidian";
-import type { SubagentSnapshot } from "../subagent/inspectorModel";
+import { anyRunning, groupByOwner, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
 import { MarkdownText } from "./MarkdownText";
 import { IconButton } from "./ObsidianIcon";
 import { configItems, incompleteNote, processSteps, reportBody, statusText, timingLine, usageItems } from "./inspectorCopy";
@@ -8,8 +8,27 @@ import { useT } from "./TranslatorContext";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 
 export interface SubagentInspectorProps {
-	/** Every subagent this session spawned, oldest first. */
+	/**
+	 * Every subagent the process holds, oldest first — across all chats.
+	 *
+	 * The panel is a tab, not part of a conversation, so it receives the whole
+	 * registry and decides what to show. {@link focusedOwnerId} is what makes
+	 * "this chat" a thing it can mean.
+	 */
 	snapshots: readonly SubagentSnapshot[];
+	/** The chat the panel was opened from, or undefined before one is adopted. */
+	focusedOwnerId?: string;
+	/**
+	 * Names a chat for the reader.
+	 *
+	 * A function rather than a map because the answer is copy: a chat with no
+	 * name of its own is described by its opening line, and one whose runtime is
+	 * gone has to be worded rather than left blank.
+	 */
+	describeOwner: (ownerId: string) => string;
+	/** Whether the list spans every chat or only the focused one. */
+	showAllChats: boolean;
+	onShowAllChats: (value: boolean) => void;
 	/** Whether the panel may show spend, matching the chat panel's tier. */
 	showAgentDetails: boolean;
 	/** Which run the detail pane shows; null is the list. */
@@ -24,14 +43,23 @@ export interface SubagentInspectorProps {
 	 * no-op.
 	 */
 	onStop: (id: string) => void;
-	/** Stops every running run; the list's "stop all". */
-	onStopAll: () => void;
+	/**
+	 * Stops every running run of one chat.
+	 *
+	 * Two stop-many callbacks rather than one with a scope argument, because the
+	 * rule they exist to keep is that a button kills exactly the rows under it:
+	 * the per-chat control can only ever reach its own group, and the reach of
+	 * the unscoped one is stated in its own name.
+	 */
+	onStopChat: (ownerId: string) => void;
+	/** Stops every running run in every chat; only rendered when several are shown. */
+	onStopEverything: () => void;
 	/**
 	 * Puts every finished run away, on the reader's orders.
 	 *
 	 * Reader-side tidying, not a lifecycle change: the archived runs stay in the
 	 * record — in their own closed section below the list — and the parent's tools
-	 * cannot tell the difference. A callback for the same reason the two stops are:
+	 * cannot tell the difference. A callback for the same reason the stops are:
 	 * the snapshots stay plain data, and the one real capability arrives here.
 	 */
 	onArchiveFinished: () => void;
@@ -80,11 +108,16 @@ export interface SubagentInspectorProps {
  */
 export function SubagentInspector({
 	snapshots,
+	focusedOwnerId,
+	describeOwner,
+	showAllChats,
+	onShowAllChats,
 	showAgentDetails,
 	selectedId,
 	onSelect,
 	onStop,
-	onStopAll,
+	onStopChat,
+	onStopEverything,
 	onArchiveFinished,
 	app,
 	component,
@@ -107,6 +140,12 @@ export function SubagentInspector({
 				<SubagentDetail
 					snapshot={selected}
 					showAgentDetails={showAgentDetails}
+					/*
+					 * Provenance, only when it is news. A run of the chat the reader came
+					 * from needs no attribution — saying it every time would train them to
+					 * stop reading the line that matters when a run is *not* theirs.
+					 */
+					ownerLabel={selected.ownerId === focusedOwnerId ? undefined : describeOwner(selected.ownerId)}
 					onBack={() => onSelect(null)}
 					onStop={onStop}
 					app={app}
@@ -115,8 +154,13 @@ export function SubagentInspector({
 			) : (
 				<SubagentList
 					snapshots={snapshots}
+					focusedOwnerId={focusedOwnerId}
+					describeOwner={describeOwner}
+					showAllChats={showAllChats}
+					onShowAllChats={onShowAllChats}
 					onSelect={onSelect}
-					onStopAll={onStopAll}
+					onStopChat={onStopChat}
+					onStopEverything={onStopEverything}
 					onArchiveFinished={onArchiveFinished}
 				/>
 			)}
@@ -126,60 +170,98 @@ export function SubagentInspector({
 
 interface SubagentListProps {
 	snapshots: readonly SubagentSnapshot[];
+	focusedOwnerId?: string;
+	describeOwner: (ownerId: string) => string;
+	showAllChats: boolean;
+	onShowAllChats: (value: boolean) => void;
 	onSelect: (id: string) => void;
-	/** Stops every running run; rendered only while at least one is running. */
-	onStopAll: () => void;
-	/** Archives every finished run; rendered only while at least one could move. */
+	onStopChat: (ownerId: string) => void;
+	onStopEverything: () => void;
+	/** Archives every settled run; rendered only while at least one could move. */
 	onArchiveFinished: () => void;
 }
 
 /**
- * Every run this session spawned, oldest first.
+ * The runs on screen, oldest first — one chat's, or every chat's in groups.
  *
  * Oldest first because the list is a record of what happened, and a record reads
  * forward: the third subagent's task usually only makes sense after the first
  * one's report. Newest-first would put the freshest row on top, which matters
  * for a feed you check repeatedly and not for a history you read once.
+ *
+ * Scoped to the focused chat by default, because that is the chat the reader
+ * just came from and the one whose fan-out they opened the panel to check. The
+ * toggle is what makes the other chats reachable rather than invisible — a
+ * background chat can be working the whole time this panel is open, and a panel
+ * that could only ever show one chat would deny it exists.
  */
-function SubagentList({ snapshots, onSelect, onStopAll, onArchiveFinished }: SubagentListProps): React.JSX.Element {
+function SubagentList({
+	snapshots,
+	focusedOwnerId,
+	describeOwner,
+	showAllChats,
+	onShowAllChats,
+	onSelect,
+	onStopChat,
+	onStopEverything,
+	onArchiveFinished,
+}: SubagentListProps): React.JSX.Element {
 	const t = useT();
+	const own = focusedOwnerId === undefined ? [] : snapshotsForOwner(snapshots, focusedOwnerId);
+	const elsewhere = snapshots.length - own.length;
+	// The toggle appears only when it would change something, and stays once it
+	// is on — a reader who switched to All chats has to be able to switch back
+	// even after the runs that justified the switch have all settled.
+	const canToggle = elsewhere > 0 || showAllChats;
+	const visible = showAllChats ? snapshots : own;
 
-	if (snapshots.length === 0) {
-		return (
-			<div className="piem-subagents__empty">
-				<p className="piem-subagents__empty-title">{t.t("subagents.empty")}</p>
-				<p className="piem-subagents__empty-hint">{t.t("subagents.emptyHint")}</p>
-			</div>
-		);
-	}
-
-	const current = snapshots.filter((snapshot) => !snapshot.archived);
-	const archived = snapshots.filter((snapshot) => snapshot.archived);
-	// Read off every snapshot rather than the shown ones, because "stop all" stops
-	// every live child whatever the reader has tidied away — and archiving only
-	// ever touches settled runs, so the two answers agree today. Asserting it here
-	// is what keeps them agreeing if that ever changes.
-	const anyRunning = snapshots.some((snapshot) => snapshot.status === "running");
+	const current = visible.filter((snapshot) => !snapshot.archived);
+	const archived = visible.filter((snapshot) => snapshot.archived);
+	const isEmpty = visible.length === 0;
+	const groups = showAllChats ? groupByOwner(current, focusedOwnerId) : [];
+	const runningChats = groups.filter((group) => anyRunning(group.snapshots)).length;
+	const runningTotal = current.filter((snapshot) => snapshot.status === "running").length;
+	// Read off the shown runs, because the archive button is what tidies the rows
+	// the reader can see: offering it when another chat holds the only finished
+	// run would press it to no visible effect, and archiving never touches a
+	// running run, so this stays in agreement with the stop totals above.
 	const anyArchivable = current.some((snapshot) => snapshot.status !== "running");
 
 	return (
 		<>
+			{isEmpty ? (
+				<div className="piem-subagents__empty">
+					<p className="piem-subagents__empty-title">{t.t("subagents.empty")}</p>
+					{/*
+					 * Two hints, because the reader's next move differs. Nothing anywhere:
+					 * explain what this panel is for. Nothing here but something elsewhere:
+					 * say so and point at the toggle — otherwise an empty panel reads as
+					 * "no subagents are running" while one is.
+					 */}
+					<p className="piem-subagents__empty-hint">
+						{elsewhere > 0 ? t.t("subagents.emptyHereHint", { count: elsewhere }) : t.t("subagents.emptyHint")}
+					</p>
+				</div>
+			) : (
 			<p className="piem-subagents__notice">
 				{t.t("subagents.panelNotice")}
 				{/*
-				 * Both list-wide controls sit in the notice: "you can stop" and the
-				 * control that stops belong in one breath, and a second row for the
-				 * other one would read as a command bar over the whole record — which
-				 * is exactly the framing rule 2 refuses. Each hides entirely when it
-				 * could only do nothing: a stop-all over a finished history and an
-				 * archive-finished over a list that is already clean are both buttons
-				 * with no available effect, and the record has no need of either.
+				 * All the list-wide controls sit in the notice: "you can stop" and the
+				 * controls that stop or tidy belong in one breath, and a second row for
+				 * them would read as a command bar over the whole record — which is
+				 * exactly the framing rule 2 refuses. Each hides entirely when it could
+				 * only do nothing: a stop over a finished history and an archive over a
+				 * list that is already clean are both buttons with no available effect,
+				 * and the record has no need of either.
+				 *
+				 * One chat on screen, so "all" is unambiguous and the kill is scoped to
+				 * it — the rows under this button are exactly that chat's.
 				 */}
-				{anyRunning ? (
+				{!showAllChats && focusedOwnerId !== undefined && runningTotal > 0 ? (
 					<button
 						type="button"
 						className="piem-subagents__notice-action piem-subagents__stop-all"
-						onClick={onStopAll}
+						onClick={() => onStopChat(focusedOwnerId)}
 						aria-label={t.t("subagents.stopAllAria")}
 					>
 						{t.t("subagents.stopAll")}
@@ -195,26 +277,69 @@ function SubagentList({ snapshots, onSelect, onStopAll, onArchiveFinished }: Sub
 						{t.t("subagents.archiveFinished")}
 					</button>
 				) : null}
+				{/*
+				 * Several chats on screen, so the unscoped kill has to say how far it
+				 * reaches. A reader who came here for one chat's runaway sweep must not
+				 * be able to end three chats' work by pressing a button labelled
+				 * "Stop all".
+				 */}
+				{showAllChats && runningTotal > 0 ? (
+					<button
+						type="button"
+						className="piem-subagents__notice-action piem-subagents__stop-all"
+						onClick={onStopEverything}
+						aria-label={t.t("subagents.stopEverythingAria", { chats: runningChats })}
+					>
+						{t.t("subagents.stopEverything", { count: runningTotal, chats: runningChats })}
+					</button>
+				) : null}
 			</p>
-			{current.length > 0 ? (
-				<ul
-					className="piem-subagents__list"
-					aria-label={t.t("subagents.listAria")}
-					onMouseOver={suppressOwnTooltip}
-				>
-					{current.map((snapshot) => (
-						<li key={snapshot.id}>
-							<SubagentRow snapshot={snapshot} onSelect={onSelect} />
-						</li>
-					))}
-				</ul>
+			)}
+			{/*
+			 * Outside the empty/populated branch on purpose: switching scope can flip
+			 * the panel between them, and a toggle rendered inside either one would be
+			 * unmounted and rebuilt by its own press — taking the keyboard reader's
+			 * focus with it, back to `<body>`.
+			 */}
+			{canToggle ? (
+				<ScopeToggle centered={isEmpty} showAllChats={showAllChats} onShowAllChats={onShowAllChats} />
+			) : null}
+			{isEmpty ? null : showAllChats ? (
+				groups.length > 0 ? (
+					groups.map((group) => {
+						const name =
+							group.ownerId === focusedOwnerId ? t.t("subagents.groupThisChat") : describeOwner(group.ownerId);
+						return (
+							<section key={group.ownerId} className="piem-subagents__group">
+								<h3 className="piem-subagents__group-head">
+									<span className="piem-subagents__group-name">{name}</span>
+									{anyRunning(group.snapshots) ? (
+										<button
+											type="button"
+											className="piem-subagents__notice-action piem-subagents__stop-all"
+											onClick={() => onStopChat(group.ownerId)}
+											aria-label={t.t("subagents.stopChatAria", { chat: name })}
+										>
+											{t.t("subagents.stopChat")}
+										</button>
+									) : null}
+								</h3>
+								<RunList snapshots={group.snapshots} onSelect={onSelect} />
+							</section>
+						);
+					})
+				) : (
+					/*
+					 * Not the empty state: "no subagents yet" would be a lie told to the
+					 * one reader who knows better, having just archived them. This says
+					 * where they went, because the section that holds them is closed and a
+					 * closed section is easy to read as an absence.
+					 */
+					<p className="piem-subagents__note">{t.t("subagents.allArchived")}</p>
+				)
+			) : current.length > 0 ? (
+				<RunList snapshots={current} onSelect={onSelect} />
 			) : (
-				/*
-				 * Not the empty state: "no subagents yet" would be a lie told to the
-				 * one reader who knows better, having just archived them. This says
-				 * where they went, because the section that holds them is closed and a
-				 * closed section is easy to read as an absence.
-				 */
 				<p className="piem-subagents__note">{t.t("subagents.allArchived")}</p>
 			)}
 			{archived.length > 0 ? <ArchivedRuns snapshots={archived} onSelect={onSelect} /> : null}
@@ -246,18 +371,76 @@ function ArchivedRuns({
 				<span className="piem-subagents__section-title">{t.t("subagents.sectionArchived")}</span>
 				<span className="piem-subagents__archived-count">{t.t("subagents.archivedCount", { count: snapshots.length })}</span>
 			</summary>
-			<ul
-				className="piem-subagents__list"
-				aria-label={t.t("subagents.archivedListAria")}
-				onMouseOver={suppressOwnTooltip}
-			>
-				{snapshots.map((snapshot) => (
-					<li key={snapshot.id}>
-						<SubagentRow snapshot={snapshot} onSelect={onSelect} />
-					</li>
-				))}
-			</ul>
+			<RunList snapshots={snapshots} onSelect={onSelect} ariaLabel={t.t("subagents.archivedListAria")} />
 		</details>
+	);
+}
+
+/**
+ * The scope switch: this chat, or all of them.
+ *
+ * A pair of pressed-state buttons rather than a checkbox, because the two scopes
+ * are both worth naming — "All chats" beside "This chat only" tells a reader what
+ * the panel is *currently* leaving out, which a single unlabelled checkbox does
+ * not.
+ */
+function ScopeToggle({
+	centered,
+	showAllChats,
+	onShowAllChats,
+}: {
+	/** Centred under the empty state's centred copy, left-aligned above a list. */
+	centered: boolean;
+	showAllChats: boolean;
+	onShowAllChats: (value: boolean) => void;
+}): React.JSX.Element {
+	const t = useT();
+	return (
+		<div
+			className={`piem-subagents__scope${centered ? " piem-subagents__scope--centered" : ""}`}
+			role="group"
+			aria-label={t.t("subagents.scopeAria")}
+		>
+			<button
+				type="button"
+				className={`piem-subagents__scope-option${showAllChats ? "" : " is-active"}`}
+				aria-pressed={!showAllChats}
+				onClick={() => onShowAllChats(false)}
+			>
+				{t.t("subagents.scopeThisChat")}
+			</button>
+			<button
+				type="button"
+				className={`piem-subagents__scope-option${showAllChats ? " is-active" : ""}`}
+				aria-pressed={showAllChats}
+				onClick={() => onShowAllChats(true)}
+			>
+				{t.t("subagents.scopeAllChats")}
+			</button>
+		</div>
+	);
+}
+
+/** One `<ul>` of rows — the whole list, or one chat's section of it. */
+function RunList({
+	snapshots,
+	onSelect,
+	ariaLabel,
+}: {
+	snapshots: readonly SubagentSnapshot[];
+	onSelect: (id: string) => void;
+	/** Overrides the default list label — the archive section names its list differently. */
+	ariaLabel?: string;
+}): React.JSX.Element {
+	const t = useT();
+	return (
+		<ul className="piem-subagents__list" aria-label={ariaLabel ?? t.t("subagents.listAria")} onMouseOver={suppressOwnTooltip}>
+			{snapshots.map((snapshot) => (
+				<li key={snapshot.id}>
+					<SubagentRow snapshot={snapshot} onSelect={onSelect} />
+				</li>
+			))}
+		</ul>
 	);
 }
 
@@ -312,6 +495,13 @@ function StatusDot({ status }: { status: SubagentSnapshot["status"] }): React.JS
 interface SubagentDetailProps {
 	snapshot: SubagentSnapshot;
 	showAgentDetails: boolean;
+	/**
+	 * The chat that ordered this run, when it is not the one the reader came from.
+	 *
+	 * Undefined for the focused chat's own runs, where attribution would be noise
+	 * on every page and would blunt the line when it is genuinely news.
+	 */
+	ownerLabel?: string;
 	onBack: () => void;
 	/** Stops this run; rendered only while it is still running. */
 	onStop: (id: string) => void;
@@ -326,7 +516,7 @@ interface SubagentDetailProps {
  * it produced, then how it got there. The process record comes last and closed:
  * it is the longest thing on the page and the least often the answer.
  */
-function SubagentDetail({ snapshot, showAgentDetails, onBack, onStop, app, component }: SubagentDetailProps): React.JSX.Element {
+function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop, app, component }: SubagentDetailProps): React.JSX.Element {
 	const t = useT();
 	const backRef = useRef<HTMLButtonElement | null>(null);
 	const note = incompleteNote(snapshot, t);
@@ -387,6 +577,13 @@ function SubagentDetail({ snapshot, showAgentDetails, onBack, onStop, app, compo
 					</>
 				) : null}
 				<p className="piem-subagents__timing">{timingLine(snapshot, t)}</p>
+				{/*
+				 * Whose run this is, when it is not this chat's. Reached from the All
+				 * chats list, a detail page is otherwise indistinguishable from one of
+				 * the reader's own — and the stop button in the bar above would then be
+				 * pressed against a chat they were not thinking about.
+				 */}
+				{ownerLabel ? <p className="piem-subagents__origin">{t.t("subagents.fromChat", { chat: ownerLabel })}</p> : null}
 			</Section>
 
 			{snapshot.instructions ? (
@@ -523,9 +720,14 @@ export interface SubagentInspectorAppProps {
 	showAgentDetails: boolean;
 	/** The newest open-this-run request, or null when the panel was opened plainly. */
 	selectionRequest?: SelectionRequest | null;
+	/** The chat the panel was opened from; the list defaults to it. */
+	focusedOwnerId?: string;
+	/** Names a chat for the reader; the view resolves session paths to copy. */
+	describeOwner: (ownerId: string) => string;
 	/** Passed through to the inspector; the view owns what these actually do. */
 	onStop: (id: string) => void;
-	onStopAll: () => void;
+	onStopChat: (ownerId: string) => void;
+	onStopEverything: () => void;
 	onArchiveFinished: () => void;
 	app: App;
 	component: Component;
@@ -540,15 +742,27 @@ export interface SubagentInspectorAppProps {
  */
 export function SubagentInspectorApp({
 	snapshots,
+	focusedOwnerId,
+	describeOwner,
 	showAgentDetails,
 	selectionRequest,
 	onStop,
-	onStopAll,
+	onStopChat,
+	onStopEverything,
 	onArchiveFinished,
 	app,
 	component,
 }: SubagentInspectorAppProps): React.JSX.Element {
 	const [selectedId, setSelectedId] = useState<string | null>(selectionRequest?.id ?? null);
+	/*
+	 * Scope lives here with the selection, for the same reason: the inspector
+	 * stays a function of its props, and the view re-renders it on every registry
+	 * event — state held there would be reset by each spawn and settlement.
+	 *
+	 * Not persisted. Reopening the panel lands on the focused chat, which is the
+	 * scope that answers the question a reader almost always opens it with.
+	 */
+	const [showAllChats, setShowAllChats] = useState(false);
 	// Which request has already been applied, so a re-render that changes only the
 	// snapshots does not drag the reader back to a detail page they left.
 	const appliedToken = useRef(selectionRequest?.token ?? 0);
@@ -564,11 +778,16 @@ export function SubagentInspectorApp({
 	return (
 		<SubagentInspector
 			snapshots={snapshots}
+			focusedOwnerId={focusedOwnerId}
+			describeOwner={describeOwner}
+			showAllChats={showAllChats}
+			onShowAllChats={setShowAllChats}
 			showAgentDetails={showAgentDetails}
 			selectedId={selectedId}
 			onSelect={setSelectedId}
 			onStop={onStop}
-			onStopAll={onStopAll}
+			onStopChat={onStopChat}
+			onStopEverything={onStopEverything}
 			onArchiveFinished={onArchiveFinished}
 			app={app}
 			component={component}

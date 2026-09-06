@@ -1572,6 +1572,36 @@ export const en = {
 		archivedListAria: "Archived subagents, oldest first",
 		/** What is left when the reader has archived everything; the section below still holds them. */
 		allArchived: "Every run is archived. Open Archived below to read one.",
+		/**
+		 * The panel spans every chat, so the list has to say which one it is
+		 * showing and offer the rest.
+		 *
+		 * Named "this chat" rather than "current session": the reader knows it as
+		 * the conversation they were just in, and "session" is this plugin's word
+		 * for a file on disk.
+		 */
+		scopeThisChat: "This chat only",
+		scopeAllChats: "All chats",
+		/** The toggle's own name, for a reader who cannot see it is a pair of tabs. */
+		scopeAria: "Which chats to show",
+		/** The group header for the chat the panel was opened from. */
+		groupThisChat: "This chat",
+		/** A run whose chat is gone — deleted, or never opened this session. */
+		groupUnknownChat: "A closed chat",
+		/** Stops the running children of one chat. Scoped, so it names its scope. */
+		stopChat: "Stop this chat's",
+		stopChatAria: "Stop every running subagent in {chat}",
+		/**
+		 * The unscoped stop, which only appears once more than one chat is on
+		 * screen — so it says how far it reaches rather than leaving the reader to
+		 * infer it from the rows above.
+		 */
+		stopEverything: "Stop all {count} ({chats} chats)",
+		stopEverythingAria: "Stop every running subagent, in all {chats} chats",
+		/** The empty state for a chat that delegated nothing while another chat did. */
+		emptyHereHint: "Nothing was handed off in this chat. {count} run(s) belong to other chats — switch to All chats to see them.",
+		/** Detail-page provenance, shown only for a run another chat ordered. */
+		fromChat: "Ordered by {chat}",
 		status: {
 			running: "working",
 			done: "done",
