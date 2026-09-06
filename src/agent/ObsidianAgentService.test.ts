@@ -3134,6 +3134,55 @@ describe("switching the active model", () => {
 	});
 });
 
+/**
+ * The composer's fold is persisted UI state, not a preference: it lives in
+ * data.json so the panel's next mount opens folded, but it changes nothing the
+ * agent reads, so persisting it must skip the reconfigure — the cheapest path
+ * through the host's `saveSettings` — and the snapshot must hand the state to
+ * the panel, which is its only source.
+ */
+describe("folding the composer", () => {
+	it("stores the fold through the host without reconfiguring the agent", async () => {
+		const persisted: Array<{ reconfigure?: boolean } | undefined> = [];
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			persistSettings: async (options) => {
+				persisted.push(options);
+			},
+		});
+
+		await service.setComposerCollapsed(true);
+
+		expect(persisted).toEqual([{ reconfigure: false }]);
+		expect(service.getSnapshot().mobileComposerCollapsed).toBe(true);
+	});
+
+	it("round-trips back to expanded as absence, not a stored false", async () => {
+		const { service, settings } = createServiceWithSettings();
+
+		await service.setComposerCollapsed(true);
+		await service.setComposerCollapsed(false);
+
+		expect(settings.mobileComposerCollapsed).toBeUndefined();
+		expect(service.getSnapshot().mobileComposerCollapsed).toBe(false);
+	});
+
+	it("does no work when the fold already matches", async () => {
+		// Same discipline as an already-active model: persisting spends a write
+		// and a notification, and a toggle that cannot change the state must not
+		// spend either.
+		const saves: number[] = [];
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			persistSettings: async () => {
+				saves.push(1);
+			},
+		});
+
+		await service.setComposerCollapsed(false);
+
+		expect(saves).toEqual([]);
+	});
+});
+
 /** Two models behind one named provider, with the first selected. */
 function configureTwoModels(settings: PiemSettings): void {
 	settings.providers = [

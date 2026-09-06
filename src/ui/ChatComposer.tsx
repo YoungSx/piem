@@ -52,7 +52,7 @@ interface ChatComposerProps {
 	 * point at it. Generated here rather than passed in because the textarea is
 	 * what the id belongs to; the panel only forwards it.
 	 */
-	onAnchorIdChange?: (id: string) => void;
+	onAnchorIdChange?: (id: string | undefined) => void;
 	/**
 	 * The context chip row, rendered inside the composer shell above the textarea.
 	 *
@@ -121,6 +121,21 @@ interface ChatComposerProps {
 	onEditQueuedPrompt?: (id: string) => void;
 	/** Throws one queued message away, by its chip's id. */
 	onDiscardQueuedPrompt?: (id: string) => void;
+	/**
+	 * Whether the composer is folded down to its top row.
+	 *
+	 * The fold is the phone's reading mode: the context row and the fold toggle
+	 * stay, the draft's own rows unmount. The queued line stays visible too — a
+	 * queue invisible at the composer is a queue the user cannot trust took their
+	 * words (the same rule that put it there).
+	 *
+	 * Stateful in the parent rather than here, because the state is persisted:
+	 * the panel's next mount has to open folded, which a component-local flag
+	 * would forget.
+	 */
+	collapsed?: boolean;
+	/** Folds or unfolds the composer; its presence is also what renders the toggle. */
+	onToggleCollapsed?: () => void;
 }
 
 /**
@@ -161,6 +176,8 @@ export function ChatComposer({
 	onSteerQueuedPrompt,
 	onEditQueuedPrompt,
 	onDiscardQueuedPrompt,
+	collapsed = false,
+	onToggleCollapsed,
 }: ChatComposerProps): React.JSX.Element {
 	const t = useT();
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -211,7 +228,9 @@ export function ChatComposer({
 		}
 		return input.slice(1).toLowerCase();
 	}, [input]);
-	const showMenu = menuOpen && commandQuery !== null && commands.length > 0;
+	// Folded, the menu cannot stand: its anchor — the textarea — is not mounted,
+	// and reopening unfolded should not resurrect a list the user never saw.
+	const showMenu = !collapsed && menuOpen && commandQuery !== null && commands.length > 0;
 
 	const selectCommand = (command: CommandEntry): void => {
 		onInputChange(`/${command.invocation} `);
@@ -221,7 +240,10 @@ export function ChatComposer({
 		textareaRef.current?.focus();
 	};
 
-	useAutosize(textareaRef, input);
+	// The textarea's own rows: `2` when it is on screen, `0` folded — read by the
+	// autosize floor (`lineHeight * minRows`), which would otherwise reserve an
+	// empty two-row box the fold just removed.
+	useAutosize(textareaRef, input, { minRows: collapsed ? 0 : 2 });
 
 	/*
 	 * Image paste/drop staging.
@@ -315,7 +337,10 @@ export function ChatComposer({
 		return () => {
 			textarea.removeEventListener("keydown", handleNativeKeyDown, { capture: true });
 		};
-	}, []);
+		// `collapsed` rides along because folding unmounts the textarea and
+		// unfolding mounts a new one — the listener binds to the element, so the
+		// remount needs the registration to run again.
+	}, [collapsed]);
 
 	useEffect(() => {
 		if (!onFocusRequested) {
@@ -336,14 +361,42 @@ export function ChatComposer({
 	}, [onFocusRequested]);
 
 	useEffect(() => {
-		onAnchorIdChange?.(anchorId);
-	}, [onAnchorIdChange, anchorId]);
+		// `undefined` while folded: the textarea the link points at is not in the
+		// document, so the skip links outside (which test the id for truthiness)
+		// must stand down rather than jump at nothing.
+		onAnchorIdChange?.(collapsed ? undefined : anchorId);
+	}, [onAnchorIdChange, anchorId, collapsed]);
 
 	return (
 		<footer className="piem-chat__composer">
 			<div className="piem-chat__composer-shell" onPointerDown={keepFocusOnPress}>
-				{contextRow}
-				{isEditing ? (
+				<div className="piem-chat__composer-top">
+					{contextRow}
+					{/*
+					 * The fold toggle, mobile-only and trailing.
+					 *
+					 * It lives in this row rather than a corner of its own because the row
+					 * is the one thing the fold keeps: a control that survives its own
+					 * action has to sit on the survivor. Rendered on the phone alone —
+					 * desktop reads at a width where folding would hide what it costs —
+					 * and absent whenever the parent passes no handler, which is how the
+					 * desktop build stays free of dead props.
+					 *
+					 * The glyph points the way the draft goes: chevron-down folds, so the
+					 * row is what remains; chevron-up opens, and the draft returns. Same
+					 * element both ways, so the press never drops focus mid-tap.
+					 */}
+					{Platform.isMobile && onToggleCollapsed ? (
+						<IconButton
+							icon={collapsed ? "chevron-down" : "chevron-up"}
+							label={t.t(collapsed ? "chat.expandComposer" : "chat.collapseComposer")}
+							onClick={onToggleCollapsed}
+							className="piem-chat__composer-toggle"
+							ariaExpanded={!collapsed}
+						/>
+					) : null}
+				</div>
+				{isEditing && !collapsed ? (
 					/*
 					 * The armed edit must be visible where the send happens. Its Send
 					 * looks identical to the everyday one but rewrites the conversation
@@ -411,7 +464,7 @@ export function ChatComposer({
 						))}
 					</ul>
 				) : null}
-				{pendingImages && pendingImages.length > 0 ? (
+				{pendingImages && pendingImages.length > 0 && !collapsed ? (
 					<ul className="piem-chat__pending-images">
 						{pendingImages.map((image, index) => (
 							<li key={image.id} className="piem-chat__pending-image">
@@ -430,6 +483,7 @@ export function ChatComposer({
 						))}
 					</ul>
 				) : null}
+				{!collapsed ? (
 					<textarea
 						ref={textareaRef}
 						id={anchorId}
@@ -437,38 +491,39 @@ export function ChatComposer({
 						onChange={(event) => {
 							const value = event.currentTarget.value;
 							onInputChange(value);
-						// Open the command menu the moment the draft becomes a lone `/`,
-						// close it the moment it stops being one. Kept here rather than in an
-						// effect so the menu tracks the keystroke, not a render behind it.
-						setMenuOpen(value.startsWith("/"));
-					}}
-					onBlur={() => {
-						// Defer so a click on a menu item fires before the menu unmounts.
-						window.setTimeout(() => setMenuOpen(false), 0);
-					}}
-					onPaste={handlePaste}
-					onDrop={handleDrop}
-					onDragOver={handleDragOver}
-					placeholder={t.t("chat.placeholder")}
-					aria-label={t.t("chat.composerAria")}
-					onMouseOver={suppressOwnTooltip}
-					aria-keyshortcuts={sendShortcutAria(shortcut)}
-					/*
-					 * The ARIA combobox half of the command menu. The draft is where
-					 * focus lives while the user types `/`, so the textarea carries the
-					 * combobox role and quotes the menu — its listbox — and the
-					 * highlighted option by id. All three attributes key off the one
-					 * `activeOptionId` the menu reports, so `aria-expanded`,
-					 * `aria-controls` and `aria-activedescendant` open, close and move
-					 * together: with no matches the menu renders nothing and none of
-					 * the three advertise it.
-					 */
-					role="combobox"
-					aria-expanded={activeOptionId !== null}
-					aria-controls={activeOptionId !== null ? menuId : undefined}
-					aria-activedescendant={activeOptionId ?? undefined}
-					rows={2}
-				/>
+							// Open the command menu the moment the draft becomes a lone `/`,
+							// close it the moment it stops being one. Kept here rather than in an
+							// effect so the menu tracks the keystroke, not a render behind it.
+							setMenuOpen(value.startsWith("/"));
+						}}
+						onBlur={() => {
+							// Defer so a click on a menu item fires before the menu unmounts.
+							window.setTimeout(() => setMenuOpen(false), 0);
+						}}
+						onPaste={handlePaste}
+						onDrop={handleDrop}
+						onDragOver={handleDragOver}
+						placeholder={t.t("chat.placeholder")}
+						aria-label={t.t("chat.composerAria")}
+						onMouseOver={suppressOwnTooltip}
+						aria-keyshortcuts={sendShortcutAria(shortcut)}
+						/*
+						 * The ARIA combobox half of the command menu. The draft is where
+						 * focus lives while the user types `/`, so the textarea carries the
+						 * combobox role and quotes the menu — its listbox — and the
+						 * highlighted option by id. All three attributes key off the one
+						 * `activeOptionId` the menu reports, so `aria-expanded`,
+						 * `aria-controls` and `aria-activedescendant` open, close and move
+						 * together: with no matches the menu renders nothing and none of
+						 * the three advertise it.
+						 */
+						role="combobox"
+						aria-expanded={activeOptionId !== null}
+						aria-controls={activeOptionId !== null ? menuId : undefined}
+						aria-activedescendant={activeOptionId ?? undefined}
+						rows={2}
+					/>
+				) : null}
 				{showMenu ? (
 					<CommandMenu
 						commands={commands}
@@ -479,7 +534,8 @@ export function ChatComposer({
 						onSelect={selectCommand}
 						onClose={() => setMenuOpen(false)}
 					/>
-					) : null}
+				) : null}
+				{!collapsed ? (
 					<div className="piem-chat__composer-bar">
 						{/*
 						 * Reading order across the bar: what the message will be sent *to*,
@@ -526,6 +582,7 @@ export function ChatComposer({
 							onAbort={onAbort}
 						/>
 					</div>
+				) : null}
 			</div>
 		</footer>
 	);

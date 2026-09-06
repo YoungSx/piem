@@ -38,6 +38,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 	chat: {
 		placeholder: "询问 Piem，或输入 / 使用命令…",
 		composerAria: "给 Piem 发消息",
+		/** 手机端独有的输入区折叠按钮。图标随状态翻转，文案也要跟着翻转：展开时是收起，折叠后是展开。 */
+		collapseComposer: "收起输入区",
+		expandComposer: "展开输入区",
 		/** 整理占住回合时的停止档位文案。上一版「停止整理」在按钮里塞了两个名词，机制说明交给正上方的状态栏，按钮只说它做什么。 */
 		stop: "停止",
 		stopResponse: "停止回复",

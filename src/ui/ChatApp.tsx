@@ -597,7 +597,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		void sendPrompt();
 	};
 
-	const handleAnchorIdChange = useCallback((id: string) => setComposerAnchorId(id), []);
+	const handleAnchorIdChange = useCallback((id: string | undefined) => setComposerAnchorId(id), []);
 
 	/**
 	 * Sends a tapped quick-action prompt as the user's own message.
@@ -765,6 +765,8 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					onAbort={() => service.abort()}
 					onFocusRequested={handleFocusRequested}
 					onAnchorIdChange={handleAnchorIdChange}
+					collapsed={snapshot.mobileComposerCollapsed}
+					onToggleCollapsed={() => void service.setComposerCollapsed(!snapshot.mobileComposerCollapsed)}
 					commands={snapshot.availableCommands}
 					modelSwitcher={
 						<ModelSwitcher

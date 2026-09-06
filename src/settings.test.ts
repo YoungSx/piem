@@ -503,3 +503,24 @@ describe("normalizeSettings with mcpServers", () => {
 		expect(settings.mcpServers).toEqual([]);
 	});
 });
+
+describe("normalizeSettings with mobileComposerCollapsed", () => {
+	it("gives a vault written before the field existed an expanded composer, stored as absence", () => {
+		// The field is persisted UI state, not a preference: "absent" is what
+		// "expanded" is stored as, so a legacy data.json loads byte-identical and
+		// a user who never folds never gains a key in their file.
+		expect(normalizeSettings({}).mobileComposerCollapsed).toBeUndefined();
+	});
+
+	it("keeps an explicit fold", () => {
+		expect(normalizeSettings({ mobileComposerCollapsed: true }).mobileComposerCollapsed).toBe(true);
+	});
+
+	it("collapses every other value back into absence rather than storing it", () => {
+		// A hand-edited data.json or a stale writer can put anything here; only
+		// `true` means folded, and `false` means the same thing as no key at all.
+		expect(normalizeSettings({ mobileComposerCollapsed: false as never }).mobileComposerCollapsed).toBeUndefined();
+		expect(normalizeSettings({ mobileComposerCollapsed: "yes" as never }).mobileComposerCollapsed).toBeUndefined();
+		expect(normalizeSettings({ mobileComposerCollapsed: null as never }).mobileComposerCollapsed).toBeUndefined();
+	});
+});

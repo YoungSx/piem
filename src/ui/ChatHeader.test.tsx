@@ -331,6 +331,7 @@ function snapshot(overrides: Partial<ChatSnapshot> = {}): ChatSnapshot {
 		// The metrics these tests assert on live behind the agent-details tier.
 		showAgentDetails: true,
 		traceExpand: "collapsed",
+		mobileComposerCollapsed: false,
 		language: "en",
 		sendShortcut: "enter",
 		contextRefs: [],

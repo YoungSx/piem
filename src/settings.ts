@@ -86,6 +86,16 @@ export interface PiemSettings {
 	 */
 	traceExpand: TraceExpandSetting;
 	/**
+	 * Whether the mobile composer starts folded down to its top row.
+	 *
+	 * Persisted UI state rather than a preference: a phone that switched away
+	 * from the panel usually had it unloaded, and without this the reader who
+	 * folded the composer to read would unfold it again on every return. Desktop
+	 * never reads it — the fold control itself is mobile-only. Absent means
+	 * expanded, so vaults written before the field existed get today's behaviour.
+	 */
+	mobileComposerCollapsed?: boolean;
+	/**
 	 * How long a message typed mid-reply waits before it reaches the model —
 	 * the whole answer, or only the provider request in flight (issue #289).
 	 * Neither is an interrupt; the chip's own steer action is.
@@ -297,6 +307,11 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		customEndpoint,
 		mcpServers: normalizeMcpServers(data?.mcpServers),
 	};
+	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
+	// and a vault written before the field existed stays byte-identical on load.
+	if (data?.mobileComposerCollapsed === true) {
+		settings.mobileComposerCollapsed = true;
+	}
 	if (activeModelId) {
 		settings.activeModelId = activeModelId;
 	}

@@ -332,6 +332,13 @@ export interface ChatSnapshot {
 	 */
 	traceExpand: TraceExpandSetting;
 	/**
+	 * Whether the mobile composer starts folded to its top row. Mirrored for the
+	 * same reason as {@link showAgentDetails}: the fold is written back through
+	 * the service, so the next snapshot the panel reads carries the state the
+	 * user just chose instead of a stale copy.
+	 */
+	mobileComposerCollapsed: boolean;
+	/**
 	 * Language the panel renders in, already resolved from the user's setting.
 	 *
 	 * Resolved here rather than in the components for the same reason
@@ -2771,6 +2778,25 @@ export class ObsidianAgentService {
 	}
 
 	/**
+	 * Folds or unfolds the mobile composer, persisting the choice.
+	 *
+	 * Persistence is the whole point: a phone that switched away usually had the
+	 * panel unloaded, and the fold the user chose has to survive that. Pure UI —
+	 * the agent keeps its configuration — so the persist skips the reconfigure
+	 * pass and the notify alone carries the new state to the panel.
+	 */
+	async setComposerCollapsed(collapsed: boolean): Promise<void> {
+		const settings = this.getSettings();
+		const next = collapsed || undefined;
+		if (settings.mobileComposerCollapsed === next) {
+			return;
+		}
+		settings.mobileComposerCollapsed = next;
+		await this.persistSettings({ reconfigure: false });
+		this.notify();
+	}
+
+	/**
 	 * Sets the level on the live conversation — the session's own property, not a
 	 * global one. The change is recorded in the session file so a reload or
 	 * another window replays it, exactly like a model change. A no-op when the
@@ -3022,6 +3048,7 @@ export class ObsidianAgentService {
 			isConfigured: this.hasApiKey(),
 			showAgentDetails: settings.showAgentDetails,
 			traceExpand: settings.traceExpand,
+			mobileComposerCollapsed: settings.mobileComposerCollapsed === true,
 			// `getLanguage` is newer than this plugin's minAppVersion, so the shipped
 			// Vault declarations do not carry it; the cast is what lets the optional
 			// call be feature-detected at runtime.
