@@ -3227,6 +3227,19 @@ export class ObsidianAgentService {
 		rt.sessionInfo = info;
 		this.sessionInfo = info;
 		this.currentPath = rt.sessionPath;
+		// A returning runtime already owns a live agent — the delete-fallback path
+		// lands here while a background run streams. `adoptSessionContext` would
+		// swap the working agent for one rebuilt from the log's stale tail (the
+		// streaming reply never hit disk), and `settleInterruptedRuns` would then
+		// read that run's own open ledger entry as a crash, raising the recovery
+		// banner over a run that is right there in flight. Both are correct for a
+		// first touch and wrong for a return — same reasoning as openSession's
+		// `if (rt.agent)` guard above, which this re-run outruns because
+		// deleteSession nulls the focus before openSession is reached.
+		if (rt.agent) {
+			this.notify();
+			return;
+		}
 		// A stored session may have parked lanes in its log; the panel resumes on
 		// main, which is the line the conversation's own history lives on.
 		rt.activeLane = "main";
