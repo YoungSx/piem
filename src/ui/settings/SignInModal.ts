@@ -1,16 +1,14 @@
 import { Modal, Notice, Setting, type App } from "obsidian";
-import type { AuthEvent, AuthPrompt, ProviderAuthInteraction } from "@earendil-works/pi-ai";
-import type { Translator } from "../../i18n";
+import type { AuthEvent, AuthPrompt, ProviderAuthInteraction } from "@earendil-works/pi-ai";import type { Translator } from "../../i18n";
 
 /**
  * The dialog a subscription sign-in happens in.
  *
  * It is the plugin's implementation of pi's {@link AuthInteraction}: the flow
- * pushes events at it and it turns them into something a person can act on. Only
- * one event shape actually matters for the flows this build performs — a device
- * code, which is a short string the user types into the provider's own page — so
- * the dialog's whole job is to show that code, offer the page, and then say it is
- * waiting.
+ * pushes events at it and it turns them into something a person can act on.
+ * Both flows this build performs are covered — the device-code flows show a
+ * code to type into the provider's page, and the pasted-code flows (`pkce.ts`)
+ * ask through `prompt` for whatever the user's browser landed on.
  *
  * Two decisions worth stating.
  *
@@ -21,12 +19,12 @@ import type { Translator } from "../../i18n";
  * controller is created here and aborted from `onClose`, whichever way the close
  * came about.
  *
- * `prompt` rejects rather than rendering a field. Nothing in this build calls it:
- * both flows are pure device-code, which is `notify`-only, and the poller never
- * asks the user for anything. A field built for a call that cannot happen would
- * be untested by use — so the honest spelling is a refusal that names what was
- * asked for. The pasted-authorization-code flows (Anthropic, OpenRouter) are what
- * will need it, and they are the piece of work that should add it.
+ * `prompt` resolves with what was typed, or rejects when the dialog closes
+ * first — and it rejects on the prompt's own signal, because pi's flows race a
+ * pending prompt against other resolutions and expect a rejection, not a value,
+ * when the dialog goes away. A raw abort rejection is what surfaces to the user
+ * as an ordinary sign-in failure, which is the mapping this dialog's catch
+ * already makes: closing the window is how cancelling a sign-in is done.
  */
 
 export interface SignInModalOptions {
@@ -153,7 +151,7 @@ class SignInModal extends Modal {
 			await this.options.signIn({
 				signal: this.controller.signal,
 				notify: (event) => this.show(event),
-				prompt: (prompt) => this.refusePrompt(prompt),
+				prompt: (prompt) => this.showPrompt(prompt),
 			});
 			this.write(t.t("signIn.done"));
 			this.options.onChanged();
@@ -247,14 +245,84 @@ class SignInModal extends Modal {
 	}
 
 	/**
-	 * Refuses a prompt this dialog has no field for.
+	 * Asks the user a question the flow is waiting on, and resolves with the
+	 * answer.
 	 *
-	 * Unreachable in this build — see the module header — and spelled as a refusal
-	 * rather than a silent hang so that adding a flow which does prompt fails
-	 * loudly, in the dialog, with the prompt's own type named.
+	 * `manual_code` is the shape the pasted-code flows use: a field for whatever
+	 * the browser landed on, resolving on submit. It rejects — on the prompt's
+	 * own signal, which pi's flows pass for exactly this — when the dialog closes
+	 * or the whole sign-in is aborted first, so a dismissed dialog cannot leave
+	 * the flow waiting on an answer nobody can give. Any other shape is a refusal,
+	 * spelled loudly so that a flow which grows a new prompt kind fails here, in
+	 * the dialog, rather than silently hanging.
 	 */
-	private async refusePrompt(prompt: AuthPrompt): Promise<string> {
-		throw new Error(this.options.t.t("signIn.promptUnsupported", { kind: prompt.type }));
+	private showPrompt(prompt: AuthPrompt): Promise<string> {
+		const { t } = this.options;
+		if (prompt.type !== "manual_code") {
+			throw new Error(t.t("signIn.promptUnsupported", { kind: prompt.type }));
+		}
+		return new Promise<string>((resolve, reject) => {
+			const fail = (reason: Error): void => {
+				cleanup();
+				reject(reason);
+			};
+			const onAbort = (): void => fail(new Error(SIGN_IN_CANCELLED));
+			const onOuterAbort = (): void => fail(new Error(SIGN_IN_CANCELLED));
+			const cleanup = (): void => {
+				prompt.signal?.removeEventListener("abort", onAbort);
+				this.controller.signal.removeEventListener("abort", onOuterAbort);
+			};
+			if (prompt.signal?.aborted || this.controller.signal.aborted) {
+				fail(new Error(SIGN_IN_CANCELLED));
+				return;
+			}
+			prompt.signal?.addEventListener("abort", onAbort, { once: true });
+			this.controller.signal.addEventListener("abort", onOuterAbort, { once: true });
+			this.showManualCode(prompt.placeholder, (value) => {
+				cleanup();
+				resolve(value);
+			});
+		});
+	}
+
+	/**
+	 * The paste field itself: instruction, input, submit — replacing the body,
+	 * because the flow's previous commentary is superseded the moment a question
+	 * replaces it.
+	 */
+	private showManualCode(placeholder: string | undefined, submit: (value: string) => void): void {
+		const { t } = this.options;
+		if (!this.body) {
+			return;
+		}
+		this.body.empty();
+		this.body.createEl("p", { text: t.t("signIn.pastePrompt") });
+		const input = this.body.createEl("input", {
+			type: "text",
+			cls: "piem-sign-in-paste",
+			attr: { placeholder: placeholder ?? "", spellcheck: "false" },
+		});
+		new Setting(this.body).addButton((button) => {
+			button.setButtonText(t.t("signIn.pasteSubmit")).setCta();
+			button.onClick(() => {
+				// Trimmed: the paste arrives trailing a newline more often than not.
+				const value = input.value.trim();
+				if (value) {
+					submit(value);
+				}
+			});
+		});
+		// Enter submits, matching every other single-field dialog here.
+		input.addEventListener("keydown", (event: KeyboardEvent) => {
+			if (event.key === "Enter") {
+				event.preventDefault();
+				const value = input.value.trim();
+				if (value) {
+					submit(value);
+				}
+			}
+		});
+		input.focus();
 	}
 }
 
@@ -262,3 +330,14 @@ class SignInModal extends Modal {
 function describe(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * Message a sign-in rejects with when the dialog went away first.
+ *
+ * The flows throw bare abort errors whose text says nothing a person can read;
+ * this dialog is the one place cancellation becomes a sentence, because closing
+ * the window is how the user cancels. Exported because the dialog-level tests
+ * pin the rejection's text — the prompt's rejection is the contract the flows
+ * receive, so its wording is part of the surface, not an implementation detail.
+ */
+export const SIGN_IN_CANCELLED = "Sign-in cancelled";

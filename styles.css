@@ -3761,6 +3761,19 @@ button.piem-chat__latest--asking {
 }
 
 /*
+ * The paste field a pasted-code flow (Anthropic, OpenRouter) asks through.
+ *
+ * A redirect URL is far longer than the dialog is wide, so it scrolls rather
+ * than wraps — a wrapped URL invites a mid-line paste by eye, and the field's
+ * own value is the thing the exchange reads, not what the user sees selected.
+ * `direction: rtl` keeps the caret on the tail, which is the part worth seeing.
+ */
+.piem-sign-in-paste {
+	direction: rtl;
+	text-align: left;
+}
+
+/*
  * Verdict from a connection test, rendered under the row's description.
  *
  * The state is carried by the text colour alone — no fill. This block sits
