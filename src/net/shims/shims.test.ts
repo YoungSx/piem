@@ -181,8 +181,34 @@ describe("anthropic shim", () => {
 		// provider-retry.js reads these off the Headers object to time the retry.
 		expect(error.headers?.get("retry-after")).toBe("3");
 		expect(error.headers?.get("x-should-retry")).toBe("true");
-		// error-body.js reads `error.error` for the raw reason.
-		expect(error.error).toEqual({ error: { message: "slow down" } });
+		// The reason is lifted out of the body and into the message, so the parsed
+		// body is withheld: handing pi both makes it print the JSON instead of the
+		// sentence on two of the three protocols. See `ErrorBodyDescription.body`.
+		expect(error.message).toBe("429 slow down");
+		expect(error.error).toBeUndefined();
+	});
+
+	it("hands pi the parsed body when our message cannot speak for it", async () => {
+		const base = await start();
+		responder = (_req, res) => {
+			res.writeHead(400, { "content-type": "application/json" });
+			// Neither `error.message` nor `message`: there is no reason to lift, so
+			// the message repeats the body and `error.error` stays what the SDKs
+			// expose — pi's own inference is correct on this shape.
+			res.end(JSON.stringify({ detail: "malformed request" }));
+		};
+		const client = new Anthropic({ apiKey: "k", baseURL: base, fetch: authFetch });
+		const error: Error & { error?: unknown } = await client
+			.messages.create({}, {})
+			.asResponse()
+			.then(
+				() => {
+					throw new Error("expected rejection");
+				},
+				(e: unknown) => e as Error & { error?: unknown },
+			);
+		expect(error.message).toBe('400 {"detail":"malformed request"}');
+		expect(error.error).toEqual({ detail: "malformed request" });
 	});
 
 	it("rejects a pre-aborted signal before reaching the wire", async () => {
