@@ -536,6 +536,18 @@ describe("ObsidianSessionManager session fork", () => {
 		expect(await textsOf(manager, source)).toEqual(["first", "second"]);
 	});
 
+	it("carries the source session's id as the fork's parent", async () => {
+		const manager = await sessionWithTurns(["first", "second"]);
+		const source = manager.getActiveSessionPath()!;
+		const sourceId = (await manager.listSessions()).find((session) => session.path === source)!.id;
+
+		const forked = await manager.forkSession(source, await entryIdOfMessage(manager, "second"));
+
+		expect(forked.parentSessionId).toBe(sourceId);
+		// The source was never a fork itself, so it carries no lineage.
+		expect((await manager.listSessions()).find((session) => session.path === source)!.parentSessionId).toBeUndefined();
+	});
+
 	it("refuses to fork a session that is not loaded", async () => {
 		const manager = await sessionWithTurns(["first"]);
 

@@ -141,7 +141,16 @@ class SessionPickerModal extends SuggestModal<SessionRow> {
 			});
 		}
 		value.createSpan({ text: sessionTitle(row.session, this.t) });
-		const meta = new Date(row.session.updatedAt).toLocaleString();
+		let meta = new Date(row.session.updatedAt).toLocaleString();
+		// Lineage shows only when the parent is in the loaded list: a deleted or
+		// evicted parent has nothing to name, and a bare "forked" tag would just
+		// be noise. The parent is matched by id — forks copy it into the header.
+		const parent = row.session.parentSessionId
+			? this.sessions.find((session) => session.id === row.session.parentSessionId)
+			: undefined;
+		if (parent) {
+			meta += ` · ${this.t.t("session.forkedFrom", { title: sessionTitle(parent, this.t) })}`;
+		}
 		el.createDiv({
 			cls: "piem-suggestion-description",
 			text: row.matchCount === undefined ? meta : `${meta} · ${this.t.t("session.searchMatchCount", { count: row.matchCount })}`,
