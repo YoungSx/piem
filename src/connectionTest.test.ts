@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { Credential, CredentialStore, Models } from "@earendil-works/pi-ai";
-import { DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS } from "./customEndpoint";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
+import { DEFAULT_MODEL_MAX_TOKENS } from "./modelConfig";
 import { getT } from "./i18n";
 import { installObsidianStub } from "./testUtils/obsidianStub";
 
@@ -423,7 +423,7 @@ describe("the request a chat probe puts on the wire", () => {
 		// An unset cap has to resolve through `buildConfiguredModel`, exactly as it
 		// does for an ordinary message — not to a probe-specific number.
 		const body = await captureProbeBody(model({ maxTokens: undefined }));
-		expect(body.max_tokens).toBe(DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS);
+		expect(body.max_tokens).toBe(DEFAULT_MODEL_MAX_TOKENS);
 	});
 
 	it("sends the model id and prompt the caller asked for, under the legacy field name", async () => {

@@ -1360,7 +1360,6 @@ export const en = {
 
 	/** How the active target is named in status lines and errors. */
 	target: {
-		customEndpoint: "The custom endpoint ({modelId})",
 		needsKeyToSend: "{target} needs an API key in plugin settings before sending a prompt.",
 		/** "Tidying up" rather than "compacting": the panel's own word for this everywhere the reader can see it. */
 		needsKeyToCompact: "{target} needs an API key in plugin settings before tidying earlier thoughts.",

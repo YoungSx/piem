@@ -2,7 +2,7 @@ import { PluginSettingTab, type App, type SettingDefinitionItem } from "obsidian
 import { getBuiltinModels } from "./net/builtinCatalog";
 import type { CacheRetention, Model } from "@earendil-works/pi-ai";
 import type PiemPlugin from "./main";
-import { CUSTOM_ENDPOINT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./constants";
+import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./constants";
 import type { SecretEnvironment, SecretStorageTier } from "./keychainEnv";
 import type { NetworkTransport } from "./net/obsidianFetch";
 import { DEFAULT_CACHE_RETENTION, readCacheRetention } from "./net/cacheRetention";
@@ -10,23 +10,17 @@ import {
 	buildConfiguredModel,
 	describeModelConfig,
 	describeProviderConfig,
-	migrateCustomEndpoint,
 	normalizeProviderAndModelLists,
 	type ModelConfig,
 	type ProviderConfig,
 } from "./modelConfig";
 import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compactionSettings";
+
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
 import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
 import { DEFAULT_LOG_LEVEL, readLogLevel, type LogLevelSetting } from "./logging/logLevel";
-import {
-	buildCustomEndpointModel,
-	isCustomEndpointActive,
-	normalizeCustomEndpoint,
-	type CustomEndpointConfig,
-} from "./customEndpoint";
 import type { SettingsPanelHost } from "./ui/settings/panelHost";
 import { buildSettingDefinitions } from "./ui/settings/settingDefinitions";
 import { SettingsPanelState } from "./ui/settings/panelState";
@@ -60,7 +54,6 @@ export interface PiemSettings {
 	provider: string;
 	/** Builtin catalog model id, used when no configured model is active. */
 	modelId: string;
-	providerApiKeys: Record<string, string>;
 	networkTransport: NetworkTransport;
 	/**
 	 * How long providers are asked to keep the prompt cache alive.
@@ -172,14 +165,6 @@ export interface PiemSettings {
 	 * Logs tab takes effect on the next record without reloading the plugin.
 	 */
 	logLevel: LogLevelSetting;
-	/**
-	 * Legacy single-endpoint form, superseded by {@link providers}/{@link models}.
-	 *
-	 * Retained after migration rather than cleared: a user who rolls back to an
-	 * older build must still find their endpoint configured. A later release
-	 * drops the field once rollback is no longer a concern.
-	 */
-	customEndpoint?: CustomEndpointConfig;
 	/** Configured MCP servers; empty means no remote tools join the agent. */
 	mcpServers: McpServerConfig[];
 }
@@ -189,7 +174,6 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	models: [],
 	provider: DEFAULT_PROVIDER,
 	modelId: DEFAULT_MODEL_ID,
-	providerApiKeys: {},
 	networkTransport: "requestUrl",
 	cacheRetention: DEFAULT_CACHE_RETENTION,
 	showAgentDetails: false,
@@ -205,13 +189,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 };
 
 /**
- * Coerces persisted data into settings, migrating the legacy custom endpoint on
- * the way through.
- *
- * Migration is folded in here rather than run as a separate pass so every
- * entrypoint that loads settings gets it, and it is keyed on the presence of a
- * provider with the legacy synthetic id — which makes repeat calls idempotent
- * even though model ids are freshly generated.
+ * Coerces persisted data into settings.
  */
 export function normalizeSettings(data: Partial<PiemSettings> | null | undefined): PiemSettings {
 	const provider = data?.provider || DEFAULT_PROVIDER;
@@ -220,35 +198,17 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	// is deliberately dropped, not migrated: the level now belongs to each
 	// conversation, and a global leftover would claim authority over sessions
 	// that already recorded their own.
-	const providerApiKeys = data?.providerApiKeys || {};
 	const networkTransport: NetworkTransport = data?.networkTransport === "fetch" ? "fetch" : "requestUrl";
 	// A corrupted or unknown stored value degrades to "auto" rather than
 	// throwing, matching how every other enum-typed setting is repaired.
 	const rawLanguage = data?.language;
 	const language: LanguageSetting = isLanguageSetting(rawLanguage) ? rawLanguage : "auto";
-	// Absent in older vaults; normalizeCustomEndpoint drops empty objects so
-	// a cleared form does not resurrect itself as an active endpoint.
-	const customEndpoint = normalizeCustomEndpoint(data?.customEndpoint);
 
 	const compaction = normalizeCompactionConfig(data?.compaction);
 	const retry = normalizeRetryConfig(data?.retry);
 
 	const { providers, models } = normalizeProviderAndModelLists(data?.providers, data?.models);
 	let activeModelId = typeof data?.activeModelId === "string" ? data.activeModelId.trim() : "";
-
-	// A legacy endpoint becomes a provider/model pair exactly once. The stored
-	// API key already lives under the synthetic provider id, so reusing that id
-	// keeps the credential resolvable without touching `providerApiKeys`.
-	const alreadyMigrated = providers.some((entry) => entry.id === CUSTOM_ENDPOINT_PROVIDER);
-	if (isCustomEndpointActive(customEndpoint) && !alreadyMigrated) {
-		const migrated = migrateCustomEndpoint(customEndpoint as CustomEndpointConfig, CUSTOM_ENDPOINT_PROVIDER);
-		providers.push(migrated.provider);
-		models.push(migrated.model);
-		// The legacy endpoint outranked the builtin dropdowns, so the migrated
-		// model has to inherit that precedence or the user's configuration
-		// would silently change target on upgrade.
-		activeModelId = migrated.model.id;
-	}
 
 	// A dangling reference would resolve to nothing on every request, so it is
 	// dropped in favour of the builtin fallback below.
@@ -261,7 +221,6 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		models,
 		provider,
 		modelId,
-		providerApiKeys: { ...providerApiKeys },
 		networkTransport,
 		// Absent in vaults written before the setting existed. Those get the hour
 		// rather than pi's five minutes, which is the point of the default — see
@@ -304,7 +263,6 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
-		customEndpoint,
 		mcpServers: normalizeMcpServers(data?.mcpServers),
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
@@ -433,12 +391,6 @@ export function getSelectedModel(settings: PiemSettings): Model<string> {
 	if (active) {
 		return buildConfiguredModel(active.model, active.provider);
 	}
-	// Reachable only for a legacy endpoint that predates migration, which
-	// normalizeSettings would otherwise have converted.
-	if (isCustomEndpointActive(settings.customEndpoint)) {
-		return buildCustomEndpointModel(settings.customEndpoint as CustomEndpointConfig);
-	}
-
 	const models = getProviderModels(settings.provider);
 	const selectedModel = models.find((model) => model.id === settings.modelId);
 	if (selectedModel) {
@@ -463,11 +415,11 @@ export function getSelectedModel(settings: PiemSettings): Model<string> {
  * renders it as a notice pointing at the configured-provider flow, which can
  * still reach any endpoint.
  *
- * Returns undefined when a configured model is active, when the pair resolves, or
- * when a legacy endpoint is in force — in each case nothing was substituted.
+ * Returns undefined when a configured model is active or when the pair resolves
+ * — in each case nothing was substituted.
  */
 export function findMissingBuiltinModel(settings: PiemSettings): { provider: string; modelId: string } | undefined {
-	if (getActiveConfiguration(settings) || isCustomEndpointActive(settings.customEndpoint)) {
+	if (getActiveConfiguration(settings)) {
 		return undefined;
 	}
 	if (getProviderModels(settings.provider).some((model) => model.id === settings.modelId)) {
@@ -479,8 +431,8 @@ export function findMissingBuiltinModel(settings: PiemSettings): { provider: str
 /**
  * API key for the resolved configuration.
  *
- * Configured providers carry their own key, so the per-provider map is
- * consulted only for builtin catalog entries — a leftover DeepSeek key is never
+ * A configured provider carries its own key; without one there is nothing to
+ * send. No cross-lookup: a leftover key for a builtin catalog id is never
  * silently reused against a different server.
  */
 export function getConfiguredApiKey(settings: PiemSettings): string | undefined {
@@ -488,30 +440,21 @@ export function getConfiguredApiKey(settings: PiemSettings): string | undefined 
 	if (active) {
 		return active.provider.apiKey.trim() || undefined;
 	}
-	if (isCustomEndpointActive(settings.customEndpoint)) {
-		return settings.customEndpoint?.apiKey.trim() || undefined;
-	}
-	const apiKey = settings.providerApiKeys[settings.provider]?.trim();
-	return apiKey || undefined;
+	return undefined;
 }
 
 /**
  * API key for one provider id, as pi-ai asks for it per request.
  *
- * Configured providers are matched by id first; the legacy synthetic id and the
- * builtin per-provider map follow, so both storage layouts keep resolving
- * during the migration window.
+ * Scoped to configured providers: a provider that was never added has no
+ * credential to resolve, whatever else the settings may hold.
  */
 export function getApiKeyForProvider(settings: PiemSettings, providerId: string): string | undefined {
 	const configured = settings.providers.find((provider) => provider.id === providerId);
 	if (configured) {
 		return configured.apiKey.trim() || undefined;
 	}
-	if (providerId === CUSTOM_ENDPOINT_PROVIDER && isCustomEndpointActive(settings.customEndpoint)) {
-		return settings.customEndpoint?.apiKey.trim() || undefined;
-	}
-	const apiKey = settings.providerApiKeys[providerId]?.trim();
-	return apiKey || undefined;
+	return undefined;
 }
 
 /**
@@ -525,9 +468,6 @@ export function describeModelTarget(settings: PiemSettings, t: Translator): stri
 	if (active) {
 		const providerName = active.provider.name || active.provider.baseUrl;
 		return `${describeModelConfig(active.model)} (${providerName})`;
-	}
-	if (isCustomEndpointActive(settings.customEndpoint)) {
-		return t.t("target.customEndpoint", { modelId: settings.customEndpoint?.modelId ?? "" });
 	}
 	return `${settings.provider}/${settings.modelId}`.replace(/^./, (first) => first.toUpperCase());
 }

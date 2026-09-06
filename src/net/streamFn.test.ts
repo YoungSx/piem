@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Credential, CredentialStore, Model } from "@earendil-works/pi-ai";
-import type { ProviderConfig } from "../modelConfig";
+import type { ProviderConfig, WireProtocol } from "../modelConfig";
 import { installObsidianStub, requestUrlMock } from "../testUtils/obsidianStub";
 
 installObsidianStub();
@@ -8,11 +8,7 @@ installObsidianStub();
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
 const { createObsidianModels, createObsidianStreamFn, withRequestDefaults } = await import("./streamFn");
 const { createFetchForTransport, toFetchFunction } = await import("./obsidianFetch");
-const { buildCustomEndpointModel } = await import("../customEndpoint");
-const { CUSTOM_ENDPOINT_PROVIDER } = await import("../constants");
 const { buildConfiguredModel } = await import("../modelConfig");
-
-const ENDPOINT = { baseUrl: "https://gw.internal/v1", apiKey: "sk-custom", modelId: "qwen3-32b" };
 
 /** SSE body for a minimal completed chat-completions turn. */
 function sseBody(text: string): string {
@@ -33,9 +29,33 @@ function responsesSseBody(): string {
 	return `data: ${JSON.stringify(created)}\n\ndata: ${JSON.stringify(completed)}\n\ndata: [DONE]\n\n`;
 }
 
-/** Captures the request the provider stack issues against the endpoint. */
+/** A key row on the chat-completions protocol, minus whatever a case is about to override. */
+function keyRow(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
+	return {
+		id: "p1",
+		name: "Configured row",
+		baseUrl: "https://gw.internal/v1",
+		protocol: "openai-completions",
+		apiKey: "sk-custom",
+		secretRef: "",
+		source: "user",
+		oauthFlow: "",
+		...overrides,
+	};
+}
+
+/** The one model served by {@link keyRow}. */
+function keyRowModel(row: ProviderConfig): Model<WireProtocol> {
+	return buildConfiguredModel(
+		{ id: "m1", providerId: row.id, modelApiId: "qwen3-32b", displayName: "Qwen", reasoning: false, supportsImages: false },
+		row,
+	);
+}
+
+/** Captures the request the provider stack issues against the row's endpoint. */
 async function streamViaRequestUrl(
-	model: Model<"openai-completions">,
+	model: Model<WireProtocol>,
+	row: ProviderConfig,
 	options: { apiKey?: string } = {},
 ): Promise<{ url: string; headers: Record<string, string>; body: Record<string, unknown>; errorMessage?: string }> {
 	let captured: { url: string; headers: Record<string, string>; body: Record<string, unknown> } | undefined;
@@ -49,7 +69,7 @@ async function streamViaRequestUrl(
 		};
 	});
 
-	const bundle = createObsidianModels({ transport: "requestUrl", customEndpoint: ENDPOINT });
+	const bundle = createObsidianModels({ transport: "requestUrl", providers: [row] });
 	const stream = bundle.models.streamSimple(
 		model,
 		{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
@@ -92,24 +112,19 @@ function captureRequest(): { body: () => Record<string, unknown> } {
 	};
 }
 
-describe("createObsidianModels with a custom endpoint", () => {
-	it("registers the synthetic custom provider so its models dispatch instead of failing with Unknown provider", async () => {
-		const model = buildCustomEndpointModel(ENDPOINT);
-		expect(model.provider).toBe(CUSTOM_ENDPOINT_PROVIDER);
-
-		const request = await streamViaRequestUrl(model, { apiKey: ENDPOINT.apiKey });
+describe("createObsidianModels for a configured key row", () => {
+	it("sends chat/completions requests to the row's base URL with the bearer key and model id", async () => {
+		const row = keyRow();
+		const request = await streamViaRequestUrl(keyRowModel(row), row, { apiKey: row.apiKey });
 		expect(request.errorMessage).toBeUndefined();
-	});
-
-	it("sends chat/completions requests to the configured base URL with the bearer key and model id", async () => {
-		const request = await streamViaRequestUrl(buildCustomEndpointModel(ENDPOINT), { apiKey: ENDPOINT.apiKey });
 		expect(request.url).toBe("https://gw.internal/v1/chat/completions");
-		expect(request.headers.authorization).toBe(`Bearer ${ENDPOINT.apiKey}`);
-		expect(request.body.model).toBe(ENDPOINT.modelId);
+		expect(request.headers.authorization).toBe(`Bearer ${row.apiKey}`);
+		expect(request.body.model).toBe("qwen3-32b");
 	});
 
 	it("applies the least-common-denominator compat overrides to the wire format", async () => {
-		const request = await streamViaRequestUrl(buildCustomEndpointModel(ENDPOINT), { apiKey: ENDPOINT.apiKey });
+		const row = keyRow();
+		const request = await streamViaRequestUrl(keyRowModel(row), row, { apiKey: row.apiKey });
 		// Legacy max_tokens field, not max_completion_tokens.
 		expect(request.body.max_tokens).toBeDefined();
 		expect(request.body.max_completion_tokens).toBeUndefined();
@@ -118,75 +133,29 @@ describe("createObsidianModels with a custom endpoint", () => {
 		// Thinking off means no reasoning_effort field.
 		expect(request.body.reasoning_effort).toBeUndefined();
 	});
-
-	it("refuses to resolve auth when no key is supplied, mirroring the plugin's missing-key error path", async () => {
-		requestUrlMock.mockImplementation(async () => {
-			throw new Error("request must never be issued without a key");
-		});
-		const bundle = createObsidianModels({ transport: "requestUrl", customEndpoint: ENDPOINT });
-		const stream = bundle.models.streamSimple(
-			buildCustomEndpointModel(ENDPOINT),
-			{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
-			{},
-		);
-		const final = await stream.result();
-		expect(final.stopReason).toBe("error");
-		expect(final.errorMessage).toBe("Provider is not configured: custom");
-	});
 });
 
-describe("createObsidianModels without an active endpoint", () => {
-	it("does not register the custom provider when no endpoint is active", () => {
-		for (const customEndpoint of [undefined, null, { baseUrl: "", apiKey: "", modelId: "" }, { baseUrl: "https://x/v1", apiKey: "", modelId: "" }]) {
-			const bundle = createObsidianModels({ transport: "requestUrl", customEndpoint: customEndpoint as never });
-			expect(bundle.models.getProvider(CUSTOM_ENDPOINT_PROVIDER)).toBeUndefined();
-		}
-	});
-
-	it("registers it once base URL and model id are both present", () => {
-		const bundle = createObsidianModels({
-			transport: "requestUrl",
-			customEndpoint: { baseUrl: "https://x/v1", apiKey: "", modelId: "m" },
-		});
-		expect(bundle.models.getProvider(CUSTOM_ENDPOINT_PROVIDER)).toBeDefined();
-	});
-});
-
-describe("createObsidianStreamFn with a custom endpoint", () => {
-	it("routes ordinary turns through the same registered provider", async () => {
-		// Only the canned response matters here; the body is asserted below.
-		captureRequest();
-
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long", maxRetries: 2 });
-		const stream = await streamFn(
-			buildCustomEndpointModel(ENDPOINT),
-			{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
-			// The agent loop forwards pi's `getApiKey(provider)` result here.
-			{ apiKey: ENDPOINT.apiKey },
-		);
-		const final = await stream.result();
-		expect(final.stopReason).not.toBe("error");
-		expect(final.errorMessage).toBeUndefined();
-	});
-
-	/*
-	 * The retention setting is only worth anything if it reaches the request body,
-	 * and nothing between the settings panel and the provider would report a value
-	 * that got dropped on the way — a lost `cacheRetention` looks exactly like a
-	 * working one, just billed at the five-minute rate. So these assert the wire
-	 * form rather than the option object: `prompt_cache_retention` is what the
-	 * OpenAI-compatible adapter emits for `"long"`, and its absence is what `"none"`
-	 * and `"short"` produce.
-	 */
+/*
+ * The retention setting is only worth anything if it reaches the request body,
+ * and nothing between the settings panel and the provider would report a value
+ * that got dropped on the way — a lost `cacheRetention` looks exactly like a
+ * working one, just billed at the five-minute rate. So these assert the wire
+ * form rather than the option object: `prompt_cache_retention` is what the
+ * OpenAI-compatible adapter emits for `"long"`, and its absence is what `"none"`
+ * and `"short"` produce.
+ */
+describe("createObsidianStreamFn", () => {
 	it("carries the long retention preference into the request body", async () => {
+		const row = keyRow();
 		const captured = captureRequest();
 
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "long", maxRetries: 2 });
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", providers: [row], cacheRetention: "long", maxRetries: 2 });
 		await (
 			await streamFn(
-				buildCustomEndpointModel(ENDPOINT),
+				keyRowModel(row),
 				{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
-				{ apiKey: ENDPOINT.apiKey },
+				// The agent loop forwards pi's `getApiKey(provider)` result here.
+				{ apiKey: row.apiKey },
 			)
 		).result();
 
@@ -194,14 +163,15 @@ describe("createObsidianStreamFn with a custom endpoint", () => {
 	});
 
 	it("omits it when the reader has turned prompt caching off", async () => {
+		const row = keyRow();
 		const captured = captureRequest();
 
-		const streamFn = createObsidianStreamFn({ transport: "requestUrl", customEndpoint: ENDPOINT, cacheRetention: "none", maxRetries: 2 });
+		const streamFn = createObsidianStreamFn({ transport: "requestUrl", providers: [row], cacheRetention: "none", maxRetries: 2 });
 		await (
 			await streamFn(
-				buildCustomEndpointModel(ENDPOINT),
+				keyRowModel(row),
 				{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
-				{ apiKey: ENDPOINT.apiKey },
+				{ apiKey: row.apiKey },
 			)
 		).result();
 
@@ -220,38 +190,24 @@ describe("createObsidianStreamFn with a custom endpoint", () => {
  */
 describe("withRequestDefaults", () => {
 	it("applies the retention getter to compaction's completeSimple, per call", async () => {
+		const row = keyRow();
 		const captured = captureRequest();
-		const bundle = createObsidianModels({ transport: "requestUrl", customEndpoint: ENDPOINT });
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row] });
 		let retention: "none" | "short" | "long" = "long";
-		const models = withRequestDefaults(bundle, () => ENDPOINT.apiKey, () => retention, () => 2);
+		const models = withRequestDefaults(bundle, () => row.apiKey, () => retention, () => 2);
 		const context = { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }], timestamp: Date.now() }] };
 
-		await models.completeSimple(buildCustomEndpointModel(ENDPOINT), context);
+		await models.completeSimple(keyRowModel(row), context);
 		expect(captured.body()["prompt_cache_retention"]).toBe("24h");
 
 		// Read per call, not captured when the wrapper was built: a reader who turns
 		// retention down mid-conversation must not keep paying the hour-long write
 		// rate on summaries until the plugin reloads.
 		retention = "none";
-		await models.completeSimple(buildCustomEndpointModel(ENDPOINT), context);
+		await models.completeSimple(keyRowModel(row), context);
 		expect(captured.body()["prompt_cache_retention"]).toBeUndefined();
 	});
 });
-
-/** A configured row, minus whatever a case is about to override. */
-function row(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
-	return {
-		id: "p1",
-		name: "Subscription row",
-		baseUrl: "https://api.x.ai/v1",
-		protocol: "openai-responses",
-		apiKey: "",
-		secretRef: "",
-		source: "user",
-		oauthFlow: "",
-		...overrides,
-	};
-}
 
 /** A credential store holding one prepared credential, and nothing else. */
 function storeWith(credentials: Record<string, Credential>): CredentialStore {
@@ -286,14 +242,14 @@ describe("createObsidianModels for a subscription row", () => {
 		// Not alongside an api key: pi short-circuits on any defined
 		// `options.apiKey`, so a key left in the row from before the switch would
 		// otherwise outrank the subscription without saying so.
-		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "xai", apiKey: "sk-stale" })] });
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [keyRow({ oauthFlow: "xai", apiKey: "sk-stale" })] });
 		const auth = bundle.models.getProvider("p1")?.auth;
 		expect(auth?.oauth?.isSubscription).toBe(true);
 		expect(auth?.apiKey).toBeUndefined();
 	});
 
 	it("keeps an api key as the only method for a row with no sign-in", () => {
-		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row()] });
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [keyRow()] });
 		const auth = bundle.models.getProvider("p1")?.auth;
 		expect(auth?.apiKey).toBeDefined();
 		expect(auth?.oauth).toBeUndefined();
@@ -302,7 +258,7 @@ describe("createObsidianModels for a subscription row", () => {
 	it("leaves a row with an unrecognised sign-in unconfigured rather than key-taking", () => {
 		// A vault written by a newer build. The row has no key, so falling back to
 		// one would report a failure against a field that is not the problem.
-		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "future-flow" })] });
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [keyRow({ oauthFlow: "future-flow", apiKey: "" })] });
 		const auth = bundle.models.getProvider("p1")?.auth;
 		expect(auth?.apiKey).toBeUndefined();
 		expect(auth?.oauth).toBeUndefined();
@@ -311,7 +267,7 @@ describe("createObsidianModels for a subscription row", () => {
 	it("resolves request auth from the stored credential", async () => {
 		const bundle = createObsidianModels({
 			transport: "requestUrl",
-			providers: [row({ oauthFlow: "xai" })],
+			providers: [keyRow({ oauthFlow: "xai", apiKey: "" })],
 			credentials: storeWith({ p1: LIVE_TOKEN }),
 		});
 		expect(await bundle.models.getAuth("p1")).toEqual({ auth: { apiKey: "at-live" }, source: "OAuth" });
@@ -320,7 +276,7 @@ describe("createObsidianModels for a subscription row", () => {
 	it("reports a signed-out row as unconfigured", async () => {
 		const bundle = createObsidianModels({
 			transport: "requestUrl",
-			providers: [row({ oauthFlow: "xai" })],
+			providers: [keyRow({ oauthFlow: "xai", apiKey: "" })],
 			credentials: storeWith({}),
 		});
 		expect(await bundle.models.getAuth("p1")).toBeUndefined();
@@ -330,7 +286,7 @@ describe("createObsidianModels for a subscription row", () => {
 	it("reports a signed-in row as authenticated by its subscription", async () => {
 		const bundle = createObsidianModels({
 			transport: "requestUrl",
-			providers: [row({ oauthFlow: "xai" })],
+			providers: [keyRow({ oauthFlow: "xai", apiKey: "" })],
 			credentials: storeWith({ p1: LIVE_TOKEN }),
 		});
 		expect(await bundle.models.checkAuth("p1")).toEqual({ source: "OAuth", type: "oauth" });
@@ -340,7 +296,7 @@ describe("createObsidianModels for a subscription row", () => {
 		// The default store is in-memory and always empty, so a throwaway collection
 		// built to probe one draft reports every subscription as signed out rather
 		// than borrowing the session's real credentials.
-		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row({ oauthFlow: "xai" })] });
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [keyRow({ oauthFlow: "xai", apiKey: "" })] });
 		expect(await bundle.models.getAuth("p1")).toBeUndefined();
 	});
 
@@ -354,14 +310,15 @@ describe("createObsidianModels for a subscription row", () => {
 				arrayBuffer: new TextEncoder().encode(responsesSseBody()).buffer as ArrayBuffer,
 			};
 		});
+		const subscriptionRow = keyRow({ protocol: "openai-responses", oauthFlow: "xai", apiKey: "" });
 		const bundle = createObsidianModels({
 			transport: "requestUrl",
-			providers: [row({ oauthFlow: "xai" })],
+			providers: [subscriptionRow],
 			credentials: storeWith({ p1: LIVE_TOKEN }),
 		});
 		const model = buildConfiguredModel(
 			{ id: "m1", providerId: "p1", modelApiId: "grok-4", displayName: "Grok", reasoning: false, supportsImages: false },
-			row({ oauthFlow: "xai" }),
+			subscriptionRow,
 		);
 		const stream = bundle.models.streamSimple(
 			model,

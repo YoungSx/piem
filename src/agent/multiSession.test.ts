@@ -114,11 +114,20 @@ async function settleTick(): Promise<void> {
 function defaultTestSettings(): PiemSettings {
 	return {
 		...DEFAULT_SETTINGS,
-		providers: [],
-		models: [],
-		provider: "deepseek",
-		modelId: "deepseek-v4-pro",
-		providerApiKeys: { deepseek: "test-key" },
+		providers: [
+			{
+				id: "p-test",
+				name: "Test gateway",
+				baseUrl: "https://gw.test/v1",
+				protocol: "openai-completions",
+				apiKey: "test-key",
+				secretRef: "",
+				source: "user",
+				oauthFlow: "",
+			},
+		],
+		models: [{ id: "m-test", providerId: "p-test", modelApiId: "test-model", displayName: "Test Model", reasoning: false, supportsImages: false }],
+		activeModelId: "m-test",
 		networkTransport: "requestUrl",
 		showAgentDetails: false,
 		sendShortcut: "enter",
