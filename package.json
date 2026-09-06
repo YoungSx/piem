@@ -1,6 +1,6 @@
 {
 	"name": "piem",
-	"version": "1.0.45",
+	"version": "1.0.46",
 	"description": "Run the Piem coding agent in a chat side panel, with tools scoped to your vault.",
 	"main": "main.js",
 	"type": "module",
