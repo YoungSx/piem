@@ -368,6 +368,80 @@ describe("ChatComposer touch focus contract", () => {
 });
 
 /**
+ * The composer's fold.
+ *
+ * The fold is a phone-only affordance, so the toggle renders on mobile alone and
+ * folding is a conditional unmount of everything below the top row — not a
+ * `display: none`, which would keep the draft's rows in the accessibility tree
+ * and the tab order. The queued chips are the exception by rule: they are words
+ * the user already handed over, and a fold that hides them is a fold that hides
+ * a promise.
+ */
+describe("ChatComposer fold toggle", () => {
+	const queued = [{ id: "queued-1", text: "Use the other note", imageCount: 0 }];
+
+	beforeEach(() => {
+		platformMock.isMobile = true;
+		platformMock.isMacOS = false;
+		document.body.replaceChildren();
+	});
+
+	afterEach(() => {
+		platformMock.isMobile = false;
+		platformMock.isMacOS = false;
+		document.body.replaceChildren();
+	});
+
+	function toggleButton(host: HTMLElement): HTMLButtonElement | null {
+		return host.querySelector<HTMLButtonElement>(".piem-chat__composer-toggle");
+	}
+
+	it("renders the toggle on mobile and routes its press to the handler", async () => {
+		let toggles = 0;
+		const host = await renderComposer({ onToggleCollapsed: () => void ++toggles });
+
+		expect(toggleButton(host)).not.toBeNull();
+		toggleButton(host)?.click();
+		expect(toggles).toBe(1);
+	});
+
+	it("renders no toggle on desktop, where the fold does not exist", async () => {
+		platformMock.isMobile = false;
+		const host = await renderComposer({ onToggleCollapsed: noop });
+
+		expect(toggleButton(host)).toBeNull();
+	});
+
+	it("unmounts the draft's rows when folded, and keeps the queue on screen", async () => {
+		const host = await renderComposer({ collapsed: true, queuedPrompts: queued, onToggleCollapsed: noop });
+
+		// The fold is an unmount, not a hiding: the textarea and the send bar leave
+		// the document, so they also leave the tab order and the accessibility tree.
+		expect(host.querySelector("textarea")).toBeNull();
+		expect(host.querySelector(".piem-chat__composer-bar")).toBeNull();
+		// The chips stay — queued words are delivered words, and the fold may not
+		// take them back out of sight.
+		expect(host.querySelector(".piem-chat__queue-item")?.textContent).toContain("Use the other note");
+		// The toggle itself survives its own action: it lives on the top row, the
+		// one part of the composer the fold keeps.
+		expect(toggleButton(host)).not.toBeNull();
+	});
+
+	it("flips the expander state and the name with the fold", async () => {
+		// `aria-expanded` says the region's state, the label says the action: an
+		// open composer offers to collapse, a folded one offers to expand.
+		const expanded = await renderComposer({ collapsed: false, onToggleCollapsed: noop });
+		expect(toggleButton(expanded)?.getAttribute("aria-expanded")).toBe("true");
+		expect(toggleButton(expanded)?.getAttribute("aria-label")).toBe("Collapse composer");
+
+		document.body.replaceChildren();
+		const folded = await renderComposer({ collapsed: true, onToggleCollapsed: noop });
+		expect(toggleButton(folded)?.getAttribute("aria-expanded")).toBe("false");
+		expect(toggleButton(folded)?.getAttribute("aria-label")).toBe("Expand composer");
+	});
+});
+
+/**
  * Presses `target` with a pointer of the given type, returning whether the
  * composer cancelled the press.
  */

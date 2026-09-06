@@ -2247,6 +2247,19 @@ button.piem-chat__latest--asking {
 	overflow-y: auto;
 }
 
+/*
+ * The trailing slot is a layout bystander, not a visible box: it exists so
+ * ContextRow can hand back "chips, then trailing widgets" from one expression.
+ * As a plain inline-flex child it would break the flex-row math — its children
+ * sit in a nested inline context where `.piem-chat__subagents`' auto margin has
+ * nothing to push against. `display: contents` dissolves the wrapper so the
+ * widgets become flex items of `.piem-chat__context-row` directly, and the auto
+ * margin finally reaches the row edge.
+ */
+.piem-chat__context-trailing {
+	display: contents;
+}
+
 .piem-chat__context-chip {
 	align-items: center;
 	border: none;
@@ -2460,6 +2473,33 @@ button.piem-chat__latest--asking {
  */
 .piem-chat__composer {
 	flex-shrink: 0;
+}
+
+/*
+ * The composer's top row: context chips plus (mobile only) the collapse toggle.
+ * The row is a flex line so the toggle can pin to the far edge; the context row
+ * flexes to take the slack and `min-width: 0` lets its chips truncate instead
+ * of pushing the toggle off-panel.
+ */
+.piem-chat__composer-top {
+	align-items: center;
+	display: flex;
+	gap: var(--size-4-1);
+}
+
+.piem-chat__composer-top .piem-chat__context-row {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/*
+ * The toggle itself: never squeezed, always at the far right. `margin-inline-start:
+ * auto` is what does the pinning — it only works because the context row above
+ * flexes, so there is slack for the margin to absorb.
+ */
+.piem-chat__composer-toggle {
+	flex-shrink: 0;
+	margin-inline-start: auto;
 }
 
 /*
@@ -4468,6 +4508,11 @@ button.piem-chat__latest--asking {
  * The wrapper the popover is positioned against, and the surface a hover-leave
  * is measured on: it contains the button *and* the popover, so travelling from
  * one to the other never leaves it.
+ *
+ * The `margin-inline-start: auto` is what pins the entry icon to the context
+ * row's trailing edge. It only works because `.piem-chat__context-trailing`
+ * (see the context chips section) dissolves into `display: contents`, making
+ * this element a direct flex item of `.piem-chat__context-row`.
  */
 .piem-chat__subagents {
 	display: inline-flex;

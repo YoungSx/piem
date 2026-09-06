@@ -1442,6 +1442,7 @@ function baseSnapshot(): ChatSnapshot {
 		isConfigured: false,
 		showAgentDetails: false,
 		traceExpand: "collapsed",
+		mobileComposerCollapsed: false,
 		language: "en",
 		contextRefs: [],
 		isFollowingActiveNote: true,

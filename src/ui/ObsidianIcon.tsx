@@ -60,6 +60,15 @@ interface IconButtonProps {
 	 * browsing. Absent for the buttons that really do just act.
 	 */
 	hasPopup?: "menu";
+	/**
+	 * Expander state, for a button that shows and hides a region in place.
+	 *
+	 * Spelled out rather than accepted as an `aria-expanded` JSX attribute because
+	 * TypeScript never type-checks hyphenated attributes — a typo or a dropped
+	 * prop would pass compile and simply vanish from the DOM. Absent renders
+	 * nothing, for the buttons that only act.
+	 */
+	ariaExpanded?: boolean;
 }
 
 export function IconButton({
@@ -71,6 +80,7 @@ export function IconButton({
 	children,
 	buttonRef,
 	hasPopup,
+	ariaExpanded,
 }: IconButtonProps): React.JSX.Element {
 	const classes = ["clickable-icon", "piem-chat__icon-button", className].filter(Boolean).join(" ");
 	const elementRef = useRef<HTMLButtonElement | null>(null);
@@ -98,6 +108,7 @@ export function IconButton({
 			type="button"
 			className={classes}
 			aria-label={label}
+			aria-expanded={ariaExpanded}
 			aria-haspopup={hasPopup}
 			disabled={disabled}
 			onClick={onClick}

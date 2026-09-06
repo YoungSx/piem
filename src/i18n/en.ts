@@ -49,6 +49,13 @@ export const en = {
 		placeholder: "Ask Piem, or / for commands…",
 		composerAria: "Message Piem",
 		/**
+		 * Mobile-only collapse button on the composer's top row. The icon flips
+		 * with the state, so the label must too: an expanded composer collapses,
+		 * a folded one expands.
+		 */
+		collapseComposer: "Collapse composer",
+		expandComposer: "Expand composer",
+		/**
 		 * The stop phase's label while the compactor holds the turn. "Stop compaction"
 		 * named the mechanism and made the button carry two nouns; the transcript's
 		 * own tidying row already narrates what is happening, so the button only says
