@@ -1318,12 +1318,17 @@ function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): Re
 			return <Block key={blockIndex} text={content.text} kind="assistant" isStreaming={args.isStreaming} context={context} className={live ? "piem-chat__block--live" : undefined} />;
 		}
 		if (content.type === "thinking") {
+			// The brain stays in the slot through both states, and a live one wears
+			// the same running treatment a tool row gets — accent glyph, lifted text,
+			// the breath. The spinner it replaced spent that slot answering "is
+			// something happening", which "Thinking…" already answers in words.
 			return (
 				<Trace
 					key={blockIndex}
-					icon={live ? "loader-circle" : "brain"}
+					icon="brain"
 					name={context.t.t(live ? "chat.thinkingNow" : "chat.thoughtItThrough")}
-					className={live ? "piem-chat__trace--thinking piem-chat__trace--live" : "piem-chat__trace--thinking"}
+					className={live ? "piem-chat__trace--thinking piem-chat__trace--running" : "piem-chat__trace--thinking"}
+					busy={live}
 					open={traceOpensByDefault(context.traceExpand, "thinking", false)}
 				>
 					<Block text={content.thinking} kind="thinking" isStreaming={args.isStreaming} context={context} />

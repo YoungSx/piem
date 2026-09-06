@@ -780,8 +780,12 @@ describe("MessageList trace collapsing", () => {
 		const trace = host.querySelector("details.piem-chat__trace--thinking");
 		// The live row carries the running marker and the present-tense label;
 		// a settled "Thought it through" on a turn still going would read as done.
-		expect(trace?.classList.contains("piem-chat__trace--live")).toBe(true);
+		expect(trace?.classList.contains("piem-chat__trace--running")).toBe(true);
+		expect(trace?.getAttribute("aria-busy")).toBe("true");
 		expect(trace?.querySelector(".piem-chat__trace-name")?.textContent).toBe("Thinking…");
+		// The brain stays in the slot through both states, and the state rides the
+		// same three signals a running tool row gets — not a spinner in its place.
+		expect(iconNames(trace)).toEqual(["brain"]);
 	});
 
 	it("opens thinking and tool rows when the expand mode is all-open", async () => {
@@ -818,6 +822,8 @@ describe("MessageList trace collapsing", () => {
 		await flushRender();
 
 		const trace = host.querySelector("details.piem-chat__trace--thinking");
+		expect(trace?.classList.contains("piem-chat__trace--running")).toBe(false);
+		expect(trace?.getAttribute("aria-busy")).toBeNull();
 		expect(trace?.classList.contains("piem-chat__trace--live")).toBe(false);
 		expect(trace?.querySelector(".piem-chat__trace-name")?.textContent).toBe("Thought it through");
 	});
