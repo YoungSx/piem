@@ -1493,6 +1493,115 @@ ${columns}
 	};
 };
 
+SCENARIOS["sign-in-modal"] = async () => {
+	const { openSignInModal } = await import("../src/ui/settings/SignInModal.ts");
+	const { getT } = await import("../src/i18n/index.ts");
+	const t = getT("en");
+
+	/**
+	 * One dialog, captured in the state `label` names. Driven through the same
+	 * seams the UI tests use — the flow's own `notify` and `prompt` — so the
+	 * picture shows what the dialog renders, not a hand-styled lookalike. A
+	 * state without a `drive` never presses Sign in, so the dialog shows its
+	 * resting face.
+	 */
+	const frame = async (label, drive) => {
+		openSignInModal({
+			app: {},
+			target: "Anthropic",
+			method: "Anthropic (Claude Pro/Max)",
+			signedIn: false,
+			canStore: true,
+			t,
+			signIn: (interaction) => drive(interaction, document.body.lastElementChild),
+			signOut: async () => {},
+			onChanged: () => {},
+		});
+		const modalEl = document.body.lastElementChild;
+		if (drive) {
+			const start = Array.from(modalEl.querySelectorAll("button")).find(
+				(button) => button.textContent === t.t("signIn.start"),
+			);
+			start.click();
+			await Promise.resolve();
+			// The failure path lands after a macrotask, like a real exchange's.
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		for (const input of Array.from(modalEl.querySelectorAll("input"))) {
+			if (input.value) {
+				input.setAttribute("value", input.value);
+			}
+		}
+		const captured = `<div class="modal"><div class="modal-title">${modalEl.querySelector(".modal-title")?.textContent ?? ""}</div>${modalEl.outerHTML}</div>`;
+		modalEl.remove();
+		return [label, captured];
+	};
+
+	const PASTE_PROMPT = { type: "manual_code", message: "", placeholder: "http://localhost:53692/callback" };
+
+	const states = [
+		await frame("Signed out — the resting dialog", undefined),
+		await frame("Device code — the code to type, the page to open", (interaction) => {
+			interaction.notify({
+				type: "device_code",
+				userCode: "WTQJ-XLMD",
+				verificationUri: "https://accounts.x.ai/device",
+			});
+			return new Promise(() => {}); // polling is where the flow would sit
+		}),
+		await frame("Paste prompt — waiting on the pasted authorization", (interaction) => {
+			return interaction.prompt(PASTE_PROMPT).catch(() => {}); // cleanup's close rejects it
+		}),
+		await frame("Failed — the exchange refused the pasted code", async (interaction, modalEl) => {
+			// The user pastes and submits; the exchange rejects. Driven through the
+			// real controls so the failure line replaces the field, as it does live.
+			// The rejection must reach the dialog — its runSignIn catch is what
+			// renders the failure line — so nothing here swallows it.
+			const answered = interaction.prompt(PASTE_PROMPT).then(() => {
+				throw new Error("HTTP 400 from the token exchange: invalid_grant");
+			});
+			await Promise.resolve();
+			const input = modalEl.querySelector("input.piem-sign-in-paste");
+			input.value = "https://localhost:53692/callback?code=stale-code";
+			Array.from(modalEl.querySelectorAll("button"))
+				.find((button) => button.textContent === t.t("signIn.pasteSubmit"))
+				.click();
+			return answered;
+		}),
+	];
+
+	const columns = [600]
+		.map(
+			(width) => `<div class="harness-panel">
+	<h3>${width}px</h3>
+	${states.map(([label, html]) => `<h4>${label}</h4>\n\t<div style="width: ${width}px">${html}</div>`).join("\n\t")}
+</div>`,
+		)
+		.join("\n");
+
+	const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>sign-in-modal</title><style>
+:root {${TOKENS}}
+body { background: #111; color: var(--text-normal); font-family: var(--font-interface); margin: 0; padding: 16px; display: flex; gap: 24px; align-items: flex-start; }
+.harness-panel h3 { color: #888; font-size: 11px; font-weight: 400; margin: 0 0 6px; }
+.harness-panel h4 { color: #6e6e6e; font-size: 11px; font-weight: 400; margin: 16px 0 4px; }
+${styles}
+${OBSIDIAN_CORE_SHIM}
+</style></head><body>
+${columns}
+</body></html>`;
+
+	return {
+		element: document.body,
+		html,
+		width: 600 + 32 + 40,
+		height: 1500,
+		cleanup: async () => {
+			document.body.replaceChildren();
+		},
+	};
+};
+
 /* ------------------------------------------------------------------ page assembly */
 
 /** Minimal markdown face for the stub renderer: the shapes replies actually carry. */
