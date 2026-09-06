@@ -889,7 +889,6 @@ export const en = {
 		 */
 		sendShortcut: "Send message with",
 
-		statusActiveModel: "Default model",
 		providersHeading: "Providers",
 		providersDesc: "Endpoints requests can go to. A provider holds a base URL, a wire protocol, and one key.",
 		addProvider: "Add provider",
@@ -1006,21 +1005,10 @@ export const en = {
 		 */
 		cacheRetention: "Prompt cache",
 		cacheRetentionDesc:
-			"Providers can hold the unchanging part of a prompt — system instructions, tool definitions, skills — so the next turn is billed at about a tenth of the price instead of in full. Holding it an hour costs more to store but survives a break spent writing; five minutes stores cheaper and usually expires before you come back. Off suits an endpoint that rejects cache markers.",
-		cacheRetentionLong: "An hour — best if you leave and come back",
-		cacheRetentionShort: "Five minutes — best for rapid back-and-forth",
-		cacheRetentionNone: "Off — do not cache prompts",
-		/**
-		 * Disclosure for the agent's outbound HTTP tool, which is always available.
-		 *
-		 * Was a toggle until #52. Reworded from permission to plain statement: the
-		 * reader is being told what the agent can do, not asked to allow it. Still
-		 * named for the capability rather than `web_fetch`, because a reader has
-		 * never seen the tool's internal name and should not have to.
-		 */
-		webFetchName: "Fetching web pages",
-		webFetchDesc:
-			"The agent can request external URLs when a task needs a page. Those requests, and any data in them, leave the vault and Obsidian; the transport above decides how they travel.",
+			"Providers hold the unchanging part of a prompt for you — system instructions, tool definitions, skills — so follow-up turns bill at about a tenth of the price instead of full. Turn it off for an endpoint that refuses cache markers.",
+		cacheRetentionLong: "An hour — step away to write, come back to it warm",
+		cacheRetentionShort: "Five minutes — for rapid back-and-forth",
+		cacheRetentionNone: "Off — for endpoints that refuse cache markers",
 		whatLeavesVault: "What leaves this vault",
 		whatLeavesVaultDesc:
 			"Prompts, vault content read by tools, and tool results are sent to the provider serving the default model. Nothing is sent anywhere else.",

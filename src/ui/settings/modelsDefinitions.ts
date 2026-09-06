@@ -1,4 +1,4 @@
-import { type SettingDefinitionItem, type SettingDefinitionRender, type SettingGroupItem } from "obsidian";
+import { type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import { createFetchForTransport, type NetworkTransport } from "../../net/obsidianFetch";
 import { createObsidianModels } from "../../net/streamFn";
 import { ModelListingCache } from "../../net/modelListingCache";
@@ -51,10 +51,9 @@ export function modelsDefinitions(host: SettingsPanelHost): SettingDefinitionIte
 	const { t } = host;
 	const live = new ModelsLiveState(host);
 	return [
-		statusLine(host, live),
+		activeModelControl(host, live),
 		providersList(host),
 		modelsList(host, live),
-		activeModelControl(host, live),
 		{
 			type: "group",
 			heading: t.t("settings.networkHeading"),
@@ -93,49 +92,56 @@ export function modelsDefinitions(host: SettingsPanelHost): SettingDefinitionIte
 						},
 					},
 				},
-				{ name: t.t("settings.webFetchName"), desc: t.t("settings.webFetchDesc") },
 			],
 		},
 	];
 }
 
 /**
- * Where a prompt is actually going, and why it may not be what was configured.
+ * Which model actually answers, chosen here rather than announced above.
  *
  * The panel's answer to "which model replied", which the old layout could only
- * convey by which controls looked enabled. The substitution warning hangs off the
- * same row rather than sitting above the section as its own paragraph: it is
- * about this sentence — a vault configured against a builtin this build no longer
- * carries is silently answered by a different one, and the two facts are
- * unreadable apart.
+ * convey by which controls looked enabled. A vault configured against a builtin
+ * this build no longer carries is silently answered by a different one — the
+ * substitution warning hangs off this same row as an effect line, because it is
+ * about this choice: the two facts are unreadable apart.
  *
- * Both parts are set in `render` because both read live model state, and
- * `getSettingDefinitions()` runs once at registration purely to index. Probing
- * the selected model for a search that never opens this page would make indexing
- * cost a model resolution.
+ * `render` rather than `control` because a change rewrites every active suffix
+ * on the model rows; `update()` would rebuild this select under a keyboard
+ * user's arrow keys, exactly the focus loss the old panel avoided with its row
+ * handles. `getSettingDefinitions()` also runs once at registration purely to
+ * index — reading the selected model there would cost indexing a model
+ * resolution.
  */
-function statusLine(host: SettingsPanelHost, live: ModelsLiveState): SettingDefinitionItem {
+function activeModelControl(host: SettingsPanelHost, live: ModelsLiveState): SettingDefinitionItem {
+	const { settings, t } = host;
 	return {
-		name: host.t.t("settings.statusActiveModel"),
-		searchable: false,
+		name: t.t("settings.activeModelHeading"),
+		desc: t.t("settings.activeModelDesc"),
+		visible: () => settings.models.length > 0,
 		render: (setting) => {
-			live.statusEl = setting.descEl;
-			live.refreshStatus();
 			const missing = host.missingBuiltinModel();
 			if (missing) {
 				// The effect-line slot every other consequence in this panel uses, so
-				// the substitution reads as a consequence of the row above it rather
-				// than as a plugin fault. Warn rather than error: nothing is broken,
-				// something was answered by a stand-in.
+				// the substitution reads as a consequence of this row rather than as
+				// a plugin fault. Warn rather than error: nothing is broken, something
+				// was answered by a stand-in.
 				const notice = createEffectLine(setting.descEl);
 				notice.setText(describeMissingBuiltinModel(missing, host.describeTarget(), host.t));
 				notice.addClass("piem-settings-effect--warn");
 			}
-			return () => {
-				if (live.statusEl === setting.descEl) live.statusEl = undefined;
-			};
+			setting.addDropdown((dropdown) => {
+				for (const model of settings.models) dropdown.addOption(model.id, describeModelRow(settings, model, t));
+				dropdown.setValue(settings.activeModelId ?? settings.models[0]?.id ?? "");
+				dropdown.onChange(async (modelId) => {
+					settings.activeModelId = modelId;
+					await host.save();
+					// Each list row marks the active one and changes in place.
+					live.refreshRows();
+				});
+			});
 		},
-	} satisfies SettingDefinitionRender;
+	};
 }
 
 /**
@@ -149,14 +155,9 @@ function statusLine(host: SettingsPanelHost, live: ModelsLiveState): SettingDefi
  * down.
  */
 class ModelsLiveState {
-	statusEl: HTMLElement | undefined;
 	readonly rows = new Map<string, HTMLElement>();
 
 	constructor(private readonly host: SettingsPanelHost) {}
-
-	refreshStatus(): void {
-		this.statusEl?.setText(this.host.describeTarget());
-	}
 
 	refreshRows(): void {
 		for (const [id, descEl] of this.rows) {
@@ -376,36 +377,6 @@ function openModelModal(host: SettingsPanelHost, model?: ModelConfig): void {
 			host.refresh();
 		},
 	}).open();
-}
-
-/**
- * Current model remains a render row because a change rewrites the status line
- * and every active suffix. `update()` would preserve list search but rebuild the
- * dropdown under a keyboard user's hands; this one local update keeps focus.
- */
-function activeModelControl(host: SettingsPanelHost, live: ModelsLiveState): SettingDefinitionItem {
-	const { settings, t } = host;
-	return {
-		name: t.t("settings.activeModelHeading"),
-		desc: t.t("settings.activeModelDesc"),
-		visible: () => settings.models.length > 0,
-		render: (setting) => {
-			setting.addDropdown((dropdown) => {
-				for (const model of settings.models) dropdown.addOption(model.id, describeModelRow(settings, model, t));
-				dropdown.setValue(settings.activeModelId ?? settings.models[0]?.id ?? "");
-				dropdown.onChange(async (modelId) => {
-					settings.activeModelId = modelId;
-					await host.save();
-					// The status line names the model and each list row marks the active
-					// one. Both change in place: `update()` would rebuild this select under
-					// a keyboard user's arrow keys, exactly the focus loss the old panel
-					// avoided with its row handles.
-					live.refreshStatus();
-					live.refreshRows();
-				});
-			});
-		},
-	};
 }
 
 /**
