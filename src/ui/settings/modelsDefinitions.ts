@@ -497,6 +497,11 @@ async function testDraftModel(host: SettingsPanelHost, draft: ModelConfig): Prom
  * carries the endpoint's own message, but never the draft: the key never enters
  * this function's arguments, and the log must stay true to that.
  */
+/** The message half of a test-failure detail. */
+function describeCause(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
+}
+
 export function logConnectionTest(
 	host: SettingsPanelHost,
 	facts: {
@@ -514,7 +519,7 @@ export function logConnectionTest(
 		...(facts.provider ? { provider: facts.provider } : {}),
 		ms: Date.now() - facts.started,
 		...(facts.detail ? { detail: facts.detail } : {}),
-		...(facts.error !== undefined ? { error: String(facts.error) } : {}),
+		...(facts.error !== undefined ? { error: describeCause(facts.error) } : {}),
 	});
 	if (facts.error !== undefined || facts.ok === false) {
 		host.logger.warn(`Connection test failed (${facts.kind})`, detail);
