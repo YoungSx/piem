@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { StopReason } from "@earendil-works/pi-ai";
-import { describeReplyCutoff } from "./replyCutoff";
+import { describeReplyCutoff, markReplySteered } from "./replyCutoff";
 import { getT } from "../i18n";
 
 const en = getT("en");
@@ -37,6 +37,31 @@ describe("describeReplyCutoff", () => {
 		const cutoff = describeReplyCutoff(reply("aborted"), en);
 		expect(cutoff?.kind).toBe("stopped");
 		expect(cutoff?.notice).toBe("You stopped this reply.");
+	});
+
+	it("reports a reply a steered message cut short, not as a stop", () => {
+		// Same `stopReason` as the stop button — pi has no other way to record an
+		// abort — so without the stamp the transcript would tell someone who
+		// pressed a chip's steer action that they pressed stop (issue #289).
+		const steered = reply("aborted");
+		markReplySteered(steered);
+
+		const cutoff = describeReplyCutoff(steered, en);
+		expect(cutoff?.kind).toBe("steered");
+		expect(cutoff?.notice).toBe("Cut short for your next message.");
+	});
+
+	it("refuses the stamp on anything but an aborted turn", () => {
+		// The flag driving the stamp is per-run, and a run whose last turn landed
+		// normally is a run whose interrupt lost the race. Marking it would put a
+		// notice under a reply that finished.
+		const landed = reply("stop");
+		markReplySteered(landed);
+		expect(describeReplyCutoff(landed, en)).toBeNull();
+
+		const failed = reply("error", "boom");
+		markReplySteered(failed);
+		expect(describeReplyCutoff(failed, en)?.kind).toBe("failed");
 	});
 
 	it("reports a reply the model's length limit cut off", () => {
@@ -90,6 +115,9 @@ describe("describeReplyCutoff", () => {
 	});
 
 	it("translates every notice", () => {
+		const steered = reply("aborted");
+		markReplySteered(steered);
+		expect(describeReplyCutoff(steered, zh)?.notice).toBe("这条回复为你的下一条消息让了路。");
 		expect(describeReplyCutoff(reply("aborted"), zh)?.notice).toBe("你已停止这条回复。");
 		expect(describeReplyCutoff(reply("length"), zh)?.notice).toBe("这条回复达到模型的长度上限，提前结束了。");
 		expect(describeReplyCutoff(reply("error", "504 Gateway Time-out"), zh)?.notice).toBe("供应商迟迟没有回话。");
@@ -103,5 +131,10 @@ describe("describeReplyCutoff", () => {
 			expect(spoken).not.toBe("");
 			expect(spoken[0]).toBe(spoken[0]?.toLowerCase());
 		}
+		const steered = reply("aborted");
+		markReplySteered(steered);
+		const steeredSpoken = describeReplyCutoff(steered, en)?.spoken ?? "";
+		expect(steeredSpoken).not.toBe("");
+		expect(steeredSpoken[0]).toBe(steeredSpoken[0]?.toLowerCase());
 	});
 });

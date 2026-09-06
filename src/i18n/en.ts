@@ -141,6 +141,18 @@ export const en = {
 		/** Appended to spoken text, so it continues the sentence in lower case. */
 		youStoppedSpoken: "you stopped this reply.",
 		/**
+		 * The other way an aborted reply happens: the reader pressed the steer
+		 * action on a waiting message, and the panel cut this turn short so it
+		 * could go straight out.
+		 *
+		 * Names the cause, not the mechanism. "Interrupted" alone would read as a
+		 * fault, and the message itself is the very next thing in the transcript,
+		 * so the line only has to connect the two.
+		 */
+		replySteered: "Cut short for your next message.",
+		/** Appended to spoken text, so it continues the sentence in lower case. */
+		replySteeredSpoken: "cut short for your next message.",
+		/**
 		 * The edit-and-resend control on the last answered question. Names both
 		 * halves of what it does — the composer opens with the words, and sending
 		 * rewrites the conversation from that turn — because "edit" alone reads
@@ -282,13 +294,36 @@ export const en = {
 		queueLabel: "Waiting to be read",
 		/** Image count suffix on a queued chip. */
 		queueImages: "{count} images",
-		/** Retract button on a queued chip. */
-		queueCancel: "Take back",
+		/**
+		 * The steer action on a queued chip: this one goes now, and the reply on
+		 * screen is cut short to make room (issue #289).
+		 *
+		 * Names the cost, not just the act. It is the one control in the queue row
+		 * that spends something — the sentence the model was midway through — and a
+		 * reader deciding between three buttons has to be able to predict that
+		 * before pressing rather than after.
+		 */
+		queueSteer: "Send now — cuts the reply short",
+		/**
+		 * Take-back button on a queued chip: the words go back into the composer
+		 * for another pass rather than being thrown away (issue #289).
+		 *
+		 * Two verbs because it does two things, and the reader needs both to
+		 * predict it: the chip goes, and the draft comes back. "Edit" alone would
+		 * promise an in-place edit of the chip.
+		 */
+		queueEdit: "Take back to edit",
+		/** Discard button on a queued chip: the words go, nothing comes back. */
+		queueDiscard: "Discard",
 		/**
 		 * The mouse half of mid-run queueing: while a reply streams the single
 		 * turn slot is Stop, so this quiet text button keeps the draft's queue
 		 * path open for pointer users. Visible only while a draft exists — the
 		 * chord keeps working regardless.
+		 *
+		 * "Queue", not "Send": a mid-reply send waits, and how long it waits is a
+		 * setting. The control that does not wait is the steer action on the chip
+		 * this produces (issue #289).
 		 */
 		queueDraft: "Queue draft",
 		/**
@@ -883,6 +918,22 @@ export const en = {
 		traceExpandCollapsed: "Everything collapsed",
 		traceExpandHighValue: "High-value rows open",
 		traceExpandExpanded: "Everything open",
+		/**
+		 * The mid-reply queueing entry (issue #289).
+		 *
+		 * The description's job is to say what the page is *not*: neither choice
+		 * interrupts, so a reader who came here looking for "send it right now"
+		 * is pointed at the control that actually does that before they change a
+		 * default and find it did not help.
+		 */
+		queueStrategy: "Mid-reply sends",
+		queueStrategyDesc:
+			"How long a message you send while Piem is still answering waits before it reaches the model. Neither choice interrupts the reply — the steer button beside each waiting message does that.",
+		queueStrategyWhen: "Wait until",
+		queueStrategyWhenDesc:
+			"The whole answer leaves the reply's plan intact. The current request is sooner, and can change a long run of tool calls halfway through it.",
+		queueStrategyAfterRun: "The whole answer is finished",
+		queueStrategyAfterTurn: "The current request is finished",
 		/**
 		 * Names what the other key does under each option, because that is the
 		 * actual trade: whichever key does not send has to make a new line, and a

@@ -74,7 +74,7 @@ node scripts/measure-transcript.mjs     # asserts the message column never scrol
 node scripts/preview-ask-user.mjs       # writes .preview/ask-user.html
 node scripts/measure-ask-user.mjs       # asserts marker centring, one text column, contrast floors
 
-node scripts/preview-visual.mjs         # writes one page per scenario + visual-manifest.json
+bun  scripts/preview-visual.mjs         # writes one page per scenario + visual-manifest.json
 node scripts/measure-visual.mjs         # screenshots every page the manifest names
 ```
 
@@ -86,7 +86,10 @@ that emits it. `preview-visual.mjs` gives up nothing to drift at all: it mounts 
 shipped React components in happy-dom and loads the whole shipped stylesheet, so a
 spacing defect in a component is a defect in the page. It pays for that with
 scenario setup — a scenario has to drive the real service — and it screenshots
-rather than asserts, so it is for looking, not for gating.
+rather than asserts, so it is for looking, not for gating. It is also the one that
+runs under `bun` rather than `node`: it swaps the `obsidian` namespace with
+`bun:test`'s `mock.module` and imports `.ts` sources directly, neither of which
+node can do.
 
 None of them are part of `npm run verify` — Chromium is not a project dependency —
 so the invariants worth keeping green in CI are mirrored as structural gates in
@@ -97,7 +100,9 @@ keyframes do not exist (and for keyframes nothing names) — the half-done renam
 that silently stopped `.piem-chat__subagents-button--running` from breathing. Override the
 browser with `CHROME=` (`CHROMIUM_BIN=` for `measure-visual.mjs`); a snap-packaged
 Chromium cannot read a checkout under a dotted path (`~/.paseo/...`), which
-`PREVIEW_DIR=` works around.
+`PREVIEW_DIR=` works around. Point `PREVIEW_DIR=` somewhere under `$HOME`, not at
+`/tmp`: a snap gets its own private `/tmp`, so the pages are written where the
+browser cannot see them and every shot fails with "Chromium wrote no file".
 
 The transcript harness renders three panel widths (300px sidebar, 390px phone,
 560px wide leaf) and asserts two things that have to hold together: the message

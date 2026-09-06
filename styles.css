@@ -2944,9 +2944,10 @@ button.piem-chat__latest--asking {
 
 /*
  * Queued mid-run sends, between the composer's notice rows and the textarea.
- * One chip per waiting message, oldest first, each with its own retract
- * button — a queue of three is three decisions, not one. Muted text keeps the
- * row from competing with the running reply it belongs to.
+ * One chip per waiting message, oldest first, each with its own pair of
+ * actions — take back to edit, or discard — because a queue of three is three
+ * decisions, not one. Muted text keeps the row from competing with the running
+ * reply it belongs to.
  */
 .piem-chat__queue {
 	display: flex;
@@ -2977,7 +2978,15 @@ button.piem-chat__latest--asking {
 	margin-inline-start: var(--size-4-1);
 }
 
-.piem-chat__queue-cancel {
+/*
+ * Both chip actions, styled as one: they are the same weight of decision and
+ * sit in the same row, so the pencil must not read as louder than the x. Muted
+ * until hover, like the transcript's own message actions.
+ *
+ * `flex-shrink: 0` is what makes the ellipsis on the text work — without it the
+ * two buttons give up their width first and the row's words never truncate.
+ */
+.piem-chat__queue-action {
 	--icon-color: var(--text-muted);
 	--icon-color-hover: var(--text-normal);
 	flex-shrink: 0;

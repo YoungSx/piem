@@ -455,6 +455,24 @@ describe("normalizeSettings with traceExpand", () => {
 	});
 });
 
+describe("normalizeSettings with promptQueueStrategy", () => {
+	it("gives a vault written before the setting existed the whole-answer timing", () => {
+		// Which is what a mid-run send has always had: the queue only ever departed
+		// when the run ended, so the default changes nothing for a legacy vault.
+		expect(normalizeSettings({}).promptQueueStrategy).toBe("afterRun");
+	});
+
+	it("keeps an explicit timing", () => {
+		expect(normalizeSettings({ promptQueueStrategy: "afterTurn" }).promptQueueStrategy).toBe("afterTurn");
+		expect(normalizeSettings({ promptQueueStrategy: "afterRun" }).promptQueueStrategy).toBe("afterRun");
+	});
+
+	it("falls back rather than persisting a timing the service cannot honour", () => {
+		expect(normalizeSettings({ promptQueueStrategy: "immediately" as never }).promptQueueStrategy).toBe("afterRun");
+		expect(normalizeSettings({ promptQueueStrategy: null as never }).promptQueueStrategy).toBe("afterRun");
+	});
+});
+
 describe("normalizeSettings with mcpServers", () => {
 	it("gives a vault written before the setting existed an empty list", () => {
 		expect(normalizeSettings({}).mcpServers).toEqual([]);

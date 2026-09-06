@@ -182,6 +182,55 @@ function hangingStreamFn(text) {
 	};
 }
 
+/**
+ * A streamFn like {@link scriptedStreamFn}, except that the reply at `cutIndex`
+ * is left open and ended by the run's own abort signal.
+ *
+ * The stand-in for a real provider under an interrupt: pi-ai never throws on an
+ * abort, it ends the stream with an `aborted` message and lets the loop unwind
+ * on that stop reason. `hangingStreamFn` above is the opposite stand-in — it
+ * ignores the signal, which is what holds a panel in the mid-interrupt state
+ * long enough to photograph the waiting chips.
+ *
+ * Indexed like its sibling rather than counting from the first *turn*, because
+ * the mount's own quick-action probe is request zero on every one of these
+ * pages and would otherwise be the request that gets cut.
+ */
+function interruptibleStreamFn(replies, cutIndex, cutText) {
+	let calls = 0;
+	return (model, _context, options) => {
+		const index = calls;
+		calls += 1;
+		if (index !== cutIndex) {
+			return textReply(model, replies[Math.min(index, replies.length - 1)] ?? "");
+		}
+		const stream = createAssistantMessageEventStream();
+		const partial = {
+			role: "assistant",
+			content: [{ type: "text", text: "" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: { input: 12_000, output: 30, cacheRead: 0, cacheWrite: 0, totalTokens: 12_030, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			timestamp: Date.now(),
+		};
+		stream.push({ type: "start", partial });
+		stream.push({ type: "text_start", contentIndex: 0, partial });
+		stream.push({
+			type: "text_delta",
+			contentIndex: 0,
+			delta: cutText,
+			partial: { ...partial, content: [{ type: "text", text: cutText }] },
+		});
+		options?.signal?.addEventListener("abort", () => {
+			const cut = { ...partial, content: [{ type: "text", text: cutText }], stopReason: "aborted", errorMessage: "Request was aborted" };
+			stream.push({ type: "error", reason: "aborted", error: cut });
+			stream.end(cut);
+		});
+		return stream;
+	};
+}
+
 /** A streamFn that fails the turn, for the error banner. */
 function failingStreamFn(message) {
 	return () => {
@@ -492,6 +541,91 @@ SCENARIOS["chat-streaming"] = async () => {
 			textarea.dispatchEvent(new Event("input", { bubbles: true }));
 			if (!(await settle(() => document.querySelector(".piem-chat__queue-button") !== null))) {
 				throw new Error("queue entry did not appear for the mid-reply draft");
+			}
+		},
+	});
+	return { element, cleanup };
+};
+
+/*
+ * Mid-reply sends waiting at the composer, with all three of their decisions on
+ * show (issue #289).
+ *
+ * This is the ordinary state now: a send during a reply queues, and how long it
+ * waits is a setting. The picture is for the row itself — three icon buttons and
+ * a flexible text column in a 300px sidebar is exactly the kind of thing that
+ * looks fine in happy-dom and truncates the wrong element in a real engine.
+ */
+SCENARIOS["chat-queued"] = async () => {
+	const { element, cleanup } = await mountChat({
+		streamFn: hangingStreamFn("Reading the three notes you tagged `reading` — the second one looks like a duplicate, hold on"),
+		drive: async (service) => {
+			const send = service.sendPrompt("Check my reading notes for duplicates");
+			await settle(
+				() => service.getSnapshot().isStreaming && document.querySelector(".piem-chat__message--assistant") !== null,
+			);
+			void send;
+			await service.sendPrompt("Actually use Books/Deep Work.md");
+			// Deliberately longer than the narrowest column: the chip's words are
+			// the row's only flexible part, so this is what proves the ellipsis
+			// lands on them rather than the three buttons being squeezed off the end.
+			await service.sendPrompt("And skip the summary at the end, I only want the overlapping highlights listed");
+			if (!(await settle(() => document.querySelectorAll(".piem-chat__queue-item").length === 2))) {
+				throw new Error("queued chips did not appear for the mid-reply sends");
+			}
+			// Three actions per chip, or the page is photographing an older row.
+			if (document.querySelectorAll(".piem-chat__queue-action").length !== 6) {
+				throw new Error("expected a steer, a take-back and a discard on every chip");
+			}
+		},
+	});
+	return { element, cleanup };
+};
+
+/*
+ * A steer after it lands: a reply cut mid-sentence, the line that says why, and
+ * the steered message answered below it (issue #289).
+ *
+ * Driven through the chip's own button rather than a service call, because the
+ * button is the only way a reader reaches this state and the page exists to show
+ * what they get for pressing it.
+ *
+ * The notice is the other half of the point. pi records the interrupt as
+ * `stopReason: "aborted"` — the stop button's own stop reason — so without the
+ * stamp this reply would carry "You stopped this reply." above a message the
+ * reader steered in on purpose.
+ */
+SCENARIOS["chat-steered"] = async () => {
+	const { element, cleanup } = await mountChat({
+		streamFn: interruptibleStreamFn(
+			[CHIPS_JSON, "", "Right — reading `Books/Deep Work.md` only. Two highlights overlap with the copy; merging them now."],
+			1,
+			"Reading the three notes you tagged `reading` — I will start with `Books/Deep Wo",
+		),
+		drive: async (service) => {
+			const send = service.sendPrompt("Check my reading notes for duplicates");
+			await settle(
+				() => service.getSnapshot().isStreaming && document.querySelector(".piem-chat__message--assistant") !== null,
+			);
+			void send;
+			await service.sendPrompt("Actually use Books/Deep Work.md");
+			if (!(await settle(() => document.querySelector(".piem-chat__queue-action") !== null))) {
+				throw new Error("the mid-reply send produced no chip to steer");
+			}
+			const steer = [...document.querySelectorAll(".piem-chat__queue-action")].find(
+				(button) => button.getAttribute("aria-label") === "Send now — cuts the reply short",
+			);
+			if (!steer) {
+				throw new Error("steer action not found on the queued chip");
+			}
+			steer.click();
+			if (!(await settle(() => document.querySelector(".piem-chat__interrupted--steered") !== null, 60))) {
+				throw new Error("the interrupted reply never reported why it stopped");
+			}
+			// The replacement run has to have answered, or the page shows a cut
+			// reply with nothing after it — which is the taken-back case, not this one.
+			if (!(await settle(() => service.getSnapshot().messages.filter((message) => message.role === "assistant").length >= 2, 60))) {
+				throw new Error("the correction was never answered");
 			}
 		},
 	});

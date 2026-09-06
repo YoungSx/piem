@@ -88,6 +88,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		askAboutVaultHintAfter: "。",
 		youStopped: "你已停止这条回复。",
 		youStoppedSpoken: "你已停止这条回复。",
+		/** 中断的另一种来路：读者按了等待条上的引导按钮，面板把这一轮就地掐断，让那条消息立刻出去。 */
+		replySteered: "这条回复为你的下一条消息让了路。",
+		replySteeredSpoken: "这条回复为你的下一条消息让了路。",
 		editMessage: "编辑并重发",
 		editingNotice: "正在编辑上一条提问——发送后将替换这条回复。",
 		/**
@@ -154,9 +157,13 @@ export const zhCN: DeepPartial<EnCopy> = {
 		queueLabel: "等待插话",
 		/** 排队 chip 上的图片数量后缀。 */
 		queueImages: "{count} 张图",
-		/** 排队 chip 的撤回按钮。 */
-		queueCancel: "撤回",
-		/** 回复流式输出期间，回合槽位已是停止档位，这个安静的文字按钮为鼠标用户保留草稿的排队入口；只在有草稿时出现，键盘快捷键不受影响。 */
+		/** 排队 chip 的引导按钮：这条立刻发出，屏幕上的回复被掐断让路。标出代价而不只是动作——三个按钮里只有它花钱。 */
+		queueSteer: "立刻引导——会掐断当前回复",
+		/** 排队 chip 的取回按钮：文字退回编辑框重写，而不是被丢掉。 */
+		queueEdit: "取回改写",
+		/** 排队 chip 的丢弃按钮：文字直接没了，什么都不退回。 */
+		queueDiscard: "丢弃",
+		/** 回复流式输出期间，回合槽位已是停止档位，这个安静的文字按钮为鼠标用户保留草稿的排队入口；只在有草稿时出现，键盘快捷键不受影响。用「排队」不用「发送」：中途发出的消息要等，等多久是设置项；不等的那个控件是它产出的等待条上的引导按钮。 */
 		queueDraft: "排队发送",
 		/** 回复已生成但没能写进 vault。读者反正已看到正文，所以这是通知而不是警报。 */
 		persistFailed: "没能存进笔记库——重新载入后这条回复就没了。",
@@ -507,6 +514,14 @@ export const zhCN: DeepPartial<EnCopy> = {
 		traceExpandCollapsed: "全部折叠",
 		traceExpandHighValue: "高价值行展开",
 		traceExpandExpanded: "全部展开",
+		/** 回复途中排队的入口（#289）。说明里最要紧的是讲清「两档都不打断」，免得有人改了默认值还是没等到立刻发出。 */
+		queueStrategy: "回复途中发送",
+		queueStrategyDesc:
+			"Piem 还在回答时你发出的消息，要等多久才轮到它。两档都不会打断这条回复——想立刻发出，请用等待条右侧的引导按钮。",
+		queueStrategyWhen: "等到",
+		queueStrategyWhenDesc: "「整段回答」不会动这条回复的计划；「当前请求」更快，但可能在一长串工具调用中途改掉它的计划。",
+		queueStrategyAfterRun: "整段回答结束",
+		queueStrategyAfterTurn: "当前这次请求结束",
 		sendShortcutDesc: "用哪个键发送消息。无论选哪项，Ctrl+回车 和 ⌘+回车 都能发送。",
 		sendShortcutEnter: "回车（Shift+回车 换行）",
 		sendShortcutModEnter: "Ctrl+回车 或 ⌘+回车（回车用于换行）",

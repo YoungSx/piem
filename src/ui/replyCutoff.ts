@@ -25,8 +25,17 @@
  * reason was in the data and the view threw it away. It is the third kind now
  * (#239), which also means the transcript reports a failed *turn* the same way
  * it already reports a failed tool call and the subagent panel a failed child.
+ *
+ * The fourth kind is not in pi's data at all. A mid-run send now interrupts the
+ * reply instead of waiting a turn for it (issue #289), and pi records that the
+ * only way it can — as `stopReason: "aborted"`, indistinguishable from the stop
+ * button. So the service stamps {@link markReplySteered} on the turn it cut,
+ * and this module reads it: two causes, two sentences, because "You stopped
+ * this reply." under a reply the reader did not stop is the same class of lie
+ * this module exists to remove.
  */
 
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { Translator } from "../i18n";
 import type { IconName } from "obsidian";
@@ -35,7 +44,7 @@ import { describeProviderFailure } from "./providerFailure";
 /** A reply that ended early, and why. `null` means it ended normally. */
 export interface ReplyCutoff {
 	/** Which cause, so the caller can pick copy and an icon without re-deriving it. */
-	kind: "stopped" | "truncated" | "failed";
+	kind: "stopped" | "steered" | "truncated" | "failed";
 	/** Line shown under the message. */
 	notice: string;
 	/**
@@ -59,13 +68,48 @@ export interface ReplyCutoff {
 }
 
 /**
+ * An assistant turn this plugin cut short to make room for a queued message.
+ *
+ * Carried on the message rather than in the runtime for the same reason
+ * `durationMs` is (see `replyDuration.ts`): the fact belongs to that one turn,
+ * has to survive a reload, and rides into the session JSONL because
+ * `appendMessage` serializes the whole object. A log written before this existed
+ * simply reads back without the field, and reads as a plain stop — which is
+ * what it was.
+ */
+interface SteeredAssistantMessage extends AssistantMessage {
+	steeredAway?: boolean;
+}
+
+/**
+ * Marks the turn a mid-run send interrupted.
+ *
+ * Called from the service's `message_end` handler, which is the first moment the
+ * finalized message object exists — pi replaces the partial once per delta and
+ * finalizes into a *different* object, so nothing stamped earlier would survive.
+ * Refuses anything but an aborted assistant turn: the flag that drives this is
+ * per-run, and a run whose last turn ended some other way (the reply landed
+ * before the interrupt did) has nothing to mark.
+ */
+export function markReplySteered(message: AgentMessage): void {
+	if (message.role !== "assistant" || message.stopReason !== "aborted") {
+		return;
+	}
+	(message as SteeredAssistantMessage).steeredAway = true;
+}
+
+/**
  * Classifies how an assistant turn ended.
  *
- * `aborted` is the user pressing stop. `length` is the provider hitting the
- * output-token ceiling — pi treats it as significant enough to fail every tool
- * call in the message (`agent-loop.js`, `failToolCallsFromTruncatedMessage`,
- * whose comment notes that truncated arguments can still parse), so the text
- * beside those calls is no more trustworthy and the reader has to be told.
+ * `aborted` is the user pressing stop — unless the turn carries
+ * {@link markReplySteered}, in which case their own next message is what ended
+ * it.
+ *
+ * `length` is the provider hitting the output-token ceiling — pi treats it as
+ * significant enough to fail every tool call in the message (`agent-loop.js`,
+ * `failToolCallsFromTruncatedMessage`, whose comment notes that truncated
+ * arguments can still parse), so the text beside those calls is no more
+ * trustworthy and the reader has to be told.
  *
  * `error` is a provider failure — a timeout, a refusal, a dropped connection.
  * pi leaves the partial message in place with the provider's text on
@@ -81,6 +125,16 @@ export interface ReplyCutoff {
  */
 export function describeReplyCutoff(message: AssistantMessage, t: Translator): ReplyCutoff | null {
 	if (message.stopReason === "aborted") {
+		if ((message as SteeredAssistantMessage).steeredAway === true) {
+			return {
+				kind: "steered",
+				notice: t.t("chat.replySteered"),
+				spoken: t.t("chat.replySteeredSpoken"),
+				// A turn, not a halt: the conversation carried on immediately below
+				// this line, which is the one thing `circle-slash` would deny.
+				icon: "corner-down-right",
+			};
+		}
 		return {
 			kind: "stopped",
 			notice: t.t("chat.youStopped"),

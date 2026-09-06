@@ -25,6 +25,7 @@ function settings(overrides: Partial<SettingsPanelSettings> = {}): SettingsPanel
 		cacheRetention: "long",
 		showAgentDetails: false,
 		traceExpand: "collapsed",
+		promptQueueStrategy: "afterRun",
 		sendShortcut: "enter",
 		language: "en",
 		sessionRetention: 0,

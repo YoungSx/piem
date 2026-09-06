@@ -110,13 +110,17 @@ interface ChatComposerProps {
 	/** Remove one staged image by id. */
 	onRemoveImage?: (id: string) => void;
 	/**
-	 * Mid-run sends waiting for pi to inject, oldest first. Shown where the
-	 * send happens — a queue invisible at the composer is a queue the user
-	 * cannot trust took their words.
+	 * Mid-run sends waiting to depart, oldest first. Shown where the send
+	 * happens — a queue invisible at the composer is a queue the user cannot
+	 * trust took their words.
 	 */
 	queuedPrompts?: QueuedPrompt[];
-	/** Takes one queued message back, by its chip's id. */
-	onCancelQueuedPrompt?: (id: string) => void;
+	/** Sends one queued message now, cutting the running reply short, by its chip's id. */
+	onSteerQueuedPrompt?: (id: string) => void;
+	/** Puts one queued message back in the draft for another pass, by its chip's id. */
+	onEditQueuedPrompt?: (id: string) => void;
+	/** Throws one queued message away, by its chip's id. */
+	onDiscardQueuedPrompt?: (id: string) => void;
 }
 
 /**
@@ -154,7 +158,9 @@ export function ChatComposer({
 	onAddImages,
 	onRemoveImage,
 	queuedPrompts,
-	onCancelQueuedPrompt,
+	onSteerQueuedPrompt,
+	onEditQueuedPrompt,
+	onDiscardQueuedPrompt,
 }: ChatComposerProps): React.JSX.Element {
 	const t = useT();
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -357,8 +363,18 @@ export function ChatComposer({
 					/*
 					 * The waiting line, oldest first. Sits between the composer and the
 					 * running reply's output so the reader connects the two: these words
-					 * went in, the agent has not reached them yet. Cancel is per chip —
-					 * a queue of three is three decisions, not one.
+					 * went in, the reply on screen has not reached them yet. Every action
+					 * is per chip — a queue of three is three decisions, not one.
+					 *
+					 * Three of them, in the order they escalate (issue #289). Send is the
+					 * primary and the only one that spends anything: it cuts the running
+					 * reply short so this message goes out now, which is the answer to
+					 * "it cannot wait" that no setting can give. The pencil lands the
+					 * words in the composer for a rewrite — it is the transcript's own
+					 * edit glyph, so the two read as one verb. The x is the way out for a
+					 * chip the reader has simply changed their mind about, without having
+					 * to clear the composer afterwards. None of the three stands in for
+					 * another.
 					 */
 					<ul
 						className="piem-chat__queue"
@@ -374,10 +390,22 @@ export function ChatComposer({
 									) : null}
 								</span>
 								<IconButton
+									icon="send"
+									label={t.t("chat.queueSteer")}
+									onClick={() => onSteerQueuedPrompt?.(queued.id)}
+									className="piem-chat__queue-action"
+								/>
+								<IconButton
+									icon="pen-line"
+									label={t.t("chat.queueEdit")}
+									onClick={() => onEditQueuedPrompt?.(queued.id)}
+									className="piem-chat__queue-action"
+								/>
+								<IconButton
 									icon="x"
-									label={t.t("chat.queueCancel")}
-									onClick={() => onCancelQueuedPrompt?.(queued.id)}
-									className="piem-chat__queue-cancel"
+									label={t.t("chat.queueDiscard")}
+									onClick={() => onDiscardQueuedPrompt?.(queued.id)}
+									className="piem-chat__queue-action"
 								/>
 							</li>
 						))}

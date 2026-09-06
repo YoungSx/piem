@@ -33,6 +33,11 @@ import { isControlKey, readControlValue, writeControlValue } from "./ui/settings
 import { getT, isLanguageSetting, resolveLanguage, type LanguageHost, type LanguageSetting, type Translator } from "./i18n";
 import { DEFAULT_SEND_SHORTCUT, isSendShortcutSetting, type SendShortcut } from "./ui/keyboard";
 import { DEFAULT_TRACE_EXPAND, isTraceExpandSetting, type TraceExpandSetting } from "./ui/traceExpand";
+import {
+	DEFAULT_PROMPT_QUEUE_STRATEGY,
+	isPromptQueueStrategy,
+	type PromptQueueStrategy,
+} from "./agent/queueStrategy";
 import { SkillManager } from "./skills/skillManager";
 import { userSkillsSupported } from "./skills/userSkills";
 import { normalizeUserSkillsDir } from "./skills/userSkillsDir";
@@ -79,6 +84,12 @@ export interface PiemSettings {
 	 * by hand either way; this is the state the reader meets, not a permission.
 	 */
 	traceExpand: TraceExpandSetting;
+	/**
+	 * How long a message typed mid-reply waits before it reaches the model —
+	 * the whole answer, or only the provider request in flight (issue #289).
+	 * Neither is an interrupt; the chip's own steer action is.
+	 */
+	promptQueueStrategy: PromptQueueStrategy;
 	/**
 	 * Language the interface speaks. `"auto"` follows the host vault's language
 	 * (resolved once per load); the concrete values override it.
@@ -162,6 +173,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	cacheRetention: DEFAULT_CACHE_RETENTION,
 	showAgentDetails: false,
 	traceExpand: DEFAULT_TRACE_EXPAND,
+	promptQueueStrategy: DEFAULT_PROMPT_QUEUE_STRATEGY,
 	language: "auto",
 	sendShortcut: DEFAULT_SEND_SHORTCUT,
 	sessionRetention: DEFAULT_SESSION_RETENTION,
@@ -240,6 +252,12 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// collapsed transcript, which is what they were reading before the choice
 		// was one to make.
 		traceExpand: isTraceExpandSetting(data?.traceExpand) ? data.traceExpand : DEFAULT_TRACE_EXPAND,
+		// Absent in vaults written before the setting existed; those get the whole
+		// answer, which is the timing a mid-run send has had since the queue itself
+		// only ever waited for `agent_end` (issue #289).
+		promptQueueStrategy: isPromptQueueStrategy(data?.promptQueueStrategy)
+			? data.promptQueueStrategy
+			: DEFAULT_PROMPT_QUEUE_STRATEGY,
 		language,
 		// Absent in vaults written before the setting existed. Those users get bare
 		// Enter, which adds a way to send rather than moving one: the Ctrl+Enter

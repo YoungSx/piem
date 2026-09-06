@@ -17,7 +17,7 @@ import {
 	type StreamFn,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { PromptQueue, type QueuedPrompt } from "./promptQueue";
+import { PromptQueue, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
 import { createObsidianModels, requestDefaults, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
 import { matchVendorForModel } from "../net/vendorMatch";
@@ -62,6 +62,7 @@ import { composeSystemPrompt, emptySkillLoadReport, expandSkill, findSkill, load
 import { loadUserSkills, type UserSkillsLoad } from "../skills/userSkills";
 import type { Skill } from "@earendil-works/pi-agent-core";
 import { describeAgentEvent } from "./agentEventLog";
+import { markReplySteered } from "../ui/replyCutoff";
 import { stampReplyEnd } from "../ui/replyDuration";
 import { summarizeToolContent } from "../ui/traceSummary";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
@@ -1126,11 +1127,11 @@ export class ObsidianAgentService {
 		}
 
 		// The departure point, and the second streaming check. Still running:
-		// steer into the live run and show the chip. The run ended while the
-		// reads above were awaited: fall through to a plain send, and whatever
-		// the mirror still holds rides along ahead of this message.
+		// queue the message and show the chip. The run ended while the reads
+		// above were awaited: fall through to a plain send, and whatever the
+		// queue still holds rides along ahead of this message.
 		if (agent.state.isStreaming) {
-			return this.enqueueSteer(trimmedPrompt, promptText, allImages);
+			return this.enqueuePrompt(rt, trimmedPrompt, promptText, allImages, images);
 		}
 
 		let sent = false;
@@ -1160,16 +1161,12 @@ export class ObsidianAgentService {
 			// on, so recovery reads the entry back where the run left it rather
 			// than against a name assumed later.
 			await this.beginRunOperation(rt, dispatch);
-			if (stranded.length === 0) {
-				await agent.prompt([message]);
-			} else {
-				// Queued messages a run never injected — a run that died before
-				// its next drain point, most often on a provider error mid-
-				// request — must not wait behind this one: the user typed the
-				// correction first. Order of arrival is the order of dispatch.
-				agent.clearAllQueues();
-				await agent.prompt(dispatch);
-			}
+			// Queued messages the interrupt never got to dispatch — a run that
+			// died on a provider error, which {@link dispatchQueuedPrompts}
+			// deliberately does not re-send into — must not wait behind this
+			// one: the user typed the correction first. Order of arrival is the
+			// order of dispatch.
+			await agent.prompt(dispatch);
 			sent = true;
 			// A fresh send supersedes the continue offer: the user has moved on
 			// and the crashed run's words are no longer this lane's transcript
@@ -1185,52 +1182,114 @@ export class ObsidianAgentService {
 	}
 
 	/**
-	 * Hands a mid-run send to pi's steering queue and mirrors it for the panel.
+	 * Records a mid-run send and lets it wait (issue #289).
 	 *
-	 * Always a steer, never a follow-up: the panel has one send button, and a
-	 * correction ("not that file, the other one") is what a message typed
-	 * mid-reply overwhelmingly is. pi's own tail covers the other shape — a
-	 * steer arriving after the last drain point is rescued by
-	 * {@link resumeQueuedPrompts} once the run ends, which is the same moment a
-	 * follow-up would have fired. Splitting the two kinds would need an intent
-	 * the composer cannot express.
+	 * Nothing is handed to pi here, whichever timing is configured. Under
+	 * `afterRun` the queue departs from {@link dispatchQueuedPrompts} when the
+	 * run ends; under `afterTurn` the messages are offered to pi at the next turn
+	 * boundary by {@link offerQueuedPromptsToTurn}. Both read the setting at the
+	 * moment they act, so a reader who changes it mid-reply gets the new timing
+	 * for the message already waiting.
 	 *
-	 * The mirror records what pi was handed because pi's queues are write-only
-	 * from outside; `steer()` is the delivery, this is the bookkeeping.
+	 * Returns `true` because the send succeeded: the words are the queue's now.
+	 * The composer clears on that, which is what lets the user type the next
+	 * correction while this one is still waiting.
 	 */
-	private enqueueSteer(originalText: string, resolvedText: string, images: ImageContent[]): boolean {
-		const rt = this.runtimeForFocused();
-		const agent = rt.agent;
-		if (!agent) {
+	private enqueuePrompt(
+		rt: SessionRuntime,
+		originalText: string,
+		resolvedText: string,
+		allImages: ImageContent[],
+		stagedImages: ImageContent[],
+	): boolean {
+		if (!rt.agent) {
 			return false;
 		}
 		const message: AgentMessage = {
 			role: "user",
-			content: [{ type: "text", text: resolvedText }, ...images],
+			content: [{ type: "text", text: resolvedText }, ...allImages],
 			timestamp: Date.now(),
 		};
-		rt.promptQueue.add({ kind: "steer", text: originalText, imageCount: images.length, message });
-		agent.steer(message);
+		rt.promptQueue.add({ text: originalText, imageCount: allImages.length, stagedImages, message });
 		this.notify();
 		return true;
 	}
 
 	/**
-	 * Dispatches messages the finished run never injected.
+	 * Offers pi whatever is waiting, at a turn boundary, under the `afterTurn`
+	 * timing.
 	 *
-	 * Two windows strand a steer: a run that dies on a provider error never
-	 * reaches its next drain point, and the last drain point itself races a
-	 * steer typed during the final reply. Either way the mirror outlives the
-	 * run while the words sit unseen by the model — waiting for a next send
-	 * that may never come. When the run ended on its own, dispatching them is
-	 * what the user asked for when they typed.
+	 * pi calls the turn-boundary hook immediately before it polls its steering
+	 * queue, so a push here is drained in the same iteration of pi's own loop and
+	 * injected before the model speaks again — which is exactly what `afterTurn`
+	 * promises. It also means pi holds these messages for one poll rather than
+	 * from the moment they were typed, which is the invariant the note on
+	 * {@link PromptQueue} is about.
 	 *
-	 * A run that died on a provider error stops here: re-sending into the same
-	 * failure would bill a second refusal, so the chips stay and the next
-	 * direct send carries them ahead of itself. An aborted run never reaches
-	 * this decision — {@link abort} empties the mirror first, and stopping is
-	 * the user retracting the queued intent along with the run.
+	 * Silent under `afterRun`, and silent while an interrupt is landing: pushing
+	 * into a run that is already unwinding would have pi inject the words into a
+	 * reply that ends before it can answer them.
+	 *
+	 * The clear is belt-and-braces. By the invariant pi's queue is empty here;
+	 * clearing means a violation costs a duplicate that never reaches the model
+	 * rather than one that does.
 	 */
+	private offerQueuedPromptsToTurn(rt: SessionRuntime, agent: Agent, signal?: AbortSignal): void {
+		if (this.getSettings().promptQueueStrategy !== "afterTurn") {
+			return;
+		}
+		if (signal?.aborted || rt.queueInterrupt || rt.promptQueue.size === 0) {
+			return;
+		}
+		agent.clearSteeringQueue();
+		for (const message of rt.promptQueue.messages()) {
+			agent.steer(message);
+		}
+	}
+
+	/**
+	 * Sends one waiting message now, cutting the running reply short — the steer
+	 * action on its chip (issue #289).
+	 *
+	 * The one control in the queue that does not wait. Both configured timings
+	 * are about how patient a queued message is; this is the reader deciding that
+	 * *this* message cannot be. The cost is the sentence in flight and nothing
+	 * else: every completed tool result stays in the transcript, and pi-ai drops
+	 * an aborted assistant turn from the next request, so the model re-plans from
+	 * the last state it actually finished.
+	 *
+	 * Only this entry travels. The others are still waiting, and what they are
+	 * waiting for is now the run about to depart — a steer is not a "send
+	 * everything", which is why the chip is per message and so is this.
+	 *
+	 * With nothing running there is nothing to cut short, so the entry simply
+	 * departs as its own run: the button means "go now" either way.
+	 */
+	async steerQueuedPrompt(id: string): Promise<void> {
+		const rt = this.current();
+		const agent = rt?.agent;
+		if (!rt || !agent) {
+			return;
+		}
+		const entry = rt.promptQueue.remove(id);
+		if (!entry) {
+			return;
+		}
+		if (!agent.state.isStreaming) {
+			await this.sendPromptEntries(rt, [entry]);
+			return;
+		}
+		rt.steeredPrompts.push(entry);
+		// Raised before the abort so no reader ever sees the gap between the run
+		// ending and its replacement departing as an idle panel: a run *is*
+		// coming, and the turn slot must stay Stop across the handover.
+		rt.queueInterrupt = true;
+		// The interrupt itself. The reply's own `agent_end` is what schedules the
+		// dispatch, so nothing is awaited here.
+		agent.abort();
+		this.notify();
+	}
+
 	/**
 	 * Single-argument form: the finished run's messages, dispatched against the
 	 * focused runtime's queue. Kept because a test reaches this seam directly.
@@ -1242,9 +1301,41 @@ export class ObsidianAgentService {
 		}
 	}
 
+	/**
+	 * Sends what the queue holds, as one prompt, now that the run is over.
+	 *
+	 * Three arrivals, one departure. It is the `afterRun` timing — the queue's
+	 * whole point, and the default — and it is the second half of
+	 * {@link steerQueuedPrompt}, whose interrupt is what ended the run this fires
+	 * from. It is also the rescue for a queue the `afterTurn` timing left behind,
+	 * when a run ended before it reached another boundary.
+	 *
+	 * A run that died on a provider error stops here: re-sending into the same
+	 * failure would bill a second refusal, so the chips stay and the next direct
+	 * send carries them ahead of itself. A run the user *stopped* never reaches
+	 * this decision — {@link abortSession} empties the queue first, and stopping
+	 * is the user retracting the queued intent along with the run.
+	 */
 	private async dispatchQueuedPrompts(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
+		try {
+			await this.sendQueuedPrompts(rt, messages);
+		} finally {
+			// Every exit closes the handover window, and none of them may leave it
+			// open: the flag props `isStreaming` up, so a leaked one is a panel
+			// stuck on Stop for the rest of the session. Whatever happened here,
+			// either a run departed — and is holding `isStreaming` on its own now —
+			// or there was nothing to send.
+			if (rt.queueInterrupt) {
+				rt.queueInterrupt = false;
+				this.notify();
+			}
+		}
+	}
+
+	/** The body of {@link dispatchQueuedPrompts}, minus the handover bookkeeping. */
+	private async sendQueuedPrompts(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
 		const runMessages = messages;
-		if (rt.promptQueue.size === 0) {
+		if (rt.steeredPrompts.length === 0 && rt.promptQueue.size === 0) {
 			return;
 		}
 		const agent = rt.agent;
@@ -1260,9 +1351,43 @@ export class ObsidianAgentService {
 		await this.flushPendingConfiguration(rt);
 		const lastAssistant = [...runMessages].reverse().find((message) => message.role === "assistant");
 		if (lastAssistant?.stopReason === "error") {
+			// Back onto the chips, including the one a steer had already claimed:
+			// re-sending into the same failure would bill a second refusal, and a
+			// steered message that vanished into a failed run would be the one kind
+			// of loss the queue exists to prevent.
+			rt.promptQueue.restore(rt.steeredPrompts);
+			rt.steeredPrompts = [];
 			return;
 		}
-		const stranded = rt.promptQueue.drain();
+		// A steer travels alone. Everything else is still waiting, and what it is
+		// waiting for is the run this is about to start.
+		const steered = rt.steeredPrompts;
+		rt.steeredPrompts = [];
+		const outgoing = steered.length > 0 ? steered : rt.promptQueue.drain();
+		// Emptied under the await above, by a direct send that took the queue with
+		// it (`resolveAndDeliver` drains too, and reaches `agent.prompt` several
+		// awaits later — so "not streaming yet" is not "nothing departed"). There
+		// is nothing left to send, and `agent.prompt([])` would spend a whole
+		// provider request on a transcript nobody added to.
+		if (outgoing.length === 0) {
+			return;
+		}
+		await this.sendPromptEntries(rt, outgoing);
+	}
+
+	/**
+	 * Departs a run carrying exactly these entries, oldest first.
+	 *
+	 * The one place a queued message actually leaves, shared by the dispatch at a
+	 * run's end and by the steer chip pressed while nothing is running. On
+	 * failure the entries go back onto the chips: the words are still the user's,
+	 * and hiding them behind an error banner loses them.
+	 */
+	private async sendPromptEntries(rt: SessionRuntime, entries: readonly QueueEntry[]): Promise<void> {
+		const agent = rt.agent;
+		if (!agent) {
+			return;
+		}
 		let tailBefore: AgentMessage | undefined;
 		try {
 			// Captured as the first statement of the block, before the notify
@@ -1272,16 +1397,15 @@ export class ObsidianAgentService {
 			rt.activeRunContext = this.freezeRunContext(rt);
 			this.notify();
 			await this.compactContextIfNeeded(rt, agent);
-			// pi's own queues may still hold what this dispatch is re-sending;
-			// draining them first keeps the run's first turn-end poll from
-			// injecting the same words a second time.
-			agent.clearAllQueues();
-			await this.beginRunOperation(rt, stranded.map((entry) => entry.message));
-			await agent.prompt(stranded.map((entry) => entry.message));
+			// The budget is per run, and `compactBetweenTurns` spends it. A run
+			// born of a steer is a run: without this, a conversation steered three
+			// times would arrive at its fourth reply with the mid-run budget of the
+			// first one already spent.
+			rt.midRunCompactions = 0;
+			await this.beginRunOperation(rt, entries.map((entry) => entry.message));
+			await agent.prompt(entries.map((entry) => entry.message));
 		} catch (error) {
-			// Back onto the chips, oldest first: the words are still the
-			// user's, and hiding them behind an error banner loses them.
-			rt.promptQueue.restore(stranded);
+			rt.promptQueue.restore(entries);
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
 			rt.activeRunContext = null;
@@ -1917,12 +2041,18 @@ export class ObsidianAgentService {
 		rt.suggestionController?.abort();
 		// Stopping the run is also retracting what was queued for it. Cleared
 		// before `agent.abort()` so the `agent_end` that follows sees an empty
-		// mirror and does not dispatch the words the user just took back.
+		// queue and does not dispatch the words the user just took back — and
+		// the interrupt flag goes with them, because there is no replacement run
+		// coming for this stop to bridge to.
 		rt.promptQueue.clear();
+		rt.steeredPrompts = [];
+		rt.queueInterrupt = false;
 		const agent = rt.agent;
 		if (!agent) {
 			return;
 		}
+		// Empty by the invariant on {@link PromptQueue} except inside one poll of
+		// pi's own loop, and this can land inside it.
 		agent.clearAllQueues();
 		agent.abort();
 		// Closure-captured on purpose: a session switch between here and idle
@@ -1955,6 +2085,14 @@ export class ObsidianAgentService {
 	 * read as `error`, not as the `idle` the stop "succeeded".
 	 */
 	private deriveRunState(rt: SessionRuntime): SessionRunState {
+		// Ahead of the error check on purpose: an interrupted reply lands as an
+		// `aborted` turn carrying pi-ai's "Request was aborted", which is the
+		// error state this would otherwise report for the fraction of a second
+		// between the interrupt and the run that replaces it (issue #289). The
+		// user stopped nothing and nothing failed.
+		if (rt.queueInterrupt) {
+			return "running";
+		}
 		if (rt.panelError || rt.agent?.state.errorMessage) {
 			return "error";
 		}
@@ -2150,37 +2288,32 @@ export class ObsidianAgentService {
 	/**
 	 * Takes one queued message back, by the chip's id.
 	 *
-	 * Unknown ids are a no-op, not an error: pi can inject the message in the
+	 * Returns what the composer should show in its place — the words as typed and
+	 * the pictures that were staged with them — so the caller can decide whether
+	 * this is a discard or a take-back-to-edit (issue #289). `null` for an
+	 * unknown id, which is not an error: the queue can be dispatched in the
 	 * moment between the render that produced the chip and the click, and a
 	 * message that already went out is exactly what the user would have been
 	 * told anyway.
 	 *
-	 * pi cannot drop a single queued message, so a live run's queue is rebuilt
-	 * from the survivors — total clear, re-push in order. When the agent is
-	 * idle the message never reached pi at all (the mirror alone was waiting
-	 * for a dispatch), so there is nothing on the pi side to rebuild.
+	 * Nothing has to be un-told to the agent. pi is never handed a queued
+	 * message — see the note on {@link PromptQueue} — so removing one from this
+	 * list is the whole operation.
 	 */
-	removeQueuedPrompt(id: string): void {
+	removeQueuedPrompt(id: string): TakenPrompt | null {
 		const rt = this.current();
 		if (!rt) {
-			return;
+			return null;
 		}
-		const removal = rt.promptQueue.remove(id);
-		if (!removal) {
-			return;
-		}
-		const agent = rt.agent;
-		if (agent && agent.state.isStreaming) {
-			agent.clearAllQueues();
-			for (const survivor of removal.survivors) {
-				if (removal.kind === "steer") {
-					agent.steer(survivor);
-				} else {
-					agent.followUp(survivor);
-				}
-			}
+		const taken = rt.promptQueue.remove(id);
+		if (!taken) {
+			return null;
 		}
 		this.notify();
+		// Only the staged pictures. The rest of the message's images were resolved
+		// out of `![[…]]` embeds still written in the text going back to the
+		// composer, and restaging those would send each one twice on the next send.
+		return { text: taken.text, images: taken.stagedImages };
 	}
 
 	/** Labels the active session; an empty name clears it back to the derived label. */
@@ -2630,7 +2763,11 @@ export class ObsidianAgentService {
 		return {
 			messages,
 			streamingMessage: agent?.state.streamingMessage,
-			isStreaming: agent?.state.isStreaming ?? false,
+			// True across the steer handover as well: between the cut reply's end
+			// and its replacement's departure the agent is genuinely idle, but a
+			// run is on its way and the turn slot must stay Stop rather than blink
+			// back to Send (issue #289).
+			isStreaming: (agent?.state.isStreaming ?? false) || (rt?.queueInterrupt ?? false),
 			// Both halves: the id pi tracks, and the tool name a reader needs. The
 			// id is for matching, never for display — an id with no captured name
 			// is dropped rather than shown raw, so a missed event cannot leak
@@ -2648,9 +2785,9 @@ export class ObsidianAgentService {
 			unpersistedMessages: [...(rt?.unpersistedMessages ?? [])],
 			errorMessage: rt?.panelError?.message ?? this.visibleAgentError(rt, agent) ?? this.initializationError,
 			errorOpensSettings: rt?.panelError?.opensSettings ?? false,
-			// Mid-run sends, waiting for pi to inject. From the mirror rather
-			// than from pi because pi's queues are write-only from outside —
-			// the mirror is the only thing that can name them.
+			// Mid-run sends, waiting for the interrupted run to land so they can
+			// depart. This list is the only record of them: pi is handed a queued
+			// message only when it is prompted with it.
 			queuedPrompts: rt?.promptQueue.list() ?? [],
 			// Staging gate: the composer asks before collecting bytes the model
 			// would refuse, instead of the send gate explaining the refusal after.
@@ -3062,6 +3199,8 @@ export class ObsidianAgentService {
 		// (new session, loaded session, thinking-level change) — queued words
 		// belong to the conversation they were typed in, not the next one.
 		rt.promptQueue.clear();
+		rt.steeredPrompts = [];
+		rt.queueInterrupt = false;
 		// An aborted run never delivers `tool_execution_end`, so anything keyed by a
 		// call that was in flight would otherwise accumulate for the life of the
 		// panel. Both maps are keyed that way and both are only ever cleared by that
@@ -3130,14 +3269,28 @@ export class ObsidianAgentService {
 			// (`createLoopConfig`). Closing over this run's `agent` rather than
 			// `this.agent` is what lets `performCompaction` tell a stale result
 			// from a current one.
-			prepareNextTurnWithContext: (turn, signal) => this.compactBetweenTurns(rt, agent, turn, signal),
+			prepareNextTurnWithContext: (turn, signal) => {
+				// Before the compaction, and unconditionally: pi polls its steering
+				// queue immediately after this hook returns, so this is the one
+				// moment a waiting message can be injected before the model speaks
+				// again (issue #289). A compaction that declines changes nothing
+				// about whose turn it is to talk.
+				this.offerQueuedPromptsToTurn(rt, agent, signal);
+				return this.compactBetweenTurns(rt, agent, turn, signal);
+			},
 			sessionId: rt.sessionInfo?.id,
-			// pi's default is "one-at-a-time": of several messages steered in a
-			// row, only the first is injected at the next turn boundary and the
-			// rest wait for later runs. A chat panel's send button means "send
-			// all of it", so every queued message reaches the next turn.
+			// pi's default is "one-at-a-time": of several messages steered in a row,
+			// only the first is injected at the next turn boundary and the rest wait
+			// for later runs. Under the `afterTurn` timing the panel offers its whole
+			// queue at each boundary, and the reader watching three chips expects
+			// three chips to go — so every offered message reaches that turn.
+			//
+			// No `followUpMode`: `followUp()` is never called. The `afterRun` timing
+			// is the panel's own dispatch at `agent_end`, which is a fresh run rather
+			// than a continuation of the one that ended, so the ledger, the context
+			// freeze and the compaction budget all apply to it as they would to any
+			// other send.
 			steeringMode: "all",
-			followUpMode: "all",
 			// pi's per-tool `executionMode` marks only take effect once this is
 			// "parallel": the loop short-circuits to sequential when either this
 			// flag or any tool in the batch is marked sequential. Batches of pure
@@ -3327,12 +3480,22 @@ export class ObsidianAgentService {
 				// other end gets measured (#240). User messages pass through
 				// untouched.
 				stampReplyEnd(event.message, Date.now());
-				// First duty: if this is a queued message pi just injected, take
-				// its chip down. Identity matching means a user who queued the
-				// same words twice gets the right one settled. The message
-				// persists either way — an injected steer is transcript history
-				// like any other turn.
+				// A message pi has just injected at a turn boundary — the `afterTurn`
+				// timing — takes its chip down. Identity matching means a user who
+				// queued the same words twice gets the right one settled; the message
+				// persists either way, since an injected queue entry is transcript
+				// history like any other turn.
 				rt.promptQueue.settle(event.message);
+				// A reply this plugin cut short to let a queued message through is
+				// stamped here, before persistence copies it: pi can only record
+				// the abort, not who asked for it, and the transcript must not tell
+				// the reader they pressed stop when they typed instead (#289). The
+				// stamp refuses every message the flag does not describe, so the
+				// order of the two lines is the whole guard — the flag is per-run
+				// and this is the run's last message.
+				if (rt.queueInterrupt) {
+					markReplySteered(event.message);
+				}
 				await this.persistMessage(rt, event.message);
 			}
 			if (event.type === "agent_end") {
@@ -3366,15 +3529,13 @@ export class ObsidianAgentService {
 			this.log.error("Failed to persist agent output", () => ({ event: event.type, error: message }));
 		}
 		if (event.type === "agent_end") {
-			// Outside the persist guard on purpose: the resume has its own
+			// Outside the persist guard on purpose: the dispatch has its own
 			// error path, and a dispatch failure must not surface disguised as
-			// a persist failure. A run that ended on its own may leave steers
-			// pi never injected — a run that died mid-request never reaches its
-			// next drain point, and the final drain point races a steer typed
-			// during the last reply. Dispatching them here is what the user
-			// asked for when they typed. Runs the user aborted are excluded
-			// inside the resume itself, and `abort()` also empties the mirror
-			// directly, so the two guards are belt and braces.
+			// a persist failure. This is where a mid-reply send departs under
+			// the default timing, and where a steered message departs once the
+			// reply it cut short has unwound. Runs the user stopped are excluded
+			// inside the dispatch itself, and `abortSession` also empties the
+			// queue directly, so the two guards are belt and braces.
 			//
 			// Not awaited, and not yet: pi awaits this listener inside the
 			// run's executor, so at this moment `activeRun` is still held and
@@ -3528,12 +3689,12 @@ export class ObsidianAgentService {
 		if (signal?.aborted) {
 			return false;
 		}
-		// No tool results means no further request in this run: the inner loop
-		// only continues on tool calls or queued steering messages, and this
-		// plugin never calls `steer()`/`followUp()`. Summarizing here would buy a
-		// summary for a request that never goes out, and the next prompt's own
-		// pre-prompt compaction covers that context anyway.
-		if (turn.toolResults.length === 0) {
+		// No tool results means no further request in this run — unless a queued
+		// message was just offered to it, which is the other thing the inner loop
+		// continues on. Summarizing without either would buy a summary for a
+		// request that never goes out, and the next prompt's own pre-prompt
+		// compaction covers that context anyway.
+		if (turn.toolResults.length === 0 && !agent.hasQueuedMessages()) {
 			return false;
 		}
 		if (rt.midRunCompactions >= MAX_MID_RUN_COMPACTIONS) {

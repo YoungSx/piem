@@ -1,6 +1,7 @@
 import type { CacheRetention } from "@earendil-works/pi-ai";
 import type { App, ExtraButtonComponent } from "obsidian";
 import type { CompactionConfig } from "../../agent/compactionSettings";
+import type { PromptQueueStrategy } from "../../agent/queueStrategy";
 import type { SkillLoadReport } from "../../agent/skillLoader";
 import type { LogLevelSetting } from "../../logging/logLevel";
 import type { McpServerConfig } from "../../mcp/mcpConfig";
@@ -189,6 +190,7 @@ export interface SettingsPanelSettings {
 	cacheRetention: CacheRetention;
 	showAgentDetails: boolean;
 	traceExpand: TraceExpandSetting;
+	promptQueueStrategy: PromptQueueStrategy;
 	sendShortcut: SendShortcut;
 	language: LanguageSetting;
 	compaction?: CompactionConfig;

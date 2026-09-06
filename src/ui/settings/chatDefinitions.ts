@@ -1,4 +1,5 @@
 import { type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
+import type { PromptQueueStrategy } from "../../agent/queueStrategy";
 import { MIN_COMPACTION_TOKENS, readTokenCount, type CompactionConfig } from "../../agent/compactionSettings";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "../../session/sessionDir";
 import { readRetentionLimit, UNLIMITED_SESSION_RETENTION } from "../../session/retention";
@@ -77,6 +78,7 @@ export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[
 			},
 		},
 		compactionPage(host),
+		queueingPage(host),
 		{
 			// A heading rather than a collapsible: storage is not advanced
 			// configuration, it is something every long-term user eventually needs
@@ -99,6 +101,42 @@ export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[
 			],
 		},
 	];
+}
+
+/**
+ * When a message typed mid-reply is let through, behind a navigable entry
+ * (issue #289).
+ *
+ * A page rather than a row on the Chat tab for the same reason the compaction
+ * fields are one: the choice needs a paragraph before it is safe to make, and a
+ * `desc` on a top-level row is a line, not a paragraph. What that paragraph is
+ * mostly for is saying what the page is *not* — neither timing interrupts, so a
+ * reader who came looking for "send it right now" leaves knowing the steer
+ * button on the chip is the thing they want, rather than changing a default and
+ * finding it did not help.
+ *
+ * `displayValue` carries the pick onto the entry, so the common question ("which
+ * one am I on?") is answered without opening it.
+ */
+function queueingPage(host: SettingsPanelHost): SettingDefinitionItem {
+	const { t } = host;
+	const options: Record<PromptQueueStrategy, string> = {
+		afterRun: t.t("settings.queueStrategyAfterRun"),
+		afterTurn: t.t("settings.queueStrategyAfterTurn"),
+	};
+	return {
+		type: "page",
+		name: t.t("settings.queueStrategy"),
+		desc: t.t("settings.queueStrategyDesc"),
+		displayValue: () => options[host.settings.promptQueueStrategy],
+		items: [
+			{
+				name: t.t("settings.queueStrategyWhen"),
+				desc: t.t("settings.queueStrategyWhenDesc"),
+				control: { type: "dropdown", key: "promptQueueStrategy", options },
+			},
+		],
+	};
 }
 
 /**

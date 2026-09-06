@@ -117,6 +117,8 @@ describe("ChatComposer send button", () => {
 		expect(host.querySelector(".piem-chat__stop-button")?.getAttribute("aria-label")).toBe("Stop response");
 		// The mouse half of queueing: with the slot busy, the draft's send path
 		// lives on this quiet text button, which only exists while a draft does.
+		// It says "queue", because a mid-reply send waits — the control that does
+		// not wait is the steer action on the chip it produces (issue #289).
 		expect(host.querySelector(".piem-chat__queue-button")?.textContent).toBe("Queue draft");
 	});
 
@@ -157,6 +159,79 @@ describe("ChatComposer send button", () => {
 		expect(host.querySelector(".piem-chat__stop-button")?.getAttribute("aria-label")).toBe("Stop");
 		expect(host.querySelectorAll(".piem-chat__send-button, .piem-chat__stop-button")).toHaveLength(1);
 		expect(host.querySelector(".piem-chat__queue-button")).toBeNull();
+	});
+});
+
+describe("ChatComposer queued chips", () => {
+	beforeEach(() => {
+		platformMock.isMobile = false;
+		document.body.replaceChildren();
+	});
+
+	afterEach(() => {
+		document.body.replaceChildren();
+	});
+
+	const queued = [
+		{ id: "queued-1", text: "Use the other note", imageCount: 0 },
+		{ id: "queued-2", text: "And skip the summary", imageCount: 2 },
+	];
+
+	function chipActions(host: HTMLElement, index: number): HTMLButtonElement[] {
+		const item = Array.from(host.querySelectorAll(".piem-chat__queue-item"))[index];
+		if (!item) {
+			throw new Error(`no queued chip at index ${index}`);
+		}
+		return Array.from(item.querySelectorAll<HTMLButtonElement>(".piem-chat__queue-action"));
+	}
+
+	it("lists one chip per waiting message, oldest first, with its image count", async () => {
+		const host = await renderComposer({ isStreaming: true, queuedPrompts: queued });
+
+		const texts = Array.from(host.querySelectorAll(".piem-chat__queue-text"), (node) => node.textContent);
+		expect(texts).toEqual(["Use the other note", "And skip the summary2 images"]);
+	});
+
+	it("offers each chip all three decisions, named apart and in escalating order", async () => {
+		// Three actions because sending now, taking the words back and throwing
+		// them away are different intents and none stands in for another (issue
+		// #289). An icon-only control has to say which it is: the label is the
+		// whole affordance for a screen reader and the tooltip for everyone else,
+		// and the steer's label has to carry its cost.
+		const host = await renderComposer({ isStreaming: true, queuedPrompts: queued });
+
+		expect(chipActions(host, 0).map((button) => button.getAttribute("aria-label"))).toEqual([
+			"Send now — cuts the reply short",
+			"Take back to edit",
+			"Discard",
+		]);
+	});
+
+	it("routes each chip's actions to its own id", async () => {
+		const steered: string[] = [];
+		const edited: string[] = [];
+		const discarded: string[] = [];
+		const host = await renderComposer({
+			isStreaming: true,
+			queuedPrompts: queued,
+			onSteerQueuedPrompt: (id) => void steered.push(id),
+			onEditQueuedPrompt: (id) => void edited.push(id),
+			onDiscardQueuedPrompt: (id) => void discarded.push(id),
+		});
+
+		chipActions(host, 0)[0]?.click();
+		chipActions(host, 1)[1]?.click();
+		chipActions(host, 0)[2]?.click();
+
+		expect(steered).toEqual(["queued-1"]);
+		expect(edited).toEqual(["queued-2"]);
+		expect(discarded).toEqual(["queued-1"]);
+	});
+
+	it("draws no queue region when nothing is waiting", async () => {
+		const host = await renderComposer({ isStreaming: true, queuedPrompts: [] });
+
+		expect(host.querySelector(".piem-chat__queue")).toBeNull();
 	});
 });
 

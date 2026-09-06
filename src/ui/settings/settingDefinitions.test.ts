@@ -44,7 +44,8 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost
 			networkTransport: "requestUrl",
 			cacheRetention: "long",
 			showAgentDetails: false,
-		traceExpand: "collapsed",
+			traceExpand: "collapsed",
+			promptQueueStrategy: "afterRun",
 			sendShortcut: "enter",
 			language: "en",
 			sessionRetention: 0,
@@ -139,6 +140,40 @@ describe("buildSettingDefinitions", () => {
 		const details = chat.items.find((item) => item.name === en.t("settings.showAgentDetails"));
 
 		expect(details?.control).toEqual({ type: "toggle", key: "showAgentDetails" });
+	});
+
+	it("puts the mid-reply queueing choice behind its own entry, with the pick on show", () => {
+		// A page rather than a Chat-tab row because the choice needs a paragraph
+		// before it is safe to make — chiefly the paragraph saying that neither
+		// option interrupts (issue #289). `displayValue` is what answers "which one
+		// am I on?" without opening it.
+		const host = stubHost();
+		const definitions = buildSettingDefinitions(host, new SettingsPanelState());
+		const chat = definitions[1] as {
+			items: Array<{
+				name?: string;
+				desc?: string;
+				displayValue?: () => string;
+				items?: Array<{ name?: string; control?: { type?: string; key?: string; options?: Record<string, string> } }>;
+			}>;
+		};
+		const page = chat.items.find((item) => item.name === en.t("settings.queueStrategy"));
+
+		expect(page?.desc).toBe(en.t("settings.queueStrategyDesc"));
+		expect(page?.displayValue?.()).toBe(en.t("settings.queueStrategyAfterRun"));
+		expect(page?.items?.[0]?.control).toEqual({
+			type: "dropdown",
+			key: "promptQueueStrategy",
+			options: {
+				afterRun: en.t("settings.queueStrategyAfterRun"),
+				afterTurn: en.t("settings.queueStrategyAfterTurn"),
+			},
+		});
+
+		// Read through a function, not captured: a value changed inside the page has
+		// to show on the entry the reader comes back to.
+		host.settings.promptQueueStrategy = "afterTurn";
+		expect(page?.displayValue?.()).toBe(en.t("settings.queueStrategyAfterTurn"));
 	});
 
 	it("offers the trace expand mode as a three-option dropdown", () => {

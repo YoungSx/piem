@@ -454,6 +454,37 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		setPendingImages(editArmed?.imagesBefore ?? []);
 	}, [editArmed, setInput]);
 
+	/**
+	 * Takes a queued mid-run send back into the composer for another pass
+	 * (issue #289).
+	 *
+	 * Appended to whatever is in the draft rather than replacing it: the chip is
+	 * pressed after the send already emptied the composer, so in the ordinary
+	 * case this simply restores the words — and in the case where the reader has
+	 * started typing again, appending is the only outcome that loses nothing.
+	 * Same rule, and the same helper, as the note-reference prefill.
+	 *
+	 * Nothing is armed and no notice appears: unlike an edit of an answered
+	 * question, this send has not happened yet, so the result is an ordinary
+	 * draft that an ordinary Send will deliver.
+	 */
+	const handleEditQueuedPrompt = useCallback(
+		(id: string): void => {
+			const taken = service.removeQueuedPrompt(id);
+			if (!taken) {
+				return;
+			}
+			setInput(appendToDraft(inputRef.current, taken.text));
+			// Fresh ids, like the transcript's own edit restage: these
+			// `ImageContent`s never carried one, and the stage keys off it.
+			setPendingImages((staged) => [
+				...staged,
+				...taken.images.map((image) => ({ id: newPendingImageId(), mimeType: image.mimeType, data: image.data })),
+			]);
+		},
+		[service, setInput],
+	);
+
 	const visibleMessages = useMemo(() => {
 		if (!snapshot.streamingMessage) {
 			return snapshot.messages;
@@ -742,7 +773,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					onAddImages={(files) => void handleAddImages(files)}
 					onRemoveImage={handleRemoveImage}
 					queuedPrompts={snapshot.queuedPrompts}
-					onCancelQueuedPrompt={(id) => service.removeQueuedPrompt(id)}
+					onSteerQueuedPrompt={(id) => void service.steerQueuedPrompt(id)}
+					onEditQueuedPrompt={handleEditQueuedPrompt}
+					// The words are dropped on the floor on purpose: this is the
+					// discard half of the same removal, and the caller's use of the
+					// return value is the only difference between the two chips.
+					onDiscardQueuedPrompt={(id) => void service.removeQueuedPrompt(id)}
 					contextGauge={
 						<ContextGauge
 							fill={snapshot.contextFill}
