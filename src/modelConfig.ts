@@ -1,9 +1,23 @@
 import { uuidv7 } from "@earendil-works/pi-ai";
 import type { Translator } from "./i18n";
 import type { Model } from "@earendil-works/pi-ai";
-import type { CustomEndpointConfig } from "./customEndpoint";
-import { DEFAULT_CUSTOM_ENDPOINT_CONTEXT_WINDOW, DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS } from "./customEndpoint";
 import { isValidSecretId } from "./keychain";
+
+/**
+ * Fallback context window for a configured model that does not state one.
+ *
+ * 128k is the de-facto standard for current OpenAI-compatible APIs. Guessing
+ * too high risks compaction firing late; too low wastes paid context. The
+ * model form's field exists precisely so users can correct the guess.
+ */
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 128_000;
+
+/**
+ * Output cap advertised for a configured model without its own. Compaction
+ * clamps its summary length against this, so a modest value keeps a
+ * half-configured model from being asked for unbounded generations.
+ */
+export const DEFAULT_MODEL_MAX_TOKENS = 8_192;
 
 /**
  * Provider and model configuration for user-supplied endpoints.
@@ -135,7 +149,7 @@ export interface ModelConfig {
 	supportsImages: boolean;
 	/**
 	 * Cap on the tokens a single reply may produce. Falls back to
-	 * {@link DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS} when unset.
+	 * {@link DEFAULT_MODEL_MAX_TOKENS} when unset.
 	 */
 	maxTokens?: number;
 }
@@ -348,8 +362,8 @@ export function buildConfiguredModel(model: ModelConfig, provider: ProviderConfi
 		reasoning: model.reasoning,
 		input: modelInput,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: model.contextWindow ?? DEFAULT_CUSTOM_ENDPOINT_CONTEXT_WINDOW,
-		maxTokens: model.maxTokens ?? DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS,
+		contextWindow: model.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW,
+		maxTokens: model.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
 	};
 	// `compat` is a conditional type keyed on the api, so each protocol is
 	// constructed in its own branch rather than through a shared object literal
@@ -362,41 +376,4 @@ export function buildConfiguredModel(model: ModelConfig, provider: ProviderConfi
 		case "anthropic-messages":
 			return { ...base, api: "anthropic-messages" };
 	}
-}
-
-/**
- * Converts a legacy custom endpoint into a provider/model pair.
- *
- * Returned rather than applied so the caller controls persistence. The provider
- * keeps the legacy synthetic id so an already-stored API key still resolves
- * under the same lookup key, and the protocol is Chat Completions because that
- * is what the old form always sent.
- */
-export function migrateCustomEndpoint(
-	endpoint: CustomEndpointConfig,
-	providerId: string,
-): { provider: ProviderConfig; model: ModelConfig } {
-	const provider: ProviderConfig = {
-		id: providerId,
-		name: "Custom endpoint",
-		baseUrl: endpoint.baseUrl,
-		protocol: DEFAULT_WIRE_PROTOCOL,
-		apiKey: endpoint.apiKey,
-		secretRef: "",
-		source: "user",
-		// The legacy form only ever held a typed key; there was no sign-in to carry.
-		oauthFlow: "",
-	};
-	const model: ModelConfig = {
-		id: uuidv7(),
-		providerId,
-		modelApiId: endpoint.modelId,
-		displayName: endpoint.modelId,
-		reasoning: false,
-		supportsImages: false,
-	};
-	if (endpoint.contextWindow !== undefined) {
-		model.contextWindow = endpoint.contextWindow;
-	}
-	return { provider, model };
 }

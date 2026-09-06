@@ -14,6 +14,7 @@ import type {
 	ProviderStreams,
 	StreamOptions,
 } from "@earendil-works/pi-ai";
+import { DEFAULT_PROVIDER } from "../constants";
 import { pluginAuthContext } from "../auth/authContext";
 import { createOAuthAuth, isOAuthFlowId } from "../auth/oauthFlows";
 import {
@@ -23,8 +24,6 @@ import {
 	type FetchFn,
 	type NetworkTransport,
 } from "./obsidianFetch";
-import { CUSTOM_ENDPOINT_PROVIDER, DEFAULT_PROVIDER } from "../constants";
-import { isCustomEndpointActive, type CustomEndpointConfig } from "../customEndpoint";
 import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "../modelConfig";
 
 /**
@@ -75,8 +74,6 @@ export interface ObsidianModelsOptions {
 	transport: NetworkTransport;
 	/** User-configured endpoints; each becomes a registered provider. */
 	providers?: readonly ProviderConfig[];
-	/** Legacy single-endpoint form, registered under the synthetic provider id. */
-	customEndpoint?: CustomEndpointConfig | null;
 	/**
 	 * Where subscription credentials are read and rotated.
 	 *
@@ -120,12 +117,6 @@ export function createObsidianModels(options: ObsidianModelsOptions): ObsidianMo
 	for (const provider of options.providers ?? []) {
 		const name = describeProviderConfig(provider);
 		models.setProvider(createConfiguredProvider(provider.id, name, authForRow(provider, name, oauthFetch)));
-	}
-	// A legacy endpoint that predates migration keeps working under the
-	// synthetic id, unless a configured provider already claims it.
-	const claimed = new Set((options.providers ?? []).map((provider) => provider.id));
-	if (isCustomEndpointActive(options.customEndpoint) && !claimed.has(CUSTOM_ENDPOINT_PROVIDER)) {
-		models.setProvider(createConfiguredProvider(CUSTOM_ENDPOINT_PROVIDER, "Custom endpoint", apiKeyAuth("Custom endpoint")));
 	}
 	return { models, fetch: createFetchForTransport(options.transport) };
 }

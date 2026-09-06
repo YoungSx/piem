@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { installObsidianStub, requestUrlMock, resetNotices, shownNotices } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat, TFile, TFolder } from "obsidian";
+import { DEFAULT_MODEL_CONTEXT_WINDOW } from "../modelConfig";
+import type { ProviderConfig } from "../modelConfig";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AgentMessage, OperationStartedRecord, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -298,26 +300,11 @@ describe("ObsidianAgentService", () => {
 
 	it("reaches a custom endpoint configured after the agent was built", async () => {
 		// Regression: `replaceAgent` used to capture `createObsidianStreamFn(...)`
-		// once, freezing the provider registry at construction-time settings. An
-		// endpoint configured afterwards left the agent holding a `Models` that
-		// had never registered `custom`, so every send failed with
-		// "Unknown provider: custom". The streamFn must resolve per request.
-		const settings: PiemSettings = {
-			...DEFAULT_SETTINGS,
-			providers: [],
-			models: [],
-			provider: "deepseek",
-			modelId: "deepseek-v4-pro",
-			providerApiKeys: { deepseek: "test-key" },
-			networkTransport: "requestUrl",
-			showAgentDetails: false,
-		traceExpand: "collapsed",
-			sendShortcut: "enter",
-			language: "en",
-			sessionRetention: DEFAULT_SESSION_RETENTION,
-			sessionDir: DEFAULT_SESSION_DIR,
-			logLevel: DEFAULT_LOG_LEVEL,
-		};
+		// once, freezing the provider registry at construction-time settings. A
+		// provider row configured afterwards left the agent holding a `Models`
+		// that had never registered it, so every send failed with
+		// "Unknown provider: <row id>". The streamFn must resolve per request.
+		const settings: PiemSettings = defaultTestSettings();
 		const adapter = new MemoryAdapter();
 		const service = new ObsidianAgentService(
 			createFakeApp(asDataAdapter(adapter)),
@@ -327,14 +314,18 @@ describe("ObsidianAgentService", () => {
 		);
 		requestUrlMock.mockResolvedValue(sseResponse(replyChunks("hello")));
 
-		// First turn on the builtin provider: this is what builds the agent, so
+		// First turn on the fixture row: this is what builds the agent, so
 		// the streamFn captures whatever the registry looked like right now.
 		await service.sendPrompt("Hello");
 		expect(service.getSnapshot().errorMessage).toBeUndefined();
 
-		// Then the user configures an endpoint and talks again — the exact
-		// sequence that used to die with "Unknown provider: custom".
-		settings.customEndpoint = { baseUrl: "https://gw.example.com/v1", apiKey: "sk-custom", modelId: "my-model" };
+		// Then the user adds a provider row and talks again — the exact
+		// sequence that used to die with "Unknown provider: <row id>".
+		settings.providers = [
+			{ id: "p-gw", name: "Gateway", baseUrl: "https://gw.example.com/v1", protocol: "openai-completions", apiKey: "sk-custom", secretRef: "", source: "user", oauthFlow: "" },
+		];
+		settings.models = [{ id: "m-gw", providerId: "p-gw", modelApiId: "my-model", displayName: "My model", reasoning: false, supportsImages: false }];
+		settings.activeModelId = "m-gw";
 		await service.sendPrompt("Hello again");
 
 		expect(service.getSnapshot().errorMessage).toBeUndefined();
@@ -351,7 +342,7 @@ describe("ObsidianAgentService", () => {
 		// preference is invisible from the outside, since it simply bills at the
 		// cheaper rate. `prompt_cache_retention` is what the OpenAI-compatible adapter
 		// puts on the wire for "long".
-		const settings: PiemSettings = { ...DEFAULT_SETTINGS, providerApiKeys: { deepseek: "test-key" } };
+		const settings: PiemSettings = defaultTestSettings();
 		const adapter = new MemoryAdapter();
 		const service = new ObsidianAgentService(
 			createFakeApp(asDataAdapter(adapter)),
@@ -781,10 +772,14 @@ describe("ObsidianAgentService", () => {
 		// at send time — after the branch summary ran and the transcript was cut —
 		// loses the question the user was trying to fix. The credential check
 		// belongs to the preflight, with the same banner a fresh send raises.
+		// The fixture row exists precisely so a turn can send; clearing the
+		// lists is what makes the vault genuinely keyless for the preflight.
 		const { service, settings } = createServiceWithSettings();
-		settings.providerApiKeys = {};
 		await service.sendPrompt("What is in my vault?");
 		const before = service.getSnapshot().messages;
+		settings.providers = [];
+		settings.models = [];
+		settings.activeModelId = undefined;
 
 		expect(await service.editAndResend(before.length - 2, "Which notes mention pi?")).toBe(false);
 		expect(service.getSnapshot().messages).toEqual(before);
@@ -1131,14 +1126,14 @@ describe("ObsidianAgentService", () => {
 		const service = createService();
 		const fresh = service.getSnapshot().contextFill;
 		expect(fresh?.heuristicOnly).toBe(true);
-		// deepseek-v4-pro ships a 1M window; the plugin does not override it.
-		expect(fresh?.contextWindow).toBe(1_000_000);
+		// The fixture model ships no window, so the plugin's own default applies.
+		expect(fresh?.contextWindow).toBe(DEFAULT_MODEL_CONTEXT_WINDOW);
 
 		await service.sendPrompt("Hello");
 
 		const after = service.getSnapshot().contextFill;
 		expect(after?.heuristicOnly).toBe(false);
-		// The fake turn reports 1_010 total tokens against a 1M window.
+		// The fake turn reports 1_010 total tokens against that window.
 		expect(after?.tokens).toBe(1_010);
 	});
 
@@ -4028,13 +4023,26 @@ function createVaultAppWithSkills(skillFiles: Record<string, string>): App {
 
 /** The settings every service test starts from, so custom ones can spread it. */
 function defaultTestSettings(): PiemSettings {
+	// A configured row, not the builtin catalog: since the legacy
+	// `providerApiKeys` map died, a key resolves only through a provider row, and
+	// the builtin fallback was always render-only — it has no field a key could
+	// live in. Tests that specifically exercise the unconfigured vault override
+	// this back to an empty pair of lists.
+	const row: ProviderConfig = {
+		id: "p-test",
+		name: "Test gateway",
+		baseUrl: "https://gw.test/v1",
+		protocol: "openai-completions",
+		apiKey: "test-key",
+		secretRef: "",
+		source: "user",
+		oauthFlow: "",
+	};
 	return {
 		...DEFAULT_SETTINGS,
-		providers: [],
-		models: [],
-		provider: "deepseek",
-		modelId: "deepseek-v4-pro",
-		providerApiKeys: { deepseek: "test-key" },
+		providers: [row],
+		models: [{ id: "m-test", providerId: row.id, modelApiId: "test-model", displayName: "Test Model", reasoning: false, supportsImages: false }],
+		activeModelId: "m-test",
 		networkTransport: "requestUrl",
 		showAgentDetails: false,
 		sendShortcut: "enter",
@@ -4122,7 +4130,6 @@ function createServiceWithMultimodalModel(
 		activeModelId: "m-multimodal",
 		provider: "anthropic",
 		modelId: "claude-opus-5",
-		providerApiKeys: {},
 		networkTransport: "requestUrl",
 		cacheRetention: "long",
 		showAgentDetails: false,
@@ -4612,9 +4619,13 @@ describe("quick-action suggestions", () => {
 	});
 
 	it("declines to ask when the target has no credential", async () => {
+		// The fixture row exists so a turn can send; emptying the lists is what
+		// makes this vault genuinely keyless.
 		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(SUGGESTION_JSON) });
 		await service.initialize();
-		settings.providerApiKeys = {};
+		settings.providers = [];
+		settings.models = [];
+		settings.activeModelId = undefined;
 
 		expect(await service.suggestQuickActions("empty")).toBeNull();
 	});
@@ -4651,7 +4662,9 @@ describe("quick-action suggestions", () => {
 		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(SUGGESTION_JSON) });
 		await service.initialize();
 		service.setActiveNotePath("Projects/weekly-0827.md");
-		settings.providerApiKeys = {};
+		settings.providers = [];
+		settings.models = [];
+		settings.activeModelId = undefined;
 
 		expect(await service.suggestQuickActions("empty")).toBeNull();
 		expect(service.peekQuickActionSuggestions("empty")).toBeUndefined();

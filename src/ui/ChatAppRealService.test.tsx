@@ -240,11 +240,20 @@ describe("ChatApp × real service (issue #168)", () => {
 		const draftStore = new DraftStore(adapter, `${SESSION_DIR}/drafts.json`);
 		const settings: PiemSettings = {
 			...DEFAULT_SETTINGS,
-			providers: [],
-			models: [],
-			provider: "deepseek",
-			modelId: "deepseek-v4-pro",
-			providerApiKeys: { deepseek: "test-key" },
+			providers: [
+				{
+						id: "p-test",
+						name: "Test gateway",
+						baseUrl: "https://gw.test/v1",
+						protocol: "openai-completions",
+						apiKey: "test-key",
+						secretRef: "",
+						source: "user",
+						oauthFlow: "",
+				},
+			],
+			models: [{ id: "m-test", providerId: "p-test", modelApiId: "test-model", displayName: "Test Model", reasoning: false, supportsImages: false }],
+			activeModelId: "m-test",
 			networkTransport: "requestUrl",
 			showAgentDetails: false,
 			sendShortcut: "enter",

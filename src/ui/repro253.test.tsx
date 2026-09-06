@@ -171,7 +171,6 @@ describe("repro 253: send with staged image clears the cards", () => {
 			provider: "prov",
 			modelId: "mod",
 			activeModelId: "mod",
-			providerApiKeys: { prov: "test-key" },
 			networkTransport: "requestUrl",
 			showAgentDetails: false,
 			sendShortcut: "enter",

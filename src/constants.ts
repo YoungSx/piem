@@ -12,12 +12,6 @@ export const DEFAULT_MODEL_ID = "deepseek-v4-pro";
  */
 export const DEFAULT_THINKING_LEVEL = "off";
 /**
- * Synthetic provider id behind user-configured OpenAI-compatible endpoints.
- * It is not part of the builtin catalog; API keys are looked up under it.
- */
-export const CUSTOM_ENDPOINT_PROVIDER = "custom";
-
-/**
  * Where the plugin's own source, tracker, and licence live.
  *
  * Spelled out rather than derived from a single base URL: GitHub's paths for

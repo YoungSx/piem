@@ -4168,27 +4168,19 @@ export class ObsidianAgentService {
 	private requireModelsBundle(): ObsidianModelsBundle {
 		// Rebuilt when a provider registration would differ, cached otherwise
 		// since transports are stateless. The key covers provider id, base URL,
-		// and protocol because each of those changes what gets registered; API
-		// keys are excluded, as they are supplied per request.
-		//
-		// The legacy endpoint contributes both fields `isCustomEndpointActive`
-		// reads. Keying on its `baseUrl` alone let a user who typed the URL
-		// first and the model id second keep a bundle built while the endpoint
-		// still counted as inactive — so `custom` was never registered.
-		const settings = this.getSettings();
-		// `oauthFlow` joins the key because it decides which auth method gets
+		// protocol, and `oauthFlow` because each of those changes what gets
 		// registered — a row switched between a key and a subscription needs a new
-		// provider, not the old one with a different credential.
+		// provider, not the old one with a different credential. API keys are
+		// excluded, as they are supplied per request.
+		const settings = this.getSettings();
 		const providerKey = settings.providers
 			.map((provider) => `${provider.id}|${provider.baseUrl}|${provider.protocol}|${provider.oauthFlow}`)
 			.join(",");
-		const legacyKey = `${settings.customEndpoint?.baseUrl ?? ""}|${settings.customEndpoint?.modelId ?? ""}`;
-		const bundleKey = `${settings.networkTransport}:${providerKey}:${legacyKey}`;
+		const bundleKey = `${settings.networkTransport}:${providerKey}`;
 		if (!this.modelsBundle || this.modelsBundleKey !== bundleKey) {
 			this.modelsBundle = createObsidianModels({
 				transport: settings.networkTransport,
 				providers: settings.providers,
-				customEndpoint: settings.customEndpoint,
 				// Deliberately outside the cache key: the store is one instance for
 				// the session, so a rebuild must reuse it rather than key on it.
 				credentials: this.credentials,

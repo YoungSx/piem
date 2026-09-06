@@ -1,13 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import {
 	buildConfiguredModel,
+	DEFAULT_MODEL_CONTEXT_WINDOW,
+	DEFAULT_MODEL_MAX_TOKENS,
 	describeModelConfig,
 	describeProviderConfig,
 	DEFAULT_WIRE_PROTOCOL,
 	emptyModelConfig,
 	emptyProviderConfig,
 	isWireProtocol,
-	migrateCustomEndpoint,
 	modelsForProvider,
 	normalizeModelConfig,
 	normalizeProviderAndModelLists,
@@ -16,7 +17,6 @@ import {
 	type ModelConfig,
 	type ProviderConfig,
 } from "./modelConfig";
-import { DEFAULT_CUSTOM_ENDPOINT_CONTEXT_WINDOW, DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS } from "./customEndpoint";
 
 function provider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
 	return {
@@ -269,8 +269,8 @@ describe("buildConfiguredModel", () => {
 
 	it("honors a context-window override and otherwise uses the standard default", () => {
 		expect(buildConfiguredModel(model({ contextWindow: 4096 }), provider()).contextWindow).toBe(4096);
-		expect(buildConfiguredModel(model(), provider()).contextWindow).toBe(DEFAULT_CUSTOM_ENDPOINT_CONTEXT_WINDOW);
-		expect(buildConfiguredModel(model(), provider()).maxTokens).toBe(DEFAULT_CUSTOM_ENDPOINT_MAX_TOKENS);
+		expect(buildConfiguredModel(model(), provider()).contextWindow).toBe(DEFAULT_MODEL_CONTEXT_WINDOW);
+		expect(buildConfiguredModel(model(), provider()).maxTokens).toBe(DEFAULT_MODEL_MAX_TOKENS);
 	});
 
 	it("honors a max-tokens override, since the shipped default is a guess about the server", () => {
@@ -280,39 +280,5 @@ describe("buildConfiguredModel", () => {
 	it("advertises image input only when the model declares it, which is what gates image send", () => {
 		expect(buildConfiguredModel(model({ supportsImages: false }), provider()).input).toEqual(["text"]);
 		expect(buildConfiguredModel(model({ supportsImages: true }), provider()).input).toEqual(["text", "image"]);
-	});
-});
-
-describe("migrateCustomEndpoint", () => {
-	it("reuses the legacy provider id so an already-stored API key still resolves", () => {
-		const { provider: migrated } = migrateCustomEndpoint({ baseUrl: "https://x/v1", apiKey: "sk-1", modelId: "m" }, "custom");
-		expect(migrated.id).toBe("custom");
-		expect(migrated.apiKey).toBe("sk-1");
-	});
-
-	it("assumes Chat Completions, which is what the old form always sent", () => {
-		const { provider: migrated } = migrateCustomEndpoint({ baseUrl: "https://x/v1", apiKey: "", modelId: "m" }, "custom");
-		expect(migrated.protocol).toBe("openai-completions");
-	});
-
-	it("carries the endpoint's model id and context window across", () => {
-		const { model: migrated } = migrateCustomEndpoint(
-			{ baseUrl: "https://x/v1", apiKey: "", modelId: "qwen3-32b", contextWindow: 65536 },
-			"custom",
-		);
-		expect(migrated.modelApiId).toBe("qwen3-32b");
-		expect(migrated.displayName).toBe("qwen3-32b");
-		expect(migrated.contextWindow).toBe(65536);
-		expect(migrated.providerId).toBe("custom");
-	});
-
-	it("leaves the context window unset when the legacy config had none", () => {
-		const { model: migrated } = migrateCustomEndpoint({ baseUrl: "https://x/v1", apiKey: "", modelId: "m" }, "custom");
-		expect(migrated.contextWindow).toBeUndefined();
-	});
-
-	it("keeps thinking off, matching what the legacy endpoint advertised", () => {
-		const { model: migrated } = migrateCustomEndpoint({ baseUrl: "https://x/v1", apiKey: "", modelId: "m" }, "custom");
-		expect(migrated.reasoning).toBe(false);
 	});
 });

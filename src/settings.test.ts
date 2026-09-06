@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { CUSTOM_ENDPOINT_PROVIDER, DEFAULT_PROVIDER } from "./constants";
+import { DEFAULT_PROVIDER } from "./constants";
 import { installObsidianStub } from "./testUtils/obsidianStub";
 import type { PiemSettings } from "./settings";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
@@ -37,29 +37,21 @@ function configured(): PiemSettings {
 }
 
 function builtinSettings(overrides: Partial<PiemSettings> = {}): PiemSettings {
-	return { ...DEFAULT_SETTINGS, providerApiKeys: {}, ...overrides };
+	return { ...DEFAULT_SETTINGS, ...overrides };
 }
 
-describe("normalizeSettings with customEndpoint", () => {
-	it("leaves the field undefined for legacy data.json without one", () => {
-		const settings = normalizeSettings({ provider: "deepseek", modelId: "deepseek-v4-pro" });
-		expect(settings.customEndpoint).toBeUndefined();
-	});
-
-	it("round-trips a stored endpoint through normalization", () => {
+describe("normalizeSettings drops the retired legacy layer", () => {
+	it("does not resurrect a customEndpoint or providerApiKeys block from an old data.json", () => {
+		// The plugin never shipped, so there is nothing to migrate: unknown keys in
+		// stored data are simply not constructed, and the next save drops them.
 		const settings = normalizeSettings({
-			customEndpoint: { baseUrl: " https://api.example.com/v1 ", apiKey: " sk-1 ", modelId: " gpt-4o-mini " },
-		});
-		expect(settings.customEndpoint).toEqual({
-			baseUrl: "https://api.example.com/v1",
-			apiKey: "sk-1",
-			modelId: "gpt-4o-mini",
-		});
-	});
-
-	it("drops an all-empty endpoint object instead of persisting a ghost config", () => {
-		const settings = normalizeSettings({ customEndpoint: {} as never });
-		expect(settings.customEndpoint).toBeUndefined();
+			provider: "deepseek",
+			modelId: "deepseek-v4-pro",
+			providerApiKeys: { deepseek: "builtin-key" },
+			customEndpoint: { baseUrl: "https://api.example.com/v1", apiKey: "sk-1", modelId: "gpt-4o-mini" },
+		} as never);
+		expect(settings).not.toHaveProperty("customEndpoint");
+		expect(settings).not.toHaveProperty("providerApiKeys");
 	});
 });
 
@@ -121,40 +113,7 @@ describe("normalizeSettings with cacheRetention", () => {
 });
 
 describe("getSelectedModel priority", () => {
-	it("returns the custom endpoint model when base URL and model id are set", () => {
-		const settings = normalizeSettings({
-			provider: DEFAULT_PROVIDER,
-			modelId: "deepseek-v4-pro",
-			customEndpoint: { baseUrl: "https://gw.internal/v1", apiKey: "sk-1", modelId: "qwen3-32b" },
-		});
-		const model = getSelectedModel(settings);
-		expect(model.provider).toBe(CUSTOM_ENDPOINT_PROVIDER);
-		expect(model.id).toBe("qwen3-32b");
-		expect(model.baseUrl).toBe("https://gw.internal/v1");
-		expect(model.api).toBe("openai-completions");
-	});
-
-	it("lets the endpoint win even though the dropdown still names a builtin provider and model", () => {
-		const settings = normalizeSettings({
-			provider: "anthropic",
-			modelId: "claude-something",
-			customEndpoint: { baseUrl: "https://x/v1", apiKey: "", modelId: "m" },
-		});
-		expect(getSelectedModel(settings).provider).toBe(CUSTOM_ENDPOINT_PROVIDER);
-	});
-
-	it("ignores an incomplete endpoint (missing model id) and falls back to the builtin catalog", () => {
-		const settings = normalizeSettings({
-			provider: DEFAULT_PROVIDER,
-			modelId: "deepseek-v4-pro",
-			customEndpoint: { baseUrl: "https://x/v1", apiKey: "sk-1", modelId: "" },
-		});
-		const model = getSelectedModel(settings);
-		expect(model.provider).toBe(DEFAULT_PROVIDER);
-		expect(model.id).toBe("deepseek-v4-pro");
-	});
-
-	it("uses the builtin catalog when no endpoint was ever configured", () => {
+	it("uses the builtin catalog when no configured model is active", () => {
 		const model = getSelectedModel(builtinSettings());
 		expect(model.provider).toBe(DEFAULT_PROVIDER);
 		expect(model.id).toBe("deepseek-v4-pro");
@@ -162,35 +121,24 @@ describe("getSelectedModel priority", () => {
 });
 
 describe("getConfiguredApiKey", () => {
-	it("reads the endpoint's own key while the endpoint is active", () => {
-		const settings = builtinSettings({
-			providerApiKeys: { deepseek: "builtin-key" },
-			customEndpoint: { baseUrl: "https://x/v1", apiKey: "custom-key", modelId: "m" },
+	it("reads the active provider's own key", () => {
+		const settings = normalizeSettings({
+			providers: [{ id: "p1", name: "GW", baseUrl: "https://gw/v1", protocol: "openai-completions", apiKey: "configured-key", secretRef: "", source: "user", oauthFlow: "" }],
+			models: [{ id: "m1", providerId: "p1", modelApiId: "m", displayName: "", reasoning: false, supportsImages: false }],
+			activeModelId: "m1",
 		});
-		expect(getConfiguredApiKey(settings)).toBe("custom-key");
+		expect(getConfiguredApiKey(settings)).toBe("configured-key");
 	});
 
-	it("never leaks a leftover provider key to a different server", () => {
-		const settings = builtinSettings({
-			providerApiKeys: { deepseek: "builtin-key" },
-			customEndpoint: { baseUrl: "https://x/v1", apiKey: "", modelId: "m" },
-		});
-		expect(getConfiguredApiKey(settings)).toBeUndefined();
-	});
-
-	it("falls back to the per-provider map for builtin providers", () => {
-		expect(getConfiguredApiKey(builtinSettings({ providerApiKeys: { deepseek: "k" } }))).toBe("k");
+	it("returns undefined without an active configuration — no cross-lookup, ever", () => {
+		// A leftover key for a builtin catalog id is never silently reused against
+		// a different server: there is nothing to resolve it against.
+		expect(getConfiguredApiKey(builtinSettings({ providerApiKeys: { deepseek: "k" } } as never))).toBeUndefined();
 		expect(getConfiguredApiKey(builtinSettings())).toBeUndefined();
 	});
 });
 
 describe("describeModelTarget", () => {
-	it("names the endpoint's model id rather than the synthetic provider constant", () => {
-		const settings = builtinSettings({ customEndpoint: { baseUrl: "https://x/v1", apiKey: "", modelId: "qwen3-32b" } });
-		expect(describeModelTarget(settings, t)).toBe("The custom endpoint (qwen3-32b)");
-		expect(describeModelTarget(settings, zh)).toBe("自定义端点（qwen3-32b）");
-	});
-
 	it("names provider and model for builtin configurations", () => {
 		expect(describeModelTarget(builtinSettings(), t)).toBe("Deepseek/deepseek-v4-pro");
 	});
@@ -240,46 +188,17 @@ describe("listModelChoices", () => {
 	});
 });
 
-describe("normalizeSettings migrating a legacy custom endpoint", () => {
-	const legacy = { baseUrl: "https://gw.internal/v1", apiKey: "sk-1", modelId: "qwen3-32b", contextWindow: 65536 };
-
-	it("converts the endpoint into a provider/model pair and selects it", () => {
-		const settings = normalizeSettings({ customEndpoint: legacy });
+describe("normalizeSettings ignores a legacy endpoint once a provider row exists", () => {
+	it("serves the configured row, not a synthetic id from an old vault", () => {
+		const settings = normalizeSettings({
+			providers: [{ id: "p1", name: "GW", baseUrl: "https://gw/v1", protocol: "openai-completions", apiKey: "sk-1", secretRef: "", source: "user", oauthFlow: "" }],
+			models: [{ id: "m1", providerId: "p1", modelApiId: "m", displayName: "", reasoning: false, supportsImages: false }],
+			activeModelId: "m1",
+			customEndpoint: { baseUrl: "https://old/v1", apiKey: "sk-old", modelId: "old-model" },
+		} as never);
 		expect(settings.providers).toHaveLength(1);
 		expect(settings.models).toHaveLength(1);
-		expect(settings.activeModelId).toBe(settings.models[0]?.id);
-	});
-
-	it("keeps the legacy provider id so an already-stored key resolves unchanged", () => {
-		const settings = normalizeSettings({ customEndpoint: legacy });
-		expect(settings.providers[0]?.id).toBe(CUSTOM_ENDPOINT_PROVIDER);
-		expect(settings.providers[0]?.apiKey).toBe("sk-1");
-		expect(settings.providers[0]?.baseUrl).toBe("https://gw.internal/v1");
-	});
-
-	it("carries the model id and context window across, so compaction still plans correctly", () => {
-		const settings = normalizeSettings({ customEndpoint: legacy });
-		expect(settings.models[0]?.modelApiId).toBe("qwen3-32b");
-		expect(settings.models[0]?.contextWindow).toBe(65536);
-	});
-
-	it("retains the legacy field, so rolling back to an older build keeps the endpoint configured", () => {
-		expect(normalizeSettings({ customEndpoint: legacy }).customEndpoint).toMatchObject({ modelId: "qwen3-32b" });
-	});
-
-	it("does not migrate twice when normalization runs again over its own output", () => {
-		const once = normalizeSettings({ customEndpoint: legacy });
-		const twice = normalizeSettings(once);
-		expect(twice.providers).toHaveLength(1);
-		expect(twice.models).toHaveLength(1);
-		// The active selection must survive, not be regenerated against a new id.
-		expect(twice.activeModelId).toBe(once.activeModelId);
-	});
-
-	it("leaves an incomplete endpoint alone rather than creating an unusable provider", () => {
-		const settings = normalizeSettings({ customEndpoint: { baseUrl: "https://x/v1", apiKey: "sk-1", modelId: "" } });
-		expect(settings.providers).toEqual([]);
-		expect(settings.activeModelId).toBeUndefined();
+		expect(settings.activeModelId).toBe("m1");
 	});
 });
 
@@ -311,18 +230,6 @@ describe("normalizeSettings with configured providers", () => {
 		const settings = normalizeSettings({ providers: [], models: [model], activeModelId: "m1" });
 		expect(settings.models).toEqual([]);
 		expect(settings.activeModelId).toBeUndefined();
-	});
-
-	it("does not migrate the legacy endpoint again when a provider already claims its id", () => {
-		const settings = normalizeSettings({
-			providers: [{ ...provider, id: CUSTOM_ENDPOINT_PROVIDER }],
-			models: [{ ...model, providerId: CUSTOM_ENDPOINT_PROVIDER }],
-			activeModelId: "m1",
-			customEndpoint: { baseUrl: "https://old/v1", apiKey: "sk-old", modelId: "old-model" },
-		});
-		expect(settings.providers).toHaveLength(1);
-		expect(settings.models).toHaveLength(1);
-		expect(settings.activeModelId).toBe("m1");
 	});
 });
 
@@ -364,15 +271,15 @@ describe("getApiKeyForProvider", () => {
 			providers: [{ id: "p1", name: "GW", baseUrl: "https://gw/v1", protocol: "openai-completions", apiKey: "configured-key", secretRef: "", source: "user", oauthFlow: "" }],
 			models: [{ id: "m1", providerId: "p1", modelApiId: "m", displayName: "", reasoning: false, supportsImages: false }],
 			activeModelId: "m1",
-			providerApiKeys: { deepseek: "builtin-key" },
 		});
 
 	it("resolves a configured provider by its own id", () => {
 		expect(getApiKeyForProvider(settings(), "p1")).toBe("configured-key");
 	});
 
-	it("still resolves builtin providers from the per-provider map", () => {
-		expect(getApiKeyForProvider(settings(), "deepseek")).toBe("builtin-key");
+	it("returns undefined for a provider that was never added, whatever else the settings hold", () => {
+		// A builtin catalog id is not a credential source: nothing configured it.
+		expect(getApiKeyForProvider(settings(), "deepseek")).toBeUndefined();
 	});
 
 	it("returns undefined for a provider with no key, so the error names the right setting", () => {
