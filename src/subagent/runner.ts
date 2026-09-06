@@ -1,37 +1,24 @@
 import {
 	Agent,
+	calculateContextTokens,
 	convertToLlm,
+	shouldCompact,
 	type AgentEvent,
-	type AgentLoopTurnUpdate,
 	type AgentMessage,
 	type AgentTool,
-	type PrepareNextTurnContext,
+	type ShouldStopAfterTurnContext,
 	type Skill,
 	type StreamFn,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import { isContextOverflow, type Model } from "@earendil-works/pi-ai";
 import type { Models, Usage } from "@earendil-works/pi-ai";
-import { compactIfNeeded, needsCompaction, type CompactResult } from "../agent/compaction";
+import { compactIfNeeded, DEFAULT_COMPACTION_SETTINGS, needsCompaction, type CompactResult } from "../agent/compaction";
 import type { CompactionSettings } from "../agent/compactionSettings";
 import { sumUsage, type UsageTotals } from "../agent/usage";
 import { composeSystemPrompt } from "../agent/skillLoader";
 import { throwIfAborted } from "../tools/toolResult";
 import { composeSubagentPrompt, type SubagentRole } from "./roles";
-
-/**
- * Mid-run compactions one child may spend, mirroring the parent's budget.
- *
- * The reason is the parent's verbatim (see `MAX_MID_RUN_COMPACTIONS` in
- * `ObsidianAgentService`): the trigger reads an estimate that leans on the
- * newest assistant usage, and that usage still reports the pre-compaction total
- * until the next reply lands — so a run whose retained tail alone exceeds the
- * budget asks for a summary at every turn boundary while shrinking nothing. A
- * child needs this more than the parent does, not less: nobody is watching it,
- * and a run has no deadline, so a futile compaction loop would bill until
- * someone noticed rather than until a clock ran out.
- */
-export const SUBAGENT_MAX_COMPACTIONS = 4;
 
 export interface SubagentRunOptions {
 	task: string;
@@ -298,72 +285,74 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 	// Compaction bookkeeping, run-local because the run is one function call: the
 	// parent needs fields on a service for the same state because its run outlives
 	// any single method.
-	let compactions = 0;
 	let lastCompaction: CompactResult | undefined;
 	const compactionUsage: Usage[] = [];
+	// Set by the hook below when it ends the run for a tidy; consumed by the
+	// tidy-continue loop after `prompt`, which clears it before acting so a stale
+	// claim cannot outlive its run.
+	let compactionPending = false;
 	/**
-	 * Summarizes the child's own history at a turn boundary.
+	 * The futility latch — the replacement for the old `SUBAGENT_MAX_COMPACTIONS`
+	 * counter, same three states as the parent's {@link SessionRuntime
+	 * .compactionGate}: `null` judges every boundary normally, `"awaiting"` holds
+	 * from a tidy attempt until the first reply whose `usage` describes the
+	 * compacted context, and `"futile"` means that floor reading still sits over
+	 * the line, so no summary can shrink this context and the hook stops ending
+	 * the run for compaction entirely.
 	 *
-	 * pi's contract for this hook is that it must not throw (`types.d.ts`), and a
-	 * child has no banner to report a failure on, so every failure path returns
-	 * `undefined` and the run continues against a context the provider will judge
-	 * — the same bargain the parent takes, minus the notice.
+	 * A child needs the latch more than the parent does, not less: nobody is
+	 * watching it, and a run has no deadline, so a futile loop would bill until
+	 * someone noticed rather than until a clock ran out.
 	 */
-	const compactBetweenTurns = async (
-		turn: PrepareNextTurnContext,
+	let compactionGate: "awaiting" | "futile" | null = null;
+	/**
+	 * Whether the run should end at this turn boundary so a tidy can happen
+	 * outside it. The parent's {@link shouldStopForCompaction} makes the same
+	 * decision with the same reasoning; this one keeps the state local.
+	 */
+	const shouldStopForCompaction = (
+		turn: ShouldStopAfterTurnContext,
 		signal?: AbortSignal,
-	): Promise<AgentLoopTurnUpdate | undefined> => {
-		const models = options.models;
-		// A run already dead must not pay for a summary it will never use.
-		if (!models || signal?.aborted || linked.signal.aborted || compactions >= SUBAGENT_MAX_COMPACTIONS) {
-			return undefined;
+	): boolean => {
+		// A run already dead must not be ended for a summary it will never use.
+		if (signal?.aborted || linked.signal.aborted) {
+			return false;
 		}
-		// No tool results means no further request in this run — pi's inner loop
-		// only continues on tool calls — so a summary bought here is never sent.
-		if (turn.toolResults.length === 0) {
-			return undefined;
+		// No tool results means nothing to continue from: `continue()` requires a
+		// user or tool-result tail, and pi's inner loop only runs on further tool
+		// calls anyway, so there is nothing to tidy for.
+		if (!options.models || turn.toolResults.length === 0) {
+			return false;
 		}
-		// The budget counts summarization *requests*, so the threshold question
-		// comes first: charging a boundary that then skips would spend the whole
-		// budget on the first four turns of any run and disable compaction for
-		// exactly the long runs it exists to rescue. `needsCompaction` is the same
-		// predicate `compactIfNeeded` applies to itself, so the two agree.
-		if (!needsCompaction(agent.state.messages, model, options.compactionSettings)) {
-			return undefined;
+		const settings = options.compactionSettings ?? DEFAULT_COMPACTION_SETTINGS;
+		if (compactionGate === "futile") {
+			// The compacted context's floor is over the line: summaries cannot
+			// shrink it, so the run never stops for compaction again — until a
+			// new tidy attempt sets `"awaiting"` and re-asks the question.
+			return false;
 		}
-		compactions += 1;
-		try {
-			const outcome = await compactIfNeeded({
-				messages: agent.state.messages,
-				model,
-				models,
-				thinkingLevel,
-				previous: lastCompaction,
-				settings: options.compactionSettings,
-				signal,
-			});
-			if (outcome.status !== "compacted") {
-				return undefined;
+		if (compactionGate === "awaiting") {
+			// Consumed here: this turn's reply is the first post-tidy request whose
+			// `usage` names the context as it now stands, so the gate's question is
+			// answered once. If that floor is already over the line, another
+			// summary cannot save the run — the provider gets the context-overflow
+			// report and the salvage path decides what to keep. A reply without
+			// usage keeps the latch in `"awaiting"`: there is still no reading,
+			// and the estimate alone would re-derive the stale pre-compaction
+			// total the latch exists to refuse.
+			const usage = turn.message.usage;
+			const floor = usage === undefined ? undefined : calculateContextTokens(usage);
+			if (floor !== undefined && shouldCompact(floor, model.contextWindow, settings)) {
+				compactionGate = "futile";
+				return false;
 			}
-			lastCompaction = outcome.result;
-			// The summarization request produces no transcript message, so
-			// `sumUsage` cannot find what it cost; recorded here or not at all.
-			// pi types the usage optional — a provider that reported none simply
-			// contributes nothing rather than an entry of zeroes, which would
-			// inflate the request count.
-			if (outcome.result.usage) {
-				compactionUsage.push(outcome.result.usage);
-			}
-			agent.state.messages = outcome.messages;
-			// The slice is load-bearing: pi snapshots `state.messages` into the
-			// loop's own array at run start and both are appended to independently,
-			// so handing the state's array back would put two writers on one list
-			// and duplicate every later message.
-			return { context: { ...turn.context, messages: agent.state.messages.slice() } };
-		} catch {
-			// Including an abort, which pi reports through this path too.
-			return undefined;
+			compactionGate = null;
 		}
+		if (!needsCompaction(agent.state.messages, model, settings)) {
+			return false;
+		}
+		compactionPending = true;
+		return true;
 	};
 
 	const agent = new Agent({
@@ -386,20 +375,22 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		toolExecution: "sequential",
 		// Unlike the parent — which uses this hook to end the run on any tool
 		// error to protect the panel — the child feeds the error back and only
-		// stops when the run itself is dead. The predicate is still load-bearing:
+		// stops when the run itself is dead. The abort half is still load-bearing:
 		// pi's loop never re-checks its signal between turns, so a completed
 		// request followed by tool results would run on forever and a kill would
 		// never land. `linked.signal` is the run's only abort source (parent
 		// abort, `kill_subagent`, and teardown all fire it, and its listener is
 		// what calls `agent.abort()`), so reading it here is the between-turns
-		// abort check the loop lacks.
-		shouldStopAfterTurn: () => linked.signal.aborted,
-		// pi fires this before `shouldStopAfterTurn` and hands the result of it to
-		// that check, so compaction runs first and the abort check gets the last
-		// word — a summary that finishes after a kill landed cannot revive the
-		// run. Absent when the host offers no `models`, which is also how tests and
-		// the pre-compaction behavior are preserved.
-		...(options.models ? { prepareNextTurnWithContext: compactBetweenTurns } : {}),
+		// abort check the loop lacks. The compaction half is pi's README pattern:
+		// end the run at a tool-result boundary instead of swapping its context
+		// underneath it; the loop after `prompt` tidies outside the run and
+		// `continue()`s back in.
+		shouldStopAfterTurn: (context, signal) => {
+			if (linked.signal.aborted) {
+				return true;
+			}
+			return shouldStopForCompaction(context, signal);
+		},
 	});
 	if (options.onEvent) {
 		const onEvent = options.onEvent;
@@ -420,13 +411,65 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		// pre-prompt check is what keeps a race from launching a doomed run.
 		throwIfAborted(linked.signal);
 		await agent.prompt(task);
+		// pi's README pattern, second half: each run the hook ended for a tidy
+		// gets summarized outside any run and continued back in from the
+		// tool-result tail that ended it. Looping rather than running once, so a
+		// continuation that crosses the line again gets the same treatment; the
+		// futility gate in the hook is what bounds the loop, and the parent's
+		// bargain holds here too — a tidy that fails does not block the resume,
+		// the provider decides whether the context fits. A kill between the stop
+		// and the resume skips both.
+		while (compactionPending && !linked.signal.aborted) {
+			compactionPending = false;
+			const models = options.models;
+			// Mirrors the hook's precondition; asserted non-null by it, but the
+			// loop body must not lean on a hook that may never have run.
+			if (models) {
+				const outcome = await compactIfNeeded({
+					messages: agent.state.messages,
+					model,
+					models,
+					thinkingLevel,
+					previous: lastCompaction,
+					settings: options.compactionSettings,
+					signal: linked.signal,
+				});
+				// The attempt itself — failed ones included, since a failed tidy
+				// is still an attempt — lifts a `"futile"` latch back to
+				// `"awaiting"`; a skipped tidy changed nothing and is not an
+				// attempt, and an aborted one was called off by the kill, whose
+				// listener already broke out of the loop.
+				if (outcome.status !== "skipped" && !linked.signal.aborted) {
+					compactionGate = "awaiting";
+				}
+				if (outcome.status === "compacted") {
+					lastCompaction = outcome.result;
+					// The summarization request produces no transcript message, so
+					// `sumUsage` cannot find what it cost; recorded here or not at
+					// all. pi types the usage optional — a provider that reported
+					// none simply contributes nothing rather than an entry of
+					// zeroes, which would inflate the request count.
+					if (outcome.result.usage) {
+						compactionUsage.push(outcome.result.usage);
+					}
+					agent.state.messages = outcome.messages;
+				}
+			}
+			// Whatever the tidy's outcome, the reply that follows is the first
+			// whose `usage` describes the context as it now stands — which is
+			// exactly what the `"awaiting"` latch set above asks the hook to
+			// wait for.
+			await agent.continue();
+		}
 	} catch (error) {
 		// An abort is not a failure to report — the salvage path below decides
 		// whether the run left anything worth handing back. Anything else is a real
 		// fault, and travels on under its own words rather than its own type: what
 		// a later reader and a later resume both need is the transcript, and pi's
 		// `StreamFn` contract keeps genuine exceptions off this path anyway
-		// (provider failures arrive as a `stopReason: "error"` turn, below).
+		// (provider failures arrive as a `stopReason: "error"` turn, below). The
+		// tidy-continue loop shares this path: a `continue()` that throws comes
+		// here under the same words.
 		if (!linked.signal.aborted) {
 			throw new SubagentRunError(error instanceof Error ? error.message : String(error), agent.state.messages);
 		}
