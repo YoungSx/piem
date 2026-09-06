@@ -33,6 +33,10 @@ export function installDom(): Document {
 	// global has to be that class rather than bun's built-in one.
 	globals.Event = window.Event;
 	globals.CustomEvent = window.CustomEvent;
+	// Escape-dispatching code constructs KeyboardEvents against the document,
+	// and happy-dom validates dispatched events against its own realm, so this
+	// global must be the window's class too — same reasoning as `Event`.
+	globals.KeyboardEvent = window.KeyboardEvent;
 	globals.requestAnimationFrame = (callback: FrameRequestCallback): number => window.setTimeout(() => callback(0), 0) as unknown as number;
 	// Pointer-query stub for touch-vs-mouse detection. Tests default to fine pointer.
 	globals.matchMedia = (query: string) => ({
@@ -90,6 +94,25 @@ export function installDom(): Document {
 const FLUSH_TIMEOUT_MS = 5_000;
 /** How often the wait loop re-checks its condition while a render settles. */
 const POLL_INTERVAL_MS = 10;
+
+/**
+ * Mounts the structural skeleton of Obsidian's link-update confirmation into
+ * `doc` and returns the modal container. Only the two classes the production
+ * selector matches on exist here: the guard must never learn to read titles or
+ * button labels, and a richer fixture would make such a read pass a test.
+ *
+ * Returns the container so tests can remove it (the "user answered" move) or
+ * re-mount it (the "answered, then reopened" move).
+ */
+export function mountLinkUpdateModal(doc: Document): HTMLElement {
+	const container = doc.createElement("div");
+	container.className = "modal-container";
+	const buttons = doc.createElement("div");
+	buttons.className = "modal-button-container";
+	container.appendChild(buttons);
+	doc.body.appendChild(container);
+	return container;
+}
 
 /**
  * Waits out React's async render cycle before asserting.

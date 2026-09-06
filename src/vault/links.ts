@@ -107,6 +107,41 @@ function backlinkSources(app: App, file: TFile): string[] | undefined {
 	return sources;
 }
 
+/**
+ * Backlink sources whose written link text names `file` by path — the links
+ * that go stale when the note moves and Obsidian's update is skipped.
+ *
+ * Deliberately narrower than {@link collectBacklinks}: a short-name link
+ * (`[[Idea]]`) re-resolves to the new location on its own, so listing it would
+ * send the caller off to "fix" links that still work. The written form lives
+ * in each source's link cache (`getCache().links`), not in `resolvedLinks`,
+ * which is keyed by *resolved* target either way; a link counts as pathed when
+ * its text still names the file's path once the `.md` is stripped. A source
+ * whose cache cannot be read (mid-index vault, test stub) stays listed —
+ * reporting a link that turned out fine is cheaper than silently hiding one
+ * that broke.
+ */
+export function collectPathedBacklinkSources(app: App, file: TFile, signal?: AbortSignal): string[] {
+	const sources: string[] = [];
+	for (const backlink of collectBacklinks(app, file, signal)) {
+		if (namesPathTo(app, backlink.target, file.path)) {
+			sources.push(backlink.target);
+		}
+	}
+	return sources;
+}
+
+/** Whether any written link in `sourcePath` names `targetPath` by path. */
+function namesPathTo(app: App, sourcePath: string, targetPath: string): boolean {
+	const metadataCache = app.metadataCache as Partial<App["metadataCache"]> | undefined;
+	if (typeof metadataCache?.getCache !== "function") {
+		return true;
+	}
+	const suffix = targetPath.replace(/\.md$/i, "").toLowerCase();
+	const links = metadataCache.getCache(sourcePath)?.links ?? [];
+	return links.some((link) => link.link.replace(/\.md$/i, "").toLowerCase().endsWith(suffix));
+}
+
 /** One note's own link map, so this is bounded by that note rather than the vault. */
 export function toLinkReferences(links: Record<string, number> | undefined): LinkReference[] {
 	return sortLinkReferences(Object.entries(links ?? {}).map(([target, count]) => ({ target, count })));
