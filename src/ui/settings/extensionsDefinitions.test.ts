@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
-import { installObsidianStub, type ToggleStub } from "../../testUtils/obsidianStub";
+import { installObsidianStub, type ExtraButtonStub, type ToggleStub } from "../../testUtils/obsidianStub";
 import { getT } from "../../i18n";
 
 const document = installDom();
@@ -12,6 +12,7 @@ const { extensionsDefinitions } = await import("./extensionsDefinitions");
 const { Setting } = await import("obsidian");
 import { SettingsPanelState } from "./panelState";
 import type { SettingsPanelHost } from "./panelHost";
+import type { McpServerState } from "../../mcp/mcpManager";
 import type { SkillRow } from "../../skills/skillManager";
 
 const en = getT("en");
@@ -83,7 +84,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 				>,
 			userSkillsAvailable: false,
 		},
-		mcp: { states: () => [], test: async () => 0 },
+		mcp: { states: () => [], test: async () => 0, reconnect: async () => undefined },
 		...overrides,
 	};
 }
@@ -220,6 +221,7 @@ describe("the MCP enable toggle", () => {
 					{ id: server.id, name: server.name, url: server.url, enabled: server.enabled, status: "untested", toolCount: 0 },
 				],
 				test: async () => 0,
+				reconnect: async () => undefined,
 			},
 		});
 		const lists = extensionsDefinitions(host, new SettingsPanelState()).filter(
@@ -300,5 +302,103 @@ describe("the MCP enable toggle", () => {
 		expect(row.flag()).toBe(true);
 		expect(row.saves()).toBe(1);
 		expect(row.toggle.getValue()).toBe(true);
+	});
+});
+
+/**
+ * The retry button lives on failed MCP rows only. What matters beyond its
+ * existence: it rides ahead of edit and delete (fixing is the next likely
+ * action), the click fences double fires, and the verdict line repaints from
+ * what the manager now reports once the reconnect settles.
+ */
+describe("the MCP retry button", () => {
+	const SERVER = { id: "mcp_1", name: "Hub", url: "http://127.0.0.1:39991/mcp", token: "", secretRef: "", enabled: true };
+
+	function renderRow(mcp: SettingsPanelHost["mcp"]): { container: HTMLElement; extraButtons: ExtraButtonStub[] } {
+		const base = stubHost();
+		const host = stubHost({
+			settings: { ...base.settings, mcpServers: [{ ...SERVER }] },
+			mcp,
+		});
+		const lists = extensionsDefinitions(host, new SettingsPanelState()).filter(
+			(entry) => (entry as { type?: string }).type === "list",
+		) as Array<{ items?: Array<{ render?: (setting: unknown) => void }> }>;
+		const container = document.createElement("div");
+		const setting = new (Setting as unknown as new (el: HTMLElement) => { extraButtons: ExtraButtonStub[] })(container);
+		// items[0] is the section note; the configured servers follow it.
+		lists[1]?.items?.[1]?.render?.(setting);
+		return { container, extraButtons: setting.extraButtons };
+	}
+
+	const verdictText = (container: HTMLElement): string =>
+		container.querySelector(".piem-settings-effect")?.textContent ?? "";
+
+	it("appears only on failed rows, ahead of edit and delete", async () => {
+		const rowMcp = (status: "error" | "ok"): SettingsPanelHost["mcp"] => ({
+			states: () => [{ ...SERVER, status, toolCount: status === "ok" ? 3 : 0, error: status === "error" ? "boom" : undefined }],
+			test: async () => 0,
+			reconnect: async () => undefined,
+		});
+
+		const errorTooltips = renderRow(rowMcp("error")).extraButtons.map((button) => button.tooltip);
+		expect(errorTooltips[0]).toBe(en.t("mcp.retry"));
+		// Fixing comes first; edit and delete keep their established order.
+		expect(errorTooltips.slice(1)).toEqual([en.t("mcp.edit"), en.t("mcp.delete")]);
+
+		const okTooltips = renderRow(rowMcp("ok")).extraButtons.map((button) => button.tooltip);
+		expect(okTooltips).toEqual([en.t("mcp.edit"), en.t("mcp.delete")]);
+	});
+
+	it("reconnects once, fences the double click, and repaints the verdict", async () => {
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let current: McpServerState = { ...SERVER, status: "error", toolCount: 0, error: "boom" };
+		let reconns = 0;
+		const { container, extraButtons } = renderRow({
+			states: () => [current],
+			test: async () => 0,
+			reconnect: async () => {
+				reconns += 1;
+				await gate;
+				current = { ...SERVER, status: "ok", toolCount: 3 };
+			},
+		});
+		const retry = extraButtons[0]!;
+		expect(verdictText(container)).toBe(en.t("mcp.statusError", { error: "boom" }));
+
+		retry.click();
+		await settle();
+
+		// Held open: the fence is up and the verdict says connecting, not silence.
+		expect(reconns).toBe(1);
+		expect(retry.extraSettingsEl.classList.contains("is-disabled")).toBe(true);
+		expect(verdictText(container)).toBe(en.t("mcp.statusConnecting"));
+
+		// Same in-flight attempt → the fence refuses a second run.
+		retry.click();
+		await settle();
+		expect(reconns).toBe(1);
+
+		release?.();
+		await settle();
+
+		expect(verdictText(container)).toBe(en.t("mcp.statusOk", { tools: 3 }));
+		expect(retry.extraSettingsEl.classList.contains("is-disabled")).toBe(false);
+	});
+
+	it("a retry that fails again lands back on the error verdict", async () => {
+		const { container, extraButtons } = renderRow({
+			states: () => [{ ...SERVER, status: "error", toolCount: 0, error: "still down" }],
+			test: async () => 0,
+			reconnect: async () => undefined,
+		});
+		const retry = extraButtons[0]!;
+
+		retry.click();
+		await settle();
+
+		expect(verdictText(container)).toBe(en.t("mcp.statusError", { error: "still down" }));
 	});
 });

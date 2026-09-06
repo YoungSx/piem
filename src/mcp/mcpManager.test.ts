@@ -604,4 +604,117 @@ describe("McpManager", () => {
 		expect(seen.mount).not.toContain("tools/call");
 		await manager.dispose();
 	});
+
+	it("retries a failed server on the next connect and recovers", async () => {
+		// A failed entry is always re-attempted; when the endpoint comes back,
+		// nothing but another connect stands between the user and the tools.
+		const server = serverFixture({ name: "x", url: "https://x.example.com" });
+		let fail = true;
+		const manager = makeManager([server], () => async (url, init) => {
+			if ((init?.method ?? "GET").toUpperCase() === "GET") {
+				return new Response(null, { status: 405 });
+			}
+			if (fail) {
+				throw new TypeError("fetch failed");
+			}
+			const body = typeof init?.body === "string" ? init.body : "";
+			if (body.includes('"method":"initialize"')) {
+				return handshakeResponses("session-1")[0]!;
+			}
+			if (body.includes("notifications/initialized")) {
+				return new Response(null, { status: 202 });
+			}
+			return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+
+		await manager.connect();
+		expect(manager.getServerStates()[0]?.status).toBe("error");
+
+		fail = false;
+		await manager.connect();
+		expect(manager.getServerStates()[0]?.status).toBe("ok");
+		await manager.dispose();
+	});
+
+	it("two concurrent connects to the same server share one handshake", async () => {
+		// The load warmup versus the panel's first open. Without the per-server
+		// chain, both calls would see no usable entry, both would mount, and the
+		// entry the loser landed would strand the winner's client unclosed.
+		const server = serverFixture({ name: "x", url: "https://x.example.com" });
+		let posts = 0;
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const manager = makeManager([server], () => async (url, init) => {
+			if ((init?.method ?? "GET").toUpperCase() === "GET") {
+				return new Response(null, { status: 405 });
+			}
+			const body = typeof init?.body === "string" ? init.body : "";
+			if (body.includes('"method":"initialize"')) {
+				posts++;
+				await gate;
+				return handshakeResponses("session-1")[0]!;
+			}
+			if (body.includes("notifications/initialized")) {
+				return new Response(null, { status: 202 });
+			}
+			return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+
+		const first = manager.connect();
+		const second = manager.connect();
+		release?.();
+		await Promise.all([first, second]);
+		expect(posts).toBe(1);
+		expect(manager.getServerStates()[0]?.status).toBe("ok");
+		await manager.dispose();
+	});
+
+	it("a handshake that lands after dispose leaves no entry behind", async () => {
+		// Unload mid-handshake: dispose emptied the map while the mount was in
+		// flight, and the late landing must not resurrect an entry whose client
+		// nothing will ever close.
+		const server = serverFixture({ name: "x", url: "https://x.example.com" });
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const manager = makeManager([server], () => async (url, init) => {
+			if ((init?.method ?? "GET").toUpperCase() === "GET") {
+				return new Response(null, { status: 405 });
+			}
+			const body = typeof init?.body === "string" ? init.body : "";
+			if (body.includes('"method":"initialize"')) {
+				await gate;
+				return handshakeResponses("session-1")[0]!;
+			}
+			if (body.includes("notifications/initialized")) {
+				return new Response(null, { status: 202 });
+			}
+			return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+
+		const connecting = manager.connect();
+		await manager.dispose();
+		release?.();
+		await connecting;
+
+		expect(manager.getServerStates()[0]?.status).toBe("untested");
+		expect(manager.buildAgentTools()).toEqual([]);
+
+		// Not a one-way latch: an explicit connect after dispose keeps working.
+		await manager.connect();
+		expect(manager.getServerStates()[0]?.status).toBe("ok");
+		await manager.dispose();
+	});
 });

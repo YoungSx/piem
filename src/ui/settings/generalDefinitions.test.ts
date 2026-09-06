@@ -55,7 +55,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			lastSkillLoad: () => ({ vault: [], user: { skills: [], searched: [], diagnostics: [] } }) as unknown as ReturnType<SettingsPanelHost["skills"]["lastSkillLoad"]>,
 			userSkillsAvailable: false,
 		},
-		mcp: { states: () => [], test: async () => 0 },
+		mcp: { states: () => [], test: async () => 0, reconnect: async () => undefined },
 		...overrides,
 	};
 }

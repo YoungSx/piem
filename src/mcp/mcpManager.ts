@@ -45,10 +45,11 @@ import { slugifyServerName, type McpServerConfig } from "./mcpConfig";
  * Connect + initial tools/list must finish inside this, or the server is marked
  * unreachable.
  *
- * Ours to choose, unlike a tool call: connecting happens on plugin load and on
- * every settings save, with no model in the loop to ask and a user waiting on the
- * settings panel to repaint. A server that cannot say hello in fifteen seconds
- * is reported as down and retried on the next save.
+ * Ours to choose, unlike a tool call: connecting happens on plugin load, on
+ * every settings save and from the panel's retry button, with no model in the
+ * loop to ask and a user waiting on the settings panel to repaint. A server
+ * that cannot say hello in fifteen seconds is reported as down and retried on
+ * the next connect.
  */
 const CONNECT_TIMEOUT_MS = 15_000;
 
@@ -236,8 +237,10 @@ function serverLabel(server: McpServerConfig): string {
 /**
  * Owns one SDK `Client` per enabled server and derives pi tools from them.
  *
- * Lifecycle: the agent service calls {@link connect} when configuration changes
- * (plugin load, settings save) and {@link dispose} when the service tears down.
+ * Lifecycle: the plugin fires one {@link connect} at load so the cache is warm
+ * before anything asks — the agent service and the settings panel both read
+ * from it — and the same call repeats on every configuration change (settings
+ * save, the panel's retry button, which skips the servers already mounted).
  * Connection is lazy per server and cached: a server that failed to connect is
  * retried on the next {@link connect}, never silently between turns — an MCP
  * tool appearing or disappearing mid-conversation would look like the model
@@ -248,6 +251,25 @@ export class McpManager {
 	private readonly servers: () => McpServerConfig[];
 	private readonly transport: () => NetworkTransport;
 	private readonly entries = new Map<string, McpServerEntry>();
+
+	/**
+	 * One slot per server whose handshake is in flight, so two callers racing on
+	 * the same server queue behind each other instead of double-mounting: both
+	 * would see no usable entry, both open a client, and the entry the loser
+	 * lands would strand the winner's client unclosed. The plugin's load warmup
+	 * versus the panel's first open is an ordinary race, not an exotic one.
+	 */
+	private readonly connecting = new Map<string, Promise<void>>();
+
+	/**
+	 * Raised by dispose and cleared by the next connect. A handshake still in
+	 * flight when the plugin unloads must not land afterwards: its `entries.set`
+	 * would resurrect a live client that nothing will ever close, so the gate
+	 * turns that landing into a no-op. Not a one-way latch — the tests re-drive
+	 * a disposed manager, and an explicit connect says "someone is asking for
+	 * connections again".
+	 */
+	private disposed = false;
 
 	/**
 	 * `pluginVersion` is the manifest's version, reported to every server in the
@@ -277,6 +299,10 @@ export class McpManager {
 	 * panel reports the error where the user can act on it.
 	 */
 	async connect(): Promise<void> {
+		// An explicit connect reopens the gate dispose closed: only the landing
+		// of a handshake that was already in flight during the dispose is
+		// dropped — a manager that survives a dispose must keep working.
+		this.disposed = false;
 		const enabled = this.servers().filter((server) => server.enabled);
 		this.forgetDisabled(enabled);
 		await Promise.all(enabled.map((server) => this.connectServer(server)));
@@ -335,12 +361,34 @@ export class McpManager {
 
 	/** Closes every client. Idempotent; safe at plugin unload. */
 	async dispose(): Promise<void> {
+		this.disposed = true;
 		const closers = [...this.entries.values()].map((entry) => this.closeClient(entry.client));
 		this.entries.clear();
 		await Promise.allSettled(closers);
 	}
 
 	private async connectServer(server: McpServerConfig): Promise<void> {
+		// Serialize per server: see `connecting`. The later caller waits for the
+		// earlier handshake, then runs its own pass — where the idempotency check
+		// sees the fresh entry and no-ops, or a changed config re-mounts cleanly.
+		const previous = this.connecting.get(server.id) ?? Promise.resolve();
+		const attempt = previous.then(() => this.mountServer(server));
+		this.connecting.set(server.id, attempt);
+		try {
+			await attempt;
+		} finally {
+			// Clear the slot only if it still holds this attempt; a queued call
+			// has already replaced it, and removing that one would desync the chain.
+			if (this.connecting.get(server.id) === attempt) {
+				this.connecting.delete(server.id);
+			}
+		}
+	}
+
+	private async mountServer(server: McpServerConfig): Promise<void> {
+		if (this.disposed) {
+			return;
+		}
 		// `connect` runs on every settings save (it is how refreshed tools reach
 		// the agent), so an already-mounted server with the same url+token is
 		// left alone — name edits need no reconnect either, since tool names are
@@ -359,6 +407,12 @@ export class McpManager {
 		}
 		try {
 			const { client, tools } = await this.openMountedClient(server);
+			// The handshake finished after unload: nothing may keep the client
+			// alive, and no entry may resurrect after `dispose` emptied the map.
+			if (this.disposed) {
+				await this.closeClient(client);
+				return;
+			}
 			this.entries.set(server.id, {
 				client,
 				tools,
@@ -372,6 +426,10 @@ export class McpManager {
 			// A failed mount leaves no client of its own worth keeping: the caller
 			// closed it, and only a previous entry's client survives here so
 			// dispose still closes it. The server is marked failed either way.
+			// After dispose there is nothing to mark — the map is gone for good.
+			if (this.disposed) {
+				return;
+			}
 			this.entries.set(server.id, {
 				client: existing?.client ?? null,
 				tools: [],

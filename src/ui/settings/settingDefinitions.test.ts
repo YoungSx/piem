@@ -77,7 +77,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost
 			lastSkillLoad: () => skillLoad as unknown as ReturnType<SettingsPanelHost["skills"]["lastSkillLoad"]>,
 			userSkillsAvailable: false,
 		},
-		mcp: { states: () => [], test: async () => 0 },
+		mcp: { states: () => [], test: async () => 0, reconnect: async () => undefined },
 		...overrides,
 	};
 }

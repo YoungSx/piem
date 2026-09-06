@@ -78,12 +78,10 @@ export default class PiemPlugin extends Plugin {
 	 */
 	private secretEnvironment: SecretEnvironment | null = null;
 	/**
-	 * The MCP client bridge, created on first ask rather than at load.
-	 *
-	 * Most sessions configure no server: a manager over an empty list connects
-	 * to nothing and builds no tools, so eagerly constructing one on every load
-	 * would buy nothing. Reads the server list and the transport through
-	 * closures, so a settings change reaches the next connect without
+	 * The MCP client bridge. `onload` warms it with a fire-and-forget connect,
+	 * which is also the first "ask" — the manager itself only pays for the
+	 * servers, not the construction. Reads the server list and the transport
+	 * through closures, so a settings change reaches the next connect without
 	 * rebuilding the manager or dropping live connections.
 	 */
 	private mcpBridge: McpManager | null = null;
@@ -137,6 +135,14 @@ export default class PiemPlugin extends Plugin {
 		this.log = this.requirePluginLogger().logger.child("plugin");
 		await this.loadSettings();
 		const t = this.t();
+
+		// Warm the MCP cache before anything needs it: the panel's first open and
+		// the first conversation then read verdicts and tools that already exist
+		// instead of each racing their own handshake. Fire-and-forget is safe —
+		// connect is per-server, never throws, and nothing here depends on the
+		// result; an agent picks the tools up at its own rebuild point. The
+		// per-server chain in the manager keeps this from racing another caller.
+		void this.mcpManager.connect();
 
 		// The manager reads the folder and the cap through this closure rather than
 		// from a snapshot, so a change in the Sessions tab reaches the next chat
