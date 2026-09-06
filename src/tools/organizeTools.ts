@@ -2,7 +2,9 @@ import { TFile, TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { normalizeVaultPath } from "../vault/path";
+import { collectPathedBacklinkSources } from "../vault/links";
 import { hasFileManager, trashOrDelete } from "../vault/trash";
+import { runGuardedRename, type RenameOutcome } from "./linkUpdateConfirm";
 import { vaultPathParameter } from "./parameters";
 import { ensureParentFolders } from "./vaultFiles";
 import { textResult, throwIfAborted } from "./toolResult";
@@ -54,7 +56,7 @@ export function createMoveNoteTool(app: App): AgentTool<typeof MoveNoteParameter
 		// sequential tool is enough to serialize the whole batch.
 		executionMode: "sequential",
 		description:
-			"Rename or move a note or folder to a new vault-relative path. Prefer this over writing the note at the new path and trashing the old one: this goes through Obsidian's file manager, so inbound [[wikilinks]] are updated across the vault, the note keeps its history, and no duplicate is left behind. Missing destination folders are created. Refuses when anything already exists at the destination, so choose a free path or trash the occupant first.",
+			"Rename or move a note or folder to a new vault-relative path. Prefer this over writing the note at the new path and trashing the old one: this goes through Obsidian's file manager, so inbound [[wikilinks]] are updated across the vault, the note keeps its history, and no duplicate is left behind. Depending on the vault's link settings, Obsidian may show a link-update confirmation; the result reports whether it was answered, dismissed after going unanswered, or never shown, and lists notes still linking to the old path when links were left behind. Missing destination folders are created. Refuses when anything already exists at the destination, so choose a free path or trash the occupant first.",
 		parameters: MoveNoteParameters,
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
@@ -113,8 +115,22 @@ export function createMoveNoteTool(app: App): AgentTool<typeof MoveNoteParameter
 			// branch to `never` and an `else` could not reach `app.vault` at all.
 			const { vault } = app;
 			const fileManager = hasFileManager(app) ? app.fileManager : null;
+			// Snapshot the pathed backlink sources *before* the rename: once it
+			// settles, the index has re-resolved, and a read under the old path
+			// returns whatever the reindex left behind — emptiness included. Taken
+			// here, the list is exactly "notes whose links would dangle if the
+			// update were skipped", which is what the skipped-update branches
+			// report. Folders cannot carry links, so the empty list is literal.
+			const priorBacklinks =
+				source instanceof TFile ? collectPathedBacklinkSources(app, source, signal) : [];
+			let outcome: RenameOutcome = { modal: "none" };
 			if (fileManager) {
-				await fileManager.renameFile(source, to);
+				// `renameFile` can park on Obsidian's "Update links" modal until
+				// someone answers it; without the guard, one unanswered modal hangs
+				// this tool forever and blocks every later rename behind the file
+				// manager's serial queue. The guard never answers for the user —
+				// it only stops the hang once the modal has clearly gone unclaimed.
+				outcome = await runGuardedRename(app, () => fileManager.renameFile(source, to), signal);
 			} else {
 				// The eslint plugin ships `prefer-file-manager-trash-file` but no
 				// rename counterpart, so nothing but this tool's own output warns that
@@ -123,10 +139,42 @@ export function createMoveNoteTool(app: App): AgentTool<typeof MoveNoteParameter
 			}
 
 			const kind = source instanceof TFolder ? "folder" : "file";
-			const linksUpdated = fileManager !== null;
-			return textResult(describeMove(from, to, kind, linksUpdated), { from, to, kind, moved: true, linksUpdated });
+			const modalDismissed = outcome.modal === "dismissed";
+			// Whether links followed is knowable only from the settled outcomes: an
+			// answered confirmation may or may not have updated them, depending on
+			// a choice that is invisible to this tool, and claiming either way
+			// would teach the model a falsehood about the vault.
+			const linksUpdated = linksUpdatedAfter(outcome, fileManager !== null);
+			// The dangling list is only claimed where the links are known not to
+			// have been updated; an answer the user gave may well have updated them.
+			const backlinks = modalDismissed || fileManager === null ? priorBacklinks : [];
+			return textResult(describeMove(from, to, kind, outcome, linksUpdated, backlinks), {
+				from,
+				to,
+				kind,
+				moved: true,
+				linksUpdated,
+				modalDismissed,
+				unresolvedBacklinks: backlinks,
+			});
 		},
 	};
+}
+
+/**
+ * Whether inbound links were updated, as far as this tool can know:
+ *
+ * - No confirmation at all: the file manager updated them — or there was
+ *   nothing to update — while the vault API never updates them.
+ * - A dismissed confirmation is "Do not update" by another route.
+ * - An answered confirmation is not visible here, so the honest answer is
+ *   neither true nor false.
+ */
+function linksUpdatedAfter(outcome: RenameOutcome, viaFileManager: boolean): boolean | null {
+	if (outcome.modal === "answered") {
+		return null;
+	}
+	return outcome.modal === "none" && viaFileManager;
 }
 
 export function createTrashNoteTool(app: App): AgentTool<typeof TrashNoteParameters> {
@@ -173,22 +221,35 @@ export function createTrashNoteTool(app: App): AgentTool<typeof TrashNoteParamet
 }
 
 /**
- * The link-update sentence is hedged on purpose. `FileManager.renameFile`
- * updates links "depending on the user's preferences" (`obsidian.d.ts`), and no
- * API exposes that setting, so an unconditional "links were updated" would be a
- * claim the model relays to the user as fact and that is false for anyone who
- * turned automatic updates off.
+ * The link-update sentences are hedged on purpose, and each names the cause it
+ * observed rather than an intention:
  *
- * One line, because `summarizeToolResult` renders the first line of output as
- * the collapsed transcript row.
+ * - The through-file-manager path cannot claim links were updated: the call
+ *   settles "depending on the user's preferences" (`obsidian.d.ts`), so the
+ *   only true unconditional claim is which API ran.
+ * - A dismissed modal is called out in the first line — `summarizeToolResult`
+ *   renders that line as the collapsed transcript row, and it is the one thing
+ *   that changes the meaning of the move. The dangling list and the setting
+ *   that prevents the modal follow, so the model can act (fix the links, or
+ *   point the user at the setting) without this tool scripting what to say.
  */
-function describeMove(from: string, to: string, kind: "file" | "folder", linksUpdated: boolean): string {
+function describeMove(from: string, to: string, kind: "file" | "folder", outcome: RenameOutcome, linksUpdated: boolean | null, backlinks: string[]): string {
 	const subject = kind === "folder" ? `folder ${from}` : from;
 	const scope = kind === "folder" ? ", with everything inside it" : "";
-	if (linksUpdated) {
-		return `Moved ${subject} to ${to}${scope}. Obsidian updated inbound links according to the vault's link settings.`;
+	const moved = `Moved ${subject} to ${to}${scope}`;
+	if (outcome.modal === "dismissed") {
+		const dangling = backlinks.length > 0 ? backlinks.join(", ") : "none found";
+		return `${moved}. Obsidian asked whether to update inbound links and no one answered, so the confirmation was dismissed: inbound links were NOT updated. Notes still linking to the old path: ${dangling}. To stop this confirmation appearing, enable "Always update internal links" in Settings → Files and links.`;
 	}
-	return `Moved ${subject} to ${to}${scope} using the vault API directly, because Obsidian's file manager was unavailable. Inbound links were not updated and may now be broken.`;
+	if (outcome.modal === "answered") {
+		// The answer itself decides whether links followed, and is invisible
+		// here — claim neither direction.
+		return `${moved}. Obsidian's link-update confirmation was answered; inbound links follow the answer that was given.`;
+	}
+	if (linksUpdated) {
+		return `${moved}. Obsidian's file manager handled the move.`;
+	}
+	return `${moved} using the vault API directly, because Obsidian's file manager was unavailable. Inbound links were not updated and may now be broken.`;
 }
 
 /**

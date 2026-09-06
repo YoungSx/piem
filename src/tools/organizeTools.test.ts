@@ -1,9 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { installObsidianStub } from "../testUtils/obsidianStub";
+import { installDom, mountLinkUpdateModal } from "../testUtils/dom";
 import { PLUGIN_ID } from "../constants";
 import type { App, TAbstractFile, TFile, TFolder } from "obsidian";
 
 installObsidianStub();
+// `move_note` runs every rename under the link-update modal guard, whose poll
+// reads a document; without one the guard takes its null-document path and the
+// modal-watching tests below could never exercise their branch.
+installDom();
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Dynamic imports so the mocked module wins over any cached real one.
 // Runtime classes come from the mocked module; types stay type-only.
@@ -21,9 +28,7 @@ describe("move_note", () => {
 		// the choice of API can catch that regression.
 		expect(app.record.fileManagerRename).toEqual([["Inbox/Idea.md", "Projects/Idea.md"]]);
 		expect(app.record.vaultRename).toEqual([]);
-		expect(textOf(result)).toBe(
-			"Moved Inbox/Idea.md to Projects/Idea.md. Obsidian updated inbound links according to the vault's link settings.",
-		);
+		expect(textOf(result)).toBe("Moved Inbox/Idea.md to Projects/Idea.md. Obsidian's file manager handled the move.");
 		expect(result.details).toMatchObject({
 			from: "Inbox/Idea.md",
 			to: "Projects/Idea.md",
@@ -107,9 +112,39 @@ describe("move_note", () => {
 		const result = await createMoveNoteTool(app.app).execute("tool-call", { from: "Inbox", to: "Archive/Inbox" });
 
 		expect(textOf(result)).toBe(
-			"Moved folder Inbox to Archive/Inbox, with everything inside it. Obsidian updated inbound links according to the vault's link settings.",
+			"Moved folder Inbox to Archive/Inbox, with everything inside it. Obsidian's file manager handled the move.",
 		);
 		expect(result.details).toMatchObject({ kind: "folder", moved: true });
+	});
+
+	it("reports an answered confirmation without claiming which way links went", async () => {
+		const app = createVaultApp([{ kind: "file", path: "Inbox/Idea.md" }], { modalDuringRename: true });
+
+		const result = await createMoveNoteTool(app.app).execute("tool-call", { from: "Inbox/Idea.md", to: "Projects/Idea.md" });
+
+		expect(textOf(result)).toBe(
+			"Moved Inbox/Idea.md to Projects/Idea.md. Obsidian's link-update confirmation was answered; inbound links follow the answer that was given.",
+		);
+		// The core honesty rule: the tool never saw the answer, so `linksUpdated`
+		// is null rather than a guess.
+		expect(result.details).toMatchObject({ moved: true, linksUpdated: null, modalDismissed: false });
+	});
+
+	it("lists pathed backlinks when the vault API orphans them", async () => {
+		const app = createVaultApp([{ kind: "file", path: "Idea.md" }], {
+			withFileManager: false,
+			// Obsidian's own nested shape: `Notes.md` links to `Idea.md` twice,
+			// and (no `getCache` on this stub) the link is treated as pathed.
+			resolvedLinks: { "Notes.md": { "Idea.md": 2 } },
+		});
+
+		const result = await createMoveNoteTool(app.app).execute("tool-call", { from: "Idea.md", to: "Projects/Idea.md" });
+
+		expect(app.record.vaultRename).toEqual([["Idea.md", "Projects/Idea.md"]]);
+		expect(textOf(result)).toContain("Inbound links were not updated and may now be broken.");
+		// The dangling list is what lets the model repair the links; both the
+		// text and the structured field must carry it.
+		expect(result.details).toMatchObject({ moved: true, linksUpdated: false, unresolvedBacklinks: ["Notes.md"] });
 	});
 
 	it("rejects a missing source", async () => {
@@ -315,10 +350,25 @@ interface VaultApp {
  * across files that both call the process-global `mock.module` invites the
  * clobbering that `obsidianStub.ts` warns about.
  *
- * `withFileManager: false` models the edge-mobile builds where `fileManager` is
- * missing, which is the branch where recoverability ends.
+ * `withFileManager: false` models the edge-mobile builds where `fileManager`
+ * is missing, which is the branch where recoverability ends. `resolvedLinks`
+ * is a fragment of Obsidian's own nested map (`{source: {target: count}}`),
+ * fed straight into `metadataCache` — the map the backlink read inverts. The
+ * stub deliberately omits `getBacklinksForFile` (the fast path is a feature
+ * probe, and a stub that answers it would need to model its whole shape), so
+ * the scan runs — and the scan reads `resolvedLinks` unconditionally, which is
+ * why a vault app carries `metadataCache` even when the fragment is empty.
+ *
+ * `modalDuringRename` mounts the link-update confirmation in the test DOM for
+ * the duration of the rename: the guard sees it, the rename settles before the
+ * grace window runs out, and the outcome is "answered" — the fast path to that
+ * branch; the full dismissal path costs a real grace window and lives in
+ * `linkUpdateConfirm.test.ts`.
  */
-function createVaultApp(fixtures: VaultFixture[], options: { withFileManager?: boolean } = {}): VaultApp {
+function createVaultApp(
+	fixtures: VaultFixture[],
+	options: { withFileManager?: boolean; resolvedLinks?: Record<string, Record<string, number>>; modalDuringRename?: boolean } = {},
+): VaultApp {
 	const record: MutationRecord = {
 		fileManagerRename: [],
 		vaultRename: [],
@@ -363,8 +413,12 @@ function createVaultApp(fixtures: VaultFixture[], options: { withFileManager?: b
 		},
 	};
 
+	let modal: HTMLElement | null = null;
 	const app = {
 		vault,
+		// `resolvedLinks` is the only member the backlink scan touches; an
+		// unprobed member would throw mid-move rather than degrade.
+		metadataCache: { resolvedLinks: options.resolvedLinks ?? {} },
 		...(options.withFileManager === false
 			? {}
 			: {
@@ -372,6 +426,16 @@ function createVaultApp(fixtures: VaultFixture[], options: { withFileManager?: b
 						renameFile: async (file: TAbstractFile, newPath: string) => {
 							if (entries.has(newPath)) {
 								throw new Error(`already exists: ${newPath}`);
+							}
+							if (options.modalDuringRename) {
+								modal = mountLinkUpdateModal(document);
+							}
+							// A modal the user answered is gone by the time the rename
+							// settles; the guard's "answered" outcome rides on this gap.
+							if (modal) {
+								await sleep(60);
+								modal.remove();
+								modal = null;
 							}
 							record.fileManagerRename.push([file.path, newPath]);
 							move(file, newPath);
