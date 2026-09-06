@@ -4,12 +4,13 @@ import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
 import { installObsidianStub } from "../../testUtils/obsidianStub";
 import { getT } from "../../i18n";
 import { NOOP_LOGGER } from "../../logging/Logger";
+import { spyLogger } from "../../testUtils/logSpy";
 
 installDom();
 installObsidianDomHelpers();
 installObsidianStub();
 
-const { modelsDefinitions } = await import("./modelsDefinitions");
+const { modelsDefinitions, logConnectionTest } = await import("./modelsDefinitions");
 const { Setting } = await import("obsidian");
 import type { SettingsPanelHost } from "./panelHost";
 
@@ -200,5 +201,51 @@ describe("modelsDefinitions", () => {
 		// The handler is deliberately a render escape hatch, not a control: its
 		// job is to update the status and model suffixes without rebuilding focus.
 		expect(active.control).toBeUndefined();
+	});
+});
+
+describe("logConnectionTest", () => {
+	const started = Date.now();
+
+	it("warns on a failed probe, carrying the endpoint's message", () => {
+		const spy = spyLogger();
+		logConnectionTest(host({ logger: spy.logger }), {
+			kind: "provider",
+			target: "OpenRouter",
+			started,
+			ok: false,
+			detail: "endpoint answered 401",
+		});
+		expect(spy.records).toHaveLength(1);
+		expect(spy.records[0]?.level).toBe("warn");
+		expect(spy.records[0]?.message).toBe("Connection test failed (provider)");
+		expect(spy.records[0]?.detail).toEqual({ target: "OpenRouter", ms: expect.any(Number), detail: "endpoint answered 401" });
+	});
+
+	it("warns on a thrown probe and names the provider for model rows", () => {
+		const spy = spyLogger();
+		logConnectionTest(host({ logger: spy.logger }), {
+			kind: "model",
+			target: "provider/model",
+			provider: "Anthropic",
+			started,
+			error: new TypeError("fetch is not defined"),
+		});
+		expect(spy.records[0]?.level).toBe("warn");
+		expect(spy.records[0]?.detail).toEqual({
+			target: "provider/model",
+			provider: "Anthropic",
+			ms: expect.any(Number),
+			error: expect.stringContaining("fetch"),
+		});
+	});
+
+	it("infos on a pass and stays silent when there is nothing to log", () => {
+		const spy = spyLogger();
+		logConnectionTest(host({ logger: spy.logger }), { kind: "model", target: "provider/model", started, ok: true, detail: "replied" });
+		expect(spy.records.map((record) => record.level)).toEqual(["info"]);
+
+		logConnectionTest(host({ logger: spy.logger }), { kind: "model", target: "provider/model", started });
+		expect(spy.records).toHaveLength(1);
 	});
 });
