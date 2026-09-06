@@ -1,6 +1,20 @@
 import { describe, expect, it } from "bun:test";
 import { getT } from "../i18n";
 import { classifyProviderFailure, describeProviderFailure, type ProviderFailureKind } from "./providerFailure";
+import { assertOkResponse } from "../net/shims/apiHttp";
+/*
+ * pi's own composer, reached through its real location under `node_modules/`
+ * because `utils/error-body.ts` is not in the package's `exports` map — the same
+ * workaround `src/vault/editDiff.ts` documents. Importing it instead of
+ * restating its output is the whole point of the matrix at the bottom of this
+ * file: the strings under test are the ones pi will actually produce, so a
+ * release that reformats them fails here rather than quietly retiring a
+ * recogniser.
+ */
+import {
+	formatProviderError,
+	normalizeProviderError,
+} from "../../node_modules/@earendil-works/pi-ai/dist/utils/error-body.js";
 
 /**
  * The cases are real provider messages, not shapes invented to satisfy the
@@ -9,7 +23,8 @@ import { classifyProviderFailure, describeProviderFailure, type ProviderFailureK
  * reorder that looks harmless will fail on the row that motivated it.
  */
 const CASES: readonly (readonly [string, ProviderFailureKind])[] = [
-	// Our own transport puts the status first (`apiHttp.ts`, `errorMessage`).
+	// The shape our own transport writes (`apiHttp.ts`, `describeErrorBody`); what
+	// pi does to it on the way here is the matrix at the bottom of this file.
 	["401 invalid API key", "auth"],
 	["403 Forbidden", "auth"],
 	["402 Payment Required", "quota"],
@@ -142,4 +157,75 @@ describe("describeProviderFailure", () => {
 		expect(zh.kind).toBe("timeout");
 		expect(zh.line).toContain("供应商");
 	});
+});
+
+/**
+ * What each protocol this plugin speaks does to one transport failure before it
+ * reaches the classifier.
+ *
+ * The table above pins the wording rules against messages providers really send.
+ * This one pins something the wording rules cannot see: the string that arrives
+ * is not the string our transport wrote. Every entry names the pi source that
+ * rewrites it, because that is what has to be re-read when a pi release lands.
+ */
+const WIRE_PROTOCOLS: readonly (readonly [string, (error: unknown) => string])[] = [
+	// api/anthropic-messages.js: `output.errorMessage = error.message`, verbatim.
+	["anthropic-messages", (error) => (error as Error).message],
+	// api/openai-completions.js: `formatProviderError(normalizeProviderError(error))`.
+	["openai-completions", (error) => formatProviderError(normalizeProviderError(error))],
+	// api/openai-responses.js, through `formatOpenAIResponsesError`: the same,
+	// with the provider's name prefixed ahead of the status.
+	["openai-responses", (error) => formatProviderError(normalizeProviderError(error), "OpenAI API error")],
+];
+
+/** The error our shims throw for a non-2xx response, from the real code path. */
+async function transportFailure(status: number, body: string): Promise<unknown> {
+	const response = new Response(body, { status, headers: { "content-type": "application/json" } });
+	return await assertOkResponse(response).then(
+		() => {
+			throw new Error("expected a rejection");
+		},
+		(error: unknown) => error,
+	);
+}
+
+/*
+ * The bodyless rows are the load-bearing ones. A gateway that answers with a
+ * status and nothing else — nginx on a large request, Cloudflare on a slow
+ * upstream — leaves no wording for `pattern` to recognise, so the hard marker is
+ * the only thing standing between the reader and "did not say why".
+ */
+const TRANSPORT_CASES: readonly (readonly [number, string, ProviderFailureKind])[] = [
+	[429, JSON.stringify({ error: { message: "Rate limit reached for gpt-4o on tokens per min" } }), "rateLimit"],
+	[402, JSON.stringify({ error: { message: "Your team has run out of credits." } }), "quota"],
+	[401, JSON.stringify({ error: { message: "Incorrect API key provided: sk-***" } }), "auth"],
+	[413, "", "contextLength"],
+	[408, "", "timeout"],
+	[500, "", "serverError"],
+];
+
+describe("the string each wire protocol actually delivers", () => {
+	for (const [status, body, expected] of TRANSPORT_CASES) {
+		for (const [protocol, deliver] of WIRE_PROTOCOLS) {
+			it(`reads ${status}${body ? "" : " with no body"} from ${protocol} as ${expected}`, async () => {
+				expect(classifyProviderFailure(deliver(await transportFailure(status, body)))).toBe(expected);
+			});
+		}
+	}
+
+	/*
+	 * The classified sentence is a guess and the raw text is what makes it safe to
+	 * make — so the raw text has to be readable. pi prints the serialized body
+	 * whenever it believes our message left it out, which is why the transport
+	 * withholds a body it has already spoken for (`ErrorBodyDescription.body`).
+	 */
+	for (const [protocol, deliver] of WIRE_PROTOCOLS) {
+		it(`leaves the provider's own sentence readable on ${protocol}`, async () => {
+			const error = await transportFailure(429, JSON.stringify({ error: { message: "slow down", type: "tokens" } }));
+			const delivered = deliver(error);
+
+			expect(delivered).toContain("429 slow down");
+			expect(delivered).not.toContain('"type"');
+		});
+	}
 });
