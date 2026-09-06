@@ -3,6 +3,7 @@ import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
 import { installObsidianStub } from "../../testUtils/obsidianStub";
 import { getT } from "../../i18n";
+import { NOOP_LOGGER } from "../../logging/Logger";
 
 installDom();
 installObsidianDomHelpers();
@@ -24,6 +25,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			userSkillsDir: "", mcpServers: [], logLevel: "info",
 		},
 		save: async () => {}, refresh: () => {}, secretStorage: "manual", readSecret: () => "", signIn: undefined,
+		logger: NOOP_LOGGER,
 		describeTarget: () => "target", t: en, contextWindow: () => 128_000,
 		countStoredSessions: async () => 0, missingBuiltinModel: () => undefined,
 		activeSessionDir: () => "piem/chats", openLogView: () => {}, countLegacySessions: async () => ({ count: 0, dir: "" }),

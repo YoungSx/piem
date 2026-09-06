@@ -605,6 +605,7 @@ export class PiemSettingTab extends PluginSettingTab {
 			// Structural mutations (add/remove rows) need fresh definitions; `update()`
 			// is the framework-owned replacement for the old tab-local empty+render.
 			refresh: () => this.update(),
+			logger: this.plugin.panelLogger,
 			secretStorage: this.secretStorageTier,
 			readSecret: (id) => this.secretEnvironment?.keychain().read(id) ?? "",
 			// Built and cached on the plugin, over the one credential store the

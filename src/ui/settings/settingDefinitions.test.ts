@@ -3,6 +3,7 @@ import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
 import { installObsidianStub } from "../../testUtils/obsidianStub";
 import { getT } from "../../i18n";
+import { NOOP_LOGGER } from "../../logging/Logger";
 
 installDom();
 installObsidianDomHelpers();
@@ -56,6 +57,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost
 		},
 		save: async () => {},
 		refresh: () => {},
+		logger: NOOP_LOGGER,
 		secretStorage: "manual",
 		readSecret: () => "",
 		signIn: undefined,

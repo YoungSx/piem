@@ -6,6 +6,7 @@ import type { RetryConfig } from "../../net/retrySettings";
 import type { PromptQueueStrategy } from "../../agent/queueStrategy";
 import type { SkillLoadReport } from "../../agent/skillLoader";
 import type { LogLevelSetting } from "../../logging/logLevel";
+import type { LoggerLike } from "../../logging/Logger";
 import type { McpServerConfig } from "../../mcp/mcpConfig";
 import type { McpServerState } from "../../mcp/mcpManager";
 import type { ModelConfig, ProviderConfig } from "../../modelConfig";
@@ -117,6 +118,17 @@ export interface SettingsPanelHost {
 	 * what the panel reads, and one version string is all that section needs.
 	 */
 	manifest: { version: string };
+	/**
+	 * The log outlet for every panel-side action.
+	 *
+	 * The panel is the only observer of several actions that otherwise leave no
+	 * trace — the connection tests' verdict dies with the modal that rendered it,
+	 * a failed skill install surfaces as a row the modal drew, and the plugin's
+	 * own logger never sees any of it. Passing a logger here is what makes those
+	 * actions reportable: failures land at `warn` so the default level shows
+	 * them, successes at `info` for the sessions that opt in.
+	 */
+	logger: LoggerLike;
 	/** Vault skill operations for the Skills tab. */
 	skills: SkillsHost;
 	/** MCP server operations for the Extensions tab. */
