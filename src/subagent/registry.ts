@@ -69,7 +69,13 @@ export interface SubagentEntry extends SubagentRunHandle {
 	 * died to a network fault mid-sweep still holds everything it had learned. The
 	 * failure path carries it out through {@link SubagentRunError}, so both
 	 * outcomes land here and the panel never has to word a failure as "nothing
-	 * happened". Empty until the first settlement.
+	 * happened".
+	 *
+	 * No longer empty until settlement: the runner hands the live context in at
+	 * each turn boundary through {@link recordProgress}, so the process record is
+	 * visible while the child works. Settlement still writes the authoritative
+	 * version — the run's final context, including whatever a compaction rewrite
+	 * left out of the live view.
 	 */
 	transcript: readonly AgentMessage[];
 	/**
@@ -186,13 +192,15 @@ export function statusOf(entry: SubagentEntry): "running" | "done" | "incomplete
 export class SubagentRegistry {
 	private entries = new Map<string, SubagentEntry>();
 	/**
-	 * Change listeners, notified on spawn and settlement.
+	 * Change listeners, notified on spawn, settlement, and each recorded turn of
+	 * a live run.
 	 *
 	 * For the UI inspector: it renders from snapshots and must not poll, so the
 	 * registry — the one place every state transition already lands — is where
 	 * the "something changed" signal comes from. Listeners receive no payload;
 	 * a change means the snapshot should be rebuilt, not that a particular
-	 * entry moved.
+	 * entry moved. Turn-boundary events, not token events: a live child wakes
+	 * the panel once per turn, which is the rate a process record can absorb.
 	 */
 	private listeners = new Set<() => void>();
 
@@ -352,6 +360,33 @@ export class SubagentRegistry {
 		this.attachRun(entry);
 		this.emitChange();
 		return "resumed";
+	}
+
+	/**
+	 * Files one turn of a still-running child's work into its transcript.
+	 *
+	 * The runner calls this at each turn boundary, so the panel's process record
+	 * fills in while the child works instead of only after it settles — the one
+	 * gap the monitor had. Copy-on-write keeps this pure: the runner already hands
+	 * over a fresh shallow copy per turn, and the entry stores that without
+	 * aliasing the agent's live state.
+	 *
+	 * Settled entries refuse the write. The settlement handlers below assign the
+	 * run's final context, which is the authoritative version; a turn_end that
+	 * unwinds late (a kill racing the last turn) must not overwrite it, and
+	 * "settled means sealed" is the one rule both paths can share.
+	 *
+	 * Session memory only (rule 3): the transcript lives on the in-memory entry
+	 * and dies with the service, exactly as it always has — this only changes
+	 * *when* it fills, never *where* it is stored.
+	 */
+	recordProgress(id: string, messages: readonly AgentMessage[]): void {
+		const entry = this.entries.get(id);
+		if (!entry || entry.settled) {
+			return;
+		}
+		entry.transcript = messages;
+		this.emitChange();
 	}
 
 	/**

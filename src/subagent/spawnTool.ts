@@ -106,6 +106,14 @@ export interface ChildRunSpec {
 	ownerId: string;
 	/** The child's linked signal — the run's kill switch. */
 	signal: AbortSignal;
+	/**
+	 * Per-turn progress callback, routed to the registry by both callers.
+	 *
+	 * Lives on the spec rather than being read off the context so the caller
+	 * binds it to the right entry id — the id exists here but not inside
+	 * {@link startChildRun}, which stays spec-shaped and registry-blind.
+	 */
+	onProgress?: (messages: readonly AgentMessage[]) => void;
 }
 
 /**
@@ -135,6 +143,7 @@ export function startChildRun(context: SubagentToolsContext, spec: ChildRunSpec)
 		getApiKey: context.getApiKey,
 		initialMessages: spec.initialMessages,
 		signal: spec.signal,
+		onProgress: spec.onProgress,
 	});
 }
 
@@ -343,6 +352,11 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 						// when it happens to spawn.
 						ownerId,
 						signal: linked.signal,
+						// The monitor panel's live process record: each turn lands in the
+						// entry while the child works, not only after settlement. `id` is
+						// in scope exactly here — the one place that knows both the run
+						// and which entry it belongs to.
+						onProgress: (messages) => context.registry.recordProgress(id, messages),
 					}),
 			});
 			return textResult(`Subagent ${id} spawned (role: ${role.name}). Collect its report with wait_subagent.`, {
