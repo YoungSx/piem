@@ -1153,6 +1153,9 @@ export const en = {
 		// to attempt a connection — the row promises a result, so it must not sit
 		// on a stale verdict while the network round trip runs.
 		statusConnecting: "Connecting…",
+		// The failed row's refresh button: it reruns the connect pass, which skips
+		// the mounted servers and retries this one.
+		retry: "Retry connection",
 		statusDisabled: "Disabled. Turn it on to connect.",
 		disableConsequenceTools: "This server's tools leave chat immediately.",
 		disableConsequenceToken: "Its token stays in the config; turning it back on restores it.",

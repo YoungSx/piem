@@ -679,6 +679,7 @@ export class PiemSettingTab extends PluginSettingTab {
 				// next states() reports.
 				states: () => this.plugin.mcpManager.getServerStates(),
 				test: (server) => this.plugin.mcpManager.testServer(server),
+				reconnect: () => this.plugin.mcpManager.connect(),
 			},
 		};
 	}

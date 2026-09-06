@@ -647,6 +647,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		statusOk: "已连接；{tools} 个工具可用。",
 		statusError: "上次连接失败：{error}",
 		statusConnecting: "正在连接…",
+		// 失败行上的刷新按钮：重跑一次连接，已挂上的服务器跳过，只重试这一个。
+		retry: "重试连接",
 		statusDisabled: "已停用。开启后才会连接。",
 		disableConsequenceTools: "该服务器提供的工具会立即全部退出对话。",
 		disableConsequenceToken: "连接令牌仍保留在配置里，重新开启即可恢复。",

@@ -149,6 +149,11 @@ export class ExtraButtonStub {
 		return this;
 	}
 
+	setDisabled(disabled: boolean): this {
+		this.render().toggleClass("is-disabled", disabled);
+		return this;
+	}
+
 	onClick(handler: () => unknown): this {
 		this.onClickHandler = handler;
 		this.render().addEventListener("click", () => {

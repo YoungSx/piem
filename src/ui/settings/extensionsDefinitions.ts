@@ -491,6 +491,38 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
 			const verdictEl = createEffectLine(setting.descEl);
 			setMcpVerdict(verdictEl, state, t);
 			configureMcpToggle(setting, host, state, verdictEl);
+			if (state.status === "error") {
+				// A failed server offers its own way back in, before the edit and
+				// delete buttons: reconnect skips the mounted servers and routes
+				// this one to a fresh handshake, then the verdict repaints from
+				// the manager's answer. First in the row — fixing is the action
+				// most likely wanted next. `retrying` is a closure fence, not a
+				// story about the button: these extra buttons are divs, and a
+				// disabled div still receives clicks, so a double click must be
+				// kept from starting a second reconnect behind the first.
+				let retrying = false;
+				setting.addExtraButton((button) => {
+					rowAction(button, "refresh-cw", t.t("mcp.retry"));
+					button.onClick(() => {
+						if (retrying) {
+							return;
+						}
+						retrying = true;
+						button.setDisabled(true);
+						verdictEl.setText(t.t("mcp.statusConnecting"));
+						void host.mcp.reconnect().finally(() => {
+							button.setDisabled(false);
+							// The handshake has settled; the row is then whatever the
+							// manager holds, since reconnect did not touch config.
+							const fresh = host.mcp.states().find((row) => row.id === state.id);
+							if (fresh) {
+								setMcpVerdict(verdictEl, fresh, t);
+							}
+							retrying = false;
+						});
+					});
+				});
+			}
 			setting.addExtraButton((button) => {
 				rowAction(button, "pencil", t.t("mcp.edit"));
 				button.onClick(() => {

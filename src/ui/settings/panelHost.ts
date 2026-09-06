@@ -128,6 +128,14 @@ export interface McpHost {
 	 * Throws on failure — the test row renders the throw as a failed verdict.
 	 */
 	test(server: McpServerConfig): Promise<number>;
+	/**
+	 * Runs a connect pass, which skips the servers already mounted and retries
+	 * only the failed ones. Resolves after every attempt has settled; the caller
+	 * then re-reads {@link states} for the fresh verdicts. This repairs the
+	 * connection cache alone — a live conversation sees new tools at its next
+	 * agent rebuild point, not here.
+	 */
+	reconnect(): Promise<void>;
 }
 
 /**
