@@ -22,8 +22,9 @@ const OUT_DIR = process.env.PREVIEW_DIR ? resolve(process.env.PREVIEW_DIR) : res
 const REPO = resolve(HERE, "..");
 
 const styles = readFileSync(join(REPO, "styles.css"), "utf8");
-// Icons live outside the repo (a download artifact); snap Chromium also cannot
-// reach hidden paths, so look next to the pages first.
+// Icons are checked in at scripts/icons.json (rebuilt by scripts/build-icons.mjs
+// from the pinned lucide-static copy); a copy next to the pages wins, because
+// snap Chromium also cannot reach hidden paths.
 let icons;
 for (const candidate of [join(OUT_DIR, "icons.json"), join(OUT_DIR, "polish", "icons.json"), join(HERE, "icons.json")]) {
 	try {
@@ -60,7 +61,7 @@ const registeredIcons = new Map();
 const setIconWithIcons = (element, name) => {
 	const svg = icons[name] ?? registeredIcons.get(name);
 	if (svg === undefined) {
-		throw new Error(`icons.json has no "${name}" — extend the download list and rebuild it`);
+		throw new Error(`icons.json has no "${name}" — add it to the sources and rebuild scripts/icons.json`);
 	}
 	element.empty();
 	const template = element.ownerDocument.createElement("template");
@@ -400,6 +401,20 @@ async function mountChat({ streamFn, settings, drive, askUserBroker }) {
 	await flushRender();
 	const element = host.firstElementChild;
 	return { element, cleanup };
+}
+
+// One icon miss used to cost a whole scenario run — the page built, mounted,
+// and only died at paint time, so five stale names meant five failed runs to
+// read. Diff the full name inventory once, up front, and fail with the whole
+// list; `scripts/build-icons.mjs` is the fix.
+{
+	const { drawableIconNames } = await import("./scan-icons.mjs");
+	const stale = (await drawableIconNames()).filter((name) => !(name in icons));
+	if (stale.length > 0) {
+		throw new Error(
+			`scripts/icons.json is missing ${stale.length} icon(s) the sources draw: ${stale.join(", ")} — run scripts/build-icons.mjs`,
+		);
+	}
 }
 
 const SCENARIOS = {};
