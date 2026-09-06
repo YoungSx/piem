@@ -88,6 +88,14 @@ tidy as a seam you can open to read the summary it wrote.
   step further, into a single row that says what the run did — "changed a note
   and read 5 notes" — with the rows it replaced inside it. A failed call and an
   answered question stay outside the fold: neither should cost a click to see.
+- **Mid-reply sends** — a message you send while Piem is still answering is not
+  refused; it waits, and this is how long. *The whole answer is finished* is the
+  default and the safe one: the reply completes its plan, then your message is
+  read as the next question. *The current request is finished* is sooner — the
+  message lands after this turn's tools and before Piem speaks again, which can
+  redirect a long run of tool calls halfway through it. Neither setting
+  interrupts: the **send** action on a waiting message does that, cutting the
+  reply short so that one message goes out now.
 - **Context tidying** — the reserve and retention budgets that decide when the
   conversation gets summarized to make room. Piem plans against the context
   window you configured for the model.

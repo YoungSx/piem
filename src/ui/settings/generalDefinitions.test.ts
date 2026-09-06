@@ -23,6 +23,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			cacheRetention: "long",
 			showAgentDetails: false,
 		traceExpand: "collapsed",
+		promptQueueStrategy: "afterRun",
 			sendShortcut: "enter",
 			language: "en",
 			sessionRetention: 0,

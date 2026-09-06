@@ -4,6 +4,7 @@ import { isSendShortcutSetting } from "../keyboard";
 import { isCacheRetentionSetting } from "../../net/cacheRetention";
 import { isTraceExpandSetting } from "../traceExpand";
 import type { NetworkTransport } from "../../net/obsidianFetch";
+import { isPromptQueueStrategy } from "../../agent/queueStrategy";
 import type { SettingsPanelSettings } from "./panelHost";
 
 /**
@@ -48,6 +49,7 @@ import type { SettingsPanelSettings } from "./panelHost";
 const CONTROL_KEYS = [
 	"showAgentDetails",
 	"traceExpand",
+	"promptQueueStrategy",
 	"language",
 	"sendShortcut",
 	"logLevel",
@@ -98,6 +100,10 @@ export function writeControlValue(settings: SettingsPanelSettings, key: ControlK
 		case "traceExpand":
 			if (!isTraceExpandSetting(value)) return false;
 			settings.traceExpand = value;
+			return true;
+		case "promptQueueStrategy":
+			if (!isPromptQueueStrategy(value)) return false;
+			settings.promptQueueStrategy = value;
 			return true;
 		case "language":
 			if (!isLanguageSetting(value)) return false;

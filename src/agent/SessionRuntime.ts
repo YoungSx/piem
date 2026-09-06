@@ -3,13 +3,13 @@ import { type Usage } from "@earendil-works/pi-ai";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
-import { PromptQueue } from "./promptQueue";
+import { PromptQueue, type QueueEntry } from "./promptQueue";
 
 /**
  * Lifecycle phase of one chat session, derived from its agent and run state.
  *
- * `'waiting-input'` covers both a queued prompt waiting for pi to inject it and
- * an interrupted run offering to resume; the service that owns this runtime
+ * `'waiting-input'` covers both a queued prompt waiting for its run to depart
+ * and an interrupted run offering to resume; the service that owns this runtime
  * decides which applies.
  */
 export type SessionRunState = "idle" | "running" | "waiting-input" | "error";
@@ -200,11 +200,41 @@ export class SessionRuntime {
 	 */
 	activeRunContext: FrozenRunContext | null = null;
 	/**
-	 * The panel's mirror of pi's two write-only queues. Emptied on abort or
-	 * agent replacement alongside pi's own queues rather than replaced, so ids
-	 * stay stable.
+	 * Mid-run sends waiting to depart. Emptied on abort or agent replacement
+	 * rather than replaced, so ids stay stable.
 	 */
 	readonly promptQueue = new PromptQueue();
+	/**
+	 * Entries the steer chip claimed, waiting for the reply they cut short to
+	 * finish unwinding (issue #289).
+	 *
+	 * Out of {@link promptQueue} the moment the chip is pressed — their chips are
+	 * gone and they are no longer subject to the configured timing — but not yet
+	 * sent, because the run they interrupted still holds the agent. Reassigned
+	 * rather than mutated in place when taken, so the array handed to the dispatch
+	 * cannot gain a second steer between the take and the send.
+	 */
+	steeredPrompts: QueueEntry[] = [];
+	/**
+	 * Whether a run was interrupted so a steered message could go out, and the
+	 * replacement has not departed yet (issue #289).
+	 *
+	 * The handover is two asynchronous hops long — the interrupted run has to
+	 * unwind, and the dispatch waits for `waitForIdle()` — and for that whole
+	 * window the agent is idle while a run is unmistakably on its way. Four
+	 * readers need to know the difference: the turn slot (which would blink from
+	 * Stop to Send and back), the session's run state (which would report the
+	 * abort's own `Request was aborted` as a failure), the transcript stamp that
+	 * tells an interrupted reply from a stopped one, and the turn-boundary hook,
+	 * which must not offer pi a message the dying run cannot answer.
+	 *
+	 * Cleared by whichever of the two ends the window: the dispatch, on every one
+	 * of its exits, or a stop that cancels the whole intent before it. It outlives
+	 * the departure by the length of the run it started, which costs nothing —
+	 * that run holds `isStreaming` on its own, and a second steer during it wants
+	 * the flag up anyway.
+	 */
+	queueInterrupt = false;
 	/** Mid-run compactions spent on the active run; the budget is per run. */
 	midRunCompactions = 0;
 	/** Prevents two retries from racing while the branch pointer is being persisted. */

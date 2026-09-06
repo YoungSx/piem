@@ -151,6 +151,26 @@ class FakeAgentService {
 		this.editResends.push({ index, prompt, images });
 		return !this.failSends;
 	}
+	/**
+	 * The queue take-back, and what it hands back.
+	 *
+	 * Modelled on the real one: removing an entry and reporting what the composer
+	 * should show are one operation, and which of the two chips was pressed is
+	 * only visible in whether the caller uses the return value.
+	 */
+	readonly queueRemovals: string[] = [];
+	queuedTakeBacks = new Map<string, { text: string; images: ImageContent[] }>();
+
+	removeQueuedPrompt(id: string): { text: string; images: ImageContent[] } | null {
+		this.queueRemovals.push(id);
+		return this.queuedTakeBacks.get(id) ?? null;
+	}
+	/** The steer chip's own call, kept apart because it is a different intent. */
+	readonly queueSteers: string[] = [];
+
+	async steerQueuedPrompt(id: string): Promise<void> {
+		this.queueSteers.push(id);
+	}
 	/** Recorded so a test can prove the fork action reached the service. */
 	readonly forkRequests: number[] = [];
 	readonly resumeCalls: number[] = [];
@@ -1136,6 +1156,102 @@ describe("ChatApp edit and resend", () => {
 
 		expect(service.sentPrompts).toEqual(["Summarize this note"]);
 		expect(service.editResends).toEqual([]);
+	});
+});
+
+describe("ChatApp queued mid-run sends", () => {
+	let mounted: Mounted | undefined;
+
+	beforeEach(() => {
+		document.body.replaceChildren();
+	});
+
+	afterEach(async () => {
+		await mounted?.unmount();
+		mounted = undefined;
+		document.body.replaceChildren();
+	});
+
+	const queued = { id: "queued-1", text: "Use the other note", imageCount: 1 };
+
+	function chipAction(host: HTMLElement, label: string): HTMLButtonElement {
+		const button = host.querySelector<HTMLButtonElement>(`.piem-chat__queue-action[aria-label="${label}"]`);
+		if (!button) {
+			throw new Error(`no queue chip action labelled ${label}`);
+		}
+		return button;
+	}
+
+	it("takes a queued message back into the composer, words and pictures together", async () => {
+		mounted = await mountChat({ snapshot: { isStreaming: true, isConfigured: true, queuedPrompts: [queued] } });
+		mounted.service.queuedTakeBacks.set("queued-1", {
+			text: "Use the other note",
+			images: [{ type: "image", mimeType: "image/png", data: "aGVsbG8=" }],
+		});
+
+		chipAction(mounted.host, "Take back to edit").click();
+		await flushRender();
+
+		expect(mounted.service.queueRemovals).toEqual(["queued-1"]);
+		expect(composer(mounted.host).value).toBe("Use the other note");
+		// Dropping the picture would answer a different question than the one the
+		// chip was showing.
+		expect(mounted.host.querySelectorAll(".piem-chat__pending-image")).toHaveLength(1);
+	});
+
+	it("appends the taken-back words rather than overwriting a draft in progress", async () => {
+		mounted = await mountChat({ snapshot: { isStreaming: true, isConfigured: true, queuedPrompts: [queued] } });
+		mounted.service.queuedTakeBacks.set("queued-1", { text: "Use the other note", images: [] });
+		await typeDraft(composer(mounted.host), "half a thought");
+
+		chipAction(mounted.host, "Take back to edit").click();
+		await flushRender();
+
+		// The ordinary case is an empty composer, since the send that queued this
+		// emptied it. When it is not empty, appending is the only outcome that
+		// loses neither the chip nor what the reader has started typing.
+		expect(composer(mounted.host).value).toBe("half a thought\n\nUse the other note");
+	});
+
+	it("steers a queued message without touching the composer", async () => {
+		// The words go to the model, not back to the reader, so the draft is not
+		// this control's business — and nothing is restaged either.
+		mounted = await mountChat({ snapshot: { isStreaming: true, isConfigured: true, queuedPrompts: [queued] } });
+		mounted.service.queuedTakeBacks.set("queued-1", { text: "Use the other note", images: [] });
+		await typeDraft(composer(mounted.host), "half a thought");
+
+		chipAction(mounted.host, "Send now — cuts the reply short").click();
+		await flushRender();
+
+		expect(mounted.service.queueSteers).toEqual(["queued-1"]);
+		expect(mounted.service.queueRemovals).toEqual([]);
+		expect(composer(mounted.host).value).toBe("half a thought");
+	});
+
+	it("discards a queued message without touching the composer", async () => {
+		mounted = await mountChat({ snapshot: { isStreaming: true, isConfigured: true, queuedPrompts: [queued] } });
+		mounted.service.queuedTakeBacks.set("queued-1", { text: "Use the other note", images: [] });
+		await typeDraft(composer(mounted.host), "half a thought");
+
+		chipAction(mounted.host, "Discard").click();
+		await flushRender();
+
+		expect(mounted.service.queueRemovals).toEqual(["queued-1"]);
+		expect(composer(mounted.host).value).toBe("half a thought");
+		expect(mounted.host.querySelectorAll(".piem-chat__pending-image")).toHaveLength(0);
+	});
+
+	it("leaves the composer alone when the chip's entry has already gone out", async () => {
+		// The chip can outlive its entry by one render: the queue departs the
+		// moment the interrupted run lands, which can be between the render and
+		// the click. Nothing to restore, and nothing to report.
+		mounted = await mountChat({ snapshot: { isStreaming: true, isConfigured: true, queuedPrompts: [queued] } });
+
+		chipAction(mounted.host, "Take back to edit").click();
+		await flushRender();
+
+		expect(mounted.service.queueRemovals).toEqual(["queued-1"]);
+		expect(composer(mounted.host).value).toBe("");
 	});
 });
 

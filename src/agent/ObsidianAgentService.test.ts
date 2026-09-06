@@ -28,6 +28,7 @@ const { MAX_ACTIVE_NOTE_CHARS } = await import("./contextInjection");
 // `settings.ts` imports `obsidian` at runtime; this import must stay behind
 // the stub registration above.
 const { DEFAULT_SETTINGS } = await import("../settings");
+const { describeReplyCutoff } = await import("../ui/replyCutoff");
 
 // Tests drive ObsidianSessionManager directly, so the directory is supplied here
 // rather than derived from a Vault; `Vault#configDir` is used in production code.
@@ -1694,93 +1695,334 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 			.map((message) => firstText(message));
 	}
 
-	/** Plants a stranded entry directly in the mirror, for paths that need one without a live run. */
+	/**
+	 * The transcript as a role sequence, with queued user messages named.
+	 *
+	 * The two timings produce the same *set* of messages and differ only in where
+	 * the queued one sits, so order is the assertion — and it is a deterministic
+	 * one, unlike "has it arrived yet".
+	 */
+	function shape(service: ObsidianAgentServiceType): string[] {
+		return service.getSnapshot().messages.map((message) => {
+			if (message.role !== "user") {
+				return message.role;
+			}
+			return `user:${firstText(message)}`;
+		});
+	}
+
+	/** Plants an entry directly in the queue, for paths that need one without a live run. */
 	function addStranded(service: ObsidianAgentServiceType, text: string): void {
 		const queue = (service as unknown as { promptQueue: PromptQueue }).promptQueue;
 		queue.add({
-			kind: "steer",
 			text,
 			imageCount: 0,
+			stagedImages: [],
 			message: { role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
 		});
 	}
 
+	function runtimeOf(service: ObsidianAgentServiceType): SessionRuntime {
+		return (service as unknown as { current: () => SessionRuntime }).current();
+	}
+
 	/**
-	 * A streamFn whose first request never answers until `release` is called —
-	 * the stand-in for a model the user interrupts mid-reply.
+	 * A streamFn whose first request answers only when told to — by `release`, by
+	 * `releaseWithToolCall`, or by the run being aborted.
+	 *
+	 * The abort half is what makes it a stand-in for a real provider: pi-ai never
+	 * throws on an abort, it ends the stream with an `aborted` message and lets
+	 * the loop unwind on that stop reason. A gate that ignored its signal would
+	 * hang forever and no steer could ever land.
 	 */
-	function createGatedStreamFn() {
+	function createGatedStreamFn(replies: readonly string[] = []) {
 		let requestCount = 0;
 		let gate: ReturnType<typeof createAssistantMessageEventStream> | undefined;
 		let gateModel: Model<Api> | undefined;
-		const streamFn: StreamFn = (model, _context, _options) => {
+		const usage = {
+			input: 1_000,
+			output: 10,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 1_010,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+		/** Ends the gated stream. `content` decides whether the turn asks for a tool. */
+		const settleGate = (stopReason: "stop" | "toolUse" | "aborted", content: AssistantMessage["content"]): void => {
+			const model = gateModel;
+			const target = gate;
+			if (!model || !target) {
+				throw new Error("settle before the first request");
+			}
+			// Once only: a release racing an abort must not push a second result.
+			gate = undefined;
+			const message: AssistantMessage = {
+				role: "assistant",
+				content,
+				api: model.api,
+				provider: model.provider,
+				model: model.id,
+				usage,
+				timestamp: Date.now(),
+				stopReason,
+				...(stopReason === "aborted" ? { errorMessage: "Request was aborted" } : {}),
+			};
+			if (stopReason === "aborted") {
+				target.push({ type: "error", reason: "aborted", error: message });
+			} else {
+				target.push({ type: "done", reason: stopReason, message });
+			}
+			target.end(message);
+		};
+		const streamFn: StreamFn = (model, _context, options) => {
+			const index = requestCount;
 			requestCount += 1;
-			if (requestCount === 1) {
+			if (index === 0) {
 				gate = createAssistantMessageEventStream();
 				gateModel = model;
+				options?.signal?.addEventListener("abort", () =>
+					settleGate("aborted", [{ type: "text", text: "First rep" }]),
+				);
 				return gate;
 			}
-			return scriptedTextStream(model, "Second reply");
+			return scriptedTextStream(model, replies[index - 1] ?? `Reply ${index}`);
 		};
 		return {
 			streamFn,
+			requests: () => requestCount,
 			waitForFirstRequest: () => waitFor(() => requestCount === 1),
-			// Same shape `scriptedTextStream` builds; the model is only known once
-			// the request arrives, so the reply is assembled at release time.
-			release: () => {
-				const model = gateModel;
-				const target = gate;
-				if (!model || !target) {
-					throw new Error("release before the first request");
-				}
-				const message: AssistantMessage = {
-					role: "assistant",
-					content: [{ type: "text", text: "First reply" }],
-					api: model.api,
-					provider: model.provider,
-					model: model.id,
-					usage: {
-						input: 1_000,
-						output: 10,
-						cacheRead: 0,
-						cacheWrite: 0,
-						totalTokens: 1_010,
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-					},
-					timestamp: Date.now(),
-					stopReason: "stop",
-				};
-				target.push({ type: "done", reason: "stop", message });
-				target.end(message);
-			},
+			release: () => settleGate("stop", [{ type: "text", text: "First reply" }]),
+			/** Ends the gated turn with a tool call, so the run has a turn boundary to reach. */
+			releaseWithToolCall: () =>
+				settleGate("toolUse", [
+					{ type: "text", text: "Listing the vault first" },
+					{ type: "toolCall", id: "tc_ls", name: "ls", arguments: { path: "" } },
+				]),
 		};
 	}
 
-	it("queues a mid-run send as a steer and injects every one at the next turn boundary", async () => {
-		// Two mid-run sends on purpose: pi's own default is one-at-a-time, so
-		// both landing proves the agent was built with steeringMode "all".
-		const gated = createGatedStreamFn();
+	it("lets a mid-run send wait for the whole answer, which is the default", async () => {
+		// The reply finishes its tool loop and says its last word *before* the
+		// queued message is read: that is what `afterRun` buys, and the reason it
+		// is the default — a message meant as a follow-up cannot land mid-plan.
+		const gated = createGatedStreamFn(["Listed. Nothing to merge.", "And the summary is skipped."]);
 		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
 
-		const run = service.sendPrompt("First question");
+		const run = service.sendPrompt("Check my reading notes");
 		await gated.waitForFirstRequest();
+		expect(await service.sendPrompt("Also skip the summary")).toBe(true);
+		expect(service.getSnapshot().queuedPrompts.map((entry) => entry.text)).toEqual(["Also skip the summary"]);
 
-		expect(await service.sendPrompt("Hold on, use the other file")).toBe(true);
-		expect(await service.sendPrompt("And also skip the summary")).toBe(true);
-		expect(service.getSnapshot().queuedPrompts.map((entry) => entry.text)).toEqual([
-			"Hold on, use the other file",
-			"And also skip the summary",
-		]);
-
-		gated.release();
+		gated.releaseWithToolCall();
 		await run;
+		await waitFor(() => userTexts(service).includes("Also skip the summary"));
 
-		expect(userTexts(service)).toEqual(["First question", "Hold on, use the other file", "And also skip the summary"]);
+		expect(shape(service)).toEqual([
+			"user:Check my reading notes",
+			"assistant",
+			"toolResult",
+			// The reply's own last word, before the queue is read.
+			"assistant",
+			"user:Also skip the summary",
+			"assistant",
+		]);
 		expect(service.getSnapshot().queuedPrompts).toEqual([]);
 	});
 
-	it("takes one queued chip back and re-pushes only the survivors into pi", async () => {
+	it("lets a mid-run send land at the next turn boundary when asked to", async () => {
+		// Same messages, one position earlier: `afterTurn` puts the queued words
+		// between this turn's tool results and the model's next sentence, so the
+		// reply never gets to finish the plan the reader is correcting.
+		const gated = createGatedStreamFn(["Right — skipping the summary."]);
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn });
+		settings.promptQueueStrategy = "afterTurn";
+
+		const run = service.sendPrompt("Check my reading notes");
+		await gated.waitForFirstRequest();
+		await service.sendPrompt("Also skip the summary");
+
+		gated.releaseWithToolCall();
+		await run;
+
+		expect(shape(service)).toEqual([
+			"user:Check my reading notes",
+			"assistant",
+			"toolResult",
+			"user:Also skip the summary",
+			"assistant",
+		]);
+		expect(service.getSnapshot().queuedPrompts).toEqual([]);
+	});
+
+	it("offers every waiting message to the same turn boundary", async () => {
+		// pi's own default is one-at-a-time, so both landing at one boundary is
+		// what proves the agent was built with steeringMode "all".
+		const gated = createGatedStreamFn(["Both noted."]);
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn });
+		settings.promptQueueStrategy = "afterTurn";
+
+		const run = service.sendPrompt("Check my reading notes");
+		await gated.waitForFirstRequest();
+		await service.sendPrompt("Use the other file");
+		await service.sendPrompt("And skip the summary");
+
+		gated.releaseWithToolCall();
+		await run;
+
+		expect(shape(service)).toEqual([
+			"user:Check my reading notes",
+			"assistant",
+			"toolResult",
+			"user:Use the other file",
+			"user:And skip the summary",
+			"assistant",
+		]);
+	});
+
+	it("sends one queued message now when its steer chip is pressed, cutting the reply short", async () => {
+		// The gate is never released, so the only thing that can end the first
+		// request is the interrupt the steer asks for.
+		const gated = createGatedStreamFn(["Right — the other note."]);
+		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
+
+		const run = service.sendPrompt("Check my reading notes");
+		await gated.waitForFirstRequest();
+		await service.sendPrompt("Use the other note");
+
+		const queued = service.getSnapshot().queuedPrompts;
+		await service.steerQueuedPrompt(queued[0]?.id ?? "");
+		await run;
+		await waitFor(() => userTexts(service).includes("Use the other note"));
+
+		expect(userTexts(service)).toEqual(["Check my reading notes", "Use the other note"]);
+		expect(service.getSnapshot().queuedPrompts).toEqual([]);
+		// Two requests: the one that was cut, and the one that carried the steered
+		// message. Waiting for the answer would have needed the first to finish.
+		expect(gated.requests()).toBe(2);
+		// And the handover window closed behind it: the flag that props the turn
+		// slot up through the gap is a stuck Stop button if it leaks.
+		expect(service.getSnapshot().isStreaming).toBe(false);
+	});
+
+	it("steers one message alone, leaving the rest of the queue to its own timing", async () => {
+		const gated = createGatedStreamFn(["Right — the other note."]);
+		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
+
+		const run = service.sendPrompt("Check my reading notes");
+		await gated.waitForFirstRequest();
+		await service.sendPrompt("This one cannot wait");
+		await service.sendPrompt("This one can");
+
+		const queued = service.getSnapshot().queuedPrompts;
+		await service.steerQueuedPrompt(queued[0]?.id ?? "");
+		await run;
+		await waitFor(() => userTexts(service).includes("This one can"));
+
+		// Separate runs, not one batch: the steered message travelled alone, and
+		// the other left only when the run the steer started had itself finished —
+		// which is the `afterRun` timing doing its job on the new run.
+		expect(shape(service)).toEqual([
+			"user:Check my reading notes",
+			"assistant",
+			"user:This one cannot wait",
+			"assistant",
+			"user:This one can",
+			"assistant",
+		]);
+		expect(service.getSnapshot().queuedPrompts).toEqual([]);
+	});
+
+	it("sends a steered message straight out when there is nothing to cut short", async () => {
+		const service = createService();
+		await service.initialize();
+		addStranded(service, "Stranded correction");
+
+		const queued = service.getSnapshot().queuedPrompts;
+		await service.steerQueuedPrompt(queued[0]?.id ?? "");
+
+		expect(userTexts(service)).toEqual(["Stranded correction"]);
+		expect(service.getSnapshot().queuedPrompts).toEqual([]);
+	});
+
+	it("tells the reader the steer cut the reply, not that they stopped it", async () => {
+		const gated = createGatedStreamFn(["Right — the other note."]);
+		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
+
+		const run = service.sendPrompt("Check my reading notes");
+		await gated.waitForFirstRequest();
+		await service.sendPrompt("Use the other note");
+		await service.steerQueuedPrompt(service.getSnapshot().queuedPrompts[0]?.id ?? "");
+		await run;
+		await waitFor(() => userTexts(service).includes("Use the other note"));
+
+		const cut = service.getSnapshot().messages.find(
+			(message) => message.role === "assistant" && message.stopReason === "aborted",
+		);
+		expect(cut).toBeDefined();
+		// Asserted through the transcript's own classifier rather than the flag it
+		// reads: the defect this prevents is a sentence, and the sentence is what
+		// has to change.
+		const cutoff = describeReplyCutoff(cut as AssistantMessage, getT("en"));
+		expect(cutoff?.kind).toBe("steered");
+		expect(cutoff?.notice).toBe("Cut short for your next message.");
+	});
+
+	it("still reports a reply the reader really did stop as stopped", async () => {
 		const gated = createGatedStreamFn();
+		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
+
+		const run = service.sendPrompt("Check my reading notes");
+		await gated.waitForFirstRequest();
+		service.abort();
+		await run;
+
+		const cut = service.getSnapshot().messages.find(
+			(message) => message.role === "assistant" && message.stopReason === "aborted",
+		);
+		expect(describeReplyCutoff(cut as AssistantMessage, getT("en"))?.kind).toBe("stopped");
+	});
+
+	it("reports the panel as busy across the handover, so the turn slot never blinks", async () => {
+		// The agent is genuinely idle between an interrupted run's end and its
+		// replacement's departure. Reporting that honestly would flip the single
+		// turn slot from Stop to Send and back, one frame apart.
+		const service = createService();
+		await service.initialize();
+		const rt = runtimeOf(service);
+
+		expect(service.getSnapshot().isStreaming).toBe(false);
+		rt.queueInterrupt = true;
+		expect(service.getSnapshot().isStreaming).toBe(true);
+		expect(service.getSessionRunStates()[0]?.state).toBe("running");
+	});
+
+	it("hands a taken-back message's words and staged pictures back to the caller", async () => {
+		const gated = createGatedStreamFn();
+		const { service } = createServiceWithMultimodalModel({ streamFn: gated.streamFn, loadUserSkills: NO_USER_SKILLS });
+
+		const run = service.sendPrompt("First question");
+		await gated.waitForFirstRequest();
+		await service.sendPrompt("Look at this instead", [{ type: "image", data: "pasted", mimeType: "image/png" }]);
+
+		const queued = service.getSnapshot().queuedPrompts;
+		expect(queued).toHaveLength(1);
+		const taken = service.removeQueuedPrompt(queued[0]?.id ?? "");
+
+		// The composer refills from exactly this: the words as typed and the
+		// picture that was staged beside them.
+		expect(taken?.text).toBe("Look at this instead");
+		expect(taken?.images).toEqual([{ type: "image", data: "pasted", mimeType: "image/png" }]);
+		expect(service.getSnapshot().queuedPrompts).toEqual([]);
+
+		gated.release();
+		await run;
+		// The taken-back words never reach the model, and nothing was left queued
+		// for the run's end to dispatch.
+		expect(userTexts(service)).toEqual(["First question"]);
+	});
+
+	it("takes one chip back and leaves the rest to go out", async () => {
+		const gated = createGatedStreamFn(["Kept."]);
 		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
 
 		const run = service.sendPrompt("First question");
@@ -1790,18 +2032,27 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 
 		const queued = service.getSnapshot().queuedPrompts;
 		expect(queued).toHaveLength(2);
-		service.removeQueuedPrompt(queued[0]?.id ?? "");
-
+		expect(service.removeQueuedPrompt(queued[0]?.id ?? "")?.text).toBe("Take this back");
 		expect(service.getSnapshot().queuedPrompts.map((entry) => entry.text)).toEqual(["Keep this one"]);
 
 		gated.release();
 		await run;
+		await waitFor(() => userTexts(service).includes("Keep this one"));
 
-		// The survivor is the only mid-run message that reached the transcript.
 		expect(userTexts(service)).toEqual(["First question", "Keep this one"]);
 	});
 
-	it("clears queued chips when the run is aborted", async () => {
+	it("reports a miss for an unknown chip id rather than throwing", async () => {
+		const service = createService();
+		await service.initialize();
+
+		expect(service.removeQueuedPrompt("queued-99")).toBeNull();
+		// Same race, same silence: the steer chip can outlive its entry too.
+		await service.steerQueuedPrompt("queued-99");
+		expect(userTexts(service)).toEqual([]);
+	});
+
+	it("clears queued chips when the run is stopped", async () => {
 		const gated = createGatedStreamFn();
 		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
 
@@ -1810,50 +2061,42 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 		await service.sendPrompt("Hold on");
 		expect(service.getSnapshot().queuedPrompts).toHaveLength(1);
 
-		// Abort only signals; a gated stream that ignores its signal never
-		// settles, so the reply has to flow for the run to actually end.
-		gated.release();
 		service.abort();
 		await run;
 
 		expect(service.getSnapshot().queuedPrompts).toEqual([]);
 		// Stopping the run retracts the queued intent along with it: the
-		// transcript holds the original prompt and the aborted reply, no steer.
+		// transcript holds the original prompt and the cut reply, no correction.
 		expect(userTexts(service)).toEqual(["First question"]);
 	});
 
-	it("dispatches stranded queue entries itself once the run's end has fully settled", async () => {
-		// This pins the dispatch *timing*, which the direct-call rescue tests
-		// above cannot: pi awaits its listeners inside the run's executor, so
-		// during `agent_end` the run is still held — `isStreaming` true,
-		// `agent.prompt` forbidden. The rescue must wait for `waitForIdle()` and
-		// only then start its own run; dispatching inline would bail on the
-		// resume's streaming guard and the words would sit on chips forever.
-		const gated = createGatedStreamFn();
+	it("dispatches queued entries itself once the run's end has fully settled", async () => {
+		// This pins the dispatch *timing*: pi awaits its listeners inside the
+		// run's executor, so during `agent_end` the run is still held —
+		// `isStreaming` true, `agent.prompt` forbidden. The dispatch must wait
+		// for `waitForIdle()` and only then start its own run; dispatching inline
+		// would bail on its own streaming guard and the words would sit on chips
+		// forever.
+		const gated = createGatedStreamFn(["Answered late."]);
 		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
 
 		const run = service.sendPrompt("First question");
 		await gated.waitForFirstRequest();
-		// Into the mirror only, bypassing `agent.steer`: pi never learns of
-		// these words, so no drain point can inject them and the mirror is
-		// full when the run ends — exactly the stranded shape.
-		addStranded(service, "Too late for the drain point");
+		addStranded(service, "Typed as the reply landed");
 		expect(service.getSnapshot().queuedPrompts).toHaveLength(1);
 
 		gated.release();
 		await run;
 
-		await waitFor(() => userTexts(service).includes("Too late for the drain point"));
+		await waitFor(() => userTexts(service).includes("Typed as the reply landed"));
 
-		// The rescue ran as its own run (the gated stream's second request
-		// answered it) and the mirror is spent.
-		expect(userTexts(service)).toEqual(["First question", "Too late for the drain point"]);
+		expect(userTexts(service)).toEqual(["First question", "Typed as the reply landed"]);
 		expect(service.getSnapshot().queuedPrompts).toEqual([]);
 	});
 
 	it("carries stranded queue entries ahead of the next direct send", async () => {
-		// A run that ended before its drain point leaves the mirror full; the
-		// next ordinary send must dispatch those words first, not behind the new one.
+		// A run that ended without dispatching leaves the queue full; the next
+		// ordinary send must dispatch those words first, not behind the new one.
 		const service = createService();
 		await service.initialize();
 		addStranded(service, "Stranded correction");
@@ -1864,7 +2107,7 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 		expect((service as unknown as { promptQueue: PromptQueue }).promptQueue.size).toBe(0);
 	});
 
-	it("dispatches stranded steers itself when the run ended without injecting them", async () => {
+	it("dispatches stranded entries itself when the run ended without them", async () => {
 		const service = createService();
 		await service.initialize();
 		addStranded(service, "Stranded correction");
@@ -1872,16 +2115,41 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 		await (service as unknown as { resumeQueuedPrompts: (messages: readonly AgentMessage[]) => Promise<void> })
 			.resumeQueuedPrompts([]);
 
-		// The rescue is a fresh run on its own: the words land, then the
-		// scripted reply, and the mirror is empty afterwards.
+		// The dispatch is a fresh run on its own: the words land, then the
+		// scripted reply, and the queue is empty afterwards.
 		expect(userTexts(service)).toEqual(["Stranded correction"]);
 		expect((service as unknown as { promptQueue: PromptQueue }).promptQueue.size).toBe(0);
+	});
+
+	it("sends the queue once when two dispatches race for it", async () => {
+		// Both pass the "is anything waiting?" gate, then one drains and the
+		// other resumes to an empty list. Without the post-drain guard the loser
+		// prompts with nothing — a whole provider request against a transcript
+		// nobody added to, and a reply to a question never asked.
+		const service = createService();
+		await service.initialize();
+		addStranded(service, "Stranded correction");
+
+		const resume = (service as unknown as {
+			resumeQueuedPrompts: (messages: readonly AgentMessage[]) => Promise<void>;
+		}).resumeQueuedPrompts.bind(service);
+		await Promise.all([resume([]), resume([])]);
+
+		expect(userTexts(service)).toEqual(["Stranded correction"]);
+		expect(
+			service.getSnapshot().messages.filter((message) => message.role === "assistant"),
+		).toHaveLength(1);
 	});
 
 	it("leaves the queue alone when the run died on a provider error", async () => {
 		const service = createService();
 		await service.initialize();
 		addStranded(service, "Stranded correction");
+		const rt = runtimeOf(service);
+		// As if a steer had already claimed those words and interrupted the run
+		// that then died: both the chip and the handover have to survive it.
+		rt.steeredPrompts = rt.promptQueue.drain();
+		rt.queueInterrupt = true;
 
 		// Shape mirrors pi's own run-failure message; only role and stopReason
 		// are read, but the full assistant shape keeps the cast honest.
@@ -1907,10 +2175,15 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 		await (service as unknown as { resumeQueuedPrompts: (messages: readonly AgentMessage[]) => Promise<void> })
 			.resumeQueuedPrompts([failed]);
 
-		// Re-sending into the same failure would bill a second refusal; the
-		// words stay queued for the next direct send to carry.
+		// Re-sending into the same failure would bill a second refusal; the words
+		// go back onto the chips for the next send to carry, steered or not.
 		expect(userTexts(service)).toEqual([]);
-		expect((service as unknown as { promptQueue: PromptQueue }).promptQueue.size).toBe(1);
+		expect(service.getSnapshot().queuedPrompts.map((entry) => entry.text)).toEqual(["Stranded correction"]);
+		// The bail is also an exit from the handover, and it has to close it: no
+		// run is coming, so a panel left reporting one would sit on Stop with
+		// nothing to stop.
+		expect(rt.queueInterrupt).toBe(false);
+		expect(service.getSnapshot().isStreaming).toBe(false);
 	});
 
 	it("clears queued chips when the session changes", async () => {
@@ -2915,9 +3188,9 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 	});
 
 	it("applies the pending switch exactly once when the run lands", async () => {
-		// A queued steer puts both flush callers on the path: the `agent_end`
-		// dispatch and the send's own settle. Take-then-apply is what keeps the
-		// second one from doing the work a second time.
+		// A queued mid-run send puts both flush callers on the path: the
+		// `agent_end` dispatch and the send's own settle. Take-then-apply is what
+		// keeps the second one from doing the work a second time.
 		const gated = createRecordingGatedStreamFn();
 		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn });
 		configureTwoModels(settings);
@@ -2939,16 +3212,19 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 		expect(rt?.pendingConfiguration).toBeNull();
 		expect(rt?.agent?.state.model.id).toBe("llama-4-maverick");
 		expect(service.getSnapshot().runningModelId).toBe("llama-4-maverick");
-		// The steered follow-up is where the deferral pays off for steers pi
-		// rescues after the run: they leave on the model the user asked for.
+		// The interrupted run keeps the model it began on; the correction, which
+		// is a run of its own now, leaves on the model the user asked for.
+		//
+		// This is where issue #289 changed the answer. A mid-run send used to be
+		// injected by pi *inside* the running loop, before this service's
+		// `agent_end` handlers and its settle-time flush could run, so the
+		// correction went out on the old model and the flush's only win was the
+		// applied state asserted above. Now the send interrupts, the run lands,
+		// and the flush runs ahead of the dispatch — which is the ordering issue
+		// #252 was written to get, reached by every mid-run send rather than only
+		// by the ones a later run happened to rescue.
 		expect(gated.requestedModels[0]).toBe("qwen-plus");
-		expect(gated.requestedModels[1]).toBe("qwen-plus");
-		// pi's steering mode ("all") injects queued steers synchronously at the
-		// turn boundary — before this service's `agent_end` handlers and its
-		// settle-time flush run — so the injected follow-up still goes out on
-		// the model the run began on. The flush's win here is the applied state
-		// asserted above; a follow-up a *later* run rescues
-		// (resumeQueuedPrompts) is the one that lands on the new model.
+		expect(gated.requestedModels[1]).toBe("llama-4-maverick");
 	});
 
 	it("lets the last mid-run choice win when the user changes their mind twice", async () => {
@@ -3715,6 +3991,7 @@ function createServiceWithMultimodalModel(
 		cacheRetention: "long",
 		showAgentDetails: false,
 		traceExpand: "collapsed",
+		promptQueueStrategy: "afterRun",
 		sendShortcut: "enter",
 		language: "en",
 		sessionRetention: DEFAULT_SESSION_RETENTION,
