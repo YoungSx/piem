@@ -218,45 +218,20 @@ export const zhCN: DeepPartial<EnCopy> = {
 	},
 
 	builtinSkills: {
-		summarize: {
-			description: "总结当前笔记或所选内容，不修改原文。",
-			content: `总结当前 Markdown 笔记。
-
-1. 调用 get_active_note，并启用 includeContent 和 includeSelection。如果存在所选内容，默认总结所选内容；只有附加说明明确要求时才总结整篇笔记。
-2. 如果返回内容被截断，先用 read 分段读完相关部分，再下结论。
-3. 保留事实、术语和有意义的链接，不补写原文没有的信息。
-4. 先给简短摘要，再列关键点；只有原文确实包含任务时才列行动项。
-5. 除非用户明确要求，否则不要编辑笔记。遵循此技能块之后附加的说明。`,
-		},
-		linkGraph: {
-			description: "分析当前笔记的出链、反向链接和缺失连接。",
-			content: `分析当前 Markdown 笔记周围的链接图谱。
-
-1. 优先使用上下文中的当前笔记路径。如果没有路径，调用 get_active_note；若未打开 Markdown 笔记，清楚地请用户先打开一篇。
-2. 调用 get_note_links，并把 direction 设为 both。若工具提示索引尚未就绪，应说明数据不可用，不要断言笔记没有链接。
-3. 调用 get_note_metadata，借助标题和标签判断笔记作用。只有确实需要内容时，才读取最相关的邻接笔记。
-4. 分别报告出链、反向链接、未解析链接、主题簇、桥接笔记和可能缺失的连接；把事实与建议分开。
-5. 除非用户明确要求，否则不要创建或修改链接。遵循此技能块之后附加的说明。`,
-		},
-		tagOrganize: {
-			description: "审计标签并提出一致、低噪声的标签结构。",
-			content: `整理用户的 Obsidian 标签体系，但不要突然修改文件。
-
-1. 从附加说明确定范围；默认只分析当前笔记。单篇笔记使用 get_note_metadata 获取标签。
-2. 如需全库审计，用 grep 分批查找 frontmatter 标签和正文 hashtag，再用 get_note_metadata 抽查代表性笔记。结果被截断时必须说明。
-3. 比较前先规范化标签：开头的 #、大小写、单复数和嵌套路径可能表示同一概念。
-4. 找出重复或近似标签、孤立标签、过宽标签和不一致的层级。给出精简的标准标签体系及旧标签到新标签的映射。
-5. 修改前先展示方案。只有得到明确同意后才编辑；保持 frontmatter 格式，并列出每篇被改动的笔记。`,
+		efficientWebResearch: {
+			description: "省 token 地做网络调研：先判断输入类型，只抓取回答问题所需的最少内容。",
 		},
 		findSkills: {
 			description: "查找可信的 agent skill，并说明如何加入 Piem。",
-			content: `帮助用户从开放的 agent-skills 生态中查找技能。本流程基于 Vercel 的 MIT 许可 find-skills 技能，并按 Piem 只能操作 vault 的边界做了调整。
-
-1. 先弄清领域和具体任务。只有常见且专业的重复任务才优先寻找可复用技能。
-2. 如果有 web_fetch，检查 skills.sh 和源码仓库；如果没有，明确说明无法实时核验，只给出 skills.sh 地址，不编造结果。
-3. 核验安装量、仓库所有者、GitHub 信誉、许可证、近期维护情况、完整 SKILL.md 和公开安全审计。不要只看搜索标题就推荐。
-4. 给出简短候选列表，包含技能名、用途、来源、证据、链接和兼容限制。Piem 不能运行 npx，也不能安装到 vault 之外。
-5. 只有用户明确要求安装时，才获取并审查完整 SKILL.md，然后写入 Piem/skills/<name>/SKILL.md。不要执行远程代码，不要复制隐藏脚本，覆盖已有 vault skill 前必须确认。`,
+		},
+		linkGraph: {
+			description: "分析当前笔记的出链、反向链接和缺失连接。",
+		},
+		summarize: {
+			description: "总结当前笔记或所选内容，不修改原文。",
+		},
+		tagOrganize: {
+			description: "审计标签并提出一致、低噪声的标签结构。",
 		},
 	},
 

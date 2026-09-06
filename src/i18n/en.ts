@@ -440,45 +440,20 @@ export const en = {
 	},
 
 	builtinSkills: {
-		summarize: {
-			description: "Summarize the active note or selection without changing it.",
-			content: `Summarize the active Markdown note.
-
-1. Call get_active_note with includeContent and includeSelection enabled. If a selection exists, summarize it unless the additional instruction explicitly asks for the whole note.
-2. If the returned content is truncated, read the remaining note in bounded chunks before drawing conclusions.
-3. Preserve facts, terminology, and meaningful links. Do not invent missing context.
-4. Lead with a compact summary, then list key points and only the action items that actually appear in the note.
-5. Do not edit the note unless the user explicitly asks you to. Honor any instruction appended after this skill block.`,
-		},
-		linkGraph: {
-			description: "Analyze the active note's backlinks, outgoing links, and missing connections.",
-			content: `Analyze the link graph around the active Markdown note.
-
-1. Use the active note path from context. If none is available, call get_active_note and stop with a clear request when no Markdown note is open.
-2. Call get_note_links with direction set to both. Treat an indexing warning as unavailable data, not as proof that the note has no links.
-3. Call get_note_metadata for headings and tags that explain the note's role. Read only the most relevant neighboring notes when their content is needed.
-4. Report outgoing links, backlinks, unresolved links, clusters, bridge notes, and useful missing connections. Separate observed links from suggestions.
-5. Do not create or edit links unless the user explicitly asks you to. Honor any instruction appended after this skill block.`,
-		},
-		tagOrganize: {
-			description: "Audit tags and propose a consistent, low-noise tag structure.",
-			content: `Organize the user's Obsidian tag system without making surprise edits.
-
-1. Determine the requested scope from the additional instruction; default to the active note. Use get_note_metadata for note-level tags.
-2. For a broader audit, use grep in bounded passes to find frontmatter tags and inline hashtags, then inspect representative notes with get_note_metadata. State when results are truncated.
-3. Normalize tags before comparing them: leading #, case variants, singular/plural variants, and nested tag paths can represent the same concept.
-4. Identify duplicates, near-duplicates, orphan tags, overly broad tags, and inconsistent nesting. Propose a small canonical taxonomy with an old-to-new mapping.
-5. Show the plan before changing files. Only edit tags after explicit approval, preserve frontmatter formatting, and report every changed note.`,
+		efficientWebResearch: {
+			description: "Research the web token-efficiently: classify the input, then fetch the minimum needed to answer.",
 		},
 		findSkills: {
 			description: "Find reputable agent skills and explain how to add them to Piem.",
-			content: `Help the user discover skills from the open agent-skills ecosystem. This workflow is adapted from Vercel's MIT-licensed find-skills skill for Piem's vault-only environment.
-
-1. Clarify the domain and exact task. Prefer a reusable skill only when the request is common and specialized enough to benefit from one.
-2. If web_fetch is available, inspect skills.sh and the source repository. If it is unavailable, say that live results cannot be verified and give the user the skills.sh URL instead of inventing results.
-3. Verify install count, repository owner, GitHub reputation, license, recent maintenance, the complete SKILL.md, and any published security audit. Never recommend from a search title alone.
-4. Present a short list with the skill name, purpose, source, evidence, URL, and any compatibility limits. Piem cannot run npx or install outside the vault.
-5. Only when the user explicitly asks to install, fetch and inspect the full SKILL.md, then write it under Piem/skills/<name>/SKILL.md. Never execute remote code, never copy hidden scripts, and never overwrite an existing vault skill without confirmation.`,
+		},
+		linkGraph: {
+			description: "Analyze the active note's backlinks, outgoing links, and missing connections.",
+		},
+		summarize: {
+			description: "Summarize the active note or selection without changing it.",
+		},
+		tagOrganize: {
+			description: "Audit tags and propose a consistent, low-noise tag structure.",
 		},
 	},
 
