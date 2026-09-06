@@ -40,6 +40,15 @@ class MemoryAdapter {
 		return file.content;
 	}
 
+	/** Test-only: stamps a file's mtime, which is how a sync tool refreshes it. */
+	setMtime(path: string, mtime: number): void {
+		const file = this.files.get(path);
+		if (!file) {
+			throw new Error(`Missing file: ${path}`);
+		}
+		this.files.set(path, { ...file, mtime });
+	}
+
 	async stat(path: string): Promise<Stat | null> {
 		const file = this.files.get(path);
 		if (file) {
@@ -366,6 +375,27 @@ describe("ObsidianSessionManager retention", () => {
 		expect(adapter.trashed).not.toContain(forked.path);
 		expect(await adapter.exists(forked.path)).toBe(true);
 		expect(manager.getActiveSessionPath()).toBe(source);
+	});
+
+	it("orders by in-band timestamps, not mtimes a sync tool refreshes", async () => {
+		const adapter = new MemoryAdapter();
+		const policy = mutablePolicy(VAULT_SESSION_DIR, UNLIMITED_SESSION_RETENTION);
+		const manager = new ObsidianSessionManager(adapter as unknown as DataAdapter, policy, "obsidian-vault:Test");
+		const genuinelyNewer = await createStampedSession(manager, FUTURE_MS + 3_000);
+		const stampedOlder = await createStampedSession(manager, FUTURE_MS);
+
+		// A sync plugin re-writes the older chat's file last, so its mtime now
+		// outranks the newer chat's — but its entries still say it was chatted on
+		// earlier. Recency must read the log, not the envelope.
+		adapter.setMtime(stampedOlder, FUTURE_MS + 10_000);
+		expect((await manager.listSessions()).map((session) => session.path)).toEqual([genuinelyNewer, stampedOlder]);
+
+		// The same clock feeds eviction: at a cap of 2 the in-band older chat is
+		// the single victim — not the newer one that only looks old because its
+		// mtime was never refreshed.
+		policy.limit = 2;
+		await createStampedSession(manager, FUTURE_MS + 4_000);
+		expect(adapter.trashed).toEqual([stampedOlder]);
 	});
 
 	it("keeps a claimed session alive across a switch and an eviction sweep", async () => {

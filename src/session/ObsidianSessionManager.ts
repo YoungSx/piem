@@ -774,12 +774,18 @@ export class ObsidianSessionManager {
 		const stats = await session.getStats();
 		const name = await session.getName();
 		const info = await this.fs.fileInfo(metadata.path);
-		const modifiedTime = info.ok ? info.value.mtimeMs : metadata.modifiedAt;
 		const entryTime = entries.reduce((latest, entry) => {
 			const messageTime = entry.type === "message" && typeof entry.message.timestamp === "number" ? entry.message.timestamp : 0;
 			return Math.max(latest, entry.timestamp, messageTime);
 		}, 0);
-		const effectiveModifiedTime = Math.max(modifiedTime, entryTime);
+		// In-band first: the newest entry timestamp is what "recently chatted"
+		// means, and it survives a sync tool touching the file's mtime on the
+		// wrong side. mtime is only the fallback for files whose entries carry no
+		// usable clock (or a read failure) — for those it is all there is, noise
+		// and all, and blending the two clocks with a max would let a sync-
+		// refreshed mtime outrank a truthful but older entry timestamp.
+		const modifiedTime =
+			entryTime > 0 ? entryTime : info.ok ? info.value.mtimeMs : metadata.modifiedAt;
 		const firstMessage = entries.find(
 			(entry): entry is Extract<Entry, { type: "message" }> => entry.type === "message" && entry.message.role === "user",
 		);
@@ -787,14 +793,14 @@ export class ObsidianSessionManager {
 			id: metadata.id,
 			path: metadata.path,
 			createdAt: new Date(metadata.createdAt).toISOString(),
-			updatedAt: new Date(effectiveModifiedTime).toISOString(),
+			updatedAt: new Date(modifiedTime).toISOString(),
 			name: name?.trim() || undefined,
 			messageCount: stats.messageCount,
 			// Empty string, not a placeholder: sessionTitle's fallback to
 			// session.untitled only triggers on emptiness.
 			firstMessage: firstMessage ? extractMessageText(firstMessage.message) : "",
 			parentSessionId: metadata.parentSessionId,
-			modifiedTime: effectiveModifiedTime,
+			modifiedTime,
 		};
 	}
 }
