@@ -747,7 +747,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 				 * controls below it, and pinning it to the top pushed the first message
 				 * down behind numbers the reader had not asked to read first.
 				 */}
-				<ChatStatusBar isInitializing={isInitializing} isRewinding={snapshot.isRewinding} run={run} />
+				<ChatStatusBar isInitializing={isInitializing} isRewinding={snapshot.isRewinding} run={run} retry={snapshot.retryNotice} />
 
 				<ChatComposer
 					input={input}

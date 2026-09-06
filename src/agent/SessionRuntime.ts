@@ -137,6 +137,27 @@ export class SessionRuntime {
 	/** Agent-reported error the user already dismissed. */
 	dismissedAgentError: string | undefined;
 
+	// --- turn retry ---
+
+	/**
+	 * The turn-level retry episode this conversation is inside, once announced.
+	 *
+	 * Written only by the retry callbacks the service wires into
+	 * `withTurnRetry` (see `./net/streamRetry`), and only when a retry was
+	 * actually scheduled — a turn that never retried never touches this. The
+	 * wait that earned the announcement holds it to the end of the turn rather
+	 * than dropping it when the next attempt starts: a notice that could die
+	 * the instant it appeared would be a flash, and one that outlives the
+	 * backoff by a second still tells the truth ("this reply needed retries").
+	 *
+	 * The grace timer that decides *when* it first appears lives in
+	 * {@link retryNoticeTimer}, so a runtime torn down mid-episode clears both
+	 * in one place instead of asking the service to remember.
+	 */
+	retryNotice: { attempt: number; maxAttempts: number } | null = null;
+	/** Grace timer between the first scheduled retry and {@link retryNotice} appearing. */
+	retryNoticeTimer: number | null = null;
+
 	// --- compaction ---
 
 	/** Per-lane compaction result, carried as the `previous:` of the next one. */
@@ -281,5 +302,13 @@ export class SessionRuntime {
 		this.compactionController?.abort();
 		this.branchSummaryController?.abort();
 		this.suggestionController?.abort();
+		// A runtime torn down mid-episode takes both the pending show-timer and
+		// any notice already showing with it; the wrapper's closures may still
+		// fire once, but they write to a runtime nobody reads.
+		if (this.retryNoticeTimer !== null) {
+			window.clearTimeout(this.retryNoticeTimer);
+			this.retryNoticeTimer = null;
+		}
+		this.retryNotice = null;
 	}
 }

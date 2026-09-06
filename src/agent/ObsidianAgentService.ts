@@ -5,6 +5,7 @@ import {
 	type CredentialStore,
 	type ImageContent,
 	type Models,
+	type RetryCallbacks,
 	type Usage,
 } from "@earendil-works/pi-ai";
 import {
@@ -27,6 +28,8 @@ import {
 import { PromptQueue, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
 import { createObsidianModels, requestDefaults, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
+import { resolveRetrySettings } from "../net/retrySettings";
+import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "../net/streamRetry";
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
 import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent } from "./compaction";
@@ -302,6 +305,16 @@ export interface ChatSnapshot {
 	 * per-message actions that would race the rewind.
 	 */
 	isRewinding: boolean;
+	/**
+	 * The turn-level retry episode, once it has earned an announcement.
+	 *
+	 * Present only after a retry was scheduled and the grace delay passed —
+	 * a transient hiccup the layer absorbed within two seconds never shows, and
+	 * a failure the reader never noticed does not deserve one. Absent again
+	 * when the turn ends. The status line renders it; the transcript keeps the
+	 * stream untouched.
+	 */
+	retryNotice?: { attempt: number; maxAttempts: number };
 	/** Whether the active model target has a credential ready for requests. */
 	isConfigured?: boolean;
 	/**
@@ -376,6 +389,18 @@ export interface ChatSnapshot {
  * nothing. Four is past any honest run and still bounds the waste.
  */
 const MAX_MID_RUN_COMPACTIONS = 4;
+
+/**
+ * How long a scheduled turn retry stays silent before the status line says so.
+ *
+ * The same judgment `TURN_VISIBLE_AFTER_MS` makes in the status line one wall
+ * over: a wait the reader has not had time to wonder about deserves no
+ * announcement. Retries shorter than this are absorbed with nothing to show —
+ * the reply simply lands a beat late — and one that does cross the line holds
+ * its notice to the turn's end rather than blinking off the moment the next
+ * attempt starts moving.
+ */
+const RETRY_NOTICE_AFTER_MS = 2_000;
 
 type SnapshotListener = (snapshot: ChatSnapshot) => void;
 
@@ -2904,6 +2929,7 @@ export class ObsidianAgentService {
 			compactionEvent: rt?.compactionEvent ?? null,
 			compactionRetained: rt?.lastCompaction?.retainedTail.length ?? 0,
 			isRewinding: rt?.retryInFlight ?? false,
+			retryNotice: rt?.retryNotice ?? undefined,
 			isConfigured: this.hasApiKey(),
 			showAgentDetails: settings.showAgentDetails,
 			traceExpand: settings.traceExpand,
@@ -3304,7 +3330,16 @@ export class ObsidianAgentService {
 			// only the provider registration differs. Resolved per request rather
 			// than captured here, so an endpoint configured after this agent was
 			// built is still reachable — see `resolveStreamFn`.
-			streamFn: this.resolveStreamFn(),
+			streamFn: withTurnRetry(this.resolveStreamFn(), {
+				// Live-read per call: the wrapper outlives any one settings revision,
+				// so a budget changed in the panel reaches the next turn rather than
+				// the next reload — the same contract `resolveStreamFn` holds itself to.
+				policy: (): TurnRetryPolicy => ({
+					...resolveRetrySettings(this.getSettings().retry),
+					maxDelayMs: DEFAULT_TURN_MAX_DELAY_MS,
+				}),
+				callbacks: this.retryCallbacksFor(rt),
+			}),
 			// pi's converter renders compaction summaries into the request. The agent's
 			// default one silently filters that role out, which would discard every
 			// compacted turn without surfacing an error.
@@ -4051,11 +4086,22 @@ export class ObsidianAgentService {
 	 * without rebuilding the agent, and the bundle underneath has its own
 	 * invalidation rule in {@link requireModelsBundle}.
 	 */
+	/**
+	 * The request-layer retry budget, from live settings.
+	 *
+	 * Read per call like the other request defaults, so lowering the budget in
+	 * the panel takes effect on the next request rather than the next reload.
+	 */
+	private resolveRetryMaxRetries(): number {
+		return resolveRetrySettings(this.getSettings().retry).maxRetries;
+	}
+
 	private modelsWithRequestDefaults(): Models {
 		return withRequestDefaults(
 			this.requireModelsBundle(),
 			(provider) => this.getApiKey(provider),
 			() => this.getSettings().cacheRetention,
+			() => this.resolveRetryMaxRetries(),
 		);
 	}
 
@@ -4083,7 +4129,64 @@ export class ObsidianAgentService {
 			// Read here, not captured above: `resolveStreamFn`'s result outlives any
 			// one settings revision, and a retention picked mid-conversation has to
 			// reach the next turn rather than the next reload.
-			return models.streamSimple(model, context, { ...streamOptions, ...requestDefaults(fetchImpl, this.getSettings().cacheRetention) });
+			return models.streamSimple(model, context, {
+				...streamOptions,
+				...requestDefaults(fetchImpl, this.getSettings().cacheRetention, this.resolveRetryMaxRetries()),
+			});
+		};
+	}
+
+	/**
+	 * Retry lifecycle callbacks for one conversation's turn wrapper.
+	 *
+	 * Each call builds its own closure set so concurrent sessions route their
+	 * notices to their own runtime — the wrapper is shared, the callbacks are
+	 * not. The pending slot lives in the closure rather than on the runtime: it
+	 * only matters between a scheduled retry and the grace timer firing, and a
+	 * stale episode can never outlive {@link SessionRuntime.retryNoticeTimer},
+	 * which `dispose()` clears.
+	 *
+	 * `onRetryAttemptStart` is deliberately not wired: clearing the notice when
+	 * the next attempt starts would let a notice that just crossed the grace
+	 * line die a fifth of a second later — a flash. The notice holds to the
+	 * turn's end ({@link SessionRuntime.retryNotice} documents the judgment).
+	 */
+	private retryCallbacksFor(rt: SessionRuntime): RetryCallbacks {
+		// The latest scheduled attempt, honored by the grace timer when it fires.
+		let pending: { attempt: number; maxAttempts: number } | null = null;
+		return {
+			onRetryScheduled: (attempt, maxAttempts) => {
+				pending = { attempt, maxAttempts };
+				if (rt.retryNotice !== null) {
+					// Already showing from an earlier retry in this turn: refresh the
+					// counts in place so the status line never reads a stale attempt.
+					rt.retryNotice = pending;
+					this.notify();
+					return;
+				}
+				if (rt.retryNoticeTimer === null) {
+					rt.retryNoticeTimer = window.setTimeout(() => {
+						rt.retryNoticeTimer = null;
+						if (pending !== null) {
+							rt.retryNotice = pending;
+							this.notify();
+						}
+					}, RETRY_NOTICE_AFTER_MS);
+				}
+				// Timer still armed from an earlier schedule: the refreshed `pending`
+				// is what it will show — nothing else to do.
+			},
+			onRetryFinished: () => {
+				pending = null;
+				if (rt.retryNoticeTimer !== null) {
+					window.clearTimeout(rt.retryNoticeTimer);
+					rt.retryNoticeTimer = null;
+				}
+				if (rt.retryNotice !== null) {
+					rt.retryNotice = null;
+					this.notify();
+				}
+			},
 		};
 	}
 

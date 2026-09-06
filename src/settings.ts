@@ -16,6 +16,7 @@ import {
 	type ProviderConfig,
 } from "./modelConfig";
 import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compactionSettings";
+import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
 import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
@@ -114,6 +115,16 @@ export interface PiemSettings {
 	 */
 	compaction?: CompactionConfig;
 	/**
+	 * When a transient failure earns another attempt, and how fast.
+	 *
+	 * Partial like compaction: an absent field follows the plugin's default
+	 * rather than freezing a shipped value on vaults that never opened the
+	 * advanced group. Resolution and clamping live in {@link resolveRetrySettings};
+	 * unlike compaction, the range clamp lands in {@link normalizeRetryConfig}
+	 * because the range is absolute rather than model-dependent.
+	 */
+	retry?: RetryConfig;
+	/**
 	 * How many chats are kept before the oldest are moved to trash.
 	 *
 	 * {@link UNLIMITED_SESSION_RETENTION} keeps every chat, which is the old
@@ -210,6 +221,7 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	const customEndpoint = normalizeCustomEndpoint(data?.customEndpoint);
 
 	const compaction = normalizeCompactionConfig(data?.compaction);
+	const retry = normalizeRetryConfig(data?.retry);
 
 	const { providers, models } = normalizeProviderAndModelLists(data?.providers, data?.models);
 	let activeModelId = typeof data?.activeModelId === "string" ? data.activeModelId.trim() : "";
@@ -292,6 +304,9 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	// as it was, and "unset" keeps meaning "follow pi".
 	if (compaction) {
 		settings.compaction = compaction;
+	}
+	if (retry) {
+		settings.retry = retry;
 	}
 	return settings;
 }
