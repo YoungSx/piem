@@ -275,11 +275,23 @@ function openProviderModal(host: SettingsPanelHost, provider?: ProviderConfig): 
 		readSecret: (id) => host.readSecret(id),
 		t,
 		test: (draft) => testDraftProvider(host, draft),
+		// Logged here rather than inside the modal: the save failure also renders
+		// there, but it renders nowhere else once the dialog closes. The subject is
+		// the row's name and the API id, never the key the draft carries.
 		onSubmit: async (saved) => {
-			if (provider) replaceById(settings.providers, saved);
-			else settings.providers.push(saved);
-			await host.save();
-			host.refresh();
+			try {
+				if (provider) replaceById(settings.providers, saved);
+				else settings.providers.push(saved);
+				await host.save();
+				host.refresh();
+			} catch (cause) {
+				host.logger.warn("Provider save failed", () => ({
+					name: saved.name,
+					id: saved.id,
+					error: cause instanceof Error ? cause.message : String(cause),
+				}));
+				throw cause;
+			}
 		},
 	}).open();
 }
@@ -366,15 +378,39 @@ function openModelModal(host: SettingsPanelHost, model?: ModelConfig): void {
 		knownListings: () => listingCacheFor(settings.networkTransport).known(),
 		// The catalog request is pinned to `requestUrl` inside modelsDev; passing
 		// the transport in here would silently override that decision.
-		fetchModelsDev: (signal) => fetchModelsDevIndex({ signal }),
-		onSubmit: async (saved) => {
-			if (model) replaceById(settings.models, saved);
-			else {
-				settings.models.push(saved);
-				settings.activeModelId ??= saved.id;
+		// The catalog request is pinned to `requestUrl` inside modelsDev; passing
+		// the transport in here would silently override that decision. A failure is
+		// wrapped to log and rethrown: the modal treats it as a shorter advice list,
+		// which is quiet by design, so this is the only trace it leaves.
+		fetchModelsDev: async (signal) => {
+			try {
+				return await fetchModelsDevIndex({ signal });
+			} catch (cause) {
+				if (!signal.aborted) {
+					host.logger.warn("models.dev catalog fetch failed", () => ({
+						error: cause instanceof Error ? cause.message : String(cause),
+					}));
+				}
+				throw cause;
 			}
-			await host.save();
-			host.refresh();
+		},
+		onSubmit: async (saved) => {
+			try {
+				if (model) replaceById(settings.models, saved);
+				else {
+					settings.models.push(saved);
+					settings.activeModelId ??= saved.id;
+				}
+				await host.save();
+				host.refresh();
+			} catch (cause) {
+				host.logger.warn("Model save failed", () => ({
+					name: describeModelConfig(saved),
+					id: saved.id,
+					error: cause instanceof Error ? cause.message : String(cause),
+				}));
+				throw cause;
+			}
 		},
 	}).open();
 }
