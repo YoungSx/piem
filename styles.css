@@ -1571,6 +1571,46 @@ button.piem-chat__context-open {
 	margin-block: 0.4em;
 }
 
+/*
+ * A link the model wrote to a note that does not exist yet.
+ *
+ * The dash carries the whole signal and colour carries none of it, because there
+ * is nothing to spend: Obsidian's accent measures 4.26:1 against the light
+ * theme's white at this size, already under the 4.5:1 WCAG 1.4.3 asks of 15px
+ * text. Obsidian's own answer for this state is `--link-unresolved-opacity: 0.7`,
+ * which takes that 4.26 to roughly 3.1 — measured side by side it reads as a
+ * rendering inconsistency rather than as a state, and it points the wrong way
+ * regardless. A note the *reader* has not written yet can afford to recede; a
+ * note the *model* named that does not exist is the most important word in the
+ * sentence.
+ *
+ * The reading view's own `.markdown-rendered .internal-link.is-unresolved` rule
+ * never reaches this container — that selector wants an ancestor this panel does
+ * not have — so measured in a real 1.13.7 the class carried no styling at all
+ * until this rule. Nothing here can be left to inheritance for the same reason.
+ *
+ * Both stated values earn their line, and each is the difference between a mark
+ * and a defect:
+ *
+ * - `text-decoration-line`, because a theme may set `--link-decoration: none`,
+ *   and then there is no line for the dash to be a variant of.
+ * - `text-underline-offset`, because at the browser's `auto` a descender in the
+ *   link text — the `y` in "Weekly Review" — cuts through the dashes and the word
+ *   reads as struck out. 0.2em clears the descender; 0.12em was measured and does
+ *   not.
+ *
+ * `dotted` was measured against `dashed` and loses: at 15px the dots close up
+ * into what looks like a faint solid rule, which is the one thing this must not
+ * resemble. Obsidian's own hover rule moves the colour and the line but never the
+ * style, so the dash survives hover without a rule of its own — verified.
+ */
+.piem-chat__markdown a.internal-link.is-unresolved {
+	text-decoration-line: underline;
+	text-decoration-style: dashed;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.2em;
+}
+
 /* --- trace rows (tool calls, results, thinking, harness output) --- */
 
 /*

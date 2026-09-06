@@ -868,3 +868,48 @@ describe("focus rings survive their scroll container (issue #219)", () => {
 		}
 	});
 });
+
+/*
+ * A link to a note that does not exist marks itself, and the mark is a line
+ * rather than less of anything.
+ *
+ * Two guidelines meet on this one rule. 1.4.3 is the reason the colour cannot
+ * move: measured in a real 1.13.7, Obsidian's accent reads 4.26:1 on the light
+ * theme's white at the panel's 15px — already under the 4.5:1 that normal-size
+ * text needs, so the state has no contrast to spend, and Obsidian's own
+ * `--link-unresolved-opacity: 0.7` would take it to roughly 3.1. 1.4.1 is the
+ * reason a line works where a hue would not: the dash is a shape, so it survives
+ * a reader who cannot separate the two colours at all.
+ *
+ * The rule is also the state's only styling. The reading view's own
+ * `.markdown-rendered .internal-link.is-unresolved` wants an ancestor this panel
+ * does not have, so nothing here can be left to inherit.
+ */
+describe("an unresolved link marks itself with a line, not with less contrast (WCAG 1.4.1 / 1.4.3)", () => {
+	const unresolved = declarations(ruleBody(".piem-chat__markdown a.internal-link.is-unresolved"));
+
+	it("dashes the underline", () => {
+		expect(unresolved).toContain("text-decoration-style: dashed");
+	});
+
+	it("spends no contrast on the state", () => {
+		// `color:` matched loosely would also hit `text-decoration-color`, which is a
+		// legitimate thing to add later; only a bare `color` is forbidden.
+		expect(unresolved).not.toMatch(/(?:^|[\s;])color\s*:/);
+		expect(unresolved).not.toContain("opacity");
+	});
+
+	it("states the line rather than inheriting one a theme may have switched off", () => {
+		// `--link-decoration: none` is a shipped value in Obsidian's own CSS, and
+		// under it there would be no underline for `dashed` to be a variant of.
+		expect(unresolved).toContain("text-decoration-line: underline");
+	});
+
+	it("clears the descenders, so the mark cannot read as strikethrough", () => {
+		// At the browser's `auto` the `y` in a link named "Weekly Review" cuts through
+		// the dashes and the word reads as struck out; 0.2em was measured to clear it
+		// and 0.12em was measured not to.
+		expect(unresolved).toMatch(/text-underline-offset:\s*0\.2em/);
+		expect(unresolved).toContain("text-decoration-thickness: 1px");
+	});
+});

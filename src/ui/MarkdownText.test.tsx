@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { App, Component } from "obsidian";
 import type { createRoot } from "react-dom/client";
 import { flushRender, installDom } from "../testUtils/dom";
-import { installObsidianStub, markdownRenderMock } from "../testUtils/obsidianStub";
+import { installObsidianStub, markdownRenderMock, resetNotices, shownNotices } from "../testUtils/obsidianStub";
 
 installObsidianStub();
 const document = installDom();
@@ -22,11 +22,23 @@ const { window: domWindow } = globalThis as unknown as { window: { MouseEvent: t
 /** Navigations a click on a rendered link asked the workspace for. */
 const openedLinks: [linktext: string, sourcePath: string, newLeaf: unknown][] = [];
 
+/*
+ * One note exists and one does not, which is the whole fixture these link tests
+ * need: the router asks the metadata cache before deciding whether a click opens
+ * a note or reports a missing one.
+ */
+const VAULT_NOTE = "Projects/beta";
+const MISSING_NOTE = "Weekly Review";
+
 const app = {
 	workspace: {
 		openLinkText: async (linktext: string, source: string, newLeaf: unknown): Promise<void> => {
 			openedLinks.push([linktext, source, newLeaf]);
 		},
+	},
+	metadataCache: {
+		getFirstLinkpathDest: (linkpath: string): { path: string } | null =>
+			linkpath === VAULT_NOTE ? { path: `${VAULT_NOTE}.md` } : null,
 	},
 } as unknown as App;
 const component = {} as Component;
@@ -65,6 +77,7 @@ async function renderBlock(props: {
 beforeEach(() => {
 	createRootSync = createRootImpl;
 	openedLinks.length = 0;
+	resetNotices();
 	markdownRenderMock.mockReset();
 	markdownRenderMock.mockImplementation(async ({ el }: { el: HTMLElement }) => {
 		const rendered = document.createElement("p");
@@ -217,9 +230,9 @@ describe("MarkdownText link navigation", () => {
 	it("opens a vault link that was rendered into the block", async () => {
 		const { markdown } = await renderBlock({ text: "see [[Projects/beta]]", kind: "assistant" });
 
-		clickLink(markdown, { cls: "internal-link", dataHref: "Projects/beta" });
+		clickLink(markdown, { cls: "internal-link", dataHref: VAULT_NOTE });
 
-		expect(openedLinks).toEqual([["Projects/beta", sourcePath, false]]);
+		expect(openedLinks).toEqual([[VAULT_NOTE, sourcePath, false]]);
 	});
 
 	it("leaves an external link in the block to the platform", async () => {
@@ -234,23 +247,23 @@ describe("MarkdownText link navigation", () => {
 
 		// Proves the empty list above is the handler declining and not the handler
 		// missing: the same container claims an internal link right after.
-		clickLink(markdown, { cls: "internal-link", dataHref: "Projects/beta" });
-		expect(openedLinks).toEqual([["Projects/beta", sourcePath, false]]);
+		clickLink(markdown, { cls: "internal-link", dataHref: VAULT_NOTE });
+		expect(openedLinks).toEqual([[VAULT_NOTE, sourcePath, false]]);
 	});
 
 	it("resolves a link against the path the block was rendered with", async () => {
-		const { host, markdown } = await renderBlock({ text: "see [[dup]]", kind: "assistant" });
+		const { host, markdown } = await renderBlock({ text: "see [[Projects/beta]]", kind: "assistant" });
 
 		// Same text, different note. The block does not re-render, so its links still
 		// belong to the note that was open when they were drawn — which is the base
-		// that makes `[[dup]]` mean what the model meant by it.
-		rerenderWith(host, "see [[dup]]", "Archive/elsewhere.md");
+		// that makes a bare `[[dup]]` mean what the model meant by it.
+		rerenderWith(host, "see [[Projects/beta]]", "Archive/elsewhere.md");
 		await flushRender();
 		expect(markdownRenderMock).toHaveBeenCalledTimes(1);
 
-		clickLink(markdown, { cls: "internal-link", dataHref: "dup" });
+		clickLink(markdown, { cls: "internal-link", dataHref: VAULT_NOTE });
 
-		expect(openedLinks).toEqual([["dup", sourcePath, false]]);
+		expect(openedLinks).toEqual([[VAULT_NOTE, sourcePath, false]]);
 	});
 
 	it("replaces the listener on a re-render instead of stacking one", async () => {
@@ -259,11 +272,60 @@ describe("MarkdownText link navigation", () => {
 		rerenderWith(host, "second");
 		await flushRender(() => markdownRenderMock.mock.calls.length > 1);
 
-		clickLink(markdown, { cls: "internal-link", dataHref: "Projects/beta" });
+		clickLink(markdown, { cls: "internal-link", dataHref: VAULT_NOTE });
 
 		// A missed removeEventListener is visible here and nowhere else: the click
 		// would open the note once per render the block had been through.
 		expect(openedLinks).toHaveLength(1);
+	});
+
+	it("marks a link whose note does not exist, once the render has settled", async () => {
+		markdownRenderMock.mockImplementation(async ({ el }: { el: HTMLElement }) => {
+			// The renderer's job, done by the stub: an anchor classified but not resolved,
+			// which is exactly what real Obsidian appends here.
+			const anchor = document.createElement("a");
+			anchor.className = "internal-link";
+			anchor.setAttribute("data-href", MISSING_NOTE);
+			anchor.setAttribute("href", MISSING_NOTE);
+			anchor.textContent = MISSING_NOTE;
+			el.appendChild(anchor);
+		});
+
+		const { markdown } = await renderBlock({ text: `start [[${MISSING_NOTE}]]`, kind: "assistant" });
+		await flushRender(() => markdown.querySelector("a.is-unresolved") !== null);
+
+		// The pass runs after the render promise, not inside the effect body: the
+		// anchors do not exist until Obsidian has appended them.
+		expect(markdown.querySelector("a.internal-link")?.classList.contains("is-unresolved")).toBe(true);
+	});
+
+	it("leaves a link whose note exists unmarked", async () => {
+		markdownRenderMock.mockImplementation(async ({ el }: { el: HTMLElement }) => {
+			const anchor = document.createElement("a");
+			anchor.className = "internal-link";
+			anchor.setAttribute("data-href", VAULT_NOTE);
+			anchor.setAttribute("href", VAULT_NOTE);
+			el.appendChild(anchor);
+		});
+
+		const { markdown } = await renderBlock({ text: `see [[${VAULT_NOTE}]]`, kind: "assistant" });
+		await flushRender(() => markdown.querySelector("a.internal-link") !== null);
+		await Promise.resolve();
+
+		expect(markdown.querySelector("a.internal-link")?.classList.contains("is-unresolved")).toBe(false);
+	});
+
+	it("reports a missing note on click instead of creating it", async () => {
+		const { markdown } = await renderBlock({ text: `start [[${MISSING_NOTE}]]`, kind: "assistant" });
+
+		const event = clickLink(markdown, { cls: "internal-link", dataHref: MISSING_NOTE });
+
+		expect(openedLinks).toEqual([]);
+		expect(shownNotices).toHaveLength(1);
+		expect(shownNotices[0]?.message).toContain(MISSING_NOTE);
+		// Claimed all the same: the anchor's target="_blank" would otherwise open a
+		// window for a note that does not exist.
+		expect(event.defaultPrevented).toBe(true);
 	});
 });
 

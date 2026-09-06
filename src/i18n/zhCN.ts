@@ -177,6 +177,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		imageAlt: "图片：{mimeType}",
 		removeImage: "移除图片 {index}",
 		imageNotFound: "在 vault 中找不到 {path}，未发送。",
+		unresolvedLink: "「{link}」还不存在，可以让 Piem 建一个。",
 		rowLabelSystem: "系统",
 		rowLabelCommand: "命令",
 		rowLabelSummary: "总结",

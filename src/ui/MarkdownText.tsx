@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import { MarkdownRenderer, type App, type Component } from "obsidian";
 import { resolveTextFace, resolveTextRenderMode, type TextBlockKind } from "./markdownPolicy";
-import { routeMarkdownLinkClick } from "./markdownLinks";
+import { markUnresolvedLinks, routeMarkdownLinkClick } from "./markdownLinks";
+import { useT } from "./TranslatorContext";
 
 export interface MarkdownTextProps {
 	text: string;
@@ -86,12 +87,21 @@ export function MarkdownText({ text, kind, isStreaming = false, app, component, 
  * and a base. `registerDomEvent` would tie the listener to the *view* instead, so
  * a transcript that scrolled a thousand blocks past would leave a thousand
  * registrations behind on a container each of them no longer owns.
+ *
+ * The copy for that listener's one message is read through a ref too, but for the
+ * opposite reason to `sourcePath`: the path is frozen because it records which
+ * note the block was drawn about, while the language is read live because it
+ * records how the reader wants to be spoken to *now*. Freezing it would answer a
+ * click in whatever language was set when the block first rendered.
  */
 function MarkdownContainer({ markdown, faceClass, app, component, sourcePath }: { markdown: string; faceClass: string; app: App; component: Component; sourcePath: string }): React.JSX.Element {
 	const ref = useRef<HTMLDivElement | null>(null);
 	const sourcePathRef = useRef(sourcePath);
+	const t = useT();
+	const tRef = useRef(t);
 
 	sourcePathRef.current = sourcePath;
+	tRef.current = t;
 
 	useEffect(() => {
 		const el = ref.current;
@@ -100,14 +110,24 @@ function MarkdownContainer({ markdown, faceClass, app, component, sourcePath }: 
 		}
 		el.empty();
 		const base = sourcePathRef.current;
-		void MarkdownRenderer.render(app, markdown, el, base, component).catch((error: unknown) => {
-			console.error("piem: markdown render failed", error);
-		});
+		let live = true;
+		void MarkdownRenderer.render(app, markdown, el, base, component)
+			.then(() => {
+				// Only now do the anchors exist: `render` appends asynchronously, and by
+				// the time it settles this effect may already have been torn down.
+				if (live) {
+					markUnresolvedLinks(app, el, base);
+				}
+			})
+			.catch((error: unknown) => {
+				console.error("piem: markdown render failed", error);
+			});
 		const onClick = (event: MouseEvent): void => {
-			routeMarkdownLinkClick(app, event, base);
+			routeMarkdownLinkClick(app, tRef.current, event, base);
 		};
 		el.addEventListener("click", onClick);
 		return () => {
+			live = false;
 			el.removeEventListener("click", onClick);
 			el.empty();
 		};
