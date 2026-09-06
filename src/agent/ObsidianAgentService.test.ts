@@ -4928,10 +4928,11 @@ describe("streaming refresh cost", () => {
 		const snapshot = service.getSnapshot();
 		expect(snapshot.isStreaming).toBe(false);
 		expect(snapshot.session?.messageCount).toBe(2);
-		// Two reads for the one turn: message_end's persist and agent_end's
-		// sweep. A handful of slack for unrelated in-run stats is still orders
-		// of magnitude below the one-per-delta behavior this pins against
-		// (200 chunks would have meant 200+).
-		expect(adapter.statCalls).toBeLessThanOrEqual(setupStatCalls + 8);
+		// Every persisted mutation now pays exactly two stats — the repair net's
+		// pre-append disk verify and the post-write fingerprint refresh — so a
+		// turn of N mutations costs ~2N, which is what this slack covers. The
+		// pinned behavior is still the one-per-delta regression: 200 chunks
+		// would mean 200+ stats, orders of magnitude past this bound.
+		expect(adapter.statCalls).toBeLessThanOrEqual(setupStatCalls + 24);
 	});
 });

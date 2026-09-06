@@ -3,6 +3,7 @@ import type { DataAdapter } from "obsidian";
 import { JsonlSessionRepo } from "@earendil-works/pi-agent-core";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
+import { scanDiskLines, type SessionDriftEvent } from "./sessionMutationLine";
 
 const SESSIONS_ROOT = "Piem/chats";
 const LEGACY_ROOT = `.${"obsidian"}/plugins/piem/sessions`;
@@ -199,6 +200,154 @@ describe("ObsidianSessionFileSystem", () => {
 			const { repo } = setup();
 
 			expect(await repo.list()).toEqual([]);
+		});
+	});
+
+	// The vault sync plugin arbitrates whole files last-writer-wins, so between
+	// two of our appends a foreign file version can land on disk. These tests
+	// stand in for that plugin with direct `adapter.write` calls — bypassing the
+	// fs on purpose, the way a foreign writer would.
+	describe("sync-drift repair net", () => {
+		function setupWithDriftLog(): { adapter: MemoryAdapter; drifts: SessionDriftEvent[]; fs: ObsidianSessionFileSystem; repo: JsonlSessionRepo } {
+			const adapter = new MemoryAdapter();
+			const drifts: SessionDriftEvent[] = [];
+			const fs = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter, undefined, (event) => drifts.push(event));
+			return { adapter, drifts, fs, repo: new JsonlSessionRepo({ fs, sessionsRoot: SESSIONS_ROOT }) };
+		}
+
+		/** Appends valid, lane-chained entries to the raw file, as the other device would. */
+		async function appendForeignEntries(adapter: MemoryAdapter, path: string, ids: string[]): Promise<void> {
+			const content = await adapter.read(path);
+			const disk = scanDiskLines(content.split("\n"));
+			let leaf = disk.laneLeaves.get("main") ?? null;
+			let seq = disk.maxSeq;
+			const additions: string[] = [];
+			for (const id of ids) {
+				seq += 1;
+				additions.push(
+					`${JSON.stringify({
+						kind: "entry", seq, lane: "main", id, type: "message",
+						parentId: leaf, timestamp: 2000 + seq,
+						message: { role: "user", content: [{ type: "text", text: id }] },
+					})}\n`,
+				);
+				leaf = id;
+			}
+			await adapter.write(path, content + additions.join(""));
+		}
+
+		async function branchTexts(repo: JsonlSessionRepo): Promise<Array<string | null>> {
+			const [listed] = await repo.list();
+			const reopened = await repo.open(listed!);
+			const entries = await reopened.findEntriesOnBranch({ order: "oldestFirst" });
+			return entries.map((entry) => (entry.type === "message" && entry.message.role === "user" ? userText(entry.message) : null));
+		}
+
+		/**
+		 * The core scenario: device A appends, the sync plugin lands device B's
+		 * version, A keeps typing against its stale in-memory view. The stale seq
+		 * and stale parent would brick the file at next load; the net rewrites the
+		 * line instead, and the merged content survives a real reopen.
+		 */
+		it("repairs a stale append after a foreign write lands between appends", async () => {
+			const { adapter, drifts, repo } = setupWithDriftLog();
+			const created = await repo.create({ cwd: CWD });
+			const path = adapter.filePaths()[0]!;
+
+			await created.appendEntry({ type: "message", id: "local-a", message: userMessage("local-a") }, "main");
+			await appendForeignEntries(adapter, path, ["foreign-0", "foreign-1"]);
+			await created.appendEntry({ type: "message", id: "local-b", message: userMessage("local-b") }, "main");
+
+			expect(drifts).toEqual([{ path, action: "repaired", kind: "entry", seq: expect.any(Number) }]);
+			expect(await branchTexts(repo)).toEqual(["local-a", "foreign-0", "foreign-1", "local-b"]);
+		});
+
+		/**
+		 * The stale session never learns the disk's seq, so every later append is
+		 * renumbered too — the file must stay loadable across arbitrarily many of
+		 * them, which is what one read per append buys.
+		 */
+		it("keeps the file loadable across consecutive stale appends", async () => {
+			const { adapter, repo } = setupWithDriftLog();
+			const created = await repo.create({ cwd: CWD });
+			const path = adapter.filePaths()[0]!;
+
+			await created.appendEntry({ type: "message", id: "local-a", message: userMessage("local-a") }, "main");
+			await appendForeignEntries(adapter, path, ["foreign-0", "foreign-1"]);
+			await created.appendEntry({ type: "message", id: "local-b", message: userMessage("local-b") }, "main");
+			await created.appendEntry({ type: "message", id: "local-c", message: userMessage("local-c") }, "main");
+			await created.setName("Renamed after drift");
+
+			expect(await branchTexts(repo)).toEqual(["local-a", "foreign-0", "foreign-1", "local-b", "local-c"]);
+			const [listed] = await repo.list();
+			expect(await (await repo.open(listed!)).getName()).toBe("Renamed after drift");
+		});
+
+		/**
+		 * The same entry id arriving twice is the one thing a rewrite cannot fix —
+		 * the id must be unique. pi's uuids make the collision practically
+		 * unreachable, so this drives the fs choke point directly with the line pi
+		 * would have sent; the valve is dropping it, and the next append must
+		 * still land on a healthy file.
+		 */
+		it("drops an append whose id the disk already used", async () => {
+			const { adapter, drifts, fs, repo } = setupWithDriftLog();
+			const created = await repo.create({ cwd: CWD });
+			const path = adapter.filePaths()[0]!;
+
+			await created.appendEntry({ type: "message", id: "shared", message: userMessage("from A") }, "main");
+			await appendForeignEntries(adapter, path, ["foreign-0"]);
+			const before = await adapter.read(path);
+			const collision = `${JSON.stringify({
+				kind: "entry", seq: 2, lane: "main", id: "shared", type: "message",
+				parentId: "shared", timestamp: 2000,
+				message: { role: "user", content: [{ type: "text", text: "duplicate id" }] },
+			})}\n`;
+			unwrap(await fs.appendFile(path, collision));
+
+			// The duplicate is dropped, and the next append is repaired onto the
+			// foreign tail — the file stays loadable either way.
+			expect(await adapter.read(path)).toBe(before);
+			await created.appendEntry({ type: "message", id: "after", message: userMessage("after") }, "main");
+			expect(drifts).toEqual([
+				{ path, action: "dropped", kind: "entry" },
+				{ path, action: "repaired", kind: "entry", seq: expect.any(Number) },
+			]);
+			expect(await branchTexts(repo)).toEqual(["from A", "foreign-0", "after"]);
+		});
+
+		it("passes ordinary back-to-back appends without touching the net", async () => {
+			const { drifts, repo } = setupWithDriftLog();
+			const created = await repo.create({ cwd: CWD });
+
+			await created.appendEntry({ type: "message", id: "a", message: userMessage("a") }, "main");
+			await created.appendEntry({ type: "message", id: "b", message: userMessage("b") }, "main");
+
+			expect(drifts).toEqual([]);
+			expect(await branchTexts(repo)).toEqual(["a", "b"]);
+		});
+
+		/**
+		 * A fs instance that never wrote the file (a reload after the plugin
+		 * restarted) has no baseline — its first append must verify by reading,
+		 * not assume drift, and a correct line must pass byte-identical.
+		 */
+		it("verifies the first append of a fresh fs instance against the disk without rewriting", async () => {
+			const { adapter, drifts, repo } = setupWithDriftLog();
+			const created = await repo.create({ cwd: CWD });
+			await created.appendEntry({ type: "message", id: "a", message: userMessage("a") }, "main");
+			const path = adapter.filePaths()[0]!;
+			const before = await adapter.read(path);
+
+			const refreshed = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter, undefined, (event) => drifts.push(event));
+			const freshRepo = new JsonlSessionRepo({ fs: refreshed, sessionsRoot: SESSIONS_ROOT });
+			const reopened = await freshRepo.open((await freshRepo.list())[0]!);
+			await reopened.appendEntry({ type: "message", id: "b", message: userMessage("b") }, "main");
+
+			expect(drifts).toEqual([]);
+			const after = await adapter.read(path);
+			expect(after.startsWith(before)).toBe(true);
+			expect(await branchTexts(freshRepo)).toEqual(["a", "b"]);
 		});
 	});
 });
