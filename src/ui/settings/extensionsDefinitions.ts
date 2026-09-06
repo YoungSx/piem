@@ -31,6 +31,20 @@ import { rowAction, type SettingsPanelHost } from "./panelHost";
 import { sectionNote } from "./sectionNote";
 
 /**
+ * Records a failed skill action.
+ *
+ * The verdict these paths also raise is a `Notice` or a modal status line that
+ * vanishes with the screen; this is the copy that survives. The subject is the
+ * row or URL the user acted on — never file contents, so no key or token can
+ * ride along.
+ */
+function logSkillFailure(host: SettingsPanelHost, action: string, subject: string, cause: unknown): void {
+	host.logger.warn(`Skill ${action} failed: ${subject}`, () => ({
+		error: cause instanceof Error ? cause.message : String(cause),
+	}));
+}
+
+/**
  * The Extensions tab as declarative definitions.
  *
  * This is the section the imperative panel worked hardest for, and the reason is
@@ -85,7 +99,12 @@ function revalidateSkills(host: SettingsPanelHost, state: SettingsPanelState): v
 			// blanking the lists: the rows on screen were true a moment ago, and an
 			// empty section would read as "no skills" instead of "could not look".
 			// The startup path swallows this too; the Reload button is where a user
-			// asks for a verdict and gets one.
+			// asks for a verdict and gets one. Logged at debug rather than warn:
+			// this runs on every tab render, so a persistently broken directory
+			// would turn each visit into a repeat warning.
+			host.logger.debug("Skill revalidation failed", () => ({
+				error: cause instanceof Error ? cause.message : String(cause),
+			}));
 			void cause;
 		} finally {
 			state.skillsLoading = false;
@@ -154,8 +173,25 @@ function vaultSkillsList(host: SettingsPanelHost, state: SettingsPanelState, sna
 				new ImportSkillModal({
 					app: host.app,
 					t,
-					fetchSource: (url) => host.skills.fetchSource(url),
-					install: (source, skill) => host.skills.install(source, skill),
+					// Wrapped rather than logged inside the modal: the failures render
+					// there, but they render nowhere else once the dialog closes.
+					fetchSource: async (url) => {
+						try {
+							return await host.skills.fetchSource(url);
+						} catch (cause) {
+							logSkillFailure(host, "source fetch", url, cause);
+							throw cause;
+						}
+					},
+					install: async (source, skill) => {
+						try {
+							await host.skills.install(source, skill);
+							host.logger.info(`Skill installed: ${skill.name}`, () => ({ url: source.url }));
+						} catch (cause) {
+							logSkillFailure(host, "install", skill.name, cause);
+							throw cause;
+						}
+					},
 					onImported: () => reloadSkills(host, state),
 				}).open(),
 		},
@@ -199,6 +235,9 @@ async function announceReload(host: SettingsPanelHost, state: SettingsPanelState
 	} catch (cause) {
 		// Unlike the revalidation above, a failure here is not swallowed: someone
 		// pressed a control and is waiting for its verdict.
+		host.logger.warn("Skill reload failed", () => ({
+			error: cause instanceof Error ? cause.message : String(cause),
+		}));
 		new Notice(t.t("skills.couldNotReload", { message: cause instanceof Error ? cause.message : String(cause) }));
 	} finally {
 		button.setDisabled(false);
@@ -704,6 +743,7 @@ async function runSkillUpdate(host: SettingsPanelHost, row: SkillRow, button: Bu
 		}
 		await afterMutation();
 	} catch (cause) {
+		logSkillFailure(host, "update", row.name, cause);
 		new Notice(t.t("skills.couldNotUpdate", { name: row.name, message: cause instanceof Error ? cause.message : String(cause) }));
 	} finally {
 		// Harmless when the row has been re-rendered away; the fresh row's
@@ -718,6 +758,7 @@ async function runSkillRemove(host: SettingsPanelHost, row: SkillRow, afterMutat
 		await host.skills.remove(row.dirName);
 		await afterMutation();
 	} catch (cause) {
+		logSkillFailure(host, "remove", row.name, cause);
 		new Notice(t.t("skills.couldNotDelete", { name: row.name, message: cause instanceof Error ? cause.message : String(cause) }));
 	}
 }

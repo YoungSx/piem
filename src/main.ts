@@ -170,7 +170,58 @@ export default class PiemPlugin extends Plugin {
 			fetch: createObsidianRequestUrlFetch(),
 			canStore: () => this.requireSecretEnvironment().pluginSecrets().available,
 		});
-		return this.signInBridge;
+		return this.wrapSignInLogging(this.signInBridge);
+	}
+
+	/**
+	 * Logs the panel's sign-in outcomes.
+	 *
+	 * A failed exchange is written to the dialog that rendered it and nowhere
+	 * else; wrapping here — the composition root, where the logger is already in
+	 * hand — records both verdicts without threading a logger through every
+	 * modal. The wrapper rethrows so the dialog's own catch still shows the same
+	 * message.
+	 */
+	private wrapSignInLogging(session: SignInSession): SignInSession {
+		return {
+			...session,
+			actionsFor: (target) => {
+				const actions = session.actionsFor(target);
+				if (!actions) {
+					return undefined;
+				}
+				const note = (verb: string, error?: unknown) => {
+					const detail = () => ({ target: target.id, method: actions.method, ...(error ? { error: String(error) } : {}) });
+					if (error) {
+						this.log.warn(`${verb} failed`, detail);
+					} else {
+						this.log.info(verb, detail);
+					}
+				};
+				return {
+					...actions,
+					isSignedIn: actions.isSignedIn.bind(actions),
+					signIn: async (interaction) => {
+						try {
+							await actions.signIn(interaction);
+							note(`OAuth sign-in completed (${actions.method})`);
+						} catch (error) {
+							note(`OAuth sign-in failed (${actions.method})`, error);
+							throw error;
+						}
+					},
+					signOut: async () => {
+						try {
+							await actions.signOut();
+							note(`OAuth sign-out completed (${actions.method})`);
+						} catch (error) {
+							note(`OAuth sign-out failed (${actions.method})`, error);
+							throw error;
+						}
+					},
+				};
+			},
+		};
 	}
 
 	/**
