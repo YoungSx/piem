@@ -237,7 +237,7 @@ export class SessionRuntime {
 	queueInterrupt = false;
 	/** Mid-run compactions spent on the active run; the budget is per run. */
 	midRunCompactions = 0;
-	/** Prevents two retries from racing while the branch pointer is being persisted. */
+	/** Holds the rewind and send preparation until agent_start; streaming then owns the turn. */
 	retryInFlight = false;
 
 	/**

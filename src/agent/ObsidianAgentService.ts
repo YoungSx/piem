@@ -1001,9 +1001,9 @@ export class ObsidianAgentService {
 	 * replacement question to the exact send path a normal message takes — command
 	 * expansion, embed resolution, the capability gates — without tripping the
 	 * busy guards on the way in. The rewind already holds the exclusivity those
-	 * guards enforce ({@link retryInFlight} is set for its whole body, and it
-	 * refuses to start while anything else does): refusing here would not be
-	 * protection, it would be the rewind blocking itself.
+	 * guards enforce: `rt.retryInFlight` covers preparation until `agent_start`,
+	 * when pi's streaming state takes over. Refusing here would be the rewind
+	 * blocking itself.
 	 *
 	 * The credential and image gates are deliberately *not* skipped. They are
 	 * re-checked on this path so a key removed or a model switched while the
@@ -1812,10 +1812,8 @@ export class ObsidianAgentService {
 			return await this.deliverPrompt(prompt, images);
 		} finally {
 			rt.retryInFlight = false;
-			// The flag's release is its own render: the notification inside the try
-			// fired while the send was still pretending to be busy, so without this
-			// one the panel could stay in the rewinding treatment through the first
-			// events of the replacement run — or, on a refused send, indefinitely.
+			// A refused or failed send may never emit agent_start. Release and
+			// notify here too, so preparation cannot leave the panel stuck busy.
 			this.notify();
 		}
 	}
@@ -3452,6 +3450,12 @@ export class ObsidianAgentService {
 	}
 
 	private async handleAgentEvent(rt: SessionRuntime, event: AgentEvent): Promise<void> {
+		if (event.type === "agent_start") {
+			// pi has already claimed the streaming state. The replacement is now
+			// running, so its rewind notice and exclusive send guard must end here,
+			// not when the awaited prompt resolves after the entire reply.
+			rt.retryInFlight = false;
+		}
 		if (event.type === "tool_execution_start") {
 			rt.pendingToolNames.set(event.toolCallId, event.toolName);
 			rt.pendingToolStarts.set(event.toolCallId, Date.now());

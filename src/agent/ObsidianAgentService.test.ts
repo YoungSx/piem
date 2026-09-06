@@ -791,7 +791,7 @@ describe("ObsidianAgentService", () => {
 		expect(service.getSnapshot().noticeMessage).toContain("does not accept images");
 	});
 
-	it("reports the rewind window on the snapshot while the branch summary runs", async () => {
+	it.each(["edit", "retry"] as const)("reports the %s rewind only until the replacement run starts", async (action) => {
 		// Between the guards and the replacement send the agent streams nothing
 		// and no compaction runs — the one window the panel used to report as
 		// fully idle while a real LLM request (the abandoned branch's summary)
@@ -805,26 +805,42 @@ describe("ObsidianAgentService", () => {
 		const service = createService();
 		await service.sendPrompt("What is in my vault?");
 		const seen = [service.getSnapshot()];
-		service.subscribe((snapshot) => seen.push(snapshot));
+		const unsubscribe = service.subscribe((snapshot) => seen.push(snapshot));
 
-		const resend = service.editAndResend(service.getSnapshot().messages.length - 2, "Which notes mention pi?");
+		const resend = action === "edit"
+			? service.editAndResend(service.getSnapshot().messages.length - 2, "Which notes mention pi?")
+			: service.retryFrom(service.getSnapshot().messages.length - 1);
 		// The branch summary request is gated until the flag is witnessed, so the
 		// assertion cannot pass on a run where no window ever opened.
 		for (let i = 0; i < 200 && release === undefined; i += 1) {
 			await new Promise((r) => setTimeout(r, 5));
 		}
-		const during = service.getSnapshot();
-		expect(during.isRewinding).toBe(true);
-		expect(during.isStreaming).toBe(false);
-		expect(during.isCompacting).toBe(false);
-		release?.();
-		expect(await resend).toBe(true);
+		try {
+			const during = service.getSnapshot();
+			expect(during.isRewinding).toBe(true);
+			expect(during.isStreaming).toBe(false);
+			expect(during.isCompacting).toBe(false);
+			release?.();
+			expect(await resend).toBe(true);
 
-		const finalSnapshot = seen[seen.length - 1];
-		expect(finalSnapshot?.isRewinding).toBe(false);
-		// The busy trio that gates every control never shows all-false mid-rewind:
-		// streaming covers the replacement run itself.
-		expect(finalSnapshot?.isStreaming).toBe(false);
+			// The live reply owns the busy state from its very first event. Waiting
+			// for the whole prompt to settle leaves "Resending" over the new answer.
+			const streaming = seen.filter((snapshot) => snapshot.isStreaming);
+			expect(streaming.length).toBeGreaterThan(0);
+			expect(streaming.some((snapshot) => snapshot.isRewinding)).toBe(false);
+			const firstRewind = seen.findIndex((snapshot) => snapshot.isRewinding);
+			const firstStreaming = seen.findIndex((snapshot) => snapshot.isStreaming);
+			expect(seen.slice(firstRewind, firstStreaming).every((snapshot) => snapshot.isRewinding)).toBe(true);
+
+			const finalSnapshot = seen[seen.length - 1];
+			expect(finalSnapshot?.isRewinding).toBe(false);
+			expect(finalSnapshot?.isStreaming).toBe(false);
+		} finally {
+			release?.();
+			await resend;
+			unsubscribe();
+			service.dispose();
+		}
 	});
 
 	it("refuses a fresh send that lands inside the rewind window", async () => {
