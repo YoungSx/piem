@@ -19,7 +19,9 @@ export class ApiError extends Error {
 	/** Always assigned, even when unknown. Must be a real `Headers` instance. */
 	readonly headers: Headers | undefined;
 	/** Parsed response body under the SDK field name: pi-ai's error-body.js
-	 *  reads `error.error` (isPlainNonEmptyObject) for the raw reason. */
+	 *  reads `error.error` (isPlainNonEmptyObject) for the raw reason. Set only
+	 *  when {@link Error.message} does not already speak for the whole body —
+	 *  see {@link ErrorBodyDescription.body}. */
 	readonly error: unknown;
 
 	constructor(
@@ -34,24 +36,55 @@ export class ApiError extends Error {
 	}
 }
 
+/**
+ * A non-2xx response as both SDKs would present it: the message they put on the
+ * error, and what they expose as the parsed body.
+ */
+interface ErrorBodyDescription {
+	/** The message both SDKs would build from this status and body. */
+	message: string;
+	/**
+	 * What belongs on {@link ApiError.error}, or `undefined` when
+	 * {@link message} already speaks for the whole body.
+	 *
+	 * pi-ai decides whether to show our message or the raw body by testing
+	 * whether the message *contains* the serialized body (`utils/error-body.js`,
+	 * `messageCarriesBody`). That test can only pass when the message repeats the
+	 * body in full — so lifting a reason out of `{"error":{"message":…}}`, which
+	 * is the whole point of the cases below, is exactly what makes pi discard the
+	 * sentence and print the JSON instead. It does that on two of the three
+	 * protocols this plugin speaks (`api/openai-completions.js`,
+	 * `api/openai-responses.js`; `api/anthropic-messages.js` uses `error.message`
+	 * unchanged), so the same 429 reached the reader as prose on one endpoint and
+	 * as a JSON blob on the next.
+	 *
+	 * This layer is the only one that *knows* the answer rather than inferring it,
+	 * so it withholds the body in that case instead of leaving pi to guess. Where
+	 * the message does repeat the body verbatim the field is kept: pi's inference
+	 * is right there, and anything else reading `error.error` should still find
+	 * what the SDKs expose.
+	 */
+	body: unknown;
+}
+
 /** Formats a non-2xx body the way both SDKs build their error message. */
-function errorMessage(status: number | undefined, bodyText: string): string {
-	if (status === undefined) return "(no status code or body)";
+function describeErrorBody(status: number | undefined, bodyText: string): ErrorBodyDescription {
+	if (status === undefined) return { message: "(no status code or body)", body: undefined };
 	let parsed: unknown;
 	try {
 		parsed = bodyText ? JSON.parse(bodyText) : undefined;
 	} catch {
-		return `${status} ${bodyText}`;
+		return { message: `${status} ${bodyText}`, body: bodyText };
 	}
 	if (isRecord(parsed) && isRecord(parsed.error) && typeof parsed.error.message === "string") {
-		return `${status} ${parsed.error.message}`;
+		return { message: `${status} ${parsed.error.message}`, body: undefined };
 	}
 	if (isRecord(parsed) && typeof parsed.message === "string") {
-		return `${status} ${parsed.message}`;
+		return { message: `${status} ${parsed.message}`, body: undefined };
 	}
-	if (typeof parsed === "string") return `${status} ${parsed}`;
-	if (parsed === undefined) return `${status} status code (no body)`;
-	return `${status} ${JSON.stringify(parsed)}`;
+	if (typeof parsed === "string") return { message: `${status} ${parsed}`, body: parsed };
+	if (parsed === undefined) return { message: `${status} status code (no body)`, body: undefined };
+	return { message: `${status} ${JSON.stringify(parsed)}`, body: parsed };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,10 +99,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function assertOkResponse(response: Response): Promise<void> {
 	if (response.ok) return;
 	const bodyText = await response.text().catch(() => "");
-	throw new ApiError(errorMessage(response.status, bodyText), {
+	const described = describeErrorBody(response.status, bodyText);
+	throw new ApiError(described.message, {
 		status: response.status,
 		headers: response.headers,
-		error: parseBody(bodyText),
+		error: described.body,
 	});
 }
 
@@ -82,15 +116,6 @@ export function transportError(cause: unknown): ApiError {
 	// signal is the honest answer.
 	Object.defineProperty(error, "cause", { value: cause, enumerable: false });
 	return error;
-}
-
-function parseBody(bodyText: string): unknown {
-	if (!bodyText) return undefined;
-	try {
-		return JSON.parse(bodyText);
-	} catch {
-		return bodyText;
-	}
 }
 
 /**
