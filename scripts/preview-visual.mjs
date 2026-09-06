@@ -1780,6 +1780,7 @@ const TOKENS = `
 	--font-medium: 500;
 	--font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 	--font-monospace: ui-monospace, SFMono-Regular, Menlo, monospace;
+	--icon-xs: 14px;
 	--icon-s: 16px;
 	--icon-size: 16px;
 	--icon-color: #b3b3b3;
