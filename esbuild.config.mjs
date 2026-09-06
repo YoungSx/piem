@@ -47,6 +47,7 @@ const context = await esbuild.context({
 	// release archive. See src/brandIcon.ts.
 	loader: {
 		".png": "dataurl",
+		".md": "text",
 	},
 	bundle: true,
 	external: [
