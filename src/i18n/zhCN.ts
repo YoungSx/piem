@@ -240,6 +240,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 		tagOrganize: {
 			description: "审计标签并提出一致、低噪声的标签结构。",
 		},
+		vaultMemory: {
+			description:
+				"跨对话记住教训：把纠正和失败记进 Piem/memory/，任务开始时先回顾，再甄别哪些配得上长期保存。",
+		},
 	},
 
 	chatStatus: {

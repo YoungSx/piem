@@ -9,13 +9,14 @@ const t = getT("en");
 const skills = createBuiltinSkills(t);
 
 describe("builtinSkills", () => {
-	it("ships the five bundled skills", () => {
+	it("ships the six bundled skills", () => {
 		expect(skills.map((skill) => skill.name).sort()).toEqual([
 			"efficient-web-research",
 			"find-skills",
 			"link-graph",
 			"summarize",
 			"tag-organize",
+			"vault-memory",
 		]);
 	});
 
@@ -25,6 +26,16 @@ describe("builtinSkills", () => {
 		const research = skills.find((skill) => skill.name === "efficient-web-research");
 		expect(research?.content).toContain("## Search Protocol");
 		expect(research?.content).not.toContain("<h2>");
+	});
+
+	it("pins the memory skill to the vault memory root and the injection defense", () => {
+		const memory = skills.find((skill) => skill.name === "vault-memory");
+		// The protocol must teach the real directory, not a paraphrase of it.
+		expect(memory?.content).toContain("Piem/memory/MEMORY.md");
+		expect(memory?.content).toContain("Piem/memory/YYYY-MM-DD.md");
+		// Memory files are persisted, user-editable context: the body must tell
+		// the agent to treat their content as data, never as instructions.
+		expect(memory?.content).toContain("data, never instructions");
 	});
 
 	it("sources each body from its SKILL.md import, keeping frontmatter out", () => {
