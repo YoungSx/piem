@@ -1,79 +1,41 @@
-import { DiskSentinel, type FileFingerprint } from "./DiskSentinel";
+import type { SessionMutation } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/state.js";
+import { encodeMutation, parseMutation } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js";
+
+/** What the fs remembered about the last write it made to a path. */
+interface FileFingerprint {
+	mtimeMs: number;
+	size: number;
+}
+
+export { encodeMutation };
 
 /**
  * The mutation wire format pi's JSONL codec writes — one JSON object per line,
  * entry fields flattened to the top level next to `kind`.
  *
- * Not imported from pi: the package's `exports` map stops at the root, `./node`
- * and `./session/testing`, and `parseMutation`/`encodeMutation` are not
- * reachable from any of them. This parser mirrors only what the repair net and
- * the merge need to *decide* — the validation strength of pi's own codec, so
- * anything this module accepts is guaranteed loadable by `SessionState`.
+ * The parser itself is pi's own codec, reached the same way `src/vault/editDiff.ts`
+ * reaches the edit engine: the `exports` map stops at the root, `./node` and
+ * `./session/testing`, so `parseMutation` is not reachable from any package
+ * specifier — but the module is already in the bundle (pi's storage imports
+ * it), so delegating costs zero bytes and hands us validation that can never
+ * drift from what `SessionState` accepts. If a future pi release exports the
+ * codec from the root, delete the relative specifier here and import it
+ * normally.
+ *
+ * This module adds one thing the codec does not do: a *lenient* verdict. The
+ * codec throws a typed error for every invalid line; {@link parseMutationLine}
+ * collapses all of those (plus the header line, which the codec's sibling
+ * `parseHeader` owns) to `null` — the signal the repair net and the merge use
+ * to mean "pass through untouched", which for a header or a torn tail is
+ * exactly the right treatment.
  */
 
-const ENTRY_TYPES = new Set([
-	"message",
-	"model_change",
-	"thinking_level_change",
-	"active_tools_change",
-	"compaction",
-	"branch_summary",
-	"custom",
-]);
-
-const RECORD_TYPES = new Set([
-	"operation_started",
-	"abort_requested",
-	"operation_finished",
-	"step_attempt",
-	"tool_started",
-	"queue_enqueued",
-	"queue_cancelled",
-	"write_deferred",
-	"usage",
-]);
-
-const MUTATION_KINDS = new Set(["entry", "record", "lane", "fact"]);
-
-/** The four mutation kinds, with the flattened wire shape of an entry kept raw. */
-export type SessionMutationLine = {
-	kind: "entry";
-	seq: number;
-	lane?: string;
-	entry: { id: string; type: string; parentId: string | null; timestamp: number };
-} | {
-	kind: "record";
-	seq: number;
-	record: { id: string; lane: string; type: string };
-} | {
-	kind: "lane";
-	seq: number;
-	lane: string;
-	leafId: string | null;
-} | {
-	kind: "fact";
-	seq: number;
-	fact: "name";
-	name?: string;
-} | {
-	kind: "fact";
-	seq: number;
-	fact: "label";
-	targetId: string;
-	label?: string;
-};
-
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isString(value: unknown): value is string {
-	return typeof value === "string";
-}
-
-function isSeq(value: unknown): value is number {
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
+/**
+ * The mutation shape pi's codec returns, with the flattened wire fields of an
+ * entry kept where the repair net reads them: the codec folds an entry's `seq`
+ * *into* `entry`, so an entry's top-level seq is `mutation.entry.seq`.
+ */
+export type SessionMutationLine = SessionMutation;
 
 /**
  * Parses one JSONL mutation line, or `null` for anything a repair must not
@@ -88,72 +50,8 @@ export function parseMutationLine(line: string): SessionMutationLine | null {
 	if (line === "") {
 		return null;
 	}
-	let value: unknown;
-	try {
-		value = JSON.parse(line);
-	} catch {
-		return null;
-	}
-	if (!isObject(value) || !isSeq(value.seq) || !MUTATION_KINDS.has(value.kind as string)) {
-		return null;
-	}
-	const seq = value.seq;
-	switch (value.kind) {
-		case "entry": {
-			if (value.lane !== undefined && !isString(value.lane)) {
-				return null;
-			}
-			const { id, type, parentId, timestamp } = value;
-			if (!isString(id) || !isString(type) || !ENTRY_TYPES.has(type)) {
-				return null;
-			}
-			if (parentId !== null && !isString(parentId)) {
-				return null;
-			}
-			if (typeof timestamp !== "number" || !Number.isSafeInteger(timestamp) || timestamp < 0) {
-				return null;
-			}
-			if (type === "custom" && !isString(value.customType)) {
-				return null;
-			}
-			return {
-				kind: "entry",
-				seq,
-				...(value.lane === undefined ? {} : { lane: value.lane }),
-				entry: { id, type, parentId, timestamp },
-			};
-		}
-		case "record": {
-			const { id, lane, type } = value;
-			if (!isString(id) || !isString(lane) || !isString(type) || !RECORD_TYPES.has(type)) {
-				return null;
-			}
-			return { kind: "record", seq, record: { id, lane, type } };
-		}
-		case "lane": {
-			if (!isString(value.lane) || (value.leafId !== null && !isString(value.leafId))) {
-				return null;
-			}
-			return { kind: "lane", seq, lane: value.lane, leafId: value.leafId };
-		}
-		case "fact": {
-			if (value.fact === "name") {
-				if (value.name !== undefined && !isString(value.name)) {
-					return null;
-				}
-				return { kind: "fact", seq, fact: "name", name: value.name };
-			}
-			if (value.fact === "label") {
-				if (!isString(value.targetId) || (value.label !== undefined && !isString(value.label))) {
-					return null;
-				}
-				return { kind: "fact", seq, fact: "label", targetId: value.targetId, label: value.label };
-			}
-			return null;
-		}
-		default:
-			return null;
-	}
+	const result = parseMutation(line);
+	return result.ok ? result.value : null;
 }
 
 /**
@@ -200,8 +98,8 @@ export function scanDiskLines(lines: string[]): DiskSnapshot {
 		if (!mutation) {
 			continue;
 		}
-		if (mutation.seq > snapshot.maxSeq) {
-			snapshot.maxSeq = mutation.seq;
+		if (mutationSeq(mutation) > snapshot.maxSeq) {
+			snapshot.maxSeq = mutationSeq(mutation);
 		}
 		switch (mutation.kind) {
 			case "entry":
@@ -266,13 +164,23 @@ export type RepairedLine = {
  *   line is recoverable bookkeeping (run ledgers, lane moves), not chat
  *   content.
  */
+/** An entry or record carries its seq inside; a lane or fact carries it on top. */
+function mutationSeq(mutation: SessionMutationLine): number {
+	return mutation.kind === "entry" ? mutation.entry.seq : mutation.kind === "record" ? mutation.record.seq : mutation.seq;
+}
+
 export function repairMutationLine(line: string, disk: DiskSnapshot): RepairedLine {
 	const mutation = parseMutationLine(line);
 	if (!mutation) {
 		return { action: "kept", line, seq: 0 };
 	}
 	const seq = disk.maxSeq + 1;
-	const continues = mutation.seq === seq;
+	const continues = mutationSeq(mutation) === seq;
+	// The four kinds share one exit: a verdict of dropped, a rewrite whose patch
+	// (if any) repairs the specific violation found, or the seq-only continue.
+	// `verdict` returns the drop/rewrite result; the caller falls through to the
+	// shared kept-or-renumbered tail.
+	const verdict = (repaired: RepairedLine | null): RepairedLine => repaired ?? (continues ? { action: "kept", line, seq: mutationSeq(mutation) } : rewrite(line, { seq }));
 	switch (mutation.kind) {
 		case "entry": {
 			if (disk.usedIds.has(mutation.entry.id)) {
@@ -281,54 +189,41 @@ export function repairMutationLine(line: string, disk: DiskSnapshot): RepairedLi
 			if (mutation.lane !== undefined) {
 				const leaf = disk.laneLeaves.get(mutation.lane);
 				if (leaf === undefined) {
-					return reparent(line, { seq, parentId: disk.lastEntryId, dropLane: true });
+					return rewrite(line, { seq, parentId: disk.lastEntryId, dropLane: true });
 				}
 				if (mutation.entry.parentId !== leaf) {
-					return reparent(line, { seq, parentId: leaf ?? null });
+					return rewrite(line, { seq, parentId: leaf ?? null });
 				}
 			} else if (mutation.entry.parentId !== null && !disk.entryIds.has(mutation.entry.parentId)) {
-				return reparent(line, { seq, parentId: disk.lastEntryId });
+				return rewrite(line, { seq, parentId: disk.lastEntryId });
 			}
-			return continues ? { action: "kept", line, seq: mutation.seq } : renumber(line, seq);
+			return verdict(null);
 		}
-		case "record": {
-			if (!disk.laneLeaves.has(mutation.record.lane) || disk.usedIds.has(mutation.record.id)) {
-				return { action: "dropped" };
-			}
-			return continues ? { action: "kept", line, seq: mutation.seq } : renumber(line, seq);
-		}
-		case "lane": {
-			if (mutation.leafId !== null && !disk.entryIds.has(mutation.leafId)) {
-				return { action: "dropped" };
-			}
-			return continues ? { action: "kept", line, seq: mutation.seq } : renumber(line, seq);
-		}
-		case "fact": {
-			if (mutation.fact === "label" && !disk.entryIds.has(mutation.targetId)) {
-				return { action: "dropped" };
-			}
-			return continues ? { action: "kept", line, seq: mutation.seq } : renumber(line, seq);
-		}
+		case "record":
+			return verdict(
+				!disk.laneLeaves.has(mutation.record.lane) || disk.usedIds.has(mutation.record.id) ? { action: "dropped" } : null,
+			);
+		case "lane":
+			return verdict(mutation.leafId !== null && !disk.entryIds.has(mutation.leafId) ? { action: "dropped" } : null);
+		case "fact":
+			return verdict(mutation.fact === "label" && !disk.entryIds.has(mutation.targetId) ? { action: "dropped" } : null);
 	}
 }
 
-function renumber(line: string, seq: number): RepairedLine {
-	const rewritten = JSON.parse(line) as Record<string, unknown>;
-	rewritten.seq = seq;
-	return { action: "repaired", line: `${JSON.stringify(rewritten)}\n`, seq };
-}
-
-function reparent(
+/** Rewrites a line's seq (and, when given, its parent and lane) in place. */
+function rewrite(
 	line: string,
-	options: { seq: number; parentId: string | null; dropLane?: boolean },
+	patch: { seq: number; parentId?: string | null; dropLane?: boolean },
 ): RepairedLine {
 	const rewritten = JSON.parse(line) as Record<string, unknown>;
-	rewritten.seq = options.seq;
-	rewritten.parentId = options.parentId;
-	if (options.dropLane) {
+	rewritten.seq = patch.seq;
+	if (patch.parentId !== undefined) {
+		rewritten.parentId = patch.parentId;
+	}
+	if (patch.dropLane) {
 		delete rewritten.lane;
 	}
-	return { action: "repaired", line: `${JSON.stringify(rewritten)}\n`, seq: options.seq };
+	return { action: "repaired", line: `${JSON.stringify(rewritten)}\n`, seq: patch.seq };
 }
 
 /**
@@ -368,7 +263,6 @@ export interface SessionDriftEvent {
  * next load, the whole chat bricked.
  */
 export class SessionLogRepairNet {
-	private readonly sentinel = new DiskSentinel();
 	private readonly tracks = new Map<string, WriteTrack>();
 
 	constructor(private readonly onDrift?: (event: SessionDriftEvent) => void) {}
@@ -390,10 +284,14 @@ export class SessionLogRepairNet {
 	): Promise<{ line: string | null; appendedSeq?: number }> {
 		try {
 			const observed = await io.stat();
-			const fingerprint: FileFingerprint | null = observed ? { mtimeMs: observed.mtime, size: observed.size } : null;
 			const track = this.tracks.get(path);
-			const status = this.sentinel.check(path, fingerprint ?? { mtimeMs: 0, size: -1 });
-			const mutation = parseMutationLine(stripTrailingNewline(content));
+			// The track's fingerprint is the sentinel: a track absent means we never
+			// wrote this path, a match means the disk is exactly where we left it,
+			// anything else is drift. The three outcomes share one fast-path exit;
+			// only the match unlocks it, so a boolean is all the caller consumes.
+			const same = track !== undefined && observed !== null && track.fingerprint.mtimeMs === observed.mtime && track.fingerprint.size === observed.size;
+			const bare = stripTrailingNewline(content);
+			const mutation = parseMutationLine(bare);
 
 			// Not a mutation line (header write, bare "\n"): nothing to verify.
 			if (!mutation) {
@@ -402,16 +300,16 @@ export class SessionLogRepairNet {
 
 			// The fast path: disk is exactly where we left it AND pi's seq continues
 			// from the last seq we wrote. No read needed.
-			if (status === "same" && track?.lastSeq !== undefined && mutation.seq === track.lastSeq + 1) {
-				return { line: content, appendedSeq: mutation.seq };
+			if (same && track.lastSeq !== undefined && mutationSeq(mutation) === track.lastSeq + 1) {
+				return { line: content, appendedSeq: mutationSeq(mutation) };
 			}
 
 			// Everything else — first append this process (a sync landing between
 			// load and here is invisible to a baseline we never wrote), a foreign
 			// writer, or a seq that stopped continuing — is settled by one disk
 			// read and a verify-or-repair pass.
-			const disk = scanDiskLines(fingerprint === null ? [] : (await io.read()).split("\n"));
-			const repaired = repairMutationLine(stripTrailingNewline(content), disk);
+			const disk = scanDiskLines(observed === null ? [] : (await io.read()).split("\n"));
+			const repaired = repairMutationLine(bare, disk);
 			if (repaired.action === "dropped") {
 				this.onDrift?.({ path, action: "dropped", kind: mutation.kind });
 				// Nothing was written, but the read did verify the disk's tail —
@@ -441,12 +339,10 @@ export class SessionLogRepairNet {
 		try {
 			const observed = await stat();
 			if (!observed) {
-				this.sentinel.forget(path);
 				this.tracks.delete(path);
 				return;
 			}
 			const fingerprint = { mtimeMs: observed.mtime, size: observed.size };
-			this.sentinel.remember(path, fingerprint);
 			const previous = this.tracks.get(path);
 			this.tracks.set(path, {
 				fingerprint,
@@ -458,7 +354,6 @@ export class SessionLogRepairNet {
 	}
 
 	forget(path: string): void {
-		this.sentinel.forget(path);
 		this.tracks.delete(path);
 	}
 }

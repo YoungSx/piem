@@ -59,6 +59,7 @@ import {
 	type ActiveSessionInfo,
 	type SessionContext,
 	type SessionDefaults,
+	type SessionReconcileOutcome,
 } from "../session/ObsidianSessionManager";
 import { aggregateSessionSearchHits, type SessionSearchResult } from "../session/sessionSearch";
 import { arrayBufferToBase64, extractImageRefs, mimeTypeForPath, sanitizeMessageForLog, stripImageRefs } from "../vault/image";
@@ -179,6 +180,12 @@ export interface ChatSnapshot {
 	 * screen reader interrupt the user to report that nothing had happened.
 	 */
 	noticeMessage?: string;
+	/**
+	 * Path of the quarantined foreign copy when a sync merge refused, as a
+	 * standing banner row the user dismisses. Absent from older snapshots means
+	 * "no conflict", the same reading a fresh install has.
+	 */
+	syncConflict?: string;
 	/**
 	 * Messages that are on screen and not on disk, by identity.
 	 *
@@ -475,6 +482,15 @@ function isReportedInTranscript(agent: Agent | null, agentError: string): boolea
  * per token during a run, and both readers of this — the error filter and the
  * dispatch-failure guard — run on snapshots taken at failure time.
  */
+/**
+ * The one-line description of an unknown thrown cause: Error gets its message,
+ * anything else gets its string form. The same verdict the lint rule bd8e9cc
+ * standardized on, now written once.
+ */
+function causeMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
+}
+
 function lastAssistantTurn(messages: readonly AgentMessage[]): AgentMessage | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];
@@ -926,7 +942,7 @@ export class ObsidianAgentService {
 		this.settleInterruptedRunsFor(runtime).catch((error) => {
 			this.log.error("Failed to settle interrupted runs", () => ({
 				path,
-				error: error instanceof Error ? error.message : String(error),
+				error: causeMessage(error),
 			}));
 		});
 		return runtime;
@@ -990,7 +1006,7 @@ export class ObsidianAgentService {
 				this.initializationError = undefined;
 			},
 			(error: unknown) => {
-				this.initializationError = error instanceof Error ? error.message : String(error);
+				this.initializationError = causeMessage(error);
 				this.notify();
 			},
 		);
@@ -1109,7 +1125,7 @@ export class ObsidianAgentService {
 		try {
 			return await this.resolveAndDeliver(rt, prompt, images);
 		} catch (error) {
-			this.setError(rt, error instanceof Error ? error.message : String(error));
+			this.setError(rt, causeMessage(error));
 			return false;
 		}
 	}
@@ -1422,6 +1438,9 @@ export class ObsidianAgentService {
 	private async afterRunIdle(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
 		await this.dispatchQueuedPrompts(rt, messages);
 		await this.resumeCompactedRun(rt);
+		// The run-end checkpoint: arrivals the other device landed mid-run are
+		// only unioned here, once nothing streams and the queue has drained.
+		await this.reconcileActiveSessionDrift();
 	}
 
 	/**
@@ -1657,7 +1676,7 @@ export class ObsidianAgentService {
 		} catch (error) {
 			this.log.debug("Model assertion at run start failed", () => ({
 				lane,
-				error: error instanceof Error ? error.message : String(error),
+				error: causeMessage(error),
 			}));
 		}
 		rt.activeRunLedger = undefined;
@@ -1675,7 +1694,7 @@ export class ObsidianAgentService {
 		} catch (error) {
 			this.log.error("Failed to record run start", () => ({
 				lane,
-				error: error instanceof Error ? error.message : String(error),
+				error: causeMessage(error),
 			}));
 		}
 	}
@@ -1712,7 +1731,7 @@ export class ObsidianAgentService {
 			// close degrades to a spurious recovery offer — never to a lost reply.
 			this.log.error("Failed to record run finish", () => ({
 				lane: ledger.lane,
-				error: failure instanceof Error ? failure.message : String(failure),
+				error: causeMessage(failure),
 			}));
 		}
 	}
@@ -1767,7 +1786,7 @@ export class ObsidianAgentService {
 			open = await this.sessionManager.findAllOpenRunOperationsFor(rt.sessionPath);
 		} catch (error) {
 			this.log.error("Failed to read the run ledger", () => ({
-				error: error instanceof Error ? error.message : String(error),
+				error: causeMessage(error),
 			}));
 			return;
 		}
@@ -1778,7 +1797,7 @@ export class ObsidianAgentService {
 				} catch (error) {
 					this.log.error("Failed to close an interrupted run's ledger entry", () => ({
 						lane,
-						error: error instanceof Error ? error.message : String(error),
+						error: causeMessage(error),
 					}));
 				}
 			}
@@ -1805,7 +1824,7 @@ export class ObsidianAgentService {
 			} catch (error) {
 				this.log.error("Failed to read an interrupted lane's transcript", () => ({
 					lane,
-					error: error instanceof Error ? error.message : String(error),
+					error: causeMessage(error),
 				}));
 				return false;
 			}
@@ -1984,7 +2003,7 @@ export class ObsidianAgentService {
 				// the note about the fork being left behind.
 				this.setNotice(
 					rt,
-					this.t().t("chat.branchSummaryFailed", { error: error instanceof Error ? error.message : String(error) }),
+					this.t().t("chat.branchSummaryFailed", { error: causeMessage(error) }),
 				);
 				return false;
 			}
@@ -2697,6 +2716,85 @@ export class ObsidianAgentService {
 	}
 
 	/**
+	 * The panel-focus checkpoint: refreshes the name and reconciles drift, so
+	 * opening the panel shows the other device's arrivals instead of a stale
+	 * transcript. Best-effort like the name sync — a failure leaves the current
+	 * view alone rather than becoming an unhandled rejection from a vault event
+	 * handler — and streaming is guarded inside {@link reconcileActiveSessionDrift}:
+	 * the repair net keeps stale appends loadable, and merging can wait for the
+	 * run-end checkpoint without interrupting the reply.
+	 */
+	async syncExternalSessionDrift(): Promise<void> {
+		await this.syncExternalSessionChange();
+		await this.reconcileActiveSessionDrift();
+	}
+
+	/**
+	 * Merges another device's copy of the active session's log into the panel.
+	 *
+	 * The vault sync plugin arbitrates whole files last-writer-wins, so when it
+	 * lands a foreign version on disk the live session's memory and the file
+	 * diverge; {@link reconcileExternalDrift} unions the two. The rebuild here is
+	 * the #235 mechanism: a fresh `Session` over the merged file, adopted through
+	 * {@link adoptSessionContext}, so the transcript on screen becomes the union
+	 * without a focus switch. `sessionRevision` moves so effects keyed on the
+	 * transcript re-run, exactly as a session switch would.
+	 *
+	 * A refused merge (divergent content, both sides compacted) quarantines the
+	 * foreign file and raises `syncConflict`; the banner names the backup path
+	 * until dismissed. Mid-run this is a no-op — the repair net keeps the file
+	 * loadable across stale appends, so merging can wait for idle without
+	 * risking anything, and interrupting a streaming reply to merge would destroy
+	 * a run the user is watching. Callers only schedule this at idle checkpoints
+	 * (panel focus, run end); it exists as a public seam for those and for tests.
+	 *
+	 * Best-effort like the name sync above: any failure leaves the current state
+	 * alone rather than becoming an unhandled rejection from a checkpoint.
+	 */
+	async reconcileActiveSessionDrift(): Promise<void> {
+		const activePath = this.sessionManager.getActiveSessionPath();
+		if (!activePath) {
+			return;
+		}
+		const rt = this.runtimes.get(activePath);
+		if (!rt || rt.agent?.state.isStreaming) {
+			return;
+		}
+		let outcome: SessionReconcileOutcome;
+		try {
+			outcome = await this.sessionManager.reconcileExternalDrift(activePath);
+		} catch {
+			this.log.debug("Session drift reconciliation failed; keeping the current view");
+			return;
+		}
+		if (outcome.action === "skipped") {
+			return;
+		}
+		if (outcome.action === "conflict") {
+			rt.syncConflict = outcome.backupPath;
+		} else {
+			rt.syncConflict = null;
+			const context = await this.sessionManager.buildSessionContextFor(activePath, rt.activeLane);
+			await this.adoptSessionContext(rt, context);
+			rt.lastCompaction = await this.sessionManager.getLastCompactionFor(activePath, rt.activeLane);
+			rt.sessionInfo = await this.sessionManager.getActiveSessionInfo();
+			this.sessionInfo = rt.sessionInfo;
+		}
+		rt.sessionRevision += 1;
+		this.notify();
+	}
+
+	/** Clears the sync-conflict banner alone; the quarantined backup stays on disk. */
+	dismissSyncConflict(): void {
+		const rt = this.runtimeForFocused();
+		if (rt.syncConflict === null) {
+			return;
+		}
+		rt.syncConflict = null;
+		this.notify();
+	}
+
+	/**
 	 * Trashes a stored session. Deleting the active one leaves the manager without
 	 * an active session, so a replacement is adopted here before anything reads
 	 * `getActiveSessionInfo` — the next stored session, or a fresh one when the
@@ -3057,6 +3155,7 @@ export class ObsidianAgentService {
 			// would refuse, instead of the send gate explaining the refusal after.
 			supportsImages: modelSupportsImages(model),
 			noticeMessage: rt?.noticeMessage,
+			syncConflict: rt?.syncConflict ?? undefined,
 			canResumeInterrupted: rt ? rt.resumableLanes.has(rt.activeLane) : false,
 			provider: model.provider,
 			modelId: model.id,
@@ -3848,7 +3947,7 @@ export class ObsidianAgentService {
 				await this.settleRunLedger(rt, event.messages);
 			}
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = causeMessage(error);
 			// No banner message: {@link persistMessage} has already marked the
 			// replies this is about, and the transcript reports it under each of
 			// them — which is the only place that can say *which* reply is not on
@@ -3882,7 +3981,7 @@ export class ObsidianAgentService {
 				.then(() => this.afterRunIdle(rt, event.messages))
 				.catch((error) => {
 					this.log.error("Failed to dispatch stranded queued prompts", () => ({
-						error: error instanceof Error ? error.message : String(error),
+						error: causeMessage(error),
 					}));
 				});
 		}
@@ -4549,7 +4648,7 @@ export class ObsidianAgentService {
 	 * has nowhere else to be seen and always reaches the banner.
 	 */
 	private reportDispatchFailure(rt: SessionRuntime, error: unknown, tailBefore: AgentMessage | undefined): void {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = causeMessage(error);
 		const lastAssistant = lastAssistantTurn(rt.agent?.state.messages ?? []);
 		if (
 			lastAssistant?.role === "assistant" &&
@@ -4584,7 +4683,7 @@ export class ObsidianAgentService {
 	 * already uses for the analogous vault-write failure.
 	 */
 	private toast(key: Parameters<Translator["t"]>[0], cause: unknown): void {
-		new Notice(this.t().t(key, { error: cause instanceof Error ? cause.message : String(cause) }));
+		new Notice(this.t().t(key, { error: causeMessage(cause) }));
 	}
 
 	/** Reports a non-failure outcome without raising the error banner's alert. */

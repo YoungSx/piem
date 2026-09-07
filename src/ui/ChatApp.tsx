@@ -702,6 +702,8 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					noticeMessage={snapshot.noticeMessage}
 					contextWall={contextWall}
 					recoveryOffer={recoveryOffer}
+					syncConflict={snapshot.syncConflict}
+					onDismissSyncConflict={() => service.dismissSyncConflict()}
 					onDismiss={() => service.dismissMessages()}
 					onOpenSettings={canOpenSettings ? () => openPluginSettings(app) : undefined}
 				/>

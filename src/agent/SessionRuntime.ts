@@ -134,6 +134,12 @@ export class SessionRuntime {
 	panelError: PanelError | undefined;
 	/** Informational message that is not a failure ("Nothing to compact yet."). */
 	noticeMessage: string | undefined;
+	/**
+	 * Path of the quarantined foreign copy when a sync merge refused, or null.
+	 * A standing outcome the banner reports until dismissed — the backup is the
+	 * user's only copy of what the other device sent, so it is named in full.
+	 */
+	syncConflict: string | null = null;
 	/** Agent-reported error the user already dismissed. */
 	dismissedAgentError: string | undefined;
 

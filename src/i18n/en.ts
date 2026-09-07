@@ -94,6 +94,13 @@ export const en = {
 		 */
 		recoveryOffer: "The last reply was cut off before it finished. Continue from where it stopped?",
 		recoveryResume: "Continue",
+		/**
+		 * The sync-conflict banner: a merge with another device's copy of the log
+		 * refused, so the foreign file was quarantined and the conversation kept
+		 * as-is. A standing outcome announced politely; the backup path follows
+		 * the sentence, which is why the key ends where it does.
+		 */
+		syncConflict: "A chat-sync conflict with another device was detected. The other device's copy was saved to",
 		conversationAria: "Conversation",
 		/** Skip link above the transcript; see WCAG 2.4.1 (Bypass Blocks). */
 		skipToComposer: "Skip to message box",

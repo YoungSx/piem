@@ -83,13 +83,20 @@ class MemoryAdapter {
 		this.files.set(newPath, { ...file, mtime: Date.now() });
 	}
 
+	/** Allows the merge publish's atomic rename to replace a destination, as pi's own publish ritual does. */
+	allowReplaceRemoval = false;
+
 	/**
 	 * Present only to fail. A chat log is the only copy of a conversation, so every
 	 * path that removes one has to go through trash; a call landing here is the
-	 * defect this adapter exists to catch.
+	 * defect this adapter exists to catch. Temporary files are exempt — pi
+	 * hard-deletes its own staging files — plus the rename-replace opt-in.
 	 */
 	async remove(path: string): Promise<void> {
-		throw new Error(`Chat logs must go to trash, not be removed: ${path}`);
+		if (!path.endsWith(".tmp") && !this.allowReplaceRemoval) {
+			throw new Error(`Chat logs must go to trash, not be removed: ${path}`);
+		}
+		this.files.delete(path);
 	}
 }
 
@@ -323,6 +330,121 @@ describe("ObsidianSessionManager open-zero-write contract", () => {
 		// start must not append again.
 		await next.ensureConfigurationFor(info.path, { provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" }, "main");
 		expect(await adapter.read(info.path)).toHaveLength(afterFirst);
+	});
+});
+
+/**
+ * The sync-drift reconciler: a vault sync plugin landed another device's
+ * version of a live session's log, and the manager has to fold both devices'
+ * work back together without losing a line. The foreign version is simulated
+ * the way the plugin really delivers it — a wholesale file overwrite — by
+ * snapshotting what the other device wrote and writing it over the local
+ * device's file.
+ */
+describe("ObsidianSessionManager sync reconciliation", () => {
+	/** Messages' text in branch order, for asserting the merged view. */
+	function messageTexts(context: { messages: unknown[] }): string[] {
+		return context.messages.map((message) => {
+			const content = (message as { content?: unknown }).content;
+			const parts = Array.isArray(content) ? (content as { type: string; text?: string }[]) : [];
+			return parts.find((part) => part.type === "text")?.text ?? "";
+		});
+	}
+
+	it("folds both devices' entries back together and rebuilds the live view", async () => {
+		const memory = new MemoryAdapter();
+		memory.allowReplaceRemoval = true;
+		const adapter = memory as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const info = await manager.createSession(DEFAULTS);
+		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
+		const baseContent = await adapter.read(info.path);
+
+		// The other device forked from "Hello" and sent its own line.
+		const external = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await external.loadSession(info.path);
+		await external.appendMessage({ role: "user", content: [{ type: "text", text: "From the other device" }], timestamp: 2 });
+		const foreignContent = await adapter.read(info.path);
+
+		// Meanwhile the local device kept writing, unaware of the foreign file.
+		// The interleave sorts by the entries' wall-clock timestamps, so the two
+		// tails' appends are held a few milliseconds apart: landing in the same
+		// millisecond ties them, and the documented tie (local wins) would then
+		// put the local reply before the foreign line and break the order below.
+		await adapter.write(info.path, baseContent);
+		await new Promise((resolve) => setTimeout(resolve, 3));
+		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Local reply" }], timestamp: 3 });
+
+		// The sync plugin delivers the foreign version wholesale.
+		await adapter.write(info.path, foreignContent);
+
+		expect(await manager.reconcileExternalDrift(info.path)).toEqual({ action: "merged" });
+
+		// Interleaved by timestamp, nothing dropped, no staging file left behind.
+		const context = await manager.buildSessionContextFor(info.path, "main");
+		expect(messageTexts(context)).toEqual(["Hello", "From the other device", "Local reply"]);
+		expect(await adapter.exists(`${info.path}.tmp`)).toBe(false);
+
+		// pi loads the merged file as a valid session — the seq renumber holds.
+		console.log("PROBE merged disk:\n" + (await adapter.read(info.path)));
+		const reloaded = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await reloaded.loadSession(info.path);
+		expect(messageTexts(await reloaded.buildSessionContextFor(info.path, "main"))).toEqual([
+			"Hello",
+			"From the other device",
+			"Local reply",
+		]);
+	});
+
+	it("skips a no-op reconciliation without touching the file", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const info = await manager.createSession(DEFAULTS);
+		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
+		const before = await adapter.read(info.path);
+		const beforeStat = await adapter.stat(info.path);
+
+		expect(await manager.reconcileExternalDrift(info.path)).toEqual({ action: "skipped" });
+
+		const afterStat = await adapter.stat(info.path);
+		expect(afterStat?.mtime).toBe(beforeStat?.mtime);
+		expect(await adapter.read(info.path)).toBe(before);
+	});
+
+	it("quarantines the foreign copy and keeps the local view when both sides compacted", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const info = await manager.createSession(DEFAULTS);
+		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
+		const baseContent = await adapter.read(info.path);
+
+		const external = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await external.loadSession(info.path);
+		await external.appendCompaction({ summary: "Other device tidied", tokensBefore: 100, retainedTail: [] }, "main");
+		const foreignContent = await adapter.read(info.path);
+
+		await adapter.write(info.path, baseContent);
+		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Local reply" }], timestamp: 3 });
+		await manager.appendCompaction({ summary: "Local tidy", tokensBefore: 100, retainedTail: [] }, "main");
+
+		// The sync plugin delivers the foreign version: both devices compacted
+		// past the shared "Hello", and the contexts have diverged for good.
+		await adapter.write(info.path, foreignContent);
+
+		const outcome = await manager.reconcileExternalDrift(info.path);
+		expect(outcome.action).toBe("conflict");
+
+		// The backup lives in a `conflicts/` folder beside the log — pi's repo
+		// only lists session files, so it never surfaces as a duplicate chat —
+		// and holds the foreign file verbatim.
+		const dir = info.path.slice(0, info.path.lastIndexOf("/"));
+		const backups = (await adapter.list(`${dir}/conflicts`)).files;
+		expect(backups).toHaveLength(1);
+		expect(await adapter.read(backups[0]!)).toBe(foreignContent);
+
+		// The live file is untouched: the local view stays usable until the
+		// user has read the banner.
+		expect(await adapter.read(info.path)).toBe(foreignContent);
 	});
 });
 

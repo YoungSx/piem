@@ -269,7 +269,7 @@ export default class PiemPlugin extends Plugin {
 		// The manager reads the folder and the cap through this closure rather than
 		// from a snapshot, so a change in the Sessions tab reaches the next chat
 		// without reloading the plugin.
-		const sessionManager = ObsidianSessionManager.forPlugin(this.app, this, () => this.settings);
+		const sessionManager = ObsidianSessionManager.forPlugin(this.app, this, () => this.settings, this.log.child("session"));
 		this.sessionManager = sessionManager;
 		/*
 		 * The escalation ladder, wired here and nowhere else.
