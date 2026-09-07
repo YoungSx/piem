@@ -4767,8 +4767,10 @@ describe("quick-action suggestions", () => {
 		const { service } = createServiceWithSettings(new MemoryAdapter(), {
 			streamFn: capturingStreamFn,
 			// Recents survive the probe's existence filter only for files the
-			// vault actually holds; `gone.md` is named but registered nowhere.
-			vaultFiles: { "Journal/today.md": "", "Ideas/home.md": "" },
+			// vault actually holds; `gone.md` is named but registered nowhere —
+			// and the same filter now applies to open tabs, so `piem.md` is
+			// registered too, as an open leaf the vault can resolve.
+			vaultFiles: { "Journal/today.md": "", "Ideas/home.md": "", "Projects/piem.md": "" },
 			probeData: { openLeaves: ["Projects/piem.md", "Journal/today.md"], recentFiles: ["Journal/today.md", "Ideas/home.md", "gone.md"] },
 		});
 		await service.initialize();
@@ -4797,8 +4799,14 @@ describe("quick-action suggestions", () => {
 	});
 
 	it("reads a changed tab set as unanswered, so stale chips for old tabs are never served", async () => {
+		// Both tab sets must be files the vault can resolve; the new existence
+		// filter drops an unregistered leaf, and two empty sets read as no change.
 		const probeData: ProbeData = { openLeaves: ["Projects/piem.md"] };
-		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(SUGGESTION_JSON), probeData });
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			streamFn: suggestionReplyStreamFn(SUGGESTION_JSON),
+			probeData,
+			vaultFiles: { "Projects/piem.md": "", "Journal/today.md": "" },
+		});
 		await service.initialize();
 
 		await service.suggestQuickActions("empty");

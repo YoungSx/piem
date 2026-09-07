@@ -1218,6 +1218,15 @@ export class ObsidianAgentService {
 		// model a broken reference to a picture it has already been given. The
 		// active note anchors the resolution: a shortest-path embed means "the
 		// image this note links to", and the index resolves it from here.
+		//
+		// This is a deliberate second read of the active path — the context
+		// freeze further down re-reads it at departure. They answer different
+		// questions: this one anchors the embeds against the note the user was
+		// in when they hit send, the freeze names the note the run departs in.
+		// The await between them is a millisecond-scale window in which a switch
+		// would split the two; unifying them means either delaying the image
+		// reads past the freeze or freezing earlier, and both drag more state
+		// reads onto this path for that window.
 		const refs = extractImageRefs(modelPrompt);
 		const sourcePath = this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ?? null;
 		const vaultImages = await this.readVaultImages(rt, refs, sourcePath);
@@ -1344,6 +1353,13 @@ export class ObsidianAgentService {
 		if (signal?.aborted || rt.queueInterrupt || rt.promptQueue.size === 0) {
 			return;
 		}
+		// Steer semantics, picked deliberately: a steered message rides the
+		// *departing* run, whose context was frozen at that run's own departure.
+		// The steer chip (the abort-and-redo path) is the opposite choice — it
+		// re-freezes before the replacement run — because there the message is
+		// the whole run, not an addendum to one. So a note switch between the
+		// original send and this steer lands in the *next* run's context, never
+		// retroactively in one already under way.
 		agent.clearSteeringQueue();
 		for (const message of rt.promptQueue.messages()) {
 			agent.steer(message);

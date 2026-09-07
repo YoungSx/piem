@@ -45,6 +45,12 @@ class FakeVault {
 	 * callers, which keeps the fake small without an `any`-typed dispatch table.
 	 */
 	private readonly handlers = new Map<string, Set<(file: { path: string }, oldPath: string) => void>>();
+	/** The paths the vault index currently resolves; ghost tests deliberately leave them out. */
+	readonly files = new Set<string>();
+
+	getFileByPath(path: string): { path: string; extension: string } | null {
+		return this.files.has(path) ? { path, extension: "md" } : null;
+	}
 
 	on(name: string, callback: (file: { path: string }, oldPath: string) => void): EventRef {
 		const existing = this.handlers.get(name) ?? new Set<(file: { path: string }, oldPath: string) => void>();
@@ -70,22 +76,31 @@ function markdown(path: string): { path: string; extension: string } {
 	return { path, extension: "md" };
 }
 
+/**
+ * Seeds both the active file and the vault index, the way a real workspace has
+ * them consistent before any event fires.
+ */
+function openNote(workspace: FakeWorkspace, vault: FakeVault, path: string): void {
+	workspace.activeFile = markdown(path);
+	vault.files.add(path);
+}
+
 describe("resolveWorkingNotePath", () => {
 	it("reports the note the user is working in", () => {
-		const { app, workspace } = createApp();
-		workspace.activeFile = markdown("Notes/today.md");
+		const { app, workspace, vault } = createApp();
+		openNote(workspace, vault, "Notes/today.md");
 
 		expect(resolveWorkingNotePath(app)).toBe("Notes/today.md");
 	});
 
 	it("keeps reporting the note while the chat panel holds focus", () => {
-		const { app, workspace } = createApp();
+		const { app, workspace, vault } = createApp();
 		// `getActiveFile` is documented to fall back to the most recently active file
 		// when the focused view is not a FileView, which is exactly the chat panel.
 		// Reading the focused *view* instead would return null here and send no
 		// context at the one moment the feature exists for: the user typing
 		// "rewrite this note" into the composer.
-		workspace.activeFile = markdown("Notes/today.md");
+		openNote(workspace, vault, "Notes/today.md");
 
 		expect(resolveWorkingNotePath(app)).toBe("Notes/today.md");
 	});
@@ -104,6 +119,18 @@ describe("resolveWorkingNotePath", () => {
 		// would try to `read` as Markdown.
 		expect(resolveWorkingNotePath(app)).toBeNull();
 	});
+
+	it("reports nothing while the workspace still holds a just-deleted file", () => {
+		const { app, workspace, vault } = createApp();
+		openNote(workspace, vault, "Notes/doomed.md");
+		vault.files.delete("Notes/doomed.md");
+
+		// Measured on a real runtime: for the whole synchronous window of the vault
+		// `"delete"` event the workspace keeps handing back the removed file's
+		// TFile while the index has already dropped it. Reporting that ghost would
+		// put a note in front of the model every `read` of which fails.
+		expect(resolveWorkingNotePath(app)).toBeNull();
+	});
 });
 
 describe("watchActiveNote", () => {
@@ -120,10 +147,10 @@ describe("watchActiveNote", () => {
 	});
 
 	it("reports the note when a leaf change fires", () => {
-		const { app, workspace } = createApp();
+		const { app, workspace, vault } = createApp();
 		const seen: (string | null)[] = [];
 		watchActiveNote(app, (path) => seen.push(path));
-		workspace.activeFile = markdown("Notes/today.md");
+		openNote(workspace, vault, "Notes/today.md");
 
 		workspace.trigger("active-leaf-change");
 
@@ -131,10 +158,10 @@ describe("watchActiveNote", () => {
 	});
 
 	it("reports the note when a file is opened in place", () => {
-		const { app, workspace } = createApp();
+		const { app, workspace, vault } = createApp();
 		const seen: (string | null)[] = [];
 		watchActiveNote(app, (path) => seen.push(path));
-		workspace.activeFile = markdown("Notes/other.md");
+		openNote(workspace, vault, "Notes/other.md");
 
 		workspace.trigger("file-open");
 
@@ -142,26 +169,27 @@ describe("watchActiveNote", () => {
 	});
 
 	it("clears the note when the last file is closed", () => {
-		const { app, workspace } = createApp();
+		const { app, workspace, vault } = createApp();
 		const seen: (string | null)[] = [];
 		watchActiveNote(app, (path) => seen.push(path));
 
-		workspace.activeFile = markdown("Notes/today.md");
+		openNote(workspace, vault, "Notes/today.md");
 		workspace.trigger("active-leaf-change");
 		workspace.activeFile = null;
+		vault.files.delete("Notes/today.md");
 		workspace.trigger("active-leaf-change");
 
 		expect(seen).toEqual(["Notes/today.md", null]);
 	});
 
 	it("re-reads the workspace on every event rather than trusting the payload", () => {
-		const { app, workspace } = createApp();
+		const { app, workspace, vault } = createApp();
 		const seen: (string | null)[] = [];
 		watchActiveNote(app, (path) => seen.push(path));
 
-		workspace.activeFile = markdown("Notes/a.md");
+		openNote(workspace, vault, "Notes/a.md");
 		workspace.trigger("active-leaf-change");
-		workspace.activeFile = markdown("Notes/b.md");
+		openNote(workspace, vault, "Notes/b.md");
 		workspace.trigger("active-leaf-change");
 
 		// The callback fires for every leaf, this panel's own included, so its
@@ -181,8 +209,7 @@ describe("watchActiveNote", () => {
 		expect(seen).toEqual([]);
 	});
 
-	it("keeps context paths aligned with vault renames and deletions", () => {
-		const { app, vault, workspace } = createApp();
+	it("keeps context paths aligned with vault renames and deletions", () => {		const { app, vault, workspace } = createApp();
 		const renamed: string[] = [];
 		const deleted: string[] = [];
 		watchActiveNote(app, () => undefined, (oldPath, newPath) => renamed.push(`${oldPath}->${newPath}`), (path) => deleted.push(path));
@@ -193,5 +220,22 @@ describe("watchActiveNote", () => {
 		expect(renamed).toEqual(["Notes/team->Archive/team"]);
 		expect(deleted).toEqual(["Archive/team"]);
 		expect(workspace.handlerCount("active-leaf-change")).toBe(1);
+	});
+
+	it("does not resurrect the deleted note as the working note", () => {
+		// The real delete sequence: `onDelete` forgets the path, then `publish`
+		// re-resolves. On a real runtime the workspace still reports the removed
+		// file in that window, so without the index re-check the forget is undone
+		// by the very next line — the ghost rides along to the next freeze and
+		// every `read` of it fails.
+		const { app, vault, workspace } = createApp();
+		const seen: (string | null)[] = [];
+		openNote(workspace, vault, "Notes/doomed.md");
+		watchActiveNote(app, (path) => seen.push(path), undefined, () => undefined);
+
+		vault.files.delete("Notes/doomed.md");
+		vault.trigger("delete", { path: "Notes/doomed.md" });
+
+		expect(seen).toEqual([null]);
 	});
 });
