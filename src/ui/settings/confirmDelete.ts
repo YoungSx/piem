@@ -71,33 +71,38 @@ class ConfirmDeleteModal extends Modal {
 		}
 
 		const copySecret = this.options.copySecret;
-		new Setting(this.contentEl)
-			.addButton((button) => button.setButtonText(t.t("confirmDelete.cancel")).onClick(() => this.close()))
-			.addButton((button) => {
-				if (copySecret === undefined) {
-					return;
-				}
-				button.setButtonText(t.t("confirmDelete.copyKey")).onClick(() => {
-					void navigator.clipboard.writeText(copySecret).then(() => {
-						new Notice(t.t("confirmDelete.copied"));
-					});
-				});
-			})
-			.addButton((button) => {
-				if (kind === "disable") {
-					button.setButtonText(t.t("confirmDelete.disable"));
-				} else {
-					// `setDestructive` is Obsidian's destructive styling, which is what
-					// tells this button apart from the Cancel beside it at a glance.
-					// (It replaced `setWarning`, deprecated in 1.13.)
-					button.setButtonText(t.t("confirmDelete.delete")).setDestructive();
-				}
-				button.onClick(() => {
-					this.confirmed = true;
-					this.close();
-					void this.options.onConfirm();
-				});
+		const setting = new Setting(this.contentEl).addButton((button) =>
+			button.setButtonText(t.t("confirmDelete.cancel")).onClick(() => this.close()),
+		);
+		// addButton builds the element before this callback runs, so a callback
+		// that returns without configuring it leaves an empty button on the row.
+		// Only asking for one when there is a secret keeps the blank shell out.
+		if (copySecret !== undefined) {
+			setting.addButton((button) =>
+				button
+					.setButtonText(t.t("confirmDelete.copyKey"))
+					.onClick(() => {
+						void navigator.clipboard.writeText(copySecret).then(() => {
+							new Notice(t.t("confirmDelete.copied"));
+						});
+					}),
+			);
+		}
+		setting.addButton((button) => {
+			if (kind === "disable") {
+				button.setButtonText(t.t("confirmDelete.disable"));
+			} else {
+				// `setDestructive` is Obsidian's destructive styling, which is what
+				// tells this button apart from the Cancel beside it at a glance.
+				// (It replaced `setWarning`, deprecated in 1.13.)
+				button.setButtonText(t.t("confirmDelete.delete")).setDestructive();
+			}
+			button.onClick(() => {
+				this.confirmed = true;
+				this.close();
+				void this.options.onConfirm();
 			});
+		});
 	}
 
 	onClose(): void {
