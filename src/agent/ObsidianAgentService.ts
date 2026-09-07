@@ -182,10 +182,10 @@ export interface ChatSnapshot {
 	noticeMessage?: string;
 	/**
 	 * Path of the quarantined foreign copy when a sync merge refused, as a
-	 * standing banner row the user dismisses. Absent from older snapshots means
-	 * "no conflict", the same reading a fresh install has.
+	 * standing banner row the user dismisses. Null or absent means "no
+	 * conflict", the same reading a fresh install has.
 	 */
-	syncConflict?: string;
+	syncConflict?: string | null;
 	/**
 	 * Messages that are on screen and not on disk, by identity.
 	 *
@@ -3155,7 +3155,7 @@ export class ObsidianAgentService {
 			// would refuse, instead of the send gate explaining the refusal after.
 			supportsImages: modelSupportsImages(model),
 			noticeMessage: rt?.noticeMessage,
-			syncConflict: rt?.syncConflict ?? undefined,
+			syncConflict: rt?.syncConflict,
 			canResumeInterrupted: rt ? rt.resumableLanes.has(rt.activeLane) : false,
 			provider: model.provider,
 			modelId: model.id,

@@ -395,7 +395,6 @@ describe("ObsidianSessionManager sync reconciliation", () => {
 		expect(await adapter.exists(`${info.path}.tmp`)).toBe(false);
 
 		// pi loads the merged file as a valid session — the seq renumber holds.
-		console.log("PROBE merged disk:\n" + (await adapter.read(info.path)));
 		const reloaded = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
 		await reloaded.loadSession(info.path);
 		expect(messageTexts(await reloaded.buildSessionContextFor(info.path, "main"))).toEqual([
