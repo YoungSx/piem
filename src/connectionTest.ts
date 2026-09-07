@@ -1,9 +1,15 @@
-import type { Models } from "@earendil-works/pi-ai";
-import type { Translator } from "./i18n";
+import type { AssistantMessage, Models } from "@earendil-works/pi-ai";
+import type { Language, Translator } from "./i18n";
 import { buildConfiguredModel, type ModelConfig, type ProviderConfig } from "./modelConfig";
 import { isOAuthFlowId } from "./auth/oauthFlows";
 import { probeModelListing, type ListingCredential, type ModelListingResult } from "./net/modelListing";
 import { createObsidianStreamingFetch, toFetchFunction, type FetchFn } from "./net/obsidianFetch";
+import {
+	assistantMessageText,
+	buildSuggestionPrompt,
+	parseSuggestedActions,
+	SUGGESTION_STREAM_OPTIONS,
+} from "./agent/quickActionSuggestionRequest";
 
 /**
  * Verifying a configured endpoint by actually calling it.
@@ -14,8 +20,8 @@ import { createObsidianStreamingFetch, toFetchFunction, type FetchFn } from "./n
  * loop by issuing the smallest possible request through the same path a real
  * turn takes.
  *
- * Two probe shapes exist, because a provider and a model are answerable to
- * different questions:
+ * Three probe shapes exist, because a provider, a model, and a side channel are
+ * answerable to different questions:
  *
  * - A **chat probe** asks a named model for a one-word answer. A pass means the
  *   credential, base URL, protocol, and that model id all agree with the server
@@ -27,6 +33,13 @@ import { createObsidianStreamingFetch, toFetchFunction, type FetchFn } from "./n
  * - A **listing probe** asks the endpoint which models it serves. A pass means
  *   the base URL, protocol, and credential agree; it says nothing about any
  *   particular model id, because none was sent.
+ * - A **suggestion probe** sends the exact request the quick-action row sends —
+ *   same options object, same prompt builder, same parser — and judges two
+ *   things a chat probe cannot see: whether the model answers with chips the
+ *   feature can actually show, and how long that takes. Both are advisory on
+ *   top of a pass (a `warn`), because a slow or prose-prone model is still a
+ *   working endpoint; the user chose it as the suggestion model, and the probe
+ *   reports what to expect rather than overriding the choice.
  *
  * A provider test prefers the chat probe whenever the user has configured a
  * model to send, and falls back to listing when they have not.
@@ -38,7 +51,7 @@ import { createObsidianStreamingFetch, toFetchFunction, type FetchFn } from "./n
 
 /** Outcome of a connection test, shaped for direct rendering next to a row. */
 export type ConnectionTestResult =
-	| { ok: true; detail: string }
+	| { ok: true; detail: string; /** Additive: a pass with a caveat, rendered as a warning beside the tick. */ warn?: string }
 	| { ok: false; detail: string };
 
 /** Shared knobs for both probe shapes. */
@@ -300,6 +313,103 @@ export async function testProviderConnection(
 		}
 		const listing = await probeModelListing(provider, { fetch: fetchImpl, signal: options.signal, credential });
 		return describeListingResult(provider, listing, hasCredential(provider, credential), t);
+	} catch (error) {
+		return { ok: false, detail: describeError(error, t) };
+	}
+}
+
+/**
+ * Latency past which a suggestion model is warned about, not failed.
+ *
+ * A suggestion is read the moment the user opens a blank panel — slower than
+ * this and the chips arrive after the reader has already started typing, which
+ * is the experience-level failure the probe exists to name. It is a standard
+ * of the feature, not of the endpoint: the connection itself is fine.
+ */
+const SUGGESTION_PROBE_SLOW_MS = 5_000;
+
+/**
+ * Sends the request a quick-action suggestion actually sends, and reports
+ * reachability, usability, and speed.
+ *
+ * The request shape comes from {@link SUGGESTION_STREAM_OPTIONS} — the same
+ * object the feature sends — so a pass here is a pass for the feature, not for
+ * a lookalike. The prompt is the empty-scope one: no subject to sample, which
+ * keeps the billed cost at the same effectively-zero as the chat probe while
+ * exercising the identical parser.
+ *
+ * Auth short-circuits mirror {@link testModelConnection} exactly: a missing
+ * credential deserves a message pointing at the field, not a 401 pointing at
+ * the server.
+ */
+export async function testSuggestionConnection(
+	models: Models,
+	model: ModelConfig,
+	provider: ProviderConfig,
+	t: Translator,
+	options: ConnectionTestOptions & { language: Language; slowAfterMs?: number },
+): Promise<ConnectionTestResult> {
+	const subscription = usesSubscription(provider);
+	if (!subscription && !provider.apiKey.trim()) {
+		return { ok: false, detail: t.t("connectionTest.noKey") };
+	}
+	if (subscription && !(await isSignedIn(models, provider, options.signal))) {
+		return { ok: false, detail: t.t("connectionTest.notSignedIn") };
+	}
+	if (!model.modelApiId.trim()) {
+		return { ok: false, detail: t.t("connectionTest.noModelId") };
+	}
+
+	try {
+		const started = Date.now();
+		const stream = await Promise.resolve(
+			models.streamSimple(
+				buildConfiguredModel(model, provider),
+				{
+					messages: [
+						{
+							role: "user",
+							content: buildSuggestionPrompt("empty", null, options.language, t),
+							timestamp: Date.now(),
+						},
+					],
+				},
+				{
+					...SUGGESTION_STREAM_OPTIONS,
+					// Same credential rule as the chat probe: a defined key — even an
+					// empty one — would skip the credential store and with it the OAuth
+					// refresh a subscription row needs.
+					apiKey: subscription ? undefined : provider.apiKey.trim(),
+					signal: options.signal,
+					fetch: options.fetch === undefined ? undefined : toFetchFunction(options.fetch),
+				},
+			),
+		);
+		const message: AssistantMessage = await stream.result();
+		if (message.stopReason === "error" || message.stopReason === "aborted") {
+			const reason = t.t(
+				message.stopReason === "aborted" ? "connectionTest.requestAborted" : "connectionTest.requestFailed",
+			);
+			return { ok: false, detail: message.errorMessage || reason };
+		}
+		const elapsedMs = Date.now() - started;
+		const count = parseSuggestedActions(assistantMessageText(message)).length;
+		const detail = t.t("connectionTest.suggestionReached", {
+			target: nameProvider(provider),
+			seconds: (elapsedMs / 1000).toFixed(1),
+			count: String(count),
+		});
+		const warnings: string[] = [];
+		if (count === 0) {
+			// Reachable but suggestion-hostile: prose or fences the parser cannot
+			// read. The feature would silently show nothing, so the verdict must
+			// say what a user would otherwise discover by absence.
+			warnings.push(t.t("connectionTest.suggestionUnparsed"));
+		}
+		if (elapsedMs > (options.slowAfterMs ?? SUGGESTION_PROBE_SLOW_MS)) {
+			warnings.push(t.t("connectionTest.suggestionSlow", { seconds: (elapsedMs / 1000).toFixed(1), limit: String((options.slowAfterMs ?? SUGGESTION_PROBE_SLOW_MS) / 1000) }));
+		}
+		return warnings.length > 0 ? { ok: true, detail, warn: warnings.join(" ") } : { ok: true, detail };
 	} catch (error) {
 		return { ok: false, detail: describeError(error, t) };
 	}

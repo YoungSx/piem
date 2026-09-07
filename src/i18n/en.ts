@@ -674,6 +674,14 @@ export const en = {
 			reply:
 				"Base the suggestions on this assistant reply:\n\n{reply}",
 		},
+		suggestSettings: {
+			name: "Suggestion model",
+			desc: "Quick-action suggestions are their own small request. By default they follow the session's model; pick a lighter one here to make the chips faster and cheaper.",
+			section: "Model choice and test",
+			followSession: "Follow the session model",
+			testName: "Test",
+			testDesc: "Sends one real suggestion request and reports whether the answer is usable and how long it took.",
+		},
 	},
 
 	/** Note-reference command. */
@@ -1343,6 +1351,17 @@ export const en = {
 		listingUnsupported:
 			"Reached {target}, but it does not list models, so the key could not be checked. Add a model under this provider to test a real request.",
 		listingStatus: "{target} answered {status}.{relayed}",
+		/**
+		 * Suggestion-probe verdicts. A reach is phrased with the latency and the
+		 * usable-chip count, because those are the two things this probe exists
+		 * to measure and a bare "reached" would read as a chat-probe pass.
+		 */
+		suggestionReached: "Reached {target} in {seconds}s — {count} usable suggestion(s).",
+		suggestionUnparsed:
+			"The model answered, but nothing in it parsed as suggestions — this model would show no chips.",
+		suggestionSlow: "Slower than the {limit}s suggestion standard.",
+		suggestionNoModel:
+			"Nothing to test: no suggestion model is chosen and the session has no configured model.",
 	},
 
 	/** How the active target is named in status lines and errors. */

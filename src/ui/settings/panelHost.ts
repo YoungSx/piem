@@ -226,6 +226,8 @@ export interface SkillsHost {
 /** The slice of settings this panel reads and writes. */
 export interface SettingsPanelSettings {
 	activeModelId?: string;
+	/** The suggestion side channel's model pick; undefined means follow the session. */
+	suggestionModelId?: string;
 	providers: ProviderConfig[];
 	models: ModelConfig[];
 	networkTransport: NetworkTransport;

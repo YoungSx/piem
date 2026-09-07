@@ -8,14 +8,16 @@
  * asks for: cached chips first, a live answer replaces them when one arrives,
  * and the cache stands in when the request cannot.
  *
- * Keyed by the tuple the suggestion prompt is actually built from — language,
- * note path, and the workspace facts the prompt quotes — so a switch from note
- * A to note B reads its own entry, a language flip does not resurrect chips
- * worded in the old tongue, and a different set of open tabs does not serve
- * chips written for a room the user has left. Not
- * persisted to disk: the cache survives a panel close and reopen but dies with
- * a plugin reload, which is the right trade for chips that are decoration —
- * the built-in row has always covered the cold start.
+ * Keyed by the tuple the suggestion prompt is actually built from — the model
+ * that produces the answer, the language, the note path, and the workspace
+ * facts the prompt quotes — so a switch from note A to note B reads its own
+ * entry, a language flip does not resurrect chips worded in the old tongue,
+ * choosing a lighter suggestion model does not serve the previous model's
+ * answer as if it were fresh, and a different set of open tabs does not serve
+ * chips written for a room the user has left. Not persisted to disk: the cache
+ * survives a panel close and reopen but dies with a plugin reload, which is
+ * the right trade for chips that are decoration — the built-in row has always
+ * covered the cold start.
  *
  * Free of React and Obsidian imports so the eviction and key rules unit-test
  * without a renderer or a vault.
@@ -30,6 +32,8 @@ export interface SuggestionCacheKey {
 	language: string;
 	/** The active note's vault path, or null for the vault-wide row. */
 	notePath: string | null;
+	/** Identity of the model that produced the answer — see `suggestionModelKey`. */
+	modelKey: string;
 	/** The workspace facts the prompt quotes, already flattened by {@link workspaceKeyPart}. */
 	workspace: string;
 }
@@ -53,7 +57,7 @@ const MAX_ENTRIES = 32;
 
 /** Builds the map key from a cache key's parts. */
 function cacheKeyString(key: SuggestionCacheKey): string {
-	return [key.language, key.notePath ?? "", key.workspace].join("\0");
+	return [key.modelKey, key.language, key.notePath ?? "", key.workspace].join("\0");
 }
 
 /**
