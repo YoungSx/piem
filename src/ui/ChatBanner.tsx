@@ -58,7 +58,7 @@ interface ChatBannerProps {
 	 * it is dismissed alone: the shared {@link onDismiss} clears the service's
 	 * message state, and acknowledging this must not clear that.
 	 */
-	syncConflict?: string;
+	syncConflict?: string | null;
 	onDismissSyncConflict?: () => void;
 	onDismiss: () => void;
 	/**

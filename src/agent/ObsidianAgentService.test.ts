@@ -4936,3 +4936,168 @@ describe("streaming refresh cost", () => {
 		expect(adapter.statCalls).toBeLessThanOrEqual(setupStatCalls + 24);
 	});
 });
+
+/**
+ * The service layer of the sync-drift recovery: a vault sync plugin landed
+ * another device's version of the live session's file, and the checkpoints
+ * (panel focus, run end) must turn that into a rebuilt transcript — or, when
+ * the two devices' histories genuinely forked, into the banner. The foreign
+ * version is simulated the way the plugin really delivers it, a wholesale file
+ * overwrite, written by a second manager standing in for the other device.
+ */
+describe("ObsidianAgentService sync drift reconciliation", () => {
+	/** The active session's manager, the seam the foreign device talks through. */
+	function managerOf(service: ObsidianAgentServiceType): ObsidianSessionManager {
+		return (service as unknown as { sessionManager: ObsidianSessionManager }).sessionManager;
+	}
+
+	/** The service's own runtime, for the revision counter the rebuild moves. */
+	function runtimeOf(service: ObsidianAgentServiceType): SessionRuntime {
+		return (service as unknown as { current: () => SessionRuntime }).current();
+	}
+
+	/**
+	 * A text-only view: the other agent-message shapes (tool calls, thinking,
+	 * bash) carry no user-facing transcript line, so they vanish from the
+	 * assertion instead of breaking the access through the union.
+	 */
+	function allTexts(message: AgentMessage): string {
+		if (message.role !== "user" && message.role !== "assistant") {
+			return "";
+		}
+		return (message.content as { type: string; text?: string }[])
+			.filter((part) => part.type === "text")
+			.map((part) => part.text ?? "")
+			.join("");
+	}
+
+	/** Every text in the snapshot's transcript, in order. */
+	function textsOf(service: ObsidianAgentServiceType): string[] {
+		return service.getSnapshot().messages.map((message) => allTexts(message)).filter((text) => text.length > 0);
+	}
+
+	/**
+	 * The other device: opens the same chat over the same vault and appends its
+	 * own line, whose file version the caller then delivers wholesale.
+	 */
+	async function foreignDeviceAppends(memory: MemoryAdapter, sessionPath: string, text: string): Promise<void> {
+		const foreign = new ObsidianSessionManager(asDataAdapter(memory), SESSION_DIR, "obsidian-vault:Test");
+		await foreign.loadSession(sessionPath);
+		await foreign.appendMessage({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
+	}
+
+	it("grows the panel with the other device's arrivals without touching the file", async () => {
+		const memory = new MemoryAdapter();
+		const service = createService(memory);
+		await service.sendPrompt("Hello");
+		const sessionPath = service.getSnapshot().session!.path;
+
+		await foreignDeviceAppends(memory, sessionPath, "From the other device");
+		const before = await memory.read(sessionPath);
+		const revisionBefore = runtimeOf(service).sessionRevision;
+
+		await service.reconcileActiveSessionDrift();
+
+		// The foreign side was already the superset, so the merged file is the
+		// one on disk — the rebuild is memory-only, and the file is left for the
+		// sync plugin's arbiter rather than churned into a newer-writer race.
+		expect(textsOf(service)).toContain("From the other device");
+		expect(runtimeOf(service).sessionRevision).toBe(revisionBefore + 1);
+		expect(service.getSnapshot().syncConflict).toBeNull();
+		expect(await memory.read(sessionPath)).toBe(before);
+	});
+
+	it("skips a reconciliation that would only churn the file", async () => {
+		const memory = new MemoryAdapter();
+		const service = createService(memory);
+		await service.sendPrompt("Hello");
+		const before = await memory.read(service.getSnapshot().session!.path);
+		const revisionBefore = runtimeOf(service).sessionRevision;
+
+		await service.reconcileActiveSessionDrift();
+
+		expect(await memory.read(service.getSnapshot().session!.path)).toBe(before);
+		expect(runtimeOf(service).sessionRevision).toBe(revisionBefore);
+	});
+
+	it("quarantines a foreign copy that is not this session and raises the banner", async () => {
+		const memory = new MemoryAdapter();
+		const service = createService(memory);
+		await service.sendPrompt("Hello");
+		const sessionPath = service.getSnapshot().session!.path;
+
+		// A different chat delivered wholesale over this one — the header id can
+		// never match, so the merge refuses rather than stitching two
+		// conversations together.
+		const stranger = new ObsidianSessionManager(asDataAdapter(memory), SESSION_DIR, "obsidian-vault:Test");
+		const other = await stranger.createSession({ provider: "test", modelId: "test-model", thinkingLevel: "high" });
+		await stranger.loadSession(other.path);
+		await stranger.appendMessage({ role: "user", content: [{ type: "text", text: "A different conversation" }], timestamp: Date.now() });
+		await memory.write(sessionPath, await memory.read(other.path));
+
+		await service.reconcileActiveSessionDrift();
+
+		// The banner names the backup, the backup exists, and the local view is
+		// exactly the conversation it was.
+		const backup = service.getSnapshot().syncConflict;
+		expect(backup).toContain("conflicts/");
+		expect(await memory.exists(backup!)).toBe(true);
+		expect(textsOf(service)).toEqual(["Hello", "Done"]);
+
+		service.dismissSyncConflict();
+		expect(service.getSnapshot().syncConflict).toBeNull();
+	});
+
+	it("defers the merge while a reply streams, then folds it in when the run ends", async () => {
+		const memory = new MemoryAdapter();
+		let gate: ReturnType<typeof createAssistantMessageEventStream> | undefined;
+		let gateModel: Model<Api> | undefined;
+		const streamFn: StreamFn = (model, _context, _options) => {
+			gateModel = model;
+			gate = createAssistantMessageEventStream();
+			return gate;
+		};
+		const service = createService(memory, { streamFn });
+		const run = service.sendPrompt("First question");
+		await waitFor(() => gate !== undefined);
+		const sessionPath = service.getSnapshot().session!.path;
+
+		// The other device's line lands mid-run, through the sync plugin.
+		await foreignDeviceAppends(memory, sessionPath, "From the other device");
+
+		// A checkpoint fired mid-run: the merge waits. Swapping the agent
+		// underneath a reply the user is watching would destroy the run.
+		await service.reconcileActiveSessionDrift();
+		expect(textsOf(service)).not.toContain("From the other device");
+
+		// The reply settles — through the repair net, whose re-chain makes the
+		// on-disk copy loadable — and the run-end checkpoint folds the arrival
+		// in without another nudge.
+		const model = gateModel!;
+		const message: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "First reply" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 1_000,
+				output: 10,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 1_010,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		};
+		gate!.push({ type: "done", reason: "stop", message });
+		gate!.end(message);
+		await run;
+		await waitForSettled(() => textsOf(service).includes("From the other device"));
+
+		expect(textsOf(service)).toEqual(["First question", "From the other device", "First reply"]);
+		expect(service.getSnapshot().syncConflict).toBeNull();
+		expect(await managerOf(service).getSession().findOpenOperations("main")).toEqual([]);
+	});
+});

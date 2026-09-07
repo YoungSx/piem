@@ -122,6 +122,25 @@ describe("mergeSessions", () => {
 		expect(result.conflicts).toEqual([{ kind: "duplicate-entry", id: "s2" }]);
 	});
 
+	it("folds back the append the repair net re-chained across a foreign landing", () => {
+		// The mid-run drift path: the foreign tail landed while the local device
+		// was mid-append, so the repair net re-chained the local reply onto the
+		// disk's leaf before writing it. The memory still holds the reply under
+		// its original parent — a chain-position difference, and the merge
+		// re-chains every entry anyway, so this is one entry seen twice, not a
+		// divergence.
+		const local = [header("sess"), ...SHARED, entryLine("l4", "s3", 1100), entryLine("l5", "l4", 1120)];
+		const foreign = [header("sess"), ...SHARED, ...chain(["f6"], 1110, "s3"), entryLine("l5", "f6", 1120)];
+
+		const result = mergeSessions(local, foreign, "sess");
+
+		expect(result.conflicts).toEqual([]);
+		expect(result.merged).not.toBeNull();
+		// l4 is the local-only arrival; f6 is the other device's; the shared l5
+		// folds to the foreign copy.
+		expect(entryIds(result.merged!)).toEqual(["s1", "s2", "s3", "l4", "f6", "l5"]);
+	});
+
 	it("quarantines when both sides compacted past the shared prefix", () => {
 		const local = [header("sess"), ...SHARED, entryLine("lc", "s3", 1200, { type: "compaction", summary: "local summary", retainedTail: [], tokensBefore: 10 })];
 		const foreign = [header("sess"), ...SHARED, entryLine("fc", "s3", 1200, { type: "compaction", summary: "foreign summary", retainedTail: [], tokensBefore: 10 })];

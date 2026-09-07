@@ -125,17 +125,24 @@ function parseSide(lines: string[]): Side {
 }
 
 /**
- * Content identity of an entry, independent of where it sat in its own file:
- * `seq` is positional and renumbered (and the codec keeps `lane` off the entry
- * entirely), everything else — parent, timestamp, payload — is the entry
- * itself. Plain `JSON.stringify` suffices for identity: pi's codec is the only
+ * Content identity of an entry, independent of where it sat in its own file.
+ * Two fields are deliberately stripped, both because the merge re-derives them:
+ * `seq` is positional and renumbered, and `parentId` is structural — every
+ * emitted entry is re-chained to its predecessor, so where an entry hung in
+ * its own file never reaches the output. Tolerating the chain position is not
+ * leniency, it is what lets the repair net's own rewrites fold back in: an
+ * append written across a foreign landing arrives with its parent corrected to
+ * the disk's leaf, and the memory's stale chain position must not turn that
+ * into a conflict. Everything left — timestamp, payload — is the entry itself.
+ *
+ * Plain `JSON.stringify` suffices for identity: pi's codec is the only
  * producer of these lines and serializes keys in a fixed order, and the repair
  * net's rewrites only mutate values in place, so equal content always
  * stringifies equal. A future producer with a different key order degrades
  * safely — to a quarantine, never to a silently accepted divergent entry.
  */
 function contentKey(entry: Entry): string {
-	const { seq: _seq, ...content } = entry;
+	const { seq: _seq, parentId: _parentId, ...content } = entry;
 	return JSON.stringify(content);
 }
 
