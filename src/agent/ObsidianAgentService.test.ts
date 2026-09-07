@@ -25,7 +25,7 @@ installObsidianStub();
 // Dynamic imports so the mocked module wins over any cached real one.
 const { ObsidianAgentService } = await import("./ObsidianAgentService");
 const { OBSIDIAN_AGENT_SYSTEM_PROMPT } = await import("./systemPrompt");
-const { TFile: TFileClass, TFolder: TFolderClass } = await import("obsidian");
+const { TFile: TFileClass, TFolder: TFolderClass, MarkdownView } = await import("obsidian");
 const { MAX_ACTIVE_NOTE_CHARS } = await import("./contextInjection");
 // `settings.ts` imports `obsidian` at runtime; this import must stay behind
 // the stub registration above.
@@ -4420,6 +4420,12 @@ interface ProbeData {
 	caches?: Record<string, unknown>;
 	/** Stands in for `workspace.activeEditor`, whose `file` the selection probe checks. */
 	activeEditor?: { file: { path: string } | null; editor: { getSelection: () => string } } | null;
+	/** Paths of the open markdown leaves, as `getLeavesOfType("markdown")` would yield. */
+	openLeaves?: string[];
+	/** Paths `workspace.getLastOpenFiles()` reports, unfiltered — the probe prunes. */
+	recentFiles?: string[];
+	/** Makes the workspace read throw, simulating an app that hands over the unexpected. */
+	workspaceError?: boolean;
 }
 
 function createFakeApp(
@@ -4508,8 +4514,22 @@ function createFakeApp(
 			// The context probe walks Markdown leaves and the recent-files list.
 			// Missing methods would send every request down the probe's degrade path,
 			// which passes silently while covering nothing.
-			getLeavesOfType: () => [],
-			getLastOpenFiles: () => [],
+			getLeavesOfType: (type: string) => {
+				if (probeData.workspaceError) {
+					throw new Error("workspace is structurally unexpected");
+				}
+				return type === "markdown"
+					? (probeData.openLeaves ?? []).map((path) => ({
+							// `view instanceof MarkdownView` is how the probe reaches the
+							// leaf's file; the real constructor takes the leaf, which the
+							// probe never reads.
+							view: Object.assign(new MarkdownView({} as never), {
+								file: files.get(path) ?? { path, extension: "md", name: path.split("/").pop() },
+							}),
+						}))
+					: [];
+			},
+			getLastOpenFiles: () => probeData.recentFiles ?? [],
 			activeEditor: probeData.activeEditor ?? null,
 		},
 	} as unknown as App;
@@ -4677,6 +4697,61 @@ describe("quick-action suggestions", () => {
 
 		await service.suggestQuickActions("empty");
 		expect(service.peekQuickActionSuggestions("reply")).toBeUndefined();
+	});
+
+	/*
+	 * The workspace grounding: an empty screen with no active note still has
+	 * facts to stand on — other open tabs, recently opened notes — and the
+	 * request must quote them, while the cache key must move when they do.
+	 */
+	it("quotes the workspace facts when the empty screen has no active note", async () => {
+		const prompts: string[] = [];
+		const capturingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+			prompts.push(context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n"));
+			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
+		};
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			streamFn: capturingStreamFn,
+			// Recents survive the probe's existence filter only for files the
+			// vault actually holds; `gone.md` is named but registered nowhere.
+			vaultFiles: { "Journal/today.md": "", "Ideas/home.md": "" },
+			probeData: { openLeaves: ["Projects/piem.md", "Journal/today.md"], recentFiles: ["Journal/today.md", "Ideas/home.md", "gone.md"] },
+		});
+		await service.initialize();
+		// `gone.md` exists in neither map, so the probe's existence filter drops it.
+
+		expect(await service.suggestQuickActions("empty")).not.toBeNull();
+		expect(prompts).toHaveLength(1);
+		// The probe sorts open tabs and recents; a recent already shown as an
+		// open tab (`today.md`) is dropped rather than shown twice.
+		expect(prompts[0]).toContain("Other open tabs: Journal/today.md, Projects/piem.md");
+		expect(prompts[0]).toContain("Recently opened: Ideas/home.md");
+		// No active note, so no folder line either.
+		expect(prompts[0]).not.toContain("Current folder:");
+	});
+
+	it("keeps the request alive when the workspace probe throws", async () => {
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			streamFn: suggestionReplyStreamFn(SUGGESTION_JSON),
+			probeData: { workspaceError: true },
+		});
+		await service.initialize();
+
+		// The side-channel contract: degrade to no workspace facts, still answer.
+		const actions = await service.suggestQuickActions("empty");
+		expect(actions).toEqual([{ id: "suggested-0", label: "Go deeper", prompt: "Expand on the reply." }]);
+	});
+
+	it("reads a changed tab set as unanswered, so stale chips for old tabs are never served", async () => {
+		const probeData: ProbeData = { openLeaves: ["Projects/piem.md"] };
+		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(SUGGESTION_JSON), probeData });
+		await service.initialize();
+
+		await service.suggestQuickActions("empty");
+		expect(service.peekQuickActionSuggestions("empty")).toBeDefined();
+
+		probeData.openLeaves = ["Journal/today.md"];
+		expect(service.peekQuickActionSuggestions("empty")).toBeUndefined();
 	});
 });
 

@@ -13,6 +13,10 @@
  * deliberately lenient — providers wrap JSON in prose or fences, and a row that
  * half-survives is worth showing sliced down rather than discarded.
  *
+ * The empty placements quote the caller's probed workspace facts — the model
+ * would otherwise be guessing at a vault it has never seen; the reply placement
+ * quotes the reply instead, which is both its subject and its context.
+ *
  * Free of React and DOM imports so the prompt, the parse, and the failure
  * contract unit-test without a renderer or a network.
  */
@@ -21,6 +25,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, UserMe
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { MAX_QUICK_ACTIONS, type QuickAction } from "../ui/quickActionSuggestions";
 import type { Language, Translator } from "../i18n";
+import { EMPTY_WORKSPACE_CONTEXT, hasWorkspaceFacts, renderWorkspaceLines, type WorkspaceContext } from "./workspaceContext";
 
 /** Where the suggestions are headed; the placement decides the prompt's framing. */
 export type SuggestionScope = "empty" | "reply";
@@ -52,11 +57,27 @@ export interface SuggestionResult {
  * The placement framing rides in the same message as the contract: one request,
  * one prompt, no system prompt to keep warm in a cache a side-channel will
  * never hit twice with the same prefix.
+ *
+ * The empty placements quote the workspace facts the caller probed (folder
+ * siblings, other open tabs, recently opened notes) so the chips are grounded
+ * in what the user is actually surrounded by, not guessing at the vault; the
+ * reply placement omits them — its subject is the reply itself, and workspace
+ * noise there would only dilute it.
  */
-export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | null, language: Language, t: Translator): string {
+export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | null, language: Language, t: Translator, workspace?: WorkspaceContext): string {
 	const lines = [t.t("quickActions.suggest.instruction", { language: LANGUAGE_NAMES[language] })];
 	if (scope === "empty") {
-		lines.push(subject ? t.t("quickActions.suggest.emptyWithNote", { path: subject }) : t.t("quickActions.suggest.emptyNoNote"));
+		// No probed workspace means an empty one: the guard reads a real context either way.
+		const quoted = workspace ?? EMPTY_WORKSPACE_CONTEXT;
+		const workspaceQuoted = hasWorkspaceFacts(quoted);
+		if (subject) {
+			lines.push(t.t("quickActions.suggest.emptyWithNote", { path: subject }));
+		} else {
+			lines.push(t.t(workspaceQuoted ? "quickActions.suggest.emptyNoNoteWorkspace" : "quickActions.suggest.emptyNoNote"));
+		}
+		if (workspaceQuoted) {
+			lines.push([t.t("quickActions.suggest.workspaceIntro"), ...renderWorkspaceLines(quoted)].join("\n"));
+		}
 	} else {
 		lines.push(t.t("quickActions.suggest.reply", { reply: subject ?? "" }));
 	}
@@ -151,6 +172,8 @@ export async function fetchQuickActionSuggestions(options: {
 	subject: string | null;
 	language: Language;
 	t: Translator;
+	/** The probed workspace facts; quoted by the empty placements, ignored by reply. */
+	workspace?: WorkspaceContext;
 	signal?: AbortSignal;
 	apiKey?: string;
 }): Promise<SuggestionResult> {
@@ -158,7 +181,7 @@ export async function fetchQuickActionSuggestions(options: {
 		messages: [
 			{
 				role: "user",
-				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.t),
+				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.t, options.workspace),
 				timestamp: Date.now(),
 			} satisfies UserMessage,
 		],

@@ -341,6 +341,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 				"对话还是空的，用户正打开着笔记「{path}」作为上下文。",
 			emptyNoNote:
 				"对话还是空的，也没有打开任何笔记；建议应该围绕用户的笔记库整体。",
+			emptyNoNoteWorkspace:
+				"对话还是空的，也没有打开任何笔记；建议应该落在下面这些工作区素材上。",
+			workspaceIntro: "用户当前的工作区：",
 			reply:
 				"请基于下面这段助手的回答来给建议：\n\n{reply}",
 		},

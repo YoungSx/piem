@@ -668,6 +668,9 @@ export const en = {
 				"The conversation is empty and the user has the note \"{path}\" open as context.",
 			emptyNoNote:
 				"The conversation is empty and no note is open; the suggestions should be about the user's vault in general.",
+			emptyNoNoteWorkspace:
+				"The conversation is empty and no note is open; the suggestions should be grounded in the user's workspace below.",
+			workspaceIntro: "The user's workspace:",
 			reply:
 				"Base the suggestions on this assistant reply:\n\n{reply}",
 		},

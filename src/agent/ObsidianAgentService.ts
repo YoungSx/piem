@@ -39,7 +39,7 @@ import { resolveCompactionSettings, type CompactionSettings } from "./compaction
 import { createObsidianTools } from "../tools/obsidianTools";
 import type { AskUserBroker } from "../tools/askUserBroker";
 import { fetchQuickActionSuggestions, lastAssistantText, type SuggestionScope } from "./quickActionSuggestionRequest";
-import { QuickActionSuggestionCache } from "./quickActionSuggestionCache";
+import { QuickActionSuggestionCache, type SuggestionCacheKey, workspaceKeyPart } from "./quickActionSuggestionCache";
 import type { QuickAction } from "../ui/quickActionSuggestions";
 import type { TraceExpandSetting } from "../ui/traceExpand";
 import { DEFAULT_THINKING_LEVEL } from "../constants";
@@ -64,7 +64,8 @@ import {
 import { aggregateSessionSearchHits, type SessionSearchResult } from "../session/sessionSearch";
 import { arrayBufferToBase64, extractImageRefs, mimeTypeForPath, sanitizeMessageForLog, stripImageRefs } from "../vault/image";
 import { EMPTY_RUN_CONTEXT, injectContext, type FrozenRunContext, type InjectedNote } from "./contextInjection";
-import { probeEnvironment, probeRunContext } from "./contextProbe";
+import { probeEnvironment, probeRunContext, probeWorkspaceContext } from "./contextProbe";
+import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
 import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "./exportNote";
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
@@ -2130,10 +2131,36 @@ export class ObsidianAgentService {
 		// read is also a pure query: minting a runtime as a side effect of it
 		// would be wrong even if nothing threw.
 		const rt = this.current();
-		return this.suggestionCache.get({
-			language: resolveLanguage(this.app.vault as LanguageHost, settings.language),
-			notePath: this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ?? null,
-		});
+		const { notePath, workspace } = this.suggestionSubject(rt);
+		return this.suggestionCache.get(this.suggestionCacheKey(resolveLanguage(this.app.vault as LanguageHost, settings.language), notePath, workspace));
+	}
+
+	/**
+	 * The subject and workspace facts a blank-screen suggestion is built from.
+	 *
+	 * Both the peek and the request path derive the same pair, so the cache key
+	 * written at request time is the one the next visit reads. The probe is the
+	 * same one the main conversation's `<context>` block uses, with the active
+	 * note's ref list as its scope; a throw degrades to an empty context rather
+	 * than breaking the side channel — the request path must never throw, and
+	 * the peek path runs inside React's commit phase.
+	 */
+	private suggestionSubject(rt: SessionRuntime | null): { notePath: string | null; workspace: WorkspaceContext } {
+		const refs = this.contextRefList(rt);
+		const notePath = refs.find((ref) => ref.kind === "active")?.path ?? null;
+		let workspace: WorkspaceContext;
+		try {
+			workspace = probeWorkspaceContext(this.app, refs);
+		} catch (error) {
+			this.log.debug("workspace probe for suggestions failed", () => ({ error: String(error) }));
+			workspace = EMPTY_WORKSPACE_CONTEXT;
+		}
+		return { notePath, workspace };
+	}
+
+	/** The full cache key — every input the prompt quotes keys the entry. */
+	private suggestionCacheKey(language: string, notePath: string | null, workspace: WorkspaceContext): SuggestionCacheKey {
+		return { language, notePath, workspace: workspaceKeyPart(workspace) };
 	}
 
 	/**
@@ -2169,6 +2196,10 @@ export class ObsidianAgentService {
 		if (scope === "reply" && !subject) {
 			return null;
 		}
+		// The empty placements quote the workspace; the reply placement's subject
+		// is the reply itself, and probing would be waste there.
+		const { workspace } = this.suggestionSubject(rt);
+		const workspaceForPrompt = scope === "empty" ? workspace : undefined;
 
 		// One suggestion request at a time: a new call supersedes the previous
 		// one, which the abort also marks so the request stops billing.
@@ -2177,12 +2208,14 @@ export class ObsidianAgentService {
 		rt.suggestionController = controller;
 		try {
 			const model = getSelectedModel(settings);
+			const language = resolveLanguage(this.app.vault as LanguageHost, settings.language);
 			const result = await fetchQuickActionSuggestions({
 				streamSimple: this.resolveStreamFn(),
 				model,
 				scope,
 				subject,
-				language: resolveLanguage(this.app.vault as LanguageHost, settings.language),
+				workspace: workspaceForPrompt,
+				language,
 				t: this.t(),
 				apiKey: this.getApiKey(model.provider),
 				signal: controller.signal,
@@ -2193,15 +2226,13 @@ export class ObsidianAgentService {
 				return null;
 			}
 			this.recordOverheadUsage(rt, result.usage);
-			// Only the empty screen caches: its subject is the (path, language) pair
-			// the next blank visit will reproduce, so the answer stays worth showing
-			// again. A reply's subject is that conversation's newest text — no future
-			// request will ask for it, so caching it would be dead weight.
+			// Only the empty screen caches: its key is the (language, note path,
+			// workspace) tuple the next blank visit will reproduce, so the answer
+			// stays worth showing again. A reply's subject is that conversation's
+			// newest text — no future request will ask for it, so caching it would
+			// be dead weight.
 			if (scope === "empty" && result.actions) {
-				this.suggestionCache.set(
-					{ language: resolveLanguage(this.app.vault as LanguageHost, settings.language), notePath: subject },
-					result.actions,
-				);
+				this.suggestionCache.set(this.suggestionCacheKey(language, subject, workspace), result.actions);
 			}
 			return result.actions;
 		} catch (error) {
