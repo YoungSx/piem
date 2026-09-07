@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { DataAdapter } from "obsidian";
 import { JsonlSessionRepo } from "@earendil-works/pi-agent-core";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
@@ -201,7 +202,7 @@ describe("mergeSessions", () => {
 	 */
 	it("produces a file pi's JsonlSessionRepo loads and reads back", async () => {
 		const adapter = new MemoryAdapter();
-		const fs = new ObsidianSessionFileSystem(adapter as unknown as Parameters<typeof ObsidianSessionFileSystem>[0]);
+		const fs = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter);
 		const repo = new JsonlSessionRepo({ fs, sessionsRoot: SESSIONS_ROOT });
 
 		const local = [header("sess-1"), ...SHARED, ...chain(["l4", "l5"], 1100, "s3")];

@@ -1,4 +1,7 @@
-import { scanDiskLines } from "./sessionMutationLine";
+import type { LogItem } from "@earendil-works/pi-agent-core";
+import type { Entry } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/types.js";
+import { parseHeader } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js";
+import { encodeMutation, parseMutationLine, scanDiskLines } from "./sessionMutationLine";
 
 /**
  * Union merge of two device-local views of one chat log.
@@ -45,20 +48,12 @@ export interface MergeResult {
 	foreignTail: number;
 }
 
-interface SideEntry {
-	id: string;
-	timestamp: number;
-	parentId: string | null;
-	/** The full flat mutation value — payload fields included, re-emitted verbatim. */
-	value: Record<string, unknown>;
-}
-
 interface Side {
 	headerLine: string | null;
 	headerId: string | undefined;
 	/** The main-lane transcript, oldest first — what the user reads as the conversation. */
-	branch: SideEntry[];
-	entriesById: Map<string, SideEntry>;
+	branch: Entry[];
+	entriesById: Map<string, Entry>;
 	/** The side's last `name` fact, or null when it never named the session. */
 	nameFact: { name?: string } | null;
 	/** Last label per target id. */
@@ -66,10 +61,10 @@ interface Side {
 }
 
 /**
- * One pass over a side's lines, lenient like `scanDiskLines`: unparseable
- * lines are skipped, not failed — pi only ever writes valid mutations, so a
- * failure means a torn tail or a header, both of which the scan already
- * handles.
+ * One pass over a side's lines, lenient like `scanDiskLines`: the same codec
+ * that guards pi's loader reads each line here, so unparseable lines — a torn
+ * tail, a header, anything pi itself would refuse — are skipped, not failed.
+ * A side this module builds from is exactly what pi would load from it.
  *
  * The branch walk starts at the main lane's leaf and follows `parentId` home.
  * A file whose entries are all lane-less (the repair net's own output) leaves
@@ -86,39 +81,35 @@ function parseSide(lines: string[]): Side {
 		labels: new Map(),
 	};
 	for (const line of lines) {
-		let value: unknown;
-		try {
-			value = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		if (typeof value !== "object" || value === null || Array.isArray(value)) {
-			continue;
-		}
-		const record = value as Record<string, unknown>;
-		if (side.headerLine === null && record.kind === "header") {
-			side.headerLine = line;
-			side.headerId = typeof record.id === "string" ? record.id : undefined;
-			continue;
-		}
-		if (record.kind === "entry" && typeof record.id === "string") {
-			const entry: SideEntry = {
-				id: record.id,
-				timestamp: typeof record.timestamp === "number" ? record.timestamp : 0,
-				parentId: typeof record.parentId === "string" ? record.parentId : null,
-				value: record,
-			};
-			if (!side.entriesById.has(entry.id)) {
-				side.entriesById.set(entry.id, entry);
+		if (side.headerLine === null) {
+			// The first readable header line wins; the codec also rejects headers of
+			// a version pi itself would refuse, so an unreadable one is just skipped.
+			const header = parseHeader(line);
+			if (header.ok) {
+				side.headerLine = line;
+				side.headerId = header.value.id;
+				continue;
 			}
+		}
+		const mutation = parseMutationLine(line);
+		if (!mutation) {
 			continue;
 		}
-		if (record.kind === "fact" && record.fact === "name") {
-			side.nameFact = { name: typeof record.name === "string" ? record.name : undefined };
-			continue;
-		}
-		if (record.kind === "fact" && record.fact === "label" && typeof record.targetId === "string") {
-			side.labels.set(record.targetId, typeof record.label === "string" ? record.label : undefined);
+		switch (mutation.kind) {
+			case "entry": {
+				const entry = mutation.entry;
+				if (!side.entriesById.has(entry.id)) {
+					side.entriesById.set(entry.id, entry);
+				}
+				break;
+			}
+			case "fact":
+				if (mutation.fact === "name") {
+					side.nameFact = { name: mutation.name };
+				} else {
+					side.labels.set(mutation.targetId, mutation.label);
+				}
+				break;
 		}
 	}
 	const disk = scanDiskLines(lines);
@@ -135,42 +126,17 @@ function parseSide(lines: string[]): Side {
 
 /**
  * Content identity of an entry, independent of where it sat in its own file:
- * `seq` is positional and renumbered, `lane` is rewritten to main, everything
- * else — parent, timestamp, payload — is the entry itself. Keys are sorted so
- * the same object serialized by different code paths compares equal.
+ * `seq` is positional and renumbered (and the codec keeps `lane` off the entry
+ * entirely), everything else — parent, timestamp, payload — is the entry
+ * itself. Plain `JSON.stringify` suffices for identity: pi's codec is the only
+ * producer of these lines and serializes keys in a fixed order, and the repair
+ * net's rewrites only mutate values in place, so equal content always
+ * stringifies equal. A future producer with a different key order degrades
+ * safely — to a quarantine, never to a silently accepted divergent entry.
  */
-function contentKey(entry: SideEntry): string {
-	const { seq: _seq, lane: _lane, ...content } = entry.value;
-	return canonicalJson(content);
-}
-
-function canonicalJson(value: unknown): string {
-	if (Array.isArray(value)) {
-		return `[${value.map(canonicalJson).join(",")}]`;
-	}
-	if (typeof value === "object" && value !== null) {
-		const keys = Object.keys(value as Record<string, unknown>).sort();
-		return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
-	}
-	return JSON.stringify(value) ?? "null";
-}
-
-/** Interleaves two chain-ordered tails by timestamp; each tail keeps its own order, local wins ties. */
-function interleave(local: SideEntry[], foreign: SideEntry[]): SideEntry[] {
-	const out: SideEntry[] = [];
-	let i = 0;
-	let j = 0;
-	while (i < local.length && j < foreign.length) {
-		const takeLocal = local[i]!.timestamp <= foreign[j]!.timestamp;
-		out.push(takeLocal ? local[i++]! : foreign[j++]!);
-	}
-	while (i < local.length) {
-		out.push(local[i++]!);
-	}
-	while (j < foreign.length) {
-		out.push(foreign[j++]!);
-	}
-	return out;
+function contentKey(entry: Entry): string {
+	const { seq: _seq, ...content } = entry;
+	return JSON.stringify(content);
 }
 
 /**
@@ -181,12 +147,14 @@ function interleave(local: SideEntry[], foreign: SideEntry[]): SideEntry[] {
  * verbatim: it is the session every other device already knows.
  */
 export function mergeSessions(localLines: string[], foreignLines: string[], sessionId: string): MergeResult {
+	// The shared shape of the two refused-at-the-header outcomes.
+	const refused = (conflicts: MergeConflict[]): MergeResult => ({ merged: null, conflicts, localTail: 0, foreignTail: 0 });
 	const foreign = parseSide(foreignLines);
 	if (foreign.headerLine === null) {
-		return { merged: null, conflicts: [{ kind: "unreadable-foreign" }], localTail: 0, foreignTail: 0 };
+		return refused([{ kind: "unreadable-foreign" }]);
 	}
 	if (foreign.headerId !== sessionId) {
-		return { merged: null, conflicts: [{ kind: "session-id", foreignId: foreign.headerId }], localTail: 0, foreignTail: 0 };
+		return refused([{ kind: "session-id", foreignId: foreign.headerId }]);
 	}
 	const local = parseSide(localLines);
 
@@ -203,13 +171,11 @@ export function mergeSessions(localLines: string[], foreignLines: string[], sess
 	}
 
 	// The shared history is the longest common prefix of the two transcripts.
-	const localIds = local.branch.map((entry) => entry.id);
-	const foreignIds = foreign.branch.map((entry) => entry.id);
 	let prefixLength = 0;
 	while (
-		prefixLength < localIds.length &&
-		prefixLength < foreignIds.length &&
-		localIds[prefixLength] === foreignIds[prefixLength]
+		prefixLength < local.branch.length &&
+		prefixLength < foreign.branch.length &&
+		local.branch[prefixLength]!.id === foreign.branch[prefixLength]!.id
 	) {
 		prefixLength += 1;
 	}
@@ -220,7 +186,7 @@ export function mergeSessions(localLines: string[], foreignLines: string[], sess
 	// Both sides compacted past the shared history: each summary describes a
 	// context the other never saw, and stitching them would fabricate a
 	// conversation nobody had. Quarantine, not merge.
-	if (localTail.some((entry) => entry.value.type === "compaction") && foreignTail.some((entry) => entry.value.type === "compaction")) {
+	if (localTail.some((entry) => entry.type === "compaction") && foreignTail.some((entry) => entry.type === "compaction")) {
 		conflicts.push({ kind: "compaction-both" });
 	}
 	if (conflicts.length > 0) {
@@ -228,23 +194,34 @@ export function mergeSessions(localLines: string[], foreignLines: string[], sess
 	}
 
 	// An id on both tails with identical content is one entry seen twice — the
-	// foreign copy wins, the local one folds away.
-	const foreignTailIds = new Set(foreignTail.map((entry) => entry.id));
-	const localOnly = localTail.filter((entry) => !foreignTailIds.has(entry.id));
+	// foreign copy wins, the local one folds away. Tails are short (a session's
+	// entries past the shared history), so the linear scan beats a set.
+	const localOnly = localTail.filter((entry) => !foreignTail.some((foreignEntry) => foreignEntry.id === entry.id));
 
-	const lines: string[] = [foreign.headerLine];
+	const lines: string[] = [];
+	// The emitted contract is one newline per line, and the header obeys it too:
+	// sides may arrive with bare lines (a `split("\n")` view) or with their
+	// terminators kept (a hand-built fixture), so the header — the one line
+	// passed through byte-for-byte — is terminated here rather than trusted.
+	const headerLine = foreign.headerLine.endsWith("\n") ? foreign.headerLine : `${foreign.headerLine}\n`;
+	lines.push(headerLine);
 	const emittedIds = new Set<string>();
 	let seq = 0;
 	let previousId: string | null = null;
-	for (const entry of [...prefix, ...interleave(localOnly, foreignTail)]) {
+	// The two tails interleave by timestamp — a stable sort does it: local first
+	// in the concat wins ties, and each tail's chain order survives (ES2019+
+	// sorts are stable), so the comparison order is identical to a hand-rolled
+	// merge of two sorted sequences.
+	for (const entry of [...prefix, ...[...localOnly, ...foreignTail].sort((a, b) => a.timestamp - b.timestamp)]) {
 		seq += 1;
 		emittedIds.add(entry.id);
 		// Every entry rides the main lane chained to its predecessor, so the
 		// replayed leaf lands on the final entry — the lane shape pi itself
 		// writes for a linear session, with no terminal lane mutation needed.
-		// Each line keeps its own trailing newline: joined, the output is the
-		// byte-exact file content pi's loader expects.
-		lines.push(`${JSON.stringify({ ...entry.value, kind: "entry", seq, lane: "main", parentId: previousId })}\n`);
+		// Emission is pi's own encoder: each line keeps its trailing newline,
+		// and joined, the output is the byte-exact file content pi's loader
+		// expects.
+		lines.push(encodeMutation({ kind: "entry", lane: "main", entry: { ...entry, seq, parentId: previousId } }));
 		previousId = entry.id;
 	}
 
@@ -254,7 +231,7 @@ export function mergeSessions(localLines: string[], foreignLines: string[], sess
 	const nameFact = foreign.nameFact ?? local.nameFact;
 	if (nameFact !== null) {
 		seq += 1;
-		lines.push(`${JSON.stringify({ kind: "fact", seq, fact: "name", ...(nameFact.name === undefined ? {} : { name: nameFact.name }) })}\n`);
+		lines.push(encodeMutation({ kind: "fact", seq, fact: "name", name: nameFact.name }));
 	}
 	const labels = new Map([...local.labels, ...foreign.labels]);
 	for (const [targetId, label] of labels) {
@@ -262,8 +239,29 @@ export function mergeSessions(localLines: string[], foreignLines: string[], sess
 			continue;
 		}
 		seq += 1;
-		lines.push(`${JSON.stringify({ kind: "fact", seq, fact: "label", targetId, ...(label === undefined ? {} : { label }) })}\n`);
+		lines.push(encodeMutation({ kind: "fact", seq, fact: "label", targetId, label }));
 	}
 
 	return { merged: lines, conflicts: [], localTail: localOnly.length, foreignTail: foreignTail.length };
+}
+
+/**
+ * Flattens pi's in-memory log back into the JSONL wire shape the merge — and
+ * the file on disk — speak. `getLog` returns entries nested under `entry`, the
+ * opposite of what the wire carries, so this re-flattens through pi's own
+ * encoder (records and lane items skipped outright: the merge drops both).
+ *
+ * No header line: `getLog` never returns one, and {@link mergeSessions} only
+ * reads the foreign side's header — the local side is tolerated headerless.
+ */
+export function serializeLogLines(items: LogItem[]): string[] {
+	const lines: string[] = [];
+	for (const item of items) {
+		if (item.kind === "entry") {
+			lines.push(encodeMutation({ kind: "entry", lane: "main", entry: item.entry }));
+		} else if (item.kind === "fact") {
+			lines.push(encodeMutation(item));
+		}
+	}
+	return lines;
 }

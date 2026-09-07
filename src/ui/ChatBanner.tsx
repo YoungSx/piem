@@ -51,6 +51,15 @@ interface ChatBannerProps {
 	 * reply behind this offer is one the user already asked for.
 	 */
 	recoveryOffer?: RecoveryOffer;
+	/**
+	 * Path of the quarantined foreign copy when a chat-sync merge refused. A
+	 * standing outcome like a notice — nothing failed, the conversation is
+	 * exactly as it was — but it names a file the user may want to inspect, and
+	 * it is dismissed alone: the shared {@link onDismiss} clears the service's
+	 * message state, and acknowledging this must not clear that.
+	 */
+	syncConflict?: string;
+	onDismissSyncConflict?: () => void;
 	onDismiss: () => void;
 	/**
 	 * Opens the plugin's settings tab. Absent when the host cannot reach it, in
@@ -71,11 +80,12 @@ interface ChatBannerProps {
  * so a stale message stayed until the next turn overwrote it.
  *
  * At most one *report* renders, and at most one standing offer beside it. Among
- * the reports, a failure outranks an outcome the user just caused; among the
- * offers, the interrupted-reply offer outranks the context wall. What a failure
- * no longer does is hide the offers: those carry the panel's only two recovery
- * controls, and one of them is frequently the cure for the failure being
- * reported.
+ * the reports, a failure outranks an outcome the user just caused; the sync
+ * conflict rows below both — it is not about this process's work at all, so it
+ * yields the slot to anything that is; among the offers, the interrupted-reply
+ * offer outranks the context wall. What a failure no longer does is hide the
+ * offers: those carry the panel's only two recovery controls, and one of them
+ * is frequently the cure for the failure being reported.
  */
 export function ChatBanner({
 	errorMessage,
@@ -83,17 +93,29 @@ export function ChatBanner({
 	noticeMessage,
 	contextWall,
 	recoveryOffer,
+	syncConflict,
+	onDismissSyncConflict,
 	onDismiss,
 	onOpenSettings,
 }: ChatBannerProps): React.JSX.Element {
 	const t = useT();
-	const notice = noticeMessage ? (
+	/** One notice-class row: info icon, text, dismiss. The shared shape of the two outcomes below. */
+	const infoRow = (text: React.ReactNode, onDismiss: () => void) => (
 		<div className="piem-chat__banner piem-chat__banner--notice">
 			<ObsidianIcon name="info" className="piem-chat__banner-icon" />
-			<span className="piem-chat__banner-text">{noticeMessage}</span>
+			<span className="piem-chat__banner-text">{text}</span>
 			<IconButton icon="x" label={t.t("chat.dismissMessage")} onClick={onDismiss} className="piem-chat__banner-dismiss" />
 		</div>
-	) : null;
+	);
+	const notice = noticeMessage ? infoRow(noticeMessage, onDismiss) : null;
+	/*
+	 * Notice-class rather than wall/recovery-class: nothing is blocked and
+	 * nothing needs acting on — the conversation is untouched and the other
+	 * device's copy is safe in the named backup. The path is appended outside
+	 * the translated sentence so a long vault path cannot wrap inside the text
+	 * node the translator shaped; the key ends unpunctuated for the same reason.
+	 */
+	const conflict = syncConflict ? infoRow([t.t("chat.syncConflict"), " ", syncConflict], onDismissSyncConflict ?? onDismiss) : null;
 	const wall = contextWall ? (
 		<div className="piem-chat__banner piem-chat__banner--wall">
 			<ObsidianIcon name="archive" className="piem-chat__banner-icon" />
@@ -116,9 +138,11 @@ export function ChatBanner({
 	) : null;
 	/*
 	 * An outcome outranks the standing offers: both live on the polite channel,
-	 * and an offer is still true after the outcome has been read. Between the
-	 * offers, the recovery outranks the wall — the reply behind it is one the user
-	 * already asked for, and the wall's tidy can wait a turn.
+	 * and an offer is still true after the outcome has been read. The sync
+	 * conflict sits under both — it does not describe this process's work, so it
+	 * yields the slot to anything that does. Between the offers, the recovery
+	 * outranks the wall — the reply behind it is one the user already asked for,
+	 * and the wall's tidy can wait a turn.
 	 *
 	 * A failure silences the outcome and nothing else. It used to silence the
 	 * offers too, which meant the banner could withhold the remedy for the very
@@ -133,7 +157,7 @@ export function ChatBanner({
 	 * reports itself in the transcript (#239) instead of arriving here as an
 	 * unbounded provider dump.
 	 */
-	const polite = (errorMessage ? null : notice) ?? recovery ?? wall;
+	const polite = (errorMessage ? null : notice) ?? recovery ?? conflict ?? wall;
 
 	return (
 		<>

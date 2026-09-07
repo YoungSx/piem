@@ -66,6 +66,12 @@ export const zhCN: DeepPartial<EnCopy> = {
 		 */
 		recoveryOffer: "上一次回复没写完就断了。从断掉的地方继续吗？",
 		recoveryResume: "继续",
+		/**
+		 * 同步冲突横幅：与另一台设备的记录合并被拒，外来文件已隔离留证，
+		 * 本会话保持原样。常驻结果、走 polite 通道播报；备份路径跟在句子
+		 * 后面，键文案到句号为止。
+		 */
+		syncConflict: "检测到与另一台设备的聊天同步冲突，对方的记录已备份到",
 		conversationAria: "对话",
 		skipToComposer: "跳到输入框",
 		skipToTranscript: "回到对话",

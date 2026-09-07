@@ -128,6 +128,10 @@ const REQUIRED_MODULES = new Map([
 		"node_modules/@earendil-works/pi-agent-core/dist/harness/tools/edit-diff.js",
 		"src/vault/editDiff.ts reaches this file by relative path because it is not in pi's exports map. A missing input means the path broke — likely a package-manager layout change or a pi rename. See that file's header.",
 	],
+	[
+		"node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js",
+		"src/session/sessionMutationLine.ts reaches this file by relative path because it is not in pi's exports map. A missing input means the path broke — likely a package-manager layout change or a pi rename. See that file's header.",
+	],
 ]);
 
 function formatSize(bytes) {

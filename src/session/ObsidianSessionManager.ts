@@ -17,11 +17,13 @@ import {
 	type SessionSearch,
 	type SessionSearchOptions,
 } from "@earendil-works/pi-agent-core";
+import type { LoggerLike } from "../logging/Logger";
 import { normalizeFolderPath } from "../vault/path";
 import { sanitizeMessageForLog } from "../vault/image";
 import { DEFAULT_THINKING_LEVEL } from "../constants";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { selectSessionsToEvict, UNLIMITED_SESSION_RETENTION } from "./retention";
+import { mergeSessions, serializeLogLines } from "./sessionMerge";
 import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
 
 export interface SessionDefaults {
@@ -120,18 +122,27 @@ export class ObsidianSessionManager {
 	 */
 	onSessionDeleted: ((sessionId: string) => void) | null = null;
 
-	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string) {
-		this.fs = new ObsidianSessionFileSystem(adapter);
+	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string, log?: LoggerLike) {
+		this.fs = new ObsidianSessionFileSystem(adapter, undefined, log ? (event) => {
+			// The repair net's verdicts are the sync story the panel cannot show:
+			// either one means another device's file version was on disk under
+			// our append. A drop is the failure class — the line never landed —
+			// (warn) while a repair is the recovery working as designed (info).
+			log[event.action === "dropped" ? "warn" : "info"](`session append ${event.action}: ${event.path}`, () => ({
+				kind: event.kind,
+				seq: event.seq ?? 0,
+			}));
+		} : undefined);
 		this.policy = typeof location === "string" ? fixedSessionPolicy(location) : location;
 		this.cwd = cwd;
 	}
 
-	static forPlugin(app: App, _plugin: Plugin, getSettings: () => SessionSettings): ObsidianSessionManager {
+	static forPlugin(app: App, _plugin: Plugin, getSettings: () => SessionSettings, log?: LoggerLike): ObsidianSessionManager {
 		const policy: SessionPolicy = {
 			sessionDir: () => getSettings().sessionDir,
 			retentionLimit: () => getSettings().sessionRetention,
 		};
-		return new ObsidianSessionManager(app.vault.adapter, policy, "piem");
+		return new ObsidianSessionManager(app.vault.adapter, policy, "piem", log);
 	}
 
 	async createSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
@@ -683,6 +694,92 @@ export class ObsidianSessionManager {
 		return (await fresh.getName())?.trim() || undefined;
 	}
 
+	/**
+	 * Reconciles a session whose file moved under it — the vault sync plugin
+	 * landed another device's version of the log — with the live in-memory view.
+	 *
+	 * Both sides are read as lines ({@link serializeLogLines} flattens the live
+	 * log; the disk holds the foreign version) and union-merged by
+	 * {@link mergeSessions}. The merged output is published with pi's own
+	 * torn-tail ritual — staged as `<path>.tmp`, then renamed over the target —
+	 * and the live `Session` is replaced by a fresh instance opened over the
+	 * merged file: pi's storage holds its state in memory and has no live
+	 * reload, so the merge is invisible until the instance is swapped.
+	 *
+	 * Outcomes:
+	 * - `skipped` — the disk read failed (best-effort: the repair net keeps the
+	 *   file loadable either way) or the merge found both sides already hold the
+	 *   full union, in which case writing anything would only churn mtime and
+	 *   invite the sync plugin to arbitrate a file that did not change.
+	 * - `merged` — the union was written when the local side held entries the
+	 *   foreign file lacked (a stale foreign overwrite folds back in), or the
+	 *   foreign side was the superset and only the in-memory instance needed
+	 *   rebuilding. Either way the fresh instance reads the merged file.
+	 * - `conflict` — the merge refused (divergent content for one entry id, both
+	 *   sides compacted past the shared history, a foreign header for another
+	 *   session). The foreign file as it sits on disk is copied to a
+	 *   `conflicts/` folder beside the log — pi's repo only lists session files,
+	 *   so the copy never surfaces as a duplicate chat — and the live session
+	 *   stays untouched for the caller to surface.
+	 *
+	 * The path must already be hydrated; this is a recovery for a live session,
+	 * not a loader.
+	 */
+	async reconcileExternalDrift(path: string): Promise<SessionReconcileOutcome> {
+		const target = normalizeFolderPath(path, { allowPluginInternals: true });
+		const live = this.hydrated.get(target);
+		if (!live) {
+			throw new Error(`No session loaded: ${target}`);
+		}
+		const foreign = await this.fs.readTextFile(target);
+		if (!foreign.ok) {
+			return { action: "skipped" };
+		}
+		const localLines = serializeLogLines(await live.session.getLog());
+		const result = mergeSessions(localLines, foreign.value.split("\n"), live.metadata.id);
+
+		if (result.merged === null) {
+			// Quarantine: copy the foreign file as it sits on disk to `conflicts/`
+			// beside its log — pi's repo only lists session files, so the copy never
+			// surfaces as a duplicate chat.
+			const slash = target.lastIndexOf("/");
+			const backupPath = `${target.slice(0, slash)}/conflicts/${target.slice(slash + 1).replace(/\.jsonl$/, "")}.conflict-${Date.now()}.jsonl`;
+			// Session paths are policy-built under `sessionDir/`, so a parent always exists.
+			await this.writeFileStrict(backupPath, foreign.value);
+			return { action: "conflict", backupPath };
+		}
+		if (result.localTail > 0) {
+			const staged = `${target}.tmp`;
+			await this.writeFileStrict(staged, result.merged.join(""), target);
+		} else if (result.foreignTail === 0) {
+			// Both sides already hold the full union: writing anything would only
+			// churn mtime and invite the sync plugin to arbitrate a file that did
+			// not change. The live instance is also still current, so no rebuild.
+			return { action: "skipped" };
+		}
+		const fresh = await this.repo(this.resolveSessionDir()).open(live.metadata);
+		this.hydrated.set(target, { session: fresh, metadata: await fresh.getMetadata() });
+		return { action: "merged" };
+	}
+
+	/**
+	 * A whole-file write whose failure is this method's own outcome, not a
+	 * caller's concern. `renameTo` stages-then-releases: pi's own torn-tail
+	 * ritual for publishing a rewritten log.
+	 */
+	private async writeFileStrict(path: string, content: string, renameTo?: string): Promise<void> {
+		const written = await this.fs.writeFile(path, content);
+		if (!written.ok) {
+			throw written.error;
+		}
+		if (renameTo !== undefined) {
+			const rename = await this.fs.renameFile(path, renameTo);
+			if (!rename.ok) {
+				throw rename.error;
+			}
+		}
+	}
+
 	async ensureConfiguration(defaults: SessionDefaults, lane = "main"): Promise<void> {
 		return this.ensureConfigurationFor(this.requireActivePath(), defaults, lane);
 	}
@@ -828,6 +925,14 @@ export class ObsidianSessionManager {
 interface SessionFileInfo extends ActiveSessionInfo {
 	modifiedTime: number;
 }
+
+/**
+ * What {@link ObsidianSessionManager.reconcileExternalDrift} decided:
+ * `skipped` (nothing to do), `merged` (union written and/or instance rebuilt),
+ * or `conflict` (merge refused; the foreign file was quarantined at
+ * `backupPath` for the user to inspect).
+ */
+export type SessionReconcileOutcome = { action: "merged" } | { action: "skipped" } | { action: "conflict"; backupPath: string };
 
 function fixedSessionPolicy(sessionDir: string): SessionPolicy {
 	return { sessionDir: () => sessionDir, retentionLimit: () => UNLIMITED_SESSION_RETENTION };

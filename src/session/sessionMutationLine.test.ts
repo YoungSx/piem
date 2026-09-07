@@ -21,7 +21,7 @@ const emptyDisk = scanDiskLines([]);
 describe("parseMutationLine", () => {
 	it("accepts each mutation kind as pi's codec encodes it", () => {
 		expect(parseMutationLine(entryLine())?.kind).toBe("entry");
-		expect(parseMutationLine(`${JSON.stringify({ kind: "record", seq: 2, id: "r1", lane: "main", type: "usage" })}\n`)?.kind).toBe("record");
+		expect(parseMutationLine(`${JSON.stringify({ kind: "record", seq: 2, id: "r1", lane: "main", type: "usage", timestamp: 1000 })}\n`)?.kind).toBe("record");
 		expect(parseMutationLine(`${JSON.stringify({ kind: "lane", seq: 3, lane: "main", leafId: "e1" })}\n`)?.kind).toBe("lane");
 		expect(parseMutationLine(`${JSON.stringify({ kind: "fact", seq: 4, fact: "name", name: "Chat" })}\n`)?.kind).toBe("fact");
 	});
@@ -117,12 +117,12 @@ describe("repairMutationLine", () => {
 
 	it("drops a record whose lane the disk lacks", () => {
 		const disk = scanDiskLines([entryLine({ seq: 1, id: "a" })]);
-		const record = `${JSON.stringify({ kind: "record", seq: 2, id: "r1", lane: "main", type: "usage" })}\n`;
+		const record = `${JSON.stringify({ kind: "record", seq: 2, id: "r1", lane: "main", type: "usage", timestamp: 1000 })}\n`;
 		// main exists on any disk (bootstrap), so flip to an undeclared lane.
 		const foreign = scanDiskLines([entryLine({ seq: 1, id: "a" }), `${JSON.stringify({ kind: "lane", seq: 2, lane: "side", leafId: null })}\n`]);
 		expect(repairMutationLine(record, disk).action).toBe("kept");
-		expect(repairMutationLine(`${JSON.stringify({ kind: "record", seq: 3, id: "r2", lane: "side", type: "usage" })}\n`, foreign).action).toBe("kept");
-		expect(repairMutationLine(`${JSON.stringify({ kind: "record", seq: 3, id: "r2", lane: "ghost", type: "usage" })}\n`, foreign).action).toBe("dropped");
+		expect(repairMutationLine(`${JSON.stringify({ kind: "record", seq: 3, id: "r2", lane: "side", type: "usage", timestamp: 1000 })}\n`, foreign).action).toBe("kept");
+		expect(repairMutationLine(`${JSON.stringify({ kind: "record", seq: 3, id: "r2", lane: "ghost", type: "usage", timestamp: 1000 })}\n`, foreign).action).toBe("dropped");
 	});
 
 	it("drops a lane mutation pointing at an entry the disk lacks", () => {

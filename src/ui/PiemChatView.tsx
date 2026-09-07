@@ -85,8 +85,9 @@ export class PiemChatView extends ItemView {
 		}
 		// Seeds the name comparison the same way the note path is seeded: the events
 		// only report that the file *may* have changed, and opening the panel is the
-		// moment a name changed while it was closed becomes visible.
-		void this.service.syncExternalSessionChange();
+		// moment a name changed while it was closed becomes visible. The drift sync
+		// also unions anything the other device landed while the panel was closed.
+		void this.service.syncExternalSessionDrift();
 		// Obsidian's own filesystem watcher misses events in some environments —
 		// Flatpak portals block inotify, network mounts do not propagate, Linux
 		// watch limits silently drop (its file explorer has the same blind spot).
@@ -100,7 +101,7 @@ export class PiemChatView extends ItemView {
 		// follows the leaf when Obsidian migrates it between windows; reading the
 		// window once at construction (or off `activeWindow`, which is whichever
 		// window is focused *now*) is what goes stale.
-		this.register(watchWindowFocus(this.contentEl, () => void this.service.syncExternalSessionChange()));
+		this.register(watchWindowFocus(this.contentEl, () => void this.service.syncExternalSessionDrift()));
 	}
 
 	getViewType(): string {

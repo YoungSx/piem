@@ -227,6 +227,44 @@ describe("ChatBanner", () => {
 		expect(host.querySelector(".piem-chat__banner--notice")).not.toBeNull();
 		expect(host.querySelector(".piem-chat__banner--wall")).toBeNull();
 	});
+
+	it("yields the polite slot to an outcome, and names the quarantined copy in its own row", async () => {
+		const host = await renderBanner({
+			noticeMessage: "Nothing to compact yet.",
+			syncConflict: "Piem/chats/conflicts/chat.conflict-123.jsonl",
+			onDismissSyncConflict: () => undefined,
+			onDismiss: () => undefined,
+		});
+		expect(host.querySelector(".piem-chat__banner-live")?.querySelector(".piem-chat__banner--notice")?.textContent).toContain(
+			"Nothing to compact yet.",
+		);
+
+		// With the outcome gone, the conflict row takes the slot and carries the
+		// path *outside* the translated sentence — a long vault path must not
+		// wrap inside the text node the translator shaped.
+		const cleared = await renderBanner({
+			syncConflict: "Piem/chats/conflicts/chat.conflict-123.jsonl",
+			onDismissSyncConflict: () => undefined,
+			onDismiss: () => undefined,
+		});
+		const row = cleared.querySelector(".piem-chat__banner-live")?.querySelector(".piem-chat__banner--notice");
+		expect(row?.textContent).toContain("Piem/chats/conflicts/chat.conflict-123.jsonl");
+	});
+
+	it("dismisses the sync conflict on its own, without clearing the shared message state", async () => {
+		let conflictDismissed = 0;
+		let sharedDismissed = 0;
+		const host = await renderBanner({
+			syncConflict: "Piem/chats/conflicts/chat.conflict-123.jsonl",
+			onDismissSyncConflict: () => (conflictDismissed += 1),
+			onDismiss: () => (sharedDismissed += 1),
+		});
+
+		const dismiss = host.querySelector<HTMLButtonElement>(".piem-chat__banner-dismiss");
+		dismiss?.click();
+		expect(conflictDismissed).toBe(1);
+		expect(sharedDismissed).toBe(0);
+	});
 });
 
 const roots = new WeakMap<HTMLElement, import("react-dom/client").Root>();
