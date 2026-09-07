@@ -108,6 +108,33 @@ describe("wide content scrolls inside its own box", () => {
 	});
 });
 
+describe("the quick-action strip scrolls inside the row", () => {
+	/*
+	 * The reply placement's row is the one sanctioned sideways scroller that is
+	 * not a wide block but the transcript's own furniture: six model-suggested
+	 * chips, laid out in one line. These pins hold the shape the fades and the
+	 * wheel handling both assume, so neither can silently scroll nothing.
+	 */
+	it("declares the strip a one-line sideways scroller", () => {
+		const body = declarations(ruleBody(".piem-chat__quick-actions--strip"));
+		expect(body).toContain("overflow-x: auto");
+		expect(body).toContain("flex-wrap: nowrap");
+	});
+
+	it("fades only the strip, never the empty screen's wrapping row", () => {
+		// The base rule is shared with the wrap layout; the mask belongs to the
+		// modifier alone, so a chip row that cannot scroll can never dim its edge.
+		expect(declarations(ruleBody(".piem-chat__quick-actions"))).not.toContain("mask-image");
+		expect(declarations(ruleBody(".piem-chat__quick-actions--strip"))).toContain("mask-image");
+	});
+
+	it("keeps each chip a fixed block the fade decides to clip", () => {
+		const body = declarations(ruleBody(".piem-chat__quick-actions--strip .piem-chat__quick-action"));
+		expect(body).toContain("white-space: nowrap");
+		expect(body).toContain("flex: none");
+	});
+});
+
 describe("prose wraps where machine output scrolls", () => {
 	/*
 	 * The split is the design. Prose has no columns to preserve, so an unbreakable

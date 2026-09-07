@@ -1340,6 +1340,29 @@ describe("MessageList quick actions", () => {
 		expect(selected[0]).toContain("note");
 	});
 
+	it("lays the reply row out as a strip and keeps the empty screen wrapping", async () => {
+		// Six chips wrapped read as a menu; the same six swiped sideways read
+		// as a palette. The empty screen's three fit, so it keeps the wrap.
+		const reply = renderMessages([userMessage("q"), assistantMessage("An answer.")], {
+			onQuickAction: () => undefined,
+			suggestedActions: Array.from({ length: 6 }, (_, index) => ({
+				id: `suggested-${index}`,
+				label: `Chip ${index}`,
+				prompt: `Prompt ${index}`,
+			})),
+		});
+		await flushRender();
+
+		const strip = reply.querySelector(".piem-chat__quick-actions");
+		expect(strip?.className).toContain("piem-chat__quick-actions--strip");
+		expect(strip?.querySelectorAll(".piem-chat__quick-action")).toHaveLength(6);
+
+		const empty = renderMessages([], { onQuickAction: () => undefined });
+		await flushRender();
+		const wrap = empty.querySelector(".piem-chat__quick-actions");
+		expect(wrap?.className).not.toContain("--strip");
+	});
+
 	it("shapes the empty-screen prompts around the open note", async () => {
 		const withNote = renderMessages([], { hasActiveNote: true, onQuickAction: () => undefined });
 		await flushRender();

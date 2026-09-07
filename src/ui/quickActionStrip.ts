@@ -92,10 +92,13 @@ export function wheelStep(deltaX: number, deltaY: number, deltaMode: number, edg
  * `resetKey`, which also rewinds the scroll — fresh suggestions reuse the
  * same DOM nodes (ids are positional), and a row scrolled to its middle must
  * not greet its replacement half-hidden.
+ *
+ * A null `ref` opts out entirely — the wrap layout has nothing to wire — and
+ * every read guards it, since the hook runs even when the row renders nothing.
  */
-export function useStripScroll(ref: RefObject<HTMLElement | null>, resetKey: string): void {
+export function useStripScroll(ref: RefObject<HTMLElement | null> | null, resetKey: string): void {
 	const sync = useCallback(() => {
-		const el = ref.current;
+		const el = ref?.current;
 		if (!el) {
 			return;
 		}
@@ -107,7 +110,7 @@ export function useStripScroll(ref: RefObject<HTMLElement | null>, resetKey: str
 	}, [ref]);
 
 	useEffect(() => {
-		const el = ref.current;
+		const el = ref?.current;
 		if (!el) {
 			return;
 		}
@@ -134,7 +137,7 @@ export function useStripScroll(ref: RefObject<HTMLElement | null>, resetKey: str
 	}, [ref, sync]);
 
 	useEffect(() => {
-		const el = ref.current;
+		const el = ref?.current;
 		if (!el) {
 			return;
 		}
