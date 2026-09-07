@@ -1013,6 +1013,65 @@ describe("MessageList consecutive-tool folding", () => {
 	});
 
 	/*
+	 * The window that made an interrupted row out of a live one: a call is drawn
+	 * while the model is still streaming its arguments — a write's arguments are
+	 * the whole note — but pi only logs the call as running once execution starts.
+	 * Between those, the row had a result of `null` and nothing in the running
+	 * set, so it landed in the interrupted state. Streaming membership of the
+	 * message is the plainest evidence the call is alive, so it takes the tool's
+	 * own glyph back.
+	 */
+	it("keeps a streaming call's tool icon while its arguments are still arriving", async () => {
+		const call = assistantToolCall("write", { path: "Clippings/Note.md" });
+		const host = renderMessages([call], { isStreaming: true });
+		await flushRender();
+
+		expect(iconNames(host.querySelector(".piem-chat__trace"))).toEqual(["file-plus"]);
+	});
+
+	/*
+	 * Message-scoped on purpose. A turn that issues two calls leaves the first
+	 * finished in a message the stream is still writing — it reads as done, not
+	 * as in motion; only the block the stream is on (the last) carries the
+	 * running treatment. A line of prose sits between the calls so neither the
+	 * fold planner nor this test has to answer for a two-call run.
+	 */
+	it("holds the breath for the streaming message's last block only", async () => {
+		const both = {
+			...assistantBase(),
+			content: [
+				{ type: "toolCall", id: nextToolCallId(callIds, "read"), name: "read", arguments: { path: "a.md" } },
+				{ type: "text", text: "Now writing." },
+				{ type: "toolCall", id: nextToolCallId(callIds, "write"), name: "write", arguments: { path: "b.md" } },
+			],
+		} as AssistantMessage;
+		const host = renderMessages([both], { isStreaming: true });
+		await flushRender();
+
+		const rows = host.querySelectorAll(".piem-chat__trace");
+		expect(rows).toHaveLength(2);
+		expect(iconNames(rows[0])).toEqual(["eye"]);
+		expect(rows[0].className).not.toContain("piem-chat__trace--running");
+		expect(iconNames(rows[1])).toEqual(["file-plus"]);
+		expect(rows[1].className).toContain("piem-chat__trace--running");
+	});
+
+	/*
+	 * The settled state is the one `circle-slash` is left to mean: no result, and
+	 * neither the running set nor the stream can still be behind it.
+	 */
+	it("still marks a settled message's unanswered call as cut off while streaming elsewhere", async () => {
+		const earlier = assistantToolCall("write", { path: "Clippings/Note.md" });
+		const later = assistantToolCall("read", { path: "Clippings/Note.md" });
+		const host = renderMessages([earlier, userMessage("And then?"), later], { isStreaming: true });
+		await flushRender();
+
+		const rows = host.querySelectorAll(".piem-chat__trace");
+		expect(iconNames(rows[0])).toEqual(["circle-slash"]);
+		expect(iconNames(rows[1])).toEqual(["eye"]);
+	});
+
+	/*
 	 * A write's diff counts are the one thing the result knew that the call could
 	 * not, they are four characters, and they are worthless clipped — so they lead,
 	 * and the path gives up its tail to the panel's width instead.

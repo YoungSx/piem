@@ -770,6 +770,97 @@ SCENARIOS["chat-streaming"] = async () => {
 };
 
 /*
+ * The write row mid-argument versus the write row the turn never answered.
+ *
+ * Both rows have no result, so both used to draw the same circle-slash — the
+ * icon the interrupted row owns. The difference is invisible to the row: the
+ * streaming one is a call whose arguments are still arriving (write's are the
+ * whole note body, so the window is seconds), while the settled one is a call
+ * the turn ended without ever answering. `streamingWriteStreamFn` holds the
+ * first state open; the second is seeded as history the same way a vault
+ * restart would restore it.
+ */
+function streamingWriteStreamFn() {
+	return () => {
+		const stream = createAssistantMessageEventStream();
+		const partial = {
+			role: "assistant",
+			content: [],
+			api: "openai-completions",
+			provider: "deepseek",
+			model: "deepseek-v4-pro",
+			usage: { input: 12_000, output: 40, cacheRead: 0, cacheWrite: 0, totalTokens: 12_040, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			timestamp: Date.now(),
+		};
+		stream.push({ type: "start", partial });
+		stream.push({ type: "text_start", contentIndex: 0, partial });
+		const prose = "Saving your highlights into the reading list now —";
+		stream.push({
+			type: "text_delta",
+			contentIndex: 0,
+			delta: prose,
+			partial: { ...partial, content: [{ type: "text", text: prose }] },
+		});
+		// The call itself: arguments arrive as JSON the way a real provider
+		// streams them, so the row has partial text to show while it waits.
+		const toolcallIndex = 1;
+		const argsFull = JSON.stringify({ path: "Books/Reading list.md", content: "# Reading list\n\n- *Deep Work* — the four-hour rule" });
+		const argsPartial = argsFull.slice(0, Math.floor(argsFull.length / 2));
+		const withCall = { ...partial, content: [{ type: "text", text: prose }, { type: "toolCall", id: "tc_write_live", name: "write", arguments: {} }] };
+		stream.push({ type: "toolcall_start", contentIndex: toolcallIndex, partial: withCall });
+		stream.push({ type: "toolcall_delta", contentIndex: toolcallIndex, delta: argsPartial, partial: withCall });
+		// Held open: no toolcall_end, no done. abort in cleanup ends the turn.
+		return stream;
+	};
+}
+
+SCENARIOS["chat-streaming-write"] = async () => {
+	const { element, cleanup } = await mountChat({
+		streamFn: streamingWriteStreamFn(),
+		drive: async (service, sessionManager) => {
+			// The counter-example, seeded as history: a call the transcript kept
+			// but whose result never arrived. Two calls per run would fold, so a
+			// user turn between them keeps each row on its own line.
+			const info = await sessionManager.createSession({ provider: "p-deepseek", modelId: "m-deepseek-pro" });
+			const assistant = (text, calls = []) => ({
+				role: "assistant",
+				content: [{ type: "text", text }, ...calls],
+				api: "openai-completions",
+				provider: "deepseek",
+				model: "deepseek-v4-pro",
+				usage: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+				stopReason: "stop",
+				timestamp: Date.now(),
+			});
+			await sessionManager.appendMessage({ role: "user", content: "Save my Deep Work highlights", timestamp: Date.now() });
+			await sessionManager.appendMessage(
+				assistant("Saving the highlights to your reading list.", [
+					{ type: "toolCall", id: "tc_write_lost", name: "write", arguments: { path: "Books/Reading list.md", content: "# Reading list\n\n- *Deep Work* — the four-hour rule" } },
+				]),
+			);
+			await sessionManager.appendMessage({ role: "user", content: "And then?", timestamp: Date.now() });
+			// Same trap chat-traces documents: createSession made the seeded
+			// session the manager's active one, so openSession it would hit the
+			// same-path early exit and the panel would keep the empty transcript.
+			// Point the manager back at the panel's own session first.
+			await sessionManager.loadSession(service.getSnapshot().session.path);
+			await service.openSession(info.path);
+			await settle(() => document.querySelectorAll(".piem-chat__trace").length >= 1);
+			// Now the live turn, whose write row must still be waiting on its
+			// arguments rather than reading as interrupted.
+			const send = service.sendPrompt("Add the Seeing highlights too");
+			await settle(
+				() =>
+					service.getSnapshot().isStreaming &&
+					document.querySelectorAll(".piem-chat__trace").length >= 2,
+			);
+			void send;
+		},
+	});
+	return { element, cleanup };
+};
+
+/*
  * Mid-reply sends waiting at the composer, with all three of their decisions on
  * show (issue #289).
  *
