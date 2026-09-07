@@ -15,6 +15,7 @@ import { useT } from "./TranslatorContext";
 import type { Translator } from "../i18n";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
+import { parseSkillInvocation, type SkillInvocation } from "./skillInvocation";
 import { GENERIC_TOOL_ICON, toolIcon } from "./toolCatalog";
 import { countDiffLines, describePendingTool, describeTool, isToolIdentifier, summarizeToolPayload, summarizeToolResult } from "./traceSummary";
 import { DEFAULT_TRACE_EXPAND, traceOpensByDefault, type TraceExpandSetting } from "./traceExpand";
@@ -1294,14 +1295,77 @@ function Block({ text, kind, isStreaming, context, className }: TextBlockProps):
 
 function renderUserMessage(message: UserMessage, args: RenderArgs): React.ReactNode {
 	if (typeof message.content === "string") {
-		return <Block text={message.content} kind="user" isStreaming={args.isStreaming} context={args.renderContext} />;
+		return <UserTextBlock text={message.content} isStreaming={args.isStreaming} context={args.renderContext} />;
 	}
 	return message.content.map((content, index) => {
 		if (content.type === "text") {
-			return <Block key={index} text={content.text} kind="user" isStreaming={args.isStreaming} context={args.renderContext} />;
+			return <UserTextBlock key={index} text={content.text} isStreaming={args.isStreaming} context={args.renderContext} />;
 		}
 		return <ImageBlock key={index} content={content} t={args.renderContext.t} />;
 	});
+}
+
+/**
+ * One user text block, folding a skill expansion into a pill when it is one.
+ *
+ * A `/name` send never reaches the transcript as typed — `expandSkill` has
+ * already replaced the command with the whole SKILL.md wrapped in `<skill>` —
+ * so the reader would otherwise meet their own turn as a wall of somebody
+ * else's instructions. When the block parses as an invocation it draws as a
+ * one-line pill (expanded on demand), with any additional instructions after
+ * the closing tag kept out here as ordinary prose; anything else falls through
+ * to the plain block the transcript has always drawn, so the fold can never
+ * swallow a turn it does not fully understand.
+ */
+function UserTextBlock({ text, isStreaming, context }: { text: string; isStreaming: boolean; context: MessageContext }): React.JSX.Element {
+	const invocation = parseSkillInvocation(text);
+	if (!invocation) {
+		return <Block text={text} kind="user" isStreaming={isStreaming} context={context} />;
+	}
+	return <SkillInvocationPill invocation={invocation} context={context} />;
+}
+
+/**
+ * The folded skill expansion, as one chip inside the user's own bubble.
+ *
+ * It borrows the trace row's skeleton — one line, `<details>` opens the full
+ * text — but deliberately not its skin: the trace row lives in the assistant's
+ * page flow, flush-left and chromeless, while this sits inside the user's
+ * bordered card and must read as *enclosure*, not traffic. A bordered inset
+ * does that; it says "this rode along inside your message" the way a quoted
+ * block does, rather than "the system did this".
+ *
+ * The user's own words after the closing tag stay out here as ordinary prose —
+ * the pill folds the attachment, never the turn itself. When nothing follows,
+ * the pill is the whole block and stands alone.
+ *
+ * Open by default is not offered: the receipt stays one click away, but the
+ * pill's whole job is that the reader should not have to wade through a skill
+ * they did not write to reach their own words after it.
+ */
+function SkillInvocationPill({ invocation, context }: { invocation: SkillInvocation; context: MessageContext }): React.JSX.Element {
+	const { t } = context;
+	const pill = (
+		<details className="piem-chat__skill-pill">
+			<summary className="piem-chat__skill-pill-summary" title={invocation.location}>
+				<ObsidianIcon name="book-open" className="piem-chat__skill-pill-icon" />
+				<span className="piem-chat__skill-pill-name">{t.t("chat.skillPillLabel", { name: invocation.name })}</span>
+				<ObsidianIcon name="chevron-down" className="piem-chat__skill-pill-chevron" />
+			</summary>
+			<div className="piem-chat__skill-pill-body">
+				<MarkdownText text={invocation.body} kind="user" isStreaming={false} app={context.app} component={context.component} sourcePath={context.sourcePath} />
+			</div>
+		</details>
+	);
+	if (invocation.trailing === "") {
+		return pill;
+	}
+	return (
+		<>
+			{pill}
+			<Block text={invocation.trailing} kind="user" isStreaming={false} context={context} />
+		</>
+	);
 }
 
 /**

@@ -420,6 +420,8 @@ export const en = {
 		/** Source labels shown beside autocomplete entries. */
 		commandKindTemplate: "Prompt",
 		commandKindSkill: "Skill",
+		/** The folded pill standing in for a skill's full text inside the user's own turn. */
+		skillPillLabel: "Skill · {name}",
 		/** Notice shown when a `/name` matches no loaded template or skill. */
 		unknownCommand: "Unknown command: /{name}",
 		/**

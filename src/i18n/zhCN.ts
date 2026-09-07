@@ -217,6 +217,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		commandMenuAria: "提示命令和技能",
 		commandKindTemplate: "提示",
 		commandKindSkill: "技能",
+		skillPillLabel: "技能 · {name}",
 		unknownCommand: "未知命令：/{name}",
 		unknownCommandSkillProblems: "有技能没能读取成功。请查看「设置 \u2192 扩展能力」。",
 		commandConflict: "提示和技能都使用 /{name}。本次已使用提示；如需技能，请输入 /skill:{name}。",

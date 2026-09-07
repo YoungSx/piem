@@ -790,6 +790,59 @@ SCENARIOS["chat-editing"] = async () => {
 };
 
 /*
+ * A skill invocation, folded and unfolded side by side. The expansion is what
+ * `formatSkillInvocation` puts into the user message when a `/skill` is sent —
+ * the transcript stores that text, so the pill is drawn by folding it at render
+ * time. Seeding the exact expansion (tag opener, padded body, trailing
+ * instructions) is what makes this page proof that the parse holds.
+ */
+SCENARIOS["chat-skill-pill"] = async () => {
+	const { element, cleanup } = await mountChat({
+		streamFn: scriptedStreamFn([CHIPS_JSON, "Marking *Seeing* as finished and fetching two similar titles now."]),
+		drive: async (service, sessionManager) => {
+			const info = await sessionManager.createSession({ provider: "p-deepseek", modelId: "m-deepseek-pro" });
+			const skill = (name, body, trailing) =>
+				`<skill name="${name}" location="/skills/${name}.md">\nReferences are relative to /skills.\n\n${body}\n</skill>${trailing ? `\n\n${trailing}` : ""}`;
+			await sessionManager.appendMessage({
+				role: "user",
+				content: skill("reading-audit", "# Reading audit\n\nAudit every note tagged `reading`:\n\n1. Flag duplicates by title.\n2. Suggest a merge target for each pair.", ""),
+				timestamp: Date.now(),
+			});
+			await sessionManager.appendMessage({
+				role: "assistant",
+				content: [{ type: "text", text: "Found three tagged notes — two are duplicates of *Deep Work*. Merging now." }],
+				api: "openai-completions",
+				provider: "deepseek",
+				model: "deepseek-v4-pro",
+				usage: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+				stopReason: "stop",
+				timestamp: Date.now(),
+			});
+			await sessionManager.appendMessage({
+				role: "user",
+				content: skill("reading-audit", "# Reading audit\n\nAudit every note tagged `reading`:\n\n1. Flag duplicates by title.\n2. Suggest a merge target for each pair.", "Also export the merged list to `Reading/2026.md`."),
+				timestamp: Date.now(),
+			});
+			// `createSession` made B the manager's active session, so a plain
+			// `openSession(B)` hits the same-path early exit and the panel keeps
+			// showing the empty A transcript. Point the manager back at A first.
+			await sessionManager.loadSession(service.getSnapshot().session.path);
+			await service.openSession(info.path);
+			await settle(() => document.querySelectorAll(".piem-chat__skill-pill").length >= 2);
+			// Open the second pill — its trailing instruction must stay outside the
+			// fold, in ordinary prose. One folded, one open, both on the page.
+			const open = [...document.querySelectorAll(".piem-chat__skill-pill-summary")][1];
+			if (!open) {
+				throw new Error("second skill pill not found");
+			}
+			open.click();
+			await settle(() => document.querySelectorAll("details[open].piem-chat__skill-pill").length === 1);
+		},
+	});
+	return { element, cleanup };
+};
+
+/*
  * The context popover, opened. The gauge's own click path opens it — the state
  * lives in `ContextGauge`, so pressing the live ring is the only way to reach it
  * — and the popover is the only surface that renders a labelled icon button next
