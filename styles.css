@@ -2028,10 +2028,10 @@ button.piem-chat__context-open {
 
 /*
  * Tool output and thinking text, same contract as the transcript's machine face:
- * wrap where wrapping is possible, scroll where it is not. The `result` and
- * `harness` variants below bound their own height, which already makes their
- * horizontal axis `auto`; stating it on the block covers the `call` variant,
- * which has no bounded body to inherit it from.
+ * wrap where wrapping is possible, scroll where it is not. The bounded variants
+ * below (`result`, `harness`, settled `thinking`) bound their own height, which
+ * already makes their horizontal axis `auto`; stating it on the block covers the
+ * `call` variant, which has no bounded body to inherit it from.
  */
 .piem-chat__trace-body pre {
 	margin: 0;
@@ -2040,9 +2040,18 @@ button.piem-chat__context-open {
 	white-space: pre-wrap;
 }
 
-/* Long tool output stays bounded so one `grep` cannot own the whole panel. */
+/*
+ * Long machine traffic stays bounded so one `grep` — or one ten-thousand-token
+ * think — cannot own the whole panel. Thinking joins its tool siblings the moment
+ * the row settles, and not before: a still-running think is being *followed*, not
+ * audited, and capping it mid-stream would park the newest sentences behind an
+ * inner scrollbar the transcript's own follow-scroll can never reach. The class
+ * drops with the live marker (the block stops being live when the next one
+ * starts), so the bound arrives exactly when the following is over.
+ */
 .piem-chat__trace--result .piem-chat__trace-body,
-.piem-chat__trace--harness .piem-chat__trace-body {
+.piem-chat__trace--harness .piem-chat__trace-body,
+.piem-chat__trace--thinking:not(.piem-chat__trace--running) .piem-chat__trace-body {
 	max-height: 18rem;
 	overflow-y: auto;
 }
