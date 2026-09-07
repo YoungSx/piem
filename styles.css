@@ -1761,6 +1761,119 @@ button.piem-chat__context-open {
 	font-family: var(--font-interface);
 }
 
+/*
+ * The skill pill — a folded skill expansion inside the user's own turn.
+ *
+ * `/name` reaches the transcript expanded to the whole SKILL.md wrapped in
+ * `<skill>` tags, so the reader's own bubble would otherwise open with a wall
+ * of instructions they did not write. The pill folds that wall back to one
+ * line. It shares the trace row's skeleton (one collapsed line, `<details>`
+ * opens the full text) but deliberately not its skin: the trace rows are the
+ * assistant's page traffic, flush-left and chromeless; this sits inside the
+ * user's bordered card and must read as an enclosure — something that rode
+ * along inside the message — the way a quote block does. Hence the inset
+ * border and the bubble-derived background, both drawn from tokens the user
+ * card already uses, so the pill reads as a smaller card of the same paper
+ * rather than a foreign element.
+ */
+.piem-chat__skill-pill {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	/*
+	 * One notch quieter than the card it sits in. The bubble is
+	 * `--background-primary`; the pill takes the canvas shade beneath it, the
+	 * same step the editor uses when a blockquote wants to say "quoted, not
+	 * spoken" without inventing a colour.
+	 */
+	background: var(--background-secondary);
+	margin-block: var(--size-4-1);
+	overflow: hidden;
+}
+
+.piem-chat__skill-pill-summary {
+	align-items: center;
+	color: var(--text-muted);
+	cursor: pointer;
+	display: flex;
+	gap: var(--size-4-1);
+	list-style: none;
+	min-height: var(--size-4-6);
+	padding: 0 var(--size-4-2);
+	user-select: none;
+}
+
+/* Obsidian ships webkit, so the default disclosure triangle needs both hooks. */
+.piem-chat__skill-pill-summary::-webkit-details-marker {
+	display: none;
+}
+
+.piem-chat__skill-pill-summary::marker {
+	content: "";
+}
+
+@media (hover: hover) {
+
+	.piem-chat__skill-pill-summary:hover {
+		background: var(--background-modifier-hover);
+	}
+}
+
+.piem-chat__skill-pill-summary:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: -2px;
+}
+
+.piem-chat__skill-pill-icon {
+	/* Matched to the trace glyph: 16px outweighed the 12px words it serves. */
+	--icon-size: var(--icon-xs);
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+
+.piem-chat__skill-pill-name {
+	flex: 1 1 auto;
+	font-size: var(--font-ui-smaller);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/*
+ * The chevron is the only affordance the summary adds beyond the trace row's
+ * vocabulary: inside a card, hover alone does not say "this opens", and a
+ * bordered box that seems inert would leave the full skill one assumption
+ * away from invisible. The rotation is the plain `<details>` open state —
+ * no new motion vocabulary, just the arrow telling the truth twice.
+ */
+.piem-chat__skill-pill-chevron {
+	--icon-size: var(--icon-xs);
+	color: var(--text-faint);
+	flex-shrink: 0;
+	transition: transform 120ms ease;
+}
+
+.piem-chat__skill-pill[open] .piem-chat__skill-pill-chevron {
+	transform: rotate(180deg);
+}
+
+/*
+ * What opening reveals: the skill's full text, one face-size step down from
+ * the turn it rode in on. It is present and verifiable — the transcript is
+ * the receipt — but the smaller, muted set is what marks it as the quoted
+ * party rather than the speaker. A cap plus its own scrollbar keeps a long
+ * SKILL.md from displacing the conversation around it; the full text stays
+ * reachable by scrolling *inside* the receipt, which is the honest scale
+ * for quoted material.
+ */
+.piem-chat__skill-pill-body {
+	border-top: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	max-height: 16rem;
+	overflow-y: auto;
+	padding: var(--size-4-2);
+}
+
 /* The argument or outcome next to the name; first thing to give up width.
  * Muted, not faint: faint is reserved for icons — at meta sizes its contrast
  * drops under 4.5:1, and this is text a reader is meant to parse. */
