@@ -46,6 +46,13 @@ export interface PiemSettings {
 	 * below applies.
 	 */
 	activeModelId?: string;
+	/**
+	 * The {@link ModelConfig} the quick-action suggestion request goes out on.
+	 * Undefined means the suggestion follows the active model — a suggestion is
+	 * a 512-token side channel, and most readers want it on whatever is already
+	 * picked rather than maintaining a second choice.
+	 */
+	suggestionModelId?: string;
 	/** User-configured endpoints. Connection and credential only, no models. */
 	providers: ProviderConfig[];
 	/** Configured models, each bound to one entry in {@link providers}. */
@@ -229,6 +236,14 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	if (activeModelId && !models.some((model) => model.id === activeModelId)) {
 		activeModelId = "";
 	}
+	let suggestionModelId = typeof data?.suggestionModelId === "string" ? data.suggestionModelId.trim() : "";
+
+	// Same dangling rule as `activeModelId`: a reference to a deleted model would
+	// resolve to nothing on every suggestion request, so it reverts to "follow
+	// the active model" instead of pointing nowhere.
+	if (suggestionModelId && !models.some((model) => model.id === suggestionModelId)) {
+		suggestionModelId = "";
+	}
 
 	const settings: PiemSettings = {
 		providers,
@@ -294,6 +309,12 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	if (activeModelId) {
 		settings.activeModelId = activeModelId;
 	}
+	// Same omitted-not-empty rule as `activeModelId`: "absent" is what the
+	// follow-the-active-model default reads as, and an empty string stored
+	// forever would disagree with a load/save round trip.
+	if (suggestionModelId) {
+		settings.suggestionModelId = suggestionModelId;
+	}
 	// Omitted rather than stored as `{}` so an untouched vault's data.json stays
 	// as it was, and "unset" keeps meaning "follow pi".
 	if (compaction) {
@@ -309,17 +330,34 @@ export function getProviderModels(provider: string): Model<string>[] {
 	return getBuiltinModels(provider);
 }
 
+/**
+ * The settings slice model resolution reads.
+ *
+ * Declared structurally rather than taken as {@link PiemSettings} because the
+ * settings tab resolves models from its own narrower view of configuration —
+ * the panel never holds the builtin pair or the rest of the stored shape, and
+ * resolution needs none of them. A full {@link PiemSettings} satisfies it, so
+ * every caller keeps working unchanged.
+ */
+export interface ModelResolutionSource {
+	providers: readonly ProviderConfig[];
+	models: readonly ModelConfig[];
+	activeModelId?: string;
+	/** The suggestion side channel's explicit pick; see {@link getSuggestionConfiguration}. */
+	suggestionModelId?: string;
+}
+
 /** The active {@link ModelConfig}, or undefined when a builtin model is selected. */
-export function getActiveModelConfig(settings: PiemSettings): ModelConfig | undefined {
-	if (!settings.activeModelId) {
+export function getActiveModelConfig(source: ModelResolutionSource): ModelConfig | undefined {
+	if (!source.activeModelId) {
 		return undefined;
 	}
-	return settings.models.find((model) => model.id === settings.activeModelId);
+	return source.models.find((model) => model.id === source.activeModelId);
 }
 
 /** The provider serving `model`. */
-export function getProviderForModel(settings: PiemSettings, model: ModelConfig): ProviderConfig | undefined {
-	return settings.providers.find((provider) => provider.id === model.providerId);
+export function getProviderForModel(source: ModelResolutionSource, model: ModelConfig): ProviderConfig | undefined {
+	return source.providers.find((provider) => provider.id === model.providerId);
 }
 
 /**
@@ -353,10 +391,10 @@ export interface ModelChoice {
  * endpoint. `normalizeSettings` already drops orphans on load, so this guards a
  * list edited live in the settings tab rather than an expected stored state.
  */
-export function listModelChoices(settings: PiemSettings): ModelChoice[] {
-	const providersById = new Map(settings.providers.map((provider) => [provider.id, provider]));
+export function listModelChoices(source: ModelResolutionSource): ModelChoice[] {
+	const providersById = new Map(source.providers.map((provider) => [provider.id, provider]));
 	const choices: ModelChoice[] = [];
-	for (const model of settings.models) {
+	for (const model of source.models) {
 		const provider = providersById.get(model.providerId);
 		if (!provider) {
 			continue;
@@ -380,22 +418,22 @@ export function listModelChoices(settings: PiemSettings): ModelChoice[] {
  * the same orphan case {@link listModelChoices} omits, so the list a caller
  * offers and the ids it can resolve agree by construction.
  */
-export function resolveModelChoice(settings: PiemSettings, choiceId: string): Model<string> | undefined {
-	const model = settings.models.find((entry) => entry.id === choiceId);
+export function resolveModelChoice(source: ModelResolutionSource, choiceId: string): Model<string> | undefined {
+	const model = source.models.find((entry) => entry.id === choiceId);
 	if (!model) {
 		return undefined;
 	}
-	const provider = getProviderForModel(settings, model);
+	const provider = getProviderForModel(source, model);
 	return provider ? buildConfiguredModel(model, provider) : undefined;
 }
 
 /** The active model paired with its provider, when both resolve. */
-export function getActiveConfiguration(settings: PiemSettings): { model: ModelConfig; provider: ProviderConfig } | undefined {
-	const model = getActiveModelConfig(settings);
+export function getActiveConfiguration(source: ModelResolutionSource): { model: ModelConfig; provider: ProviderConfig } | undefined {
+	const model = getActiveModelConfig(source);
 	if (!model) {
 		return undefined;
 	}
-	const provider = getProviderForModel(settings, model);
+	const provider = getProviderForModel(source, model);
 	return provider ? { model, provider } : undefined;
 }
 
@@ -423,6 +461,62 @@ export function getSelectedModel(settings: PiemSettings): Model<string> {
 		throw new Error(`Default model ${DEFAULT_PROVIDER}/${DEFAULT_MODEL_ID} is not available.`);
 	}
 	return fallbackModel;
+}
+
+/**
+ * Resolves the model the quick-action suggestion request travels on.
+ *
+ * An explicit choice wins, resolved through {@link resolveModelChoice} so a
+ * model whose provider was deleted resolves to nothing rather than to some
+ * other endpoint. Without one the suggestion follows the active configured
+ * model — the default the feature has always run on. Undefined — never a
+ * builtin-catalog fallback — is the honest answer when neither resolves: the
+ * builtin pair is render-only here and cannot send, so returning it would let
+ * a suggestion request start on a model with no credential behind it.
+ *
+ * The suggestion cache keys on this result via {@link suggestionModelKey};
+ * the two must move together or a model switch would resurrect another
+ * model's chips.
+ */
+export function resolveSuggestionModel(settings: PiemSettings): Model<string> | undefined {
+	const config = getSuggestionConfiguration(settings);
+	return config ? buildConfiguredModel(config.model, config.provider) : undefined;
+}
+
+/**
+ * The model/provider pair the suggestion request sends on, or undefined.
+ *
+ * The panel's test button needs the pair itself — `createObsidianModels` is
+ * built around a provider, not a resolved pi model — so this is
+ * {@link resolveSuggestionModel}'s body with the pair left un-built. Defined on
+ * the {@link ModelResolutionSource} slice so the settings tab can call it on its
+ * own settings object without the whole {@link PiemSettings} behind it.
+ */
+export function getSuggestionConfiguration(
+	source: ModelResolutionSource,
+): { model: ModelConfig; provider: ProviderConfig } | undefined {
+	if (source.suggestionModelId) {
+		const model = source.models.find((entry) => entry.id === source.suggestionModelId);
+		if (!model) {
+			return undefined;
+		}
+		const provider = source.providers.find((entry) => entry.id === model.providerId);
+		return provider ? { model, provider } : undefined;
+	}
+	return getActiveConfiguration(source);
+}
+
+/**
+ * The cache-key component for a suggestion model.
+ *
+ * `Model.provider` is the discriminator, not decoration: `buildConfiguredModel`
+ * sets `Model.id` to the model's *api* id, which two providers can share, so
+ * `${provider}/${id}` is the shortest identity that cannot collide across
+ * configured endpoints. Callers must use this helper rather than re-joining
+ * the parts — the join is the kind of thing that drifts apart in two call sites.
+ */
+export function suggestionModelKey(model: Model<string>): string {
+	return `${model.provider}/${model.id}`;
 }
 
 /**

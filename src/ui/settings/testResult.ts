@@ -18,7 +18,11 @@ export function renderTestResult(el: HTMLElement, result: ConnectionTestResult):
 	el.removeClass("piem-test-result--pending");
 	el.toggleClass("piem-test-result--ok", result.ok);
 	el.toggleClass("piem-test-result--error", !result.ok);
-	el.setText(result.detail);
+	// A warn is still a pass — the tick stands — but it says so with a caveat,
+	// styled away from the red family so "working, but slow" never reads as
+	// "broken".
+	el.toggleClass("piem-test-result--warn", result.ok && result.warn !== undefined);
+	el.setText(result.ok && result.warn ? `${result.detail} ${result.warn}` : result.detail);
 }
 
 /** Renders the in-flight state, so a slow endpoint does not look like a dead button. */
@@ -80,7 +84,7 @@ export function attachTestButton(setting: Setting, t: Translator, run: () => Pro
 	return {
 		reset(): void {
 			resultEl.empty();
-			resultEl.removeClasses(["piem-test-result--ok", "piem-test-result--error", "piem-test-result--pending"]);
+			resultEl.removeClasses(["piem-test-result--ok", "piem-test-result--error", "piem-test-result--pending", "piem-test-result--warn"]);
 		},
 	};
 }

@@ -347,6 +347,14 @@ export const zhCN: DeepPartial<EnCopy> = {
 			reply:
 				"请基于下面这段助手的回答来给建议：\n\n{reply}",
 		},
+		suggestSettings: {
+			name: "建议模型",
+			desc: "智能建议是一个独立的小请求。默认跟随当前会话的模型；在这里选一个更轻量的，建议按钮就会更快、更便宜。",
+			section: "模型选择与测试",
+			followSession: "跟随当前会话模型",
+			testName: "测试",
+			testDesc: "真实发送一次建议请求，报告回答是否可用以及耗时多久。",
+		},
 	},
 
 	noteReference: {
@@ -747,6 +755,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 		listingRejectedSignIn: "{target} 拒绝了此登录（{status}），请重新登录。{relayed}",
 		listingUnsupported: "已连通 {target}，但它不提供模型列表，因此无法验证密钥。请在此提供方下添加一个模型以测试真实请求。",
 		listingStatus: "{target} 返回 {status}。{relayed}",
+		suggestionReached: "已连通 {target}，耗时 {seconds} 秒 — 解析出 {count} 条可用建议。",
+		suggestionUnparsed: "模型有回答，但没有任何内容能解析成建议 — 这个模型不会显示建议按钮。",
+		suggestionSlow: "比 {limit} 秒的建议标准要慢。",
+		suggestionNoModel: "没有可测的目标：未选择建议模型，且当前会话没有已配置的模型。",
 	},
 
 	target: {

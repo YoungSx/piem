@@ -40,6 +40,20 @@ const REPLY_SAMPLE_LIMIT = 4_000;
 /** A JSON array of three short objects needs nowhere near a full reply. */
 const SUGGESTION_MAX_TOKENS = 512;
 
+/**
+ * The request shape every suggestion travels with, exported so the settings
+ * page's test probe can send exactly what a real suggestion sends.
+ *
+ * No `reasoning` key: the pi-ai option type has no "off" level — absence is
+ * off. Sharing the object rather than duplicating it is what keeps the probe
+ * honest: a probe that fakes the shape would pass on configurations the real
+ * request fails on.
+ */
+export const SUGGESTION_STREAM_OPTIONS: SimpleStreamOptions = {
+	toolChoice: "none",
+	maxTokens: SUGGESTION_MAX_TOKENS,
+};
+
 /** The instruction is authored in English; the output language is named in words the model reads. */
 const LANGUAGE_NAMES: Record<Language, string> = { en: "English", "zh-cn": "简体中文" };
 
@@ -154,6 +168,21 @@ export function parseSuggestedActions(text: string): QuickAction[] {
 }
 
 /**
+ * The plain text of an assistant reply, joined across its text blocks.
+ *
+ * Shared by the request path (where the text is parsed into chips) and the
+ * settings page's test probe (which judges the same text), so both read the
+ * answer the same way — a probe that joined blocks differently would disagree
+ * with the feature about whether a model produced usable output.
+ */
+export function assistantMessageText(message: AssistantMessage): string {
+	return message.content
+		.filter((content): content is Extract<typeof content, { type: "text" }> => content.type === "text")
+		.map((content) => content.text)
+		.join("\n");
+}
+
+/**
  * One suggestion request, end to end.
  *
  * `streamSimple` is injected rather than reached for, so the caller keeps its
@@ -187,9 +216,7 @@ export async function fetchQuickActionSuggestions(options: {
 		],
 	};
 	const streamOptions: SimpleStreamOptions = {
-		// No `reasoning` key: the pi-ai option type has no "off" level — absence is off.
-		toolChoice: "none",
-		maxTokens: SUGGESTION_MAX_TOKENS,
+		...SUGGESTION_STREAM_OPTIONS,
 		...(options.apiKey !== undefined && { apiKey: options.apiKey }),
 		...(options.signal && { signal: options.signal }),
 	};
@@ -204,10 +231,6 @@ export async function fetchQuickActionSuggestions(options: {
 	if (options.signal?.aborted || message.stopReason === "error" || message.stopReason === "aborted") {
 		return { actions: null, usage: message.usage };
 	}
-	const text = message.content
-		.filter((content): content is Extract<typeof content, { type: "text" }> => content.type === "text")
-		.map((content) => content.text)
-		.join("\n");
-	const actions = parseSuggestedActions(text);
+	const actions = parseSuggestedActions(assistantMessageText(message));
 	return { actions: actions.length > 0 ? actions : null, usage: message.usage };
 }

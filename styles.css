@@ -3649,6 +3649,26 @@ button.piem-chat__latest--asking {
 }
 
 /*
+ * A declarative row whose body *is* a disclosure group.
+ *
+ * Obsidian lays `.setting-item` out as a flex row (name/description left,
+ * control right), which squeezes a `<details>` into the control slot and
+ * collapses its two rows into a sliver. This host's body is the group, so the
+ * row falls back to block flow and the disclosure takes the full width; the
+ * name and description above it stay the searchable copy the framework indexed.
+ * Two classes rather than one for the same reason the modal's hidden-row rule
+ * is scoped: Obsidian's flex rule is a single class, and winning on stylesheet
+ * order alone is not a bet a plugin makes.
+ */
+.setting-item.piem-settings-advanced-host {
+	display: block;
+}
+
+.setting-item.piem-settings-advanced-host > .setting-item-info {
+	margin-bottom: var(--size-4-2);
+}
+
+/*
  * What a setting will actually do, under its description.
  *
  * A separate line rather than appended prose because it changes as the user
@@ -3992,6 +4012,16 @@ button.piem-chat__latest--asking {
 
 .piem-test-result--error {
 	color: var(--text-error);
+}
+
+/*
+ * A pass with a caveat (the suggestion probe's slow-but-working verdict). The
+ * class rides alongside `--ok` — the tick stands — and yellow is the one
+ * semantic Obsidian leaves unclaimed by both error and success, so "working,
+ * but slow" cannot be mistaken for either.
+ */
+.piem-test-result--warn {
+	color: var(--text-warning);
 }
 
 /* --- suggestion rows (provider/model search) --- */

@@ -1,9 +1,10 @@
-import { type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
+import { Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import { createFetchForTransport, type NetworkTransport } from "../../net/obsidianFetch";
 import { createObsidianModels } from "../../net/streamFn";
 import { ModelListingCache } from "../../net/modelListingCache";
-import { testModelConnection, testProviderConnection } from "../../connectionTest";
+import { testModelConnection, testProviderConnection, testSuggestionConnection } from "../../connectionTest";
 import type { ConnectionTestResult } from "../../connectionTest";
+import { getSuggestionConfiguration, listModelChoices } from "../../settings";
 import { fetchModelsDevIndex } from "../../net/modelsDev";
 import {
 	describeModelConfig,
@@ -23,11 +24,13 @@ import { openConfirmDelete } from "./confirmDelete";
 import { ModelModal } from "./ModelModal";
 import { ProviderModal } from "./ProviderModal";
 import { openSignInModal } from "./SignInModal";
+import { createCollapsibleSection } from "./collapsibleSection";
 import { createEffectLine } from "./effectLine";
 import { describeMissingBuiltinModel, describeModelRow, describeProviderRow } from "./modelsCopy";
 import { rowAction, type SettingsPanelHost } from "./panelHost";
 import { signInTargetFor } from "../../auth/signInSession";
 import { sectionNote } from "./sectionNote";
+import { attachTestButton, type TestRowHandle } from "./testResult";
 
 /**
  * Model count from which the list's search input earns its place. Below it,
@@ -54,6 +57,7 @@ export function modelsDefinitions(host: SettingsPanelHost): SettingDefinitionIte
 		activeModelControl(host, live),
 		providersList(host),
 		modelsList(host, live),
+		suggestionSection(host),
 		{
 			type: "group",
 			heading: t.t("settings.networkHeading"),
@@ -365,11 +369,109 @@ function modelDefinition(host: SettingsPanelHost, model: ModelConfig, live: Mode
 	};
 }
 
+/**
+ * The suggestion side channel's model choice and its test, tucked in a
+ * disclosure.
+ *
+ * Most readers never think about suggestions — the default of following the
+ * session's model is the right answer for them, and giving it a full-height row
+ * would suggest a decision they have to make. A `<details>` group (the same
+ * primitive the tidying group uses) keeps the two controls reachable but quiet.
+ *
+ * The test is the feature's own request, not a lookalike: it resolves the pair
+ * the same way the suggestion request does ({@link getSuggestionConfiguration}),
+ * so a green tick here is a statement about the request chips actually ride on.
+ */
+function suggestionSection(host: SettingsPanelHost): SettingDefinitionItem {
+	const { settings, t } = host;
+	return {
+		name: t.t("quickActions.suggestSettings.name"),
+		desc: t.t("quickActions.suggestSettings.desc"),
+		render: (setting) => {
+			setting.settingEl.addClass("piem-settings-advanced-host");
+			const body = createCollapsibleSection(setting.settingEl, {
+				label: t.t("quickActions.suggestSettings.section"),
+			});
+			let verdict: TestRowHandle | undefined;
+
+			new Setting(body)
+				.setName(t.t("quickActions.suggestSettings.followSession"))
+				.setDesc("")
+				.addDropdown((dropdown) => {
+					// The leading empty option *is* the default: an unselected dropdown
+					// would force a choice on everyone, while "" reads as "follow along"
+					// and matches what the resolver does for an unset id.
+					dropdown.addOption("", t.t("quickActions.suggestSettings.followSession"));
+					for (const choice of listModelChoices(settings)) {
+						dropdown.addOption(choice.id, `${choice.name} · ${choice.provider}`);
+					}
+					dropdown.setValue(settings.suggestionModelId ?? "");
+					dropdown.onChange(async (modelId) => {
+						settings.suggestionModelId = modelId || undefined;
+						await host.save();
+						// The verdict described the previous model; keeping it would let a
+						// stale green tick vouch for a configuration that just changed.
+						verdict?.reset();
+					});
+				});
+
+			const testRow = new Setting(body).setName(t.t("quickActions.suggestSettings.testName")).setDesc(
+				t.t("quickActions.suggestSettings.testDesc"),
+			);
+			verdict = attachTestButton(testRow, t, () => testSuggestionTarget(host));
+		},
+	};
+}
+
+/**
+ * Runs the suggestion probe against whatever the dropdown currently resolves to.
+ *
+ * Resolution goes through the same helper the request path uses, so the two can
+ * never disagree about what "follow the session" means. A follow-session pick
+ * with nothing configured has no request to send — probing would mean inventing
+ * a target — so the row says so in red before any network is touched.
+ */
+async function testSuggestionTarget(host: SettingsPanelHost): Promise<ConnectionTestResult> {
+	const config = getSuggestionConfiguration(host.settings);
+	if (!config) {
+		return { ok: false, detail: host.t.t("connectionTest.suggestionNoModel") };
+	}
+	const { models, fetch: fetchImpl } = createObsidianModels({
+		transport: host.settings.networkTransport,
+		providers: [config.provider],
+	});
+	const started = Date.now();
+	try {
+		const result = await testSuggestionConnection(models, config.model, config.provider, host.t, {
+			fetch: fetchImpl,
+			language: host.t.lang,
+		});
+		logConnectionTest(host, {
+			kind: "model",
+			target: describeModelConfig(config.model),
+			provider: config.provider.name,
+			started,
+			ok: result.ok,
+			detail: result.detail,
+		});
+		return result;
+	} catch (error) {
+		logConnectionTest(host, {
+			kind: "model",
+			target: describeModelConfig(config.model),
+			provider: config.provider.name,
+			started,
+			ok: false,
+			error,
+		});
+		throw error;
+	}
+}
+
 function openModelModal(host: SettingsPanelHost, model?: ModelConfig): void {
 	const { settings, t } = host;
 	if (settings.providers.length === 0) return;
-	new ModelModal({
-		app: host.app,
+	new ModelModal({		app: host.app,
 		model,
 		providers: settings.providers,
 		t,

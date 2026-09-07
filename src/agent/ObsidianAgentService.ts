@@ -4,6 +4,7 @@ import {
 	getSupportedThinkingLevels,
 	type CredentialStore,
 	type ImageContent,
+	type Model,
 	type Models,
 	type RetryCallbacks,
 	type Usage,
@@ -50,7 +51,9 @@ import {
 	getSelectedModel,
 	listModelChoices,
 	resolveModelChoice,
+	resolveSuggestionModel,
 	modelSupportsImages,
+	suggestionModelKey,
 	type ModelChoice,
 	type PiemSettings,
 } from "../settings";
@@ -2131,8 +2134,18 @@ export class ObsidianAgentService {
 		// read is also a pure query: minting a runtime as a side effect of it
 		// would be wrong even if nothing threw.
 		const rt = this.current();
+		// Same resolution the request below uses, so the peek and the revalidate
+		// always read and write the same entry: the request may travel on a model
+		// other than the active one, and a peek keyed on the active model would
+		// miss it.
+		const model = resolveSuggestionModel(settings);
+		if (!model) {
+			return undefined;
+		}
 		const { notePath, workspace } = this.suggestionSubject(rt);
-		return this.suggestionCache.get(this.suggestionCacheKey(resolveLanguage(this.app.vault as LanguageHost, settings.language), notePath, workspace));
+		return this.suggestionCache.get(
+			this.suggestionCacheKey(resolveLanguage(this.app.vault as LanguageHost, settings.language), notePath, workspace, model),
+		);
 	}
 
 	/**
@@ -2159,8 +2172,8 @@ export class ObsidianAgentService {
 	}
 
 	/** The full cache key — every input the prompt quotes keys the entry. */
-	private suggestionCacheKey(language: string, notePath: string | null, workspace: WorkspaceContext): SuggestionCacheKey {
-		return { language, notePath, workspace: workspaceKeyPart(workspace) };
+	private suggestionCacheKey(language: string, notePath: string | null, workspace: WorkspaceContext, model: Model<string>): SuggestionCacheKey {
+		return { language, notePath, modelKey: suggestionModelKey(model), workspace: workspaceKeyPart(workspace) };
 	}
 
 	/**
@@ -2207,7 +2220,13 @@ export class ObsidianAgentService {
 		const controller = new AbortController();
 		rt.suggestionController = controller;
 		try {
-			const model = getSelectedModel(settings);
+			// The suggestion's own model, not the active one: undefined means no
+			// configured model anywhere — the same "nothing to show" as below, and
+			// never a builtin-catalog model, which cannot send here.
+			const model = resolveSuggestionModel(settings);
+			if (!model) {
+				return null;
+			}
 			const language = resolveLanguage(this.app.vault as LanguageHost, settings.language);
 			const result = await fetchQuickActionSuggestions({
 				streamSimple: this.resolveStreamFn(),
@@ -2232,7 +2251,7 @@ export class ObsidianAgentService {
 			// newest text — no future request will ask for it, so caching it would
 			// be dead weight.
 			if (scope === "empty" && result.actions) {
-				this.suggestionCache.set(this.suggestionCacheKey(language, subject, workspace), result.actions);
+				this.suggestionCache.set(this.suggestionCacheKey(language, subject, workspace, model), result.actions);
 			}
 			return result.actions;
 		} catch (error) {
