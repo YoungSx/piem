@@ -679,7 +679,12 @@ export function MessageList({
 				) : null}
 				{awaitsFirstToken(messages, isStreaming, pendingToolCalls.length > 0) ? <PendingReply /> : null}
 				{followUpActions.length > 0 && onQuickAction ? (
-					<QuickActions actions={followUpActions} onSelect={onQuickAction} />
+					/*
+					 * The strip, not the wrap: six chips wrapped read as a menu, while
+					 * the same six swiped sideways read as a palette. The empty
+					 * screen's row keeps the default — its three fixed chips fit.
+					 */
+					<QuickActions actions={followUpActions} onSelect={onQuickAction} layout="strip" />
 				) : null}
 			</main>
 			{!isAtLatest ? (
