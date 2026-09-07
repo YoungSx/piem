@@ -520,8 +520,12 @@ export function MessageList({
 		return () => window.cancelAnimationFrame(frame);
 		// The pending question joins the dependency list for the same reason the
 		// running tools do: it changes the transcript's height, and a question that
-		// arrived below the fold is a question the reader never answers.
-	}, [messages, pendingToolCalls, isStreaming, pendingQuestion]);
+		// arrived below the fold is a question the reader never answers. The
+		// follow-up strip does too, and for a further reason: it mounts a beat
+		// *after* the settle this effect already scrolled for — the suggestion
+		// request resolves late — so a row that grew in below the fold after the
+		// one scroll that covered `messages` would otherwise stay there.
+	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, followUpActions]);
 
 	const updateFollowState = (): void => {
 		const transcript = transcriptRef.current;

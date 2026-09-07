@@ -133,6 +133,20 @@ describe("the quick-action strip scrolls inside the row", () => {
 		expect(body).toContain("white-space: nowrap");
 		expect(body).toContain("flex: none");
 	});
+
+	it("refuses to shrink inside the transcript column", () => {
+		/*
+		 * The strip is a direct flex item of the scrolling `.piem-chat__messages`
+		 * column, and its own `overflow-x: auto` sets its automatic minimum size
+		 * to zero — so once the turn above fills the column, the flex shrink phase
+		 * spends its whole deficit on this row and crushes it to its padding. The
+		 * chips survive inside at full height, clipped by the row's own hidden
+		 * scrollbar: a few pixels of pill tops, and scrolling cannot reveal them
+		 * because the crushed row no longer contributes height. Chromium-measured:
+		 * a 40-row transcript lays the row out at 4px unpinned, 32px pinned.
+		 */
+		expect(declarations(ruleBody(".piem-chat__quick-actions--strip"))).toContain("flex-shrink: 0");
+	});
 });
 
 describe("prose wraps where machine output scrolls", () => {
