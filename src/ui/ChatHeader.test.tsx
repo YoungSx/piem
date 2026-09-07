@@ -138,10 +138,10 @@ describe("ChatHeader action row", () => {
 
 /*
  * A phone squeezes the transcript between the header above and the keyboard
- * below, so the header's wrap — a full second row of 48px buttons on a narrow
- * leaf — is height the conversation cannot afford. The row goes back to one
- * line by retiring the history button; its picker stays one menu item away in
- * the overflow menu, gated by the same availability the button had.
+ * below, so the header once shed its history button there and let the overflow
+ * menu carry the picker. The detour cost a second tap to reach a control the
+ * desktop keeps one tap away, so the button is back on every platform — the
+ * assertions below pin that it never leaves the row again.
  */
 describe("ChatHeader on a phone", () => {
 	beforeEach(() => {
@@ -156,32 +156,46 @@ describe("ChatHeader on a phone", () => {
 		document.body.replaceChildren();
 	});
 
-	it("drops the history button from the row, keeping new chat and the menu", async () => {
+	it("keeps the history button in the row, in the desktop position", async () => {
 		const host = await renderHeader(snapshot(), { sessions: [sessionInfo("a"), sessionInfo("b")] });
 
 		const labels = Array.from(host.querySelectorAll(".piem-chat__header-actions button"), (button) => button.getAttribute("aria-label"));
-		expect(labels).toEqual(["New chat", "More chat actions"]);
+		expect(labels).toEqual(["View chat history", "New chat", "More chat actions"]);
 	});
 
-	it("offers history at the head of the overflow menu in its place", async () => {
-		const host = await renderHeader(snapshot({ session: sessionInfo() }), {
-			onOpenSettings: () => undefined,
-			sessions: [sessionInfo("a"), sessionInfo("b")],
-		});
+	it("keeps the history button mounted even when there is nothing to pick", async () => {
+		const host = await renderHeader(snapshot());
 
-		expect((await openOverflow(host)).titles()).toEqual(["View chat history", "Rename chat", "Open settings", "Delete chat"]);
+		const button = host.querySelector<HTMLButtonElement>('.piem-chat__header-actions button[aria-label="View chat history"]');
+		expect(button?.disabled).toBe(true);
+		expect(host.querySelectorAll(".piem-chat__header-actions button")).toHaveLength(3);
 	});
 
-	it("keeps history in the menu mid-turn — the picker never touches the run in flight", async () => {
-		// Issue #252: openSession and the picker leave a running request alone, and
-		// the picker's rows already mark which sessions are mid-run. The old rule
-		// ("history out of the menu mid-turn") is retired with it.
-		const host = await renderHeader(snapshot({ session: sessionInfo(), isStreaming: true }), {
-			onOpenSettings: () => undefined,
-			sessions: [sessionInfo("a"), sessionInfo("b")],
-		});
+	it("opens the picker from the button, no menu detour", async () => {
+		let picked = 0;
+		const host = document.createElement("div");
+		document.body.appendChild(host);
+		const root = createRootSync(host);
+		root.render(
+			<ChatHeader
+				app={app}
+				snapshot={snapshot({ session: sessionInfo() })}
+				sessions={[sessionInfo("a"), sessionInfo("b")]}
+				onOpenSession={() => {
+					picked += 1;
+				}}
+				onNewSession={() => undefined}
+				onRenameSession={() => undefined}
+				onDeleteSession={() => undefined}
+			/>,
+		);
+		await flushRender();
 
-		expect((await openOverflow(host)).titles()).toEqual(["View chat history", "Rename chat", "Open settings", "Delete chat"]);
+		host.querySelector<HTMLButtonElement>('.piem-chat__header-actions button[aria-label="View chat history"]')?.click();
+		await flushRender();
+
+		expect(picked).toBe(0); // The picker is a dialog, not a menu item; the stub agrees.
+		expect(() => lastMenu()).toThrow("no menu was built");
 	});
 });
 
