@@ -2,11 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { getT } from "../../i18n";
 import {
 	describeUserSkillsDirProblem,
-	describeUserSkillsDirReading,
 	USER_SKILLS_DIR_PLACEHOLDER,
 	userSkillsDirDescription,
 	userSkillsSearchedDescription,
 } from "./userSkillsCopy";
+import { searchedReadingBadge } from "./badges";
 
 /**
  * This copy is the entire feedback loop for a folder the plugin reads on a
@@ -117,13 +117,14 @@ describe("userSkillsSearchedDescription", () => {
 	});
 });
 
-describe("describeUserSkillsDirReading", () => {
+describe("searchedReadingBadge", () => {
 	it("reports a missing folder as a fact, with no verdict attached", () => {
-		const copy = describeUserSkillsDirReading({ found: false, loaded: 0 }, en);
+		const { label: copy, tone } = searchedReadingBadge({ found: false, loaded: 0 }, en);
 
 		// The framing lives once, above the list. Repeating it per row would
 		// either nag or reassure, and reassurance is what hides the defect.
-		expect(copy).toContain("No folder");
+		expect(copy).toBe("Not found");
+		expect(tone).toBe("untested");
 		expect(copy.toLowerCase()).not.toContain("error");
 		expect(copy.toLowerCase()).not.toContain("wrong");
 	});
@@ -132,50 +133,49 @@ describe("describeUserSkillsDirReading", () => {
 		// The case a two-state message would misreport. A user staring at an empty
 		// skills list needs to know the folder was reached, because that moves the
 		// question from the path to its contents.
-		const empty = describeUserSkillsDirReading({ found: true, loaded: 0 }, en);
-		const missing = describeUserSkillsDirReading({ found: false, loaded: 0 }, en);
+		const empty = searchedReadingBadge({ found: true, loaded: 0 }, en).label;
+		const missing = searchedReadingBadge({ found: false, loaded: 0 }, en).label;
 
 		expect(empty).not.toBe(missing);
-		expect(empty).toContain("Read");
-		expect(empty).toContain("no skills");
+		expect(empty).toBe("Empty");
 	});
 
 	it("makes a working folder unmistakable by saying how many skills it gave", () => {
-		expect(describeUserSkillsDirReading({ found: true, loaded: 4 }, en)).toContain("4 skills loaded");
+		expect(searchedReadingBadge({ found: true, loaded: 4 }, en)).toEqual({ label: "4 skills", tone: "neutral" });
 	});
 
 	it("keeps the singular readable rather than saying 1 skills", () => {
-		expect(describeUserSkillsDirReading({ found: true, loaded: 1 }, en)).toContain("1 skill loaded");
+		expect(searchedReadingBadge({ found: true, loaded: 1 }, en).label).toBe("1 skill");
 	});
 
 	it("does not report an unchecked folder as absent", () => {
 		// found === undefined means the check itself failed — permissions, an
 		// unreachable filesystem. Saying "no folder" there would send a reader
 		// whose skills exist looking for a mistake in a path that is fine.
-		const unknown = describeUserSkillsDirReading({ found: undefined, loaded: 0 }, en);
-		const missing = describeUserSkillsDirReading({ found: false, loaded: 0 }, en);
+		const unknown = searchedReadingBadge({ found: undefined, loaded: 0 }, en);
+		const missing = searchedReadingBadge({ found: false, loaded: 0 }, en);
 
-		expect(unknown).not.toBe(missing);
-		expect(unknown.toLowerCase()).not.toContain("no folder");
+		expect(unknown.label).not.toBe(missing.label);
+		expect(unknown).toEqual({ label: "Cannot check", tone: "warn" });
 	});
 
 	it("keeps the unknown state distinct in Chinese too", () => {
-		const unknown = describeUserSkillsDirReading({ found: undefined, loaded: 0 }, zh);
+		const unknown = searchedReadingBadge({ found: undefined, loaded: 0 }, zh).label;
 
 		expect(unknown).toMatch(/\p{Script=Han}/u);
-		expect(unknown).not.toBe(describeUserSkillsDirReading({ found: false, loaded: 0 }, zh));
+		expect(unknown).not.toBe(searchedReadingBadge({ found: false, loaded: 0 }, zh).label);
 	});
 
 	it("keeps the counts intact in Chinese, and still separates the three outcomes", () => {
-		const missing = describeUserSkillsDirReading({ found: false, loaded: 0 }, zh);
-		const empty = describeUserSkillsDirReading({ found: true, loaded: 0 }, zh);
-		const loaded = describeUserSkillsDirReading({ found: true, loaded: 4 }, zh);
+		const missing = searchedReadingBadge({ found: false, loaded: 0 }, zh).label;
+		const empty = searchedReadingBadge({ found: true, loaded: 0 }, zh).label;
+		const loaded = searchedReadingBadge({ found: true, loaded: 4 }, zh).label;
 
 		for (const copy of [missing, empty, loaded]) {
 			expect(copy).toMatch(/\p{Script=Han}/u);
 		}
 		expect(new Set([missing, empty, loaded]).size).toBe(3);
 		expect(loaded).toContain("4");
-		expect(describeUserSkillsDirReading({ found: true, loaded: 1 }, zh)).toContain("1");
+		expect(searchedReadingBadge({ found: true, loaded: 1 }, zh).label).toContain("1");
 	});
 });

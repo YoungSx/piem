@@ -3024,6 +3024,9 @@ export class ObsidianAgentService {
 		// when there is no agent to reconfigure.
 		const rt = this.current();
 		if (!rt || !rt.agent || !this.sessionManager.isLoaded(rt.sessionPath)) {
+			// MCP configuration belongs to the plugin, even before a chat exists.
+			// The settings row awaits this path for its connection verdict.
+			await this.fetchExternalTools();
 			this.notify();
 			return;
 		}

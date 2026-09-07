@@ -13,7 +13,7 @@ import { DEFAULT_SESSION_RETENTION } from "../session/retention";
 import { DEFAULT_SESSION_DIR } from "../session/sessionDir";
 import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
 import type { PiemSettings } from "../settings";
-import type { ObsidianAgentService as ObsidianAgentServiceType, PendingToolCall } from "./ObsidianAgentService";
+import type { ObsidianAgentService as ObsidianAgentServiceType, ObsidianAgentServiceOptions, PendingToolCall } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { spyLogger } from "../testUtils/logSpy";
 import { stubWindowTimers } from "../testUtils/windowStub";
@@ -3490,6 +3490,43 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 	});
 });
 
+describe("MCP configuration before opening a chat", () => {
+	it("connects configured MCP servers before the first chat has been opened", async () => {
+		const { McpManager } = await import("../mcp/mcpManager");
+		let requests = 0;
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), {
+			getExternalTools: async () => { await manager.connect(); return manager.buildAgentTools(); },
+		});
+		const manager = new McpManager(() => settings.mcpServers, () => "requestUrl", "test", () => async (_url, init) => {
+			requests++;
+			const request = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+			if (request.method === "notifications/initialized") return new Response(null, { status: 202 });
+			const result = request.method === "initialize"
+				? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "test" } }
+				: { tools: [{ name: "lookup", inputSchema: { type: "object" } }] };
+			return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }), { headers: { "content-type": "application/json" } });
+		});
+		settings.mcpServers = [{ id: "new", name: "New server", url: "https://example.com/mcp", enabled: true, token: "", secretRef: "" }];
+		try {
+			expect(manager.getServerStates()[0]?.status).toBe("untested");
+			await service.refreshConfiguration();
+			expect(manager.getServerStates()[0]?.status).toBe("ok");
+			expect(manager.getServerStates()[0]?.toolCount).toBe(1);
+			expect(service.getActiveSessionPath()).toBeNull();
+			const before = requests;
+			await service.refreshConfiguration();
+			expect(requests).toBe(before);
+			settings.mcpServers[0]!.enabled = false;
+			await service.refreshConfiguration();
+			expect(manager.getServerStates()[0]?.status).toBe("disabled");
+			expect(manager.buildAgentTools()).toHaveLength(0);
+		} finally {
+			await manager.dispose();
+			service.dispose();
+		}
+	});
+});
+
 describe("language in the snapshot", () => {
 	it("resolves the user's setting so the panel never re-resolves it", () => {
 		const { service, settings } = createServiceWithSettings();
@@ -4062,6 +4099,7 @@ function createServiceWithSettings(
 		loadUserSkills?: typeof NO_USER_SKILLS;
 		/** Stands in for the plugin's `saveSettings`; omitted reconfigures in memory. */
 		persistSettings?: (options?: { reconfigure?: boolean }) => Promise<void>;
+		getExternalTools?: ObsidianAgentServiceOptions["getExternalTools"];
 		/** Link graph, metadata cache and active editor for the context probe. */
 		probeData?: ProbeData;
 	} = {},
@@ -4080,6 +4118,7 @@ function createServiceWithSettings(
 			// the override.
 			loadUserSkills: overrides.loadUserSkills ?? NO_USER_SKILLS,
 			...(overrides.persistSettings ? { persistSettings: overrides.persistSettings } : {}),
+			getExternalTools: overrides.getExternalTools,
 		},
 	);
 	return { service, settings };

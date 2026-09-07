@@ -115,44 +115,14 @@ export interface UserSkillsDirReading {
 }
 
 /**
- * What happened at one folder, for the line under its path.
- *
- * Four outcomes, not three. {@link UserSkillsDirReading.found} is undefined when
- * the folder could not be probed at all — the filesystem call neither confirmed
- * nor denied it — and folding that into "no folder" would be exactly the lie
- * this report exists to prevent: a reader whose permissions hid their skills
- * from us would be told the folder is not there, and stop looking.
- *
- * A folder that was read and produced nothing is likewise its own case: it is
- * neither the absence above nor a working folder, and rolling it into either
- * would misreport it — a user staring at an empty skills list needs to know the
- * folder was reached, because that moves the question from the path to its
- * contents.
- *
- * The path itself is not interpolated. It is data, and the panel renders it as
- * the row's own name, which keeps it selectable and keeps a long path from
- * swallowing the sentence.
- */
-export function describeUserSkillsDirReading(reading: UserSkillsDirReading, t: Translator): string {
-	if (reading.found === undefined) {
-		return t.t("skills.userSearchedUnknown");
-	}
-	if (!reading.found) {
-		return t.t("skills.userSearchedMissing");
-	}
-	if (reading.loaded === 0) {
-		return t.t("skills.userSearchedEmpty");
-	}
-	return t.t("skills.userSearchedFound", { skills: countSkills(reading.loaded, t) });
-}
-
-/**
+ * Exported for the badge module's reuse: the searched report's count moves
+ * beside the path as a badge, and one summary of a count cannot spell two ways.
  * `n skills`, with the singular spelled out rather than assembled.
  *
  * A separate leaf per plural form instead of `{count} skill(s)`: languages do
  * not agree on where the plural boundary falls, and a translator handed a
  * template with an English suffix cannot fix it.
  */
-function countSkills(count: number, t: Translator): string {
+export function countSkills(count: number, t: Translator): string {
 	return count === 1 ? t.t("skills.userSkillOne") : t.t("skills.userSkillMany", { count });
 }

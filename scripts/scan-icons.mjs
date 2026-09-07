@@ -45,7 +45,7 @@ function grepLiteralIconNames() {
 		}
 	};
 	walk(SRC);
-	files.push(join(HERE, "preview-visual.mjs"));
+	files.push(...readdirSync(HERE).filter((name) => /^preview-.*\.mjs$/.test(name)).map((name) => join(HERE, name)));
 
 	const names = new Set();
 	// `name="…"` is ObsidianIcon's prop, `icon(=|:) "…"` covers object entries
@@ -54,9 +54,11 @@ function grepLiteralIconNames() {
 	// literals only show up if the whole span is swept — so those spans are
 	// captured and every quoted token inside is taken.
 	const patterns = [
-		/\bname\s*=\s*"([a-z0-9][a-z0-9-]*)"/g,
+		/<ObsidianIcon\b[^>]*?\bname\s*=\s*"([a-z0-9][a-z0-9-]*)"/g,
 		/\bicon\s*(?:=|:)\s*"([a-z0-9][a-z0-9-]*)"/gi,
 		/setIcon\([^,]+,\s*"([a-z0-9][a-z0-9-]*)"/g,
+		/\.setIcon\(\s*"([a-z0-9][a-z0-9-]*)"/g,
+		/rowAction\([^,]+,\s*"([a-z0-9][a-z0-9-]*)"/g,
 	];
 	const braceProps = /\b(?:name|icon)\s*=\s*\{([^}]*)\}/g;
 	const quoted = /"([a-z0-9][a-z0-9-]*)"/g;

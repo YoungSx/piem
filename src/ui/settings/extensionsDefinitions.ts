@@ -1,4 +1,4 @@
-import { Notice, TFile, type App, type ButtonComponent, type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
+import { Notice, TFile, type App, type ButtonComponent, type ExtraButtonComponent, type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import type { SkillDiagnostic } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../../i18n";
 import type { SkillRow } from "../../skills/skillManager";
@@ -19,8 +19,17 @@ import {
 	type SkillProblemsCopy,
 } from "./skillsCopy";
 import {
+	appendSettingBadge,
+	describeMcpBadge,
+	externalFileBadge,
+	mcpPendingBadge,
+	problemCountBadge,
+	searchedReadingBadge,
+	setBadge,
+	skillProvenanceBadge,
+} from "./badges";
+import {
 	describeUserSkillsDirProblem,
-	describeUserSkillsDirReading,
 	USER_SKILLS_DIR_PLACEHOLDER,
 	userSkillsDirDescription,
 	userSkillsDirName,
@@ -28,7 +37,7 @@ import {
 	userSkillsSearchedLabel,
 } from "./userSkillsCopy";
 import { rowAction, type SettingsPanelHost } from "./panelHost";
-import { sectionNote } from "./sectionNote";
+import { sectionNote, sectionNoteWithHeadingBadge } from "./sectionNote";
 
 /**
  * Records a failed skill action.
@@ -270,7 +279,9 @@ function vaultSkillsList(host: SettingsPanelHost, state: SettingsPanelState, sna
 		// and only once a read has landed, since before that the folder has not been
 		// looked in and claiming it is empty would be a guess.
 		items: [
-			sectionNote(t.t("skills.desc"), snapshot && snapshot.inventory.rows.length === 0 ? t.t("skills.empty") : undefined),
+			sectionNoteWithHeadingBadge(t.t("skills.heading"), problemCountBadge(snapshot?.load.vault.length ?? 0, t), [
+				t.t("skills.desc"), snapshot && snapshot.inventory.rows.length === 0 ? t.t("skills.empty") : undefined,
+			]),
 			...(snapshot?.inventory.rows ?? []).map((row) => vaultSkillRow(host, state, row)),
 		],
 	};
@@ -322,8 +333,11 @@ function vaultSkillRow(host: SettingsPanelHost, state: SettingsPanelState, row: 
 	const { t } = host;
 	return {
 		name: row.name,
-		desc: describeSkillRow(row, t),
+		aliases: row.provenance ? [row.provenance.url] : undefined,
 		render: (setting) => {
+			appendSettingBadge(setting, skillProvenanceBadge(row, t));
+			const source = describeSkillRow(row);
+			if (source) setFoldableDescription(setting, source, t);
 			// The switch rides ahead of the file actions, mirroring the toggle's
 			// place on the built-in rows: on/off is the question a reader answers
 			// most often, and Open/Update/Delete are the rarer errands.
@@ -422,7 +436,7 @@ function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, s
 			type: "group",
 			heading: t.t("skills.userHeading"),
 			items: [
-				sectionNote(t.t("skills.userDesc")),
+				sectionNoteWithHeadingBadge(t.t("skills.userHeading"), problemCountBadge(user?.diagnostics.length ?? 0, t), [t.t("skills.userDesc")]),
 				{
 					name: userSkillsDirName(t),
 					desc: userSkillsDirDescription(t),
@@ -438,6 +452,7 @@ function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, s
 							(skill): SettingGroupItem => ({
 								name: skill.name,
 								render: (setting) => {
+									appendSettingBadge(setting, externalFileBadge(t));
 									// Frontmatter descriptions are written by outside hands with no
 									// length limit; past the budget the row folds instead of
 									// stretching the list.
@@ -462,14 +477,14 @@ function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, s
 					...searched.map(
 						(entry): SettingDefinitionItem => ({
 							name: entry.dir,
-							desc: describeUserSkillsDirReading({ found: entry.found, loaded: entry.loaded }, t),
 							searchable: false,
+							render: (setting) => { appendSettingBadge(setting, searchedReadingBadge(entry, t)); },
 						}),
 					),
 				]),
 		// Last, and after the user's own skills rather than at the top of the tab.
 		// This is where someone already is when they ask why a folder was skipped,
-		// and it is the long-form answer to a row reading "Could not be checked."
+		// and it is the long-form answer to a row reading "Cannot check".
 		...problemRows(user?.diagnostics ?? [], userSkillProblemsCopy(t)),
 	];
 }
@@ -525,9 +540,8 @@ function configureUserSkillsDir(setting: Setting, host: SettingsPanelHost, state
 /**
  * The MCP servers section: what remote tools the agent is offered.
  *
- * Saving — not a private reconnect call — is what reconnects: `host.save()`
- * reaches the running agent's configuration and the connect happens on that
- * path, so there is one road from "config changed" to "agent sees the new tools".
+ * Saving reconfigures MCP through the agent service, even before a chat exists.
+ * The row's connect/retry action also lets the reader recover without editing.
  *
  * Synchronous throughout, unlike the skills sections above: `mcp.states()` reads
  * the running manager, so the rows can be built where they are declared.
@@ -588,52 +602,46 @@ function openMcpModal(host: SettingsPanelHost, server?: McpServerConfig): void {
 function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupItem {
 	const { t } = host;
 	return {
-		// The URL is the address requests leave to, so it reads as the row's main
-		// description; the connection verdict hangs beneath it as an effect line,
-		// the same slot every other async status in this panel uses. Both are set in
-		// `render` rather than as `desc`: the URL folds, and the verdict is rewritten
-		// in place.
+		// The URL stays below the name; connection status is beside it and only
+		// actionable errors need a separate line.
 		name: state.name,
 		aliases: [state.url],
 		render: (setting) => {
 			// URLs are handed in verbatim and can be very long; the fold keeps the row
 			// scannable, and the verdict line below still appends after the folded body.
 			setFoldableDescription(setting, state.url, t);
+			const badgeEl = appendSettingBadge(setting, describeMcpBadge(state, t));
+			badgeEl.setAttribute("role", "status");
 			const verdictEl = createEffectLine(setting.descEl);
-			setMcpVerdict(verdictEl, state, t);
-			configureMcpToggle(setting, host, state, verdictEl);
-			if (state.status === "error") {
-				// A failed server offers its own way back in, before the edit and
-				// delete buttons: reconnect skips the mounted servers and routes
-				// this one to a fresh handshake, then the verdict repaints from
-				// the manager's answer. First in the row — fixing is the action
-				// most likely wanted next. `retrying` is a closure fence, not a
-				// story about the button: these extra buttons are divs, and a
-				// disabled div still receives clicks, so a double click must be
-				// kept from starting a second reconnect behind the first.
-				let retrying = false;
-				setting.addExtraButton((button) => {
-					rowAction(button, "refresh-cw", t.t("mcp.retry"));
-					button.onClick(() => {
-						if (retrying) {
-							return;
-						}
-						retrying = true;
-						button.setDisabled(true);
-						verdictEl.setText(t.t("mcp.statusConnecting"));
-						void host.mcp.reconnect().finally(() => {
-							button.setDisabled(false);
-							// The handshake has settled; the row is then whatever the
-							// manager holds, since reconnect did not touch config.
-							const fresh = host.mcp.states().find((row) => row.id === state.id);
-							if (fresh) {
-								setMcpVerdict(verdictEl, fresh, t);
-							}
-							retrying = false;
-						});
+			let connectButton: ExtraButtonComponent;
+			const reconcile = (fresh: McpServerState): void => {
+				setMcpVerdict(badgeEl, verdictEl, fresh, t);
+				rowAction(connectButton, "refresh-cw", fresh.status === "untested" ? t.t("mcp.connect") : t.t("mcp.retry"));
+				connectButton.extraSettingsEl.hidden = !fresh.enabled || fresh.status === "ok";
+			};
+			configureMcpToggle(setting, host, state, badgeEl, verdictEl, reconcile);
+			// Keep the recovery control mounted so a failed enable can reveal it
+			// without rebuilding the row. Untested servers can connect directly.
+			let retrying = false;
+			setting.addExtraButton((button) => {
+				connectButton = button;
+				button.extraSettingsEl.addClass("piem-settings-connect-button");
+				button.onClick(() => {
+					if (retrying || button.extraSettingsEl.hidden) return;
+					retrying = true;
+					button.setDisabled(true);
+					setBadge(badgeEl, mcpPendingBadge(t));
+					verdictEl.setText("");
+					verdictEl.removeClass("piem-settings-effect--error");
+					void host.mcp.reconnect().finally(() => {
+						button.setDisabled(false);
+						const fresh = host.mcp.states().find((row) => row.id === state.id);
+						if (fresh) reconcile(fresh);
+						retrying = false;
 					});
 				});
-			}
+			});
+			reconcile(state);
 			setting.addExtraButton((button) => {
 				rowAction(button, "pencil", t.t("mcp.edit"));
 				button.onClick(() => {
@@ -670,7 +678,7 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
  *
  * The toggle writes the enabled flag and saves; whether the server connects or
  * disconnects is decided on the save path, not here. While that save runs the
- * verdict line promises the attempt, then reports the fresh verdict in place — a
+ * badge promises the attempt, then reports the fresh verdict in place — a
  * rebuild here would replace the row out from under the very toggle the user just
  * flipped, which is why this is the one part of the section that stays
  * imperative.
@@ -686,7 +694,9 @@ function configureMcpToggle(
 	setting: Setting,
 	host: SettingsPanelHost,
 	state: McpServerState,
+	badgeEl: HTMLElement,
 	verdictEl: HTMLElement,
+	reconcile: (fresh: McpServerState) => void,
 ): void {
 	const { t } = host;
 	setting.addToggle((toggle) => {
@@ -711,14 +721,16 @@ function configureMcpToggle(
 					server.enabled = enabled;
 				}
 				toggle.setDisabled(true);
-				verdictEl.setText(enabled ? t.t("mcp.statusConnecting") : t.t("mcp.statusDisabled"));
+				setBadge(badgeEl, enabled ? mcpPendingBadge(t) : describeMcpBadge({ ...state, enabled: false }, t));
+				verdictEl.setText("");
+				verdictEl.removeClass("piem-settings-effect--error");
 				try {
 					await host.save();
 				} finally {
 					toggle.setDisabled(false);
 					const fresh = host.mcp.states().find((row) => row.id === state.id);
 					if (fresh) {
-						setMcpVerdict(verdictEl, fresh, t);
+						reconcile(fresh);
 					}
 				}
 			};
@@ -751,25 +763,12 @@ function configureMcpToggle(
 	});
 }
 
-/** The connection verdict, as one sentence. */
-function describeMcpRow(state: McpServerState, t: Translator): string {
-	return state.enabled
-		? state.status === "ok"
-			? t.t("mcp.statusOk", { tools: state.toolCount })
-			: state.status === "error"
-				? t.t("mcp.statusError", { error: state.error ?? "" })
-				: t.t("mcp.statusUntested")
-		: t.t("mcp.statusDisabled");
-}
-
-/**
- * Rewrites a row's verdict line in place — the sentence and the error tint
- * together, so a failed connection reads as one through {@link describeMcpRow}'s
- * words and the same effect-line styling every other failure in this panel uses.
- */
-function setMcpVerdict(el: HTMLElement, state: McpServerState, t: Translator): void {
-	el.setText(describeMcpRow(state, t));
-	el.toggleClass("piem-settings-effect--error", state.enabled && state.status === "error");
+/** Status beside the name; only the actionable, verbatim error stays below. */
+function setMcpVerdict(badgeEl: HTMLElement, el: HTMLElement, state: McpServerState, t: Translator): void {
+	setBadge(badgeEl, describeMcpBadge(state, t));
+	const failed = state.enabled && state.status === "error";
+	el.setText(failed ? state.error ?? "" : "");
+	el.toggleClass("piem-settings-effect--error", failed);
 }
 
 /**

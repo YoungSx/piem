@@ -1,4 +1,5 @@
 import type { SettingDefinitionRender } from "obsidian";
+import { setGroupHeadingBadge, type SettingBadge } from "./badges";
 
 /**
  * A section's prose, sitting as the first row under its heading.
@@ -37,10 +38,20 @@ export function sectionNote(...sentences: readonly (string | undefined)[]): Sett
 	};
 }
 
-/**
- * The class the note carries, so the stylesheet can mute it.
- *
- * Exported for the same reason `EFFECT_LINE_CLASS` is: one literal, so a rename
- * cannot leave the stylesheet pointing at a class nothing renders.
- */
+/** The always-present note also updates its group's problem count. */
+export function sectionNoteWithHeadingBadge(
+	heading: string,
+	badge: SettingBadge | undefined,
+	sentences: readonly (string | undefined)[],
+): SettingDefinitionRender {
+	const note = sectionNote(...sentences);
+	return {
+		...note,
+		render: (setting, group) => {
+			note.render(setting, group);
+			setGroupHeadingBadge(group, heading, badge);
+		},
+	};
+}
+
 export const SECTION_NOTE_CLASS = "piem-settings-note";

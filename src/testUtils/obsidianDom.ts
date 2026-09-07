@@ -59,6 +59,19 @@ export function installObsidianDomHelpers(): void {
 	prototype.createSpan = function createSpan(this: HTMLElement, options: DomElementOptions = {}): HTMLElement {
 		return createEl.call(this, "span", options);
 	};
+	globalThis.createFragment = (callback?: (fragment: DocumentFragment) => void): DocumentFragment => {
+		const fragment = document.createDocumentFragment();
+		fragment.createSpan = (options?: DomElementOptions | string): HTMLSpanElement => {
+			const span = document.createElement("span");
+			const info = typeof options === "string" ? { cls: options } : options;
+			if (info?.text !== undefined) span.textContent = info.text;
+			if (info?.cls) span.className = Array.isArray(info.cls) ? info.cls.join(" ") : info.cls;
+			fragment.append(span);
+			return span;
+		};
+		callback?.(fragment);
+		return fragment;
+	};
 	prototype.setText = function setText(this: HTMLElement, text: string): void {
 		this.textContent = text;
 	};

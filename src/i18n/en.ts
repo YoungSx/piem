@@ -1059,9 +1059,6 @@ export const en = {
 		enabledLabel: "Enabled",
 		import: "Import from URL",
 		empty: "No skills yet. Import one from a URL, or create a folder in Piem/skills with a SKILL.md inside.",
-		importedFrom: "Imported from {url}",
-		handAuthored: "Written in this vault. Updates come from editing the files.",
-		rootFile: "A single note acting as a skill. Edit it like any note; it cannot be updated or deleted from here.",
 		open: "Open",
 		update: "Check for updates",
 		delete: "Delete",
@@ -1132,18 +1129,6 @@ export const en = {
 		 */
 		userSearchedDesc:
 			"Where skills were looked for the last time they loaded. A folder you have not created is simply not there, and nothing is wrong. A folder you did create should say how many skills it holds — if it does not, the path being read is not the one you meant.",
-		/** Per-folder outcomes. Each states only what was seen, with no verdict attached. */
-		userSearchedMissing: "No folder at this path.",
-		/** Its own case: reached, and empty. A user with no skills listed needs the difference. */
-		userSearchedEmpty: "Read, and holds no skills.",
-		userSearchedFound: "Read, {skills} loaded.",
-		/**
-		 * The check itself failed — the folder was neither confirmed nor denied.
-		 * Its own line rather than folded into "no folder": telling a reader whose
-		 * permissions hid their skills that the folder is not there sends them
-		 * looking in the wrong place entirely.
-		 */
-		userSearchedUnknown: "Could not be checked.",
 		userProblemsHeading: "Problems reading folders on this computer",
 		/**
 		 * "In its own words" is the load-bearing phrase: it tells the reader the
@@ -1156,6 +1141,25 @@ export const en = {
 			"Reported by this computer's filesystem, in its own words. Skills at these paths are not loaded. Folders that read cleanly are unaffected.",
 		userSkillOne: "1 skill",
 		userSkillMany: "{count} skills",
+	},
+
+	/** Compact facts beside names on the Extensions page. */
+	badges: {
+		mcpOkOne: "Connected · 1 tool",
+		mcpOkMany: "Connected · {tools} tools",
+		mcpError: "Connection failed",
+		mcpPending: "Not connected",
+		mcpConnecting: "Connecting",
+		disabled: "Disabled",
+		imported: "Imported",
+		handAuthored: "Handwritten",
+		rootFile: "Single note",
+		external: "External file",
+		missing: "Not found",
+		empty: "Empty",
+		unknown: "Cannot check",
+		problemOne: "1 problem",
+		problemMany: "{count} problems",
 	},
 
 	/** The import-skills modal. */
@@ -1181,8 +1185,7 @@ export const en = {
 	 *
 	 * The description states the outbound truth up front: configuring a server
 	 * means requests leave the vault to that URL, and its tools run in chat.
-	 * Every status line is a sentence, not a bare word, because "error" alone
-	 * sends a reader hunting for the message this row already holds.
+	 * Connection badges sit beside names; errors remain verbatim below the URL.
 	 */
 	mcp: {
 		heading: "MCP servers",
@@ -1202,19 +1205,11 @@ export const en = {
 		edit: "Edit",
 		delete: "Delete",
 		empty: "No MCP servers configured yet. Add one to bring its tools into chat.",
-		statusOk: "Connected; {tools} tools available.",
-		statusError: "Last connection failed: {error}",
-		// Shown on the row's verdict line for the seconds the toggle's save takes
-		// to attempt a connection — the row promises a result, so it must not sit
-		// on a stale verdict while the network round trip runs.
-		statusConnecting: "Connecting…",
-		// The failed row's refresh button: it reruns the connect pass, which skips
-		// the mounted servers and retries this one.
+		// The recovery action reruns the connect pass, skipping mounted servers.
 		retry: "Retry connection",
-		statusDisabled: "Disabled. Turn it on to connect.",
+		connect: "Connect",
 		disableConsequenceTools: "This server's tools leave chat immediately.",
 		disableConsequenceToken: "Its token stays in the config; turning it back on restores it.",
-		statusUntested: "Not connected yet. Saving settings or reloading the plugin connects it.",
 		testTitle: "Connection",
 		testOk: "Reached the server; {tools} tools available.",
 		name: "Name",
