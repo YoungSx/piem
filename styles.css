@@ -2491,13 +2491,15 @@ button.piem-chat__latest--asking {
 	gap: var(--size-4-1);
 	overflow: visible;
 	/*
-	 * Anchors every chip's disclosure popover — the row, not the chip. A chip
-	 * can sit anywhere along the row, and one near the start leaves a popover
-	 * that grows leftward no panel to grow into: the visual smoke photographed
-	 * one escaping the leaf entirely at 390px. The row is the widest stable box
-	 * on this line, and right-aligning to its end is where the gauge's and the
-	 * subagents' popovers already open, so all three floating surfaces share one
-	 * anchor and one clamping width.
+	 * Anchors the chip disclosure popovers — as their containing block, not as
+	 * their alignment. Each chip measures where it sits on the row (offsetLeft,
+	 * see `ContextRow.tsx`) and publishes an inline offset plus a start/end
+	 * placement, so its popover opens beside the chip that opened it; both
+	 * placements clamp the popover's width against this same box, so whatever
+	 * the chip's position the popover can never escape the leaf. The row stays
+	 * the widest stable box on this line, which is also why the gauge's and the
+	 * subagents' popovers still right-align to its end — those two have no chip
+	 * to follow.
 	 */
 	position: relative;
 }
@@ -2644,11 +2646,19 @@ button.piem-chat__latest--asking {
 
 /*
  * The chip's disclosure, the same geometry and stacking as the two popovers it
- * sits between (the context meter's and the subagents'). Anchored to the row,
- * not the chip — the row's note above says why — so `inset-inline-end: 0` reads
- * against a box that spans the composer: the panel can never grow past the leaf
- * it lives in. `max-width` clamps to that same box, because 18rem is wider than
- * the row itself in the narrow sidebars this row was rebuilt for.
+ * sits between (the context meter's and the subagents'). The chip measures its
+ * own position on the row and publishes `--chip-inline-offset` plus a placement
+ * (see `ContextRow.tsx`); this stylesheet only turns those into geometry. The
+ * default placement grows from the chip's start edge, and `start` is the
+ * placement that fits — measured, not assumed — because the row's first chip is
+ * the one that opens most often (the active note always leads).
+ *
+ * Every horizontal extent clamps against the row's padding box — the containing
+ * block abspos percentages resolve against — so whichever side the popover
+ * grows toward it cannot escape the leaf. `min-width` rides the same clamp: a
+ * bare `11rem` could win over the clamped `max-width` and walk straight out
+ * again. A chip without the measured offset (tests, or a popover mounted
+ * before the layout effect runs) gets 0px, which is today's end-anchored look.
  */
 .piem-chat__context-chip-popover {
 	background: var(--background-primary);
@@ -2659,15 +2669,30 @@ button.piem-chat__latest--asking {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	max-width: min(18rem, 100%);
-	min-width: 11rem;
+	max-width: min(18rem, calc(100% - var(--chip-inline-offset, 0px)));
+	min-width: min(11rem, calc(100% - var(--chip-inline-offset, 0px)));
 	padding: var(--size-4-1);
 	position: absolute;
-	inset-inline-end: 0;
+	inset-inline-start: 0;
+	inset-inline-end: auto;
+	margin-inline-start: var(--chip-inline-offset, 0px);
+	margin-inline-end: 0;
 	text-align: start;
 	white-space: normal;
 	width: max-content;
 	z-index: var(--layer-menu, 65);
+}
+
+/*
+ * The mirrored placement: the chip hugs the row's end, so the popover grows
+ * toward the start instead. The offset shifts from the start margin to the end
+ * margin, and every clamp stays exactly as tight as in the default placement.
+ */
+.piem-chat__context-chip[data-popover-placement="end"] .piem-chat__context-chip-popover {
+	inset-inline-start: auto;
+	inset-inline-end: 0;
+	margin-inline-start: 0;
+	margin-inline-end: var(--chip-inline-offset, 0px);
 }
 
 /*

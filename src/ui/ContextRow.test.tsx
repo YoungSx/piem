@@ -7,7 +7,7 @@ installObsidianStub();
 const document = installDom();
 
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
-const { ContextRow } = await import("./ContextRow");
+const { ContextRow, popoverPlacement } = await import("./ContextRow");
 const { TranslatorProvider } = await import("./TranslatorContext");
 const { createRoot } = await import("react-dom/client");
 
@@ -448,6 +448,33 @@ describe("ContextRow", () => {
 		// Distinct React keys: keying on path alone would collide the moment the
 		// same note appeared in both roles.
 		expect(host.querySelectorAll(".piem-chat__context-chip")).toHaveLength(2);
+	});
+});
+
+describe("popoverPlacement", () => {
+	it("anchors at the chip when the chip sits at the row's start", () => {
+		// The active chip always leads: growing toward the row's end puts the
+		// popover right beside the press.
+		expect(popoverPlacement(0, 40, 400)).toEqual({ placement: "start", offset: 0 });
+	});
+
+	it("anchors at the chip while there is still room to grow toward the end", () => {
+		expect(popoverPlacement(130, 40, 400)).toEqual({ placement: "start", offset: 130 });
+	});
+
+	it("flips to the start side once the chip has more room behind it", () => {
+		// offset is measured from the end edge: 400 - 300 - 40 = 60.
+		expect(popoverPlacement(300, 40, 400)).toEqual({ placement: "end", offset: 60 });
+	});
+
+	it("breaks ties toward the default start placement", () => {
+		expect(popoverPlacement(160, 80, 400)).toEqual({ placement: "start", offset: 160 });
+	});
+
+	it("clamps degenerate or mid-layout measurements instead of inventing geometry", () => {
+		expect(popoverPlacement(-12, 40, 400)).toEqual({ placement: "start", offset: 0 });
+		expect(popoverPlacement(500, 40, 400)).toEqual({ placement: "end", offset: 0 });
+		expect(popoverPlacement(0, 0, 0)).toEqual({ placement: "start", offset: 0 });
 	});
 });
 
