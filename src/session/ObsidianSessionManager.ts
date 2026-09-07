@@ -24,6 +24,7 @@ import { DEFAULT_THINKING_LEVEL } from "../constants";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { selectSessionsToEvict, UNLIMITED_SESSION_RETENTION } from "./retention";
 import { mergeSessions, serializeLogLines } from "./sessionMerge";
+import { collapseSkillInvocation, parseSkillInvocation } from "../agent/skillInvocation";
 import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
 
 export interface SessionDefaults {
@@ -1046,10 +1047,25 @@ function extractMessageText(message: AgentMessage): string {
 		return "";
 	}
 	if (typeof message.content === "string") {
-		return message.content;
+		return collapseSkillInvocationText(message.content);
 	}
 	return message.content
 		.filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
-		.map((part) => part.text)
+		.map((part) => collapseSkillInvocationText(part.text))
 		.join("\n");
+}
+
+/**
+ * Reads a text block back as the user's own words: a skill expansion goes back
+ * to `/name` plus whatever instructions followed it. Everything that titles a
+ * session — the header, the picker, the exported note's file name — draws from
+ * `firstMessage`, and the expansion is pi-agent-core's, not the user's; a title
+ * of `<skill name="…" location="…">` says nothing anyone chose. Blocks that
+ * aren't invocations (including injected context from the implicit-injection
+ * pass) pass through untouched, so a failed parse degrades to exactly the
+ * pre-collapse behaviour.
+ */
+function collapseSkillInvocationText(text: string): string {
+	const parsed = parseSkillInvocation(text);
+	return parsed ? collapseSkillInvocation(parsed) : text;
 }

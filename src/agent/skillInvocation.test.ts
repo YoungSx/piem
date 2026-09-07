@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseSkillInvocation } from "./skillInvocation";
+import { collapseSkillInvocation, parseSkillInvocation } from "./skillInvocation";
 
 describe("parseSkillInvocation", () => {
 	it("parses a bare expansion", () => {
@@ -52,5 +52,26 @@ describe("parseSkillInvocation", () => {
 		const body = "# Title\n\n- one\n- two";
 		const parsed = parseSkillInvocation(`<skill name="a" location="/x">\n\n${body}\n</skill>`);
 		expect(parsed?.body).toBe(body);
+	});
+});
+
+describe("collapseSkillInvocation", () => {
+	it("collapses a bare expansion to the bare command", () => {
+		const parsed = parseSkillInvocation('<skill name="nlm-skill" location="/s/SKILL.md">\n\nBody.\n</skill>');
+		expect(collapseSkillInvocation(parsed!)).toBe("/nlm-skill");
+	});
+
+	it("re-attaches additional instructions after the command", () => {
+		const parsed = parseSkillInvocation('<skill name="a" location="/x">\n\nBody.\n</skill>\n\nNow check the wording please');
+		expect(collapseSkillInvocation(parsed!)).toBe("/a Now check the wording please");
+	});
+
+	it("collapses back to the short command form with the instructions intact", () => {
+		// Which spelling reached the composer (/name vs /skill:name) is gone
+		// once expanded; the short form is what a title wants, and it still
+		// dispatches — the name routes to the skill.
+		const expanded = `<skill name="nlm-skill" location="C:\\skills\\nlm\\SKILL.md">\nReferences are relative to C:\\skills\\nlm.\n\nBody.\n</skill>\n\nAlso export the merged list`;
+		const parsed = parseSkillInvocation(expanded);
+		expect(collapseSkillInvocation(parsed!)).toBe("/nlm-skill Also export the merged list");
 	});
 });
