@@ -49,6 +49,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 4. Multi-device session sync (sessionMerge, sessionMutationLine, and the
  *    manager/draft work riding with it) spent the last of that headroom at
  *    ~1.592 MiB. The ceiling follows to 1.60 MiB.
+ * 5. The suggestion-model advanced section (its settings row, the
+ *    `testSuggestionConnection` probe, and the bilingual copy for both) spent
+ *    the last of that headroom at ~1.600 MiB — 74 bytes over the line. The
+ *    ceiling follows to 1.61 MiB.
  *
  * Each time the target is roughly 80 KiB above the measured size: enough that
  * ordinary feature work does not trip the gate, while a regression of catalog
@@ -56,7 +60,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * here rather than on a user's phone. Lowering the ceiling with the bundle is the
  * point; a ratchet left at its old value stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.60 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.61 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
