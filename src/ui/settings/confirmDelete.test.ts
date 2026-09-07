@@ -30,6 +30,7 @@ describe("confirmDelete", () => {
 		title: string;
 		confirm: HTMLButtonElement;
 		cancel: HTMLButtonElement;
+		buttons: HTMLButtonElement[];
 		confirmed: () => number;
 		dismissed: () => number;
 	} {
@@ -57,7 +58,7 @@ describe("confirmDelete", () => {
 		const buttons = Array.from(shell.querySelectorAll("button"));
 		const confirm = buttons.at(-1) as HTMLButtonElement;
 		const cancel = buttons.find((button) => button.textContent === "confirmDelete.cancel") as HTMLButtonElement;
-		return { title, confirm, cancel, confirmed: () => count, dismissed: () => dismissals };
+		return { title, confirm, cancel, buttons, confirmed: () => count, dismissed: () => dismissals };
 	}
 
 	it("defaults to the destructive delete framing", () => {
@@ -110,5 +111,27 @@ describe("confirmDelete", () => {
 		confirmed.confirm.click();
 		expect(confirmed.confirmed()).toBe(1);
 		expect(confirmed.dismissed()).toBe(0);
+	});
+
+	/**
+	 * Regression: addButton builds the element before its callback runs, so a
+	 * callback that returns without configuring it leaves a blank pill on the
+	 * row — that is exactly what the MCP disable dialog shipped. No copySecret
+	 * means no copy button may be asked for at all.
+	 */
+	it("without a secret the row holds only cancel and confirm — no blank pill", () => {
+		const modal = openModal({ kind: "disable" });
+		expect(modal.buttons).toHaveLength(2);
+		for (const button of modal.buttons) {
+			expect(button.textContent).not.toBe("");
+		}
+	});
+
+	it("with a secret the copy button sits between cancel and confirm", () => {
+		const modal = openModal({ copySecret: "sk-live-…" });
+		expect(modal.buttons).toHaveLength(3);
+		const copy = modal.buttons.find((button) => button.textContent === "confirmDelete.copyKey");
+		expect(copy).toBeDefined();
+		expect(modal.buttons.indexOf(copy as HTMLButtonElement)).toBe(1);
 	});
 });
