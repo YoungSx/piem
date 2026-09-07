@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { QuickActionSuggestionCache, type SuggestionCacheKey } from "./quickActionSuggestionCache";
+import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
+import { QuickActionSuggestionCache, type SuggestionCacheKey, workspaceKeyPart } from "./quickActionSuggestionCache";
 import type { QuickAction } from "../ui/quickActionSuggestions";
 
 const chips = (label: string): QuickAction[] => [{ id: "suggested-0", label, prompt: `Prompt for ${label}.` }];
 
-const key = (language: string, notePath: string | null): SuggestionCacheKey => ({ language, notePath });
+const key = (language: string, notePath: string | null, workspace = ""): SuggestionCacheKey => ({ language, notePath, workspace });
 
 describe("QuickActionSuggestionCache", () => {
 	it("returns undefined for a key never answered", () => {
@@ -39,6 +40,24 @@ describe("QuickActionSuggestionCache", () => {
 		const cache = new QuickActionSuggestionCache();
 		cache.set(key("en", "notes/a.md"), chips("English"));
 		expect(cache.get(key("zh-cn", "notes/a.md"))).toBeUndefined();
+	});
+
+	it("separates entries by workspace, so changed open tabs do not serve chips for a room the user left", () => {
+		const cache = new QuickActionSuggestionCache();
+		cache.set(key("en", null, "tab-a.md|tab-b.md"), chips("With tabs"));
+		expect(cache.get(key("en", null, "tab-c.md"))).toBeUndefined();
+		expect(cache.get(key("en", null, "tab-a.md|tab-b.md"))?.[0]?.label).toBe("With tabs");
+	});
+
+	it("joins the workspace parts deterministically, so the key survives a round-trip", () => {
+		expect(workspaceKeyPart(EMPTY_WORKSPACE_CONTEXT)).toBe("");
+		expect(
+			workspaceKeyPart({
+				folder: { path: "notes", entries: ["a.md", "sub/"], totalEntries: 4 },
+				openTabs: ["other.md"],
+				recentFiles: ["old.md"],
+			}),
+		).toBe("notes|a.md|sub/|4|other.md|old.md");
 	});
 
 	it("overwrites in place when the same key is answered twice", () => {

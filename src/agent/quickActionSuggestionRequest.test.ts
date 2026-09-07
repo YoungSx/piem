@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { getT } from "../i18n";
+import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
 import { buildSuggestionPrompt, fetchQuickActionSuggestions, lastAssistantText, parseSuggestedActions } from "./quickActionSuggestionRequest";
 
 const t = getT("en");
@@ -58,6 +59,52 @@ describe("buildSuggestionPrompt", () => {
 	it("quotes the reply text for the post-reply row", () => {
 		const prompt = buildSuggestionPrompt("reply", "Here is the answer.", "en", t);
 		expect(prompt).toContain("Here is the answer.");
+	});
+
+	it("renders the workspace facts under an intro line for the no-note empty screen", () => {
+		const workspace: WorkspaceContext = {
+			folder: null,
+			openTabs: ["Projects/piem.md"],
+			recentFiles: ["Journal/2026-08-29.md", "Ideas/home.md"],
+		};
+		const prompt = buildSuggestionPrompt("empty", null, "en", t, workspace);
+		expect(prompt).toContain("grounded in the user's workspace");
+		expect(prompt).toContain("The user's workspace:");
+		expect(prompt).toContain("Other open tabs: Projects/piem.md");
+		expect(prompt).toContain("Recently opened: Journal/2026-08-29.md, Ideas/home.md");
+	});
+
+	it("renders the folder lines alongside the note path when one is open", () => {
+		const workspace: WorkspaceContext = {
+			folder: { path: "Projects", entries: ["piem.md", "archive/"], totalEntries: 5 },
+			openTabs: [],
+			recentFiles: [],
+		};
+		const prompt = buildSuggestionPrompt("empty", "Projects/home.md", "en", t, workspace);
+		expect(prompt).toContain('"Projects/home.md"');
+		expect(prompt).toContain("Current folder: Projects");
+		expect(prompt).toContain("Also in this folder: piem.md, archive/ (+3 more)");
+	});
+
+	it("stays byte-identical to the pre-workspace prompt when the probed context is empty", () => {
+		// The empty-vault case must not regress: no intro, no lines, same bytes.
+		for (const workspace of [undefined, EMPTY_WORKSPACE_CONTEXT]) {
+			expect(buildSuggestionPrompt("empty", null, "en", t, workspace)).toBe(buildSuggestionPrompt("empty", null, "en", t));
+			expect(buildSuggestionPrompt("empty", "notes/a.md", "en", t, workspace)).toBe(buildSuggestionPrompt("empty", "notes/a.md", "en", t));
+			expect(buildSuggestionPrompt("reply", "text", "en", t, workspace)).toBe(buildSuggestionPrompt("reply", "text", "en", t));
+		}
+	});
+
+	it("ignores the workspace entirely for the reply scope", () => {
+		const workspace: WorkspaceContext = {
+			folder: { path: "Projects", entries: ["piem.md"], totalEntries: 1 },
+			openTabs: ["Projects/piem.md"],
+			recentFiles: ["Ideas/home.md"],
+		};
+		const prompt = buildSuggestionPrompt("reply", "The answer.", "en", t, workspace);
+		expect(prompt).toContain("The answer.");
+		expect(prompt).not.toContain("workspace");
+		expect(prompt).not.toContain("piem.md");
 	});
 });
 
