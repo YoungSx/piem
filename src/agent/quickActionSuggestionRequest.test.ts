@@ -106,6 +106,13 @@ describe("buildSuggestionPrompt", () => {
 		expect(prompt).not.toContain("workspace");
 		expect(prompt).not.toContain("piem.md");
 	});
+
+	it("asks for the scope's own cap: three on the empty screen, six after a reply", () => {
+		// The model and the parse must agree — a cap the instruction never names
+		// produces a row that the parse silently cuts down.
+		expect(buildSuggestionPrompt("empty", null, "en", t)).toContain("at most 3 objects");
+		expect(buildSuggestionPrompt("reply", "The answer.", "en", t)).toContain("at most 6 objects");
+	});
 });
 
 describe("lastAssistantText", () => {
@@ -165,6 +172,17 @@ describe("parseSuggestedActions", () => {
 		expect(parseSuggestedActions(`[${four}]`)).toHaveLength(3);
 	});
 
+	it("caps the reply row at six with an explicit cap, and only by that cap", () => {
+		const seven = Array.from({ length: 7 }, (_, index) => `{"label":"L${index}","prompt":"P${index}"}`).join(",");
+		// The default cap stays three — the reply cap travels only where the
+		// caller passes it, which is also what keeps the settings probe at three.
+		expect(parseSuggestedActions(`[${seven}]`)).toHaveLength(3);
+		expect(parseSuggestedActions(`[${seven}]`, 6)).toHaveLength(6);
+		expect(parseSuggestedActions(`[${seven}]`, 6).map((action) => action.id)).toEqual(
+			Array.from({ length: 6 }, (_, index) => `suggested-${index}`),
+		);
+	});
+
 	it("returns nothing for garbage, empty arrays, and non-array JSON", () => {
 		expect(parseSuggestedActions("I have no suggestions.")).toEqual([]);
 		expect(parseSuggestedActions("[]")).toEqual([]);
@@ -193,6 +211,26 @@ describe("fetchQuickActionSuggestions", () => {
 		expect((captured.options as { toolChoice?: string }).toolChoice).toBe("none");
 		// No reasoning key: the option type has no "off" level, absence is off.
 		expect("reasoning" in (captured.options as object)).toBe(false);
+	});
+
+	it("gives the reply's six chips double the output budget the empty screen's three get", async () => {
+		// Six chips of JSON against 512 tokens truncates mid-string; the
+		// stopReason "length" fails the parse and the whole row vanishes.
+		for (const [scope, maxTokens] of [["empty", 512], ["reply", 1024]] as const) {
+			const captured: { options?: { maxTokens?: number } } = {};
+			await fetchQuickActionSuggestions({
+				streamSimple: ((model: unknown, context: unknown, options: unknown) => {
+					captured.options = options as { maxTokens?: number };
+					return fakeStream(assistantMessage("[]"))();
+				}) as never,
+				model: {} as never,
+				scope,
+				subject: null,
+				language: "en",
+				t,
+			});
+			expect(captured.options?.maxTokens).toBe(maxTokens);
+		}
 	});
 
 	it("resolves to null actions on a transport error, without throwing", async () => {

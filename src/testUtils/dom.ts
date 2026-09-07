@@ -37,6 +37,9 @@ export function installDom(): Document {
 	// and happy-dom validates dispatched events against its own realm, so this
 	// global must be the window's class too — same reasoning as `Event`.
 	globals.KeyboardEvent = window.KeyboardEvent;
+	// Wheel handlers under test dispatch WheelEvents at elements; same realm
+	// reasoning as `Event`.
+	globals.WheelEvent = window.WheelEvent;
 	globals.requestAnimationFrame = (callback: FrameRequestCallback): number => window.setTimeout(() => callback(0), 0) as unknown as number;
 	// Pointer-query stub for touch-vs-mouse detection. Tests default to fine pointer.
 	globals.matchMedia = (query: string) => ({
