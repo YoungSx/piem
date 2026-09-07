@@ -4216,6 +4216,20 @@ button.piem-chat__latest--asking {
 	color: var(--text-normal);
 }
 
+/*
+ * The session picker's title sits in the same value line as the run-state dot
+ * (issue #235), and a several-hundred-character opener must not wrap it into a
+ * paragraph. `MAX_TITLE_CHARS` bounds the text; this bounds the line — 60
+ * characters is wider than a phone, so the one-line clamp is what the list's
+ * scannability actually leans on. Scoped to the picker so model rows (the only
+ * other `.piem-suggestion-value` consumer) keep their single-line flow.
+ */
+.piem-session-value {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .piem-suggestion-description {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);

@@ -9,12 +9,16 @@ import type { SessionSearchResult } from "../session/sessionSearch";
 installObsidianStub();
 installDom();
 
-const { openSessionPicker } = await import("./sessionDialogs");
+const { openSessionPicker, sessionTitle, describeSession } = await import("./sessionDialogs");
 const t = getT("en");
 const app = {} as App;
 
 function session(path: string, name: string, updatedAt = "2026-01-02T03:04:05.000Z"): ActiveSessionInfo {
 	return { id: path, path, name, createdAt: "2026-01-01T00:00:00.000Z", updatedAt, messageCount: 2, firstMessage: "" };
+}
+
+function openedWithOpener(path: string, firstMessage: string): ActiveSessionInfo {
+	return { ...session(path, ""), firstMessage };
 }
 
 function hit(path: string, snippet: string, matchCount = 1): SessionSearchResult {
@@ -36,7 +40,7 @@ interface PickerSetup {
  * Opens the picker with a search function whose promises the test resolves by
  * hand, which is what makes the ordering assertions below possible.
  */
-function setup(options: { search?: boolean } = {}): PickerSetup {
+function setup(options: { search?: boolean; sessions?: ActiveSessionInfo[] } = {}): PickerSetup {
 	resetSuggestModals();
 	const openedPaths: string[] = [];
 	const deleted: ActiveSessionInfo[] = [];
@@ -44,7 +48,7 @@ function setup(options: { search?: boolean } = {}): PickerSetup {
 	const waiting = new Map<string, (hits: SessionSearchResult[]) => void>();
 	openSessionPicker(
 		app,
-		SESSIONS,
+		options.sessions ?? SESSIONS,
 		{
 			onOpen: (path) => openedPaths.push(path),
 			onDelete: (item) => deleted.push(item),
@@ -74,6 +78,45 @@ async function flush(): Promise<void> {
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	}
 }
+
+describe("sessionTitle", () => {
+	it("uses the opener verbatim until it outruns a label", () => {
+		expect(sessionTitle(session("a.jsonl", "Vector search notes"), t)).toBe("Vector search notes");
+	});
+
+	it("caps a several-hundred-character opener to one line's worth of text", () => {
+		const title = sessionTitle(openedWithOpener("a.jsonl", "很".repeat(300)), t);
+
+		expect(title).toHaveLength(61);
+		expect(title.endsWith("…")).toBe(true);
+		expect(title.slice(0, 60)).toBe("很".repeat(60));
+	});
+
+	it("falls back to the opener only when no name exists", () => {
+		expect(sessionTitle(openedWithOpener("a.jsonl", "first line\nsecond line"), t)).toBe("first line");
+	});
+
+	it("caps a long explicit name the same way", () => {
+		const title = sessionTitle(session("a.jsonl", "x".repeat(200)), t);
+
+		expect(title).toHaveLength(61);
+		expect(title.endsWith("…")).toBe(true);
+	});
+
+	it("lets exactly sixty characters pass without an ellipsis", () => {
+		const label = "y".repeat(60);
+
+		expect(sessionTitle(session("a.jsonl", label), t)).toBe(label);
+		expect(sessionTitle(openedWithOpener("a.jsonl", label), t)).toBe(label);
+	});
+
+	it("passes the capped title to everything that phrases a session", () => {
+		const described = describeSession(openedWithOpener("a.jsonl", "很".repeat(300)), t);
+
+		expect(described.startsWith("很".repeat(60) + "…")).toBe(true);
+		expect(described).toContain("·");
+	});
+});
 
 describe("openSessionPicker", () => {
 	it("lists every chat before anything is typed", async () => {
@@ -192,6 +235,17 @@ describe("openSessionPicker", () => {
 		await picker.choose(0);
 
 		expect(openedPaths).toEqual(["a.jsonl"]);
+	});
+
+	it("renders a several-hundred-character opener as the capped title, not the paragraph", async () => {
+		const { picker } = setup({ sessions: [openedWithOpener("a.jsonl", "很".repeat(300))] });
+		await picker.rerender();
+
+		// The title span alone: the row also carries the timestamp line, which has
+		// its own width and isn't the thing under test.
+		const title = picker.resultContainerEl.querySelector<HTMLElement>(".piem-session-value")?.textContent ?? "";
+		expect(title).toHaveLength(61);
+		expect(title.endsWith("…")).toBe(true);
 	});
 
 	it("says it searches transcripts only when it can", async () => {

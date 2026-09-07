@@ -15,22 +15,32 @@ export interface SessionPickerActions {
 	searchSessions?: (text: string, options: { signal: AbortSignal }) => Promise<SessionSearchResult[]>;
 }
 
+/**
+ * Titles are labels, not paragraphs: an opener can run to hundreds of
+ * characters, and everything that names a session — the header, the picker
+ * rows, the fork lineage, the delete confirmation — shows at most this many
+ * of them.
+ */
+const MAX_TITLE_CHARS = 60;
+
+function capTitle(label: string): string {
+	return label.length > MAX_TITLE_CHARS ? `${label.slice(0, MAX_TITLE_CHARS)}…` : label;
+}
+
 export function sessionTitle(session: ActiveSessionInfo | undefined, t: Translator): string {
 	if (!session) {
 		return t.t("session.newChat");
 	}
-	return session.name?.trim() || session.firstMessage.trim().split("\n")[0] || t.t("session.untitled");
+	return capTitle(session.name?.trim() || session.firstMessage.trim().split("\n")[0] || t.t("session.untitled"));
 }
 
 /**
- * Prefers an explicit name, then the opening question, then the timestamp. Lives
- * beside the dialogs because the header, the picker rows and the delete
- * confirmation all have to name a session the same way.
+ * Names the session and stamps when it last moved. Lives beside the dialogs
+ * because the picker's matching and the delete confirmation both phrase a
+ * session this way.
  */
 export function describeSession(session: ActiveSessionInfo, t: Translator): string {
-	const label = sessionTitle(session, t);
-	const summary = label.length > 60 ? `${label.slice(0, 60)}…` : label;
-	return `${summary} · ${new Date(session.updatedAt).toLocaleString()}`;
+	return `${sessionTitle(session, t)} · ${new Date(session.updatedAt).toLocaleString()}`;
 }
 
 export function openSessionPicker(
@@ -133,7 +143,7 @@ class SessionPickerModal extends SuggestModal<SessionRow> {
 		const label = key ? this.t.t(key) : undefined;
 		// The dot is a child of the value line so the shared `.piem-suggestion-value`
 		// layout stays untouched — other pickers render through the same class.
-		const value = el.createDiv({ cls: "piem-suggestion-value" });
+		const value = el.createDiv({ cls: "piem-suggestion-value piem-session-value" });
 		if (state && label) {
 			value.createSpan({
 				cls: `piem-session-run-dot piem-session-run-dot--${state}`,
