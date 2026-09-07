@@ -3874,15 +3874,91 @@ button.piem-chat__latest--asking {
 	margin-bottom: var(--size-4-2);
 }
 
-/*
- * What a setting will actually do, under its description.
- *
- * A separate line rather than appended prose because it changes as the user
- * types while the description does not, and because it names a consequence — how
- * many chats are about to move to trash — that should not read as more boilerplate.
- * Collapsed while empty so the row does not reserve space for a line that has not
- * arrived from disk yet.
- */
+/* Status and provenance sit beside the name; long names wrap independently. */
+.piem-badged-name {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--size-4-1) var(--size-4-2);
+	max-width: 100%;
+}
+
+.piem-badged-name__label {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+/* File actions may need their own line when the settings pane is narrow. */
+.setting-item.piem-settings-badged-row {
+	flex-wrap: wrap;
+}
+
+.piem-settings-badged-row > .setting-item-info {
+	flex-grow: 1;
+	min-width: 0;
+}
+
+.piem-settings-badged-row > .setting-item-control {
+	flex-wrap: wrap;
+	max-width: 100%;
+}
+
+.piem-settings-connect-button[hidden] {
+	display: none;
+}
+
+.piem-badge {
+	--piem-badge-color: var(--text-muted);
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-3);
+	flex: 0 0 auto;
+	box-sizing: border-box;
+	max-width: 100%;
+	padding: var(--size-2-1) var(--size-4-2);
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--piem-badge-color) 9%, transparent);
+	color: color-mix(in srgb, var(--text-normal) 60%, var(--piem-badge-color));
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	line-height: var(--line-height-tight);
+	letter-spacing: 0;
+	white-space: nowrap;
+}
+
+.piem-badge--ok { --piem-badge-color: var(--text-success); }
+.piem-badge--connecting { --piem-badge-color: var(--text-accent); }
+.piem-badge--error { --piem-badge-color: var(--text-error); }
+.piem-badge--warn { --piem-badge-color: var(--text-warning); }
+
+.piem-badge--disabled {
+	border-color: var(--background-modifier-border);
+	background: transparent;
+}
+
+.piem-badge:not(.piem-badge--neutral, .piem-badge--disabled)::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	flex: 0 0 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.piem-badge--untested::before { opacity: 0.55; }
+.piem-badge--connecting::before { animation: piem-badge-pulse 1.6s ease-in-out infinite; }
+
+@keyframes piem-badge-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.piem-badge--connecting::before { animation: none; }
+}
+
+/* Async feedback below descriptions collapses when there is nothing to report. */
 .piem-settings-effect {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);

@@ -106,10 +106,7 @@ export function skillProblemRow(diagnostic: SkillDiagnostic): { path: string; me
 	return { path: diagnostic.path, message: diagnostic.message };
 }
 
-/** Row description: where an imported skill came from, or what a local one is. */
-export function describeSkillRow(row: SkillRow, t: Translator): string {
-	if (row.provenance) {
-		return t.t("skills.importedFrom", { url: row.provenance.url });
-	}
-	return row.dirName === "" ? t.t("skills.rootFile") : t.t("skills.handAuthored");
+/** Keep the imported source URL selectable below the provenance badge. */
+export function describeSkillRow(row: SkillRow): string | undefined {
+	return row.provenance?.url;
 }

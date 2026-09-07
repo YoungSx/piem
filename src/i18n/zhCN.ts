@@ -583,9 +583,6 @@ export const zhCN: DeepPartial<EnCopy> = {
 		enabledLabel: "启用",
 		import: "从 URL 导入",
 		empty: "还没有技能。从 URL 导入一个，或在 Piem/skills 里建一个包含 SKILL.md 的文件夹。",
-		importedFrom: "导入自 {url}",
-		handAuthored: "在笔记库中手写。更新请直接修改文件。",
-		rootFile: "单篇笔记充当的技能。像普通笔记一样编辑；无法从这里更新或删除。",
 		open: "打开",
 		update: "检查更新",
 		delete: "删除",
@@ -613,13 +610,6 @@ export const zhCN: DeepPartial<EnCopy> = {
 		userSearchedHeading: "已搜索的文件夹",
 		userSearchedDesc:
 			"上次加载技能时查找过的位置。你没有创建过的文件夹本来就不存在，这不是故障。你确实创建过的文件夹应当显示它包含多少个技能——如果没有，说明实际读取的路径不是你想要的那个。",
-		userSearchedMissing: "此路径上没有文件夹。",
-		userSearchedEmpty: "已读取，其中没有技能。",
-		userSearchedFound: "已读取，加载了 {skills}。",
-		// 检查本身失败了——文件夹既没有确认存在，也没有确认不存在。不并入「没有
-		// 文件夹」：权限问题挡住了我们的读取时，说「这里没有文件夹」会把人引去
-		// 完全错误的方向。
-		userSearchedUnknown: "无法检查该文件夹。",
 		userProblemsHeading: "读取本机文件夹时的问题",
 		// 「原样返回」是这句话的关键：它告诉读者下面那段英文是操作系统吐出来的，
 		// 不是插件自己坏了——否则一行 EACCES 看起来就像崩溃日志。后两句分别交代
@@ -627,6 +617,24 @@ export const zhCN: DeepPartial<EnCopy> = {
 		userProblemsDesc: "以下是这台电脑的文件系统原样返回的内容。这些路径上的技能没有加载。能正常读取的文件夹不受影响。",
 		userSkillOne: "1 个技能",
 		userSkillMany: "{count} 个技能",
+	},
+
+	badges: {
+		mcpOkOne: "已连接 · 1 工具",
+		mcpOkMany: "已连接 · {tools} 工具",
+		mcpError: "连接失败",
+		mcpPending: "待连接",
+		mcpConnecting: "连接中",
+		disabled: "已停用",
+		imported: "导入",
+		handAuthored: "手写",
+		rootFile: "单篇笔记",
+		external: "外部文件",
+		missing: "不存在",
+		empty: "空的",
+		unknown: "无法检查",
+		problemOne: "1 个问题",
+		problemMany: "{count} 个问题",
 	},
 
 	skillImport: {
@@ -650,8 +658,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 	 * 「扩展能力」页的 MCP 服务器区块。
 	 *
 	 * 描述先把出境说清：配置一个服务器，就意味着请求会离开笔记库、发往该
-	 * URL。状态行一律写成完整的句子，不写光秃秃的「错误」——报错原文就在
-	 * 本行里，不该让读者再去别处找。
+	 * URL。连接状态放在名称旁的徽章里，错误原文保留在网址下方。
 	 */
 	mcp: {
 		heading: "MCP 服务器",
@@ -665,15 +672,11 @@ export const zhCN: DeepPartial<EnCopy> = {
 		edit: "编辑",
 		delete: "删除",
 		empty: "还没有配置 MCP 服务器。添加一个，即可让它的工具进入对话。",
-		statusOk: "已连接；{tools} 个工具可用。",
-		statusError: "上次连接失败：{error}",
-		statusConnecting: "正在连接…",
-		// 失败行上的刷新按钮：重跑一次连接，已挂上的服务器跳过，只重试这一个。
+		// 恢复按钮重跑连接，跳过已连接且配置未变的服务器。
 		retry: "重试连接",
-		statusDisabled: "已停用。开启后才会连接。",
+		connect: "连接",
 		disableConsequenceTools: "该服务器提供的工具会立即全部退出对话。",
 		disableConsequenceToken: "连接令牌仍保留在配置里，重新开启即可恢复。",
-		statusUntested: "尚未连接。保存设置或重新加载插件时会连接。",
 		testTitle: "连接",
 		testOk: "已连上服务器；{tools} 个工具可用。",
 		name: "名称",

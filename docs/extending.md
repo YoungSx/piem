@@ -46,8 +46,12 @@ the model knows they exist without you naming them. Skills are read fresh from
 disk on every turn: editing or adding one takes effect on your **next message**,
 with no plugin reload.
 
-A skill with malformed frontmatter still loads, but produces a warning in the
-chat banner. The warning clears on your next message.
+In **Extensions**, badges beside skill names show **Imported**, **Handwritten**,
+**Single note**, or **External file**. Imported skills keep their source URL below
+the name. Problems appear below the affected section, with a count beside its
+heading; **Reload** in the Skills heading rereads the files and updates the report.
+The folder search report distinguishes an empty folder, a missing folder, and one
+that could not be checked.
 
 ### Importing from GitHub
 
@@ -77,11 +81,16 @@ bearer token, and an enable switch.
 - Tools appear to the model as `mcp_<server>_<tool>`, so a reader can tell
   remote tools from vault ones in every transcript. Name collisions with
   existing tools are resolved with a numeric suffix.
-- Each server row shows its status (`ok` / `error` / `disabled`) and its tool
-  count. A **Test** button probes the draft configuration without saving it.
-- Saving settings reconnects. A server already connected with the same URL and
-  token is left alone; an edited or failed server reconnects. A temporarily
-  down endpoint recovers on your next save — never silently between turns.
+- Each server's name has a status badge: **Connected** with its tool count,
+  **Connecting**, **Connection failed**, **Not connected**, or **Disabled**. The
+  enable switch controls whether Piem should connect; the badge reports the
+  result. Connection errors stay below the name.
+- Saving settings connects enabled servers, even before you open a chat. A
+  server already connected with the same URL and token is left alone; an edited
+  or failed server reconnects. **Connect** beside a pending server and **Retry
+  connection** beside a failed one let you try again immediately. A new message
+  also refreshes the tool set; there is no periodic background retry.
+- **Test** in the server editor probes the draft configuration without saving it.
 - Bearer tokens follow the same sealed-at-rest lifecycle as provider API keys.
   See [Security and privacy](security.md#where-your-keys-live).
 - Timeouts are bounded: 15 s to connect and list tools, 120 s per tool call,

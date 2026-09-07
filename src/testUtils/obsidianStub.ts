@@ -1092,6 +1092,34 @@ const obsidianStub = {
 
 		hide(): void {}
 	},
+	SettingGroup: class SettingGroup {
+		listEl: HTMLElement;
+		headingEl: HTMLElement;
+		controlEl: HTMLElement;
+
+		constructor(containerEl: HTMLElement) {
+			const group = containerEl.createDiv({ cls: "setting-group" });
+			const header = group.createDiv({ cls: "setting-item setting-item-heading" });
+			this.headingEl = header.createDiv({ cls: "setting-item-name" });
+			this.controlEl = header.createDiv({ cls: "setting-item-control" });
+			this.listEl = group.createDiv({ cls: "setting-items" });
+		}
+
+		setHeading(text: string | DocumentFragment): this {
+			this.headingEl.replaceChildren(text);
+			return this;
+		}
+
+		addClass(...classes: string[]): this {
+			this.listEl.parentElement?.classList.add(...classes);
+			return this;
+		}
+
+		addExtraButton(build: (button: ExtraButtonStub) => unknown): this {
+			build(new ExtraButtonStub(this.controlEl));
+			return this;
+		}
+	},
 	// DOM-backed row builder, like the Modal above: the elements land in the
 	// document so a test can assert on the markup production code produced.
 	// Only the members exercised so far are implemented — a method that is
@@ -1155,6 +1183,7 @@ const obsidianStub = {
 			const stub = new ToggleStub(this.controlsEl);
 			this.toggles.push(stub);
 			build(stub);
+			this.settingEl.classList.add("mod-toggle");
 			return this;
 		}
 

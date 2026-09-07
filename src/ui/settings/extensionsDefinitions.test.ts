@@ -10,7 +10,8 @@ installObsidianDomHelpers();
 installObsidianStub();
 
 const { extensionsDefinitions } = await import("./extensionsDefinitions");
-const { Setting } = await import("obsidian");
+const { Setting, SettingGroup } = await import("obsidian");
+import type { SettingDefinitionGroup, SettingDefinitionRender } from "obsidian";
 import { SettingsPanelState } from "./panelState";
 import type { SettingsPanelHost } from "./panelHost";
 import type { McpServerState } from "../../mcp/mcpManager";
@@ -211,6 +212,7 @@ describe("the MCP enable toggle", () => {
 	});
 
 	function mount(enabled: boolean): {
+		container: HTMLElement;
 		toggle: ToggleStub;
 		dialogs: () => HTMLElement[];
 		buttons: () => HTMLButtonElement[];
@@ -247,6 +249,7 @@ describe("the MCP enable toggle", () => {
 				(el) => el.firstElementChild?.textContent === DIALOG_TITLE,
 			) as HTMLElement[];
 		return {
+			container,
 			toggle: setting.toggles[0] as ToggleStub,
 			dialogs,
 			buttons: () => Array.from(dialogs()[0]?.querySelectorAll("button") ?? []),
@@ -282,6 +285,8 @@ describe("the MCP enable toggle", () => {
 		expect(row.saves()).toBe(1);
 		expect(row.toggle.getValue()).toBe(false);
 		expect(row.dialogs().length).toBe(0);
+		expect(row.container.querySelector(".piem-badge--disabled")?.textContent).toBe("Disabled");
+		expect(row.container.querySelector(".piem-settings-effect")?.textContent).toBe("");
 	});
 
 	it("dismissing puts the switch back and writes nothing", async () => {
@@ -311,16 +316,17 @@ describe("the MCP enable toggle", () => {
 		expect(row.flag()).toBe(true);
 		expect(row.saves()).toBe(1);
 		expect(row.toggle.getValue()).toBe(true);
+		expect(row.container.querySelector(".piem-badge--untested")?.textContent).toBe("Not connected");
 	});
 });
 
 /**
- * The retry button lives on failed MCP rows only. What matters beyond its
+ * The connection button lives on pending and failed MCP rows. Beyond its
  * existence: it rides ahead of edit and delete (fixing is the next likely
  * action), the click fences double fires, and the verdict line repaints from
  * what the manager now reports once the reconnect settles.
  */
-describe("the MCP retry button", () => {
+describe("the MCP connection button", () => {
 	const SERVER = { id: "mcp_1", name: "Hub", url: "http://127.0.0.1:39991/mcp", token: "", secretRef: "", enabled: true };
 
 	function renderRow(mcp: SettingsPanelHost["mcp"]): { container: HTMLElement; extraButtons: ExtraButtonStub[] } {
@@ -342,8 +348,8 @@ describe("the MCP retry button", () => {
 	const verdictText = (container: HTMLElement): string =>
 		container.querySelector(".piem-settings-effect")?.textContent ?? "";
 
-	it("appears only on failed rows, ahead of edit and delete", async () => {
-		const rowMcp = (status: "error" | "ok"): SettingsPanelHost["mcp"] => ({
+	it("offers connect on untested rows and retry on failures, ahead of edit and delete", async () => {
+		const rowMcp = (status: "error" | "ok" | "untested"): SettingsPanelHost["mcp"] => ({
 			states: () => [{ ...SERVER, status, toolCount: status === "ok" ? 3 : 0, error: status === "error" ? "boom" : undefined }],
 			test: async () => 0,
 			reconnect: async () => undefined,
@@ -354,16 +360,20 @@ describe("the MCP retry button", () => {
 		// Fixing comes first; edit and delete keep their established order.
 		expect(errorTooltips.slice(1)).toEqual([en.t("mcp.edit"), en.t("mcp.delete")]);
 
-		const okTooltips = renderRow(rowMcp("ok")).extraButtons.map((button) => button.tooltip);
+		const okTooltips = renderRow(rowMcp("ok")).extraButtons.filter((button) => !button.extraSettingsEl.hidden).map((button) => button.tooltip);
 		expect(okTooltips).toEqual([en.t("mcp.edit"), en.t("mcp.delete")]);
+		const pending = renderRow(rowMcp("untested")).extraButtons[0]!;
+		expect(pending.extraSettingsEl.hidden).toBe(false);
+		expect(pending.tooltip).toBe(en.t("mcp.connect"));
+		await settle();
 	});
 
-	it("reconnects once, fences the double click, and repaints the verdict", async () => {
+	it.each(["untested", "error"] as const)("connects from %s once, fences the double click, and repaints the verdict", async (status) => {
 		let release: (() => void) | undefined;
 		const gate = new Promise<void>((resolve) => {
 			release = resolve;
 		});
-		let current: McpServerState = { ...SERVER, status: "error", toolCount: 0, error: "boom" };
+		let current: McpServerState = { ...SERVER, status, toolCount: 0, error: status === "error" ? "boom" : undefined };
 		let reconns = 0;
 		const { container, extraButtons } = renderRow({
 			states: () => [current],
@@ -375,7 +385,10 @@ describe("the MCP retry button", () => {
 			},
 		});
 		const retry = extraButtons[0]!;
-		expect(verdictText(container)).toBe(en.t("mcp.statusError", { error: "boom" }));
+		const badge = container.querySelector(".piem-badge");
+		expect(badge?.textContent).toBe(status === "error" ? "Connection failed" : "Not connected");
+		expect(badge?.getAttribute("role")).toBe("status");
+		expect(verdictText(container)).toBe(status === "error" ? "boom" : "");
 
 		retry.click();
 		await settle();
@@ -383,7 +396,10 @@ describe("the MCP retry button", () => {
 		// Held open: the fence is up and the verdict says connecting, not silence.
 		expect(reconns).toBe(1);
 		expect(retry.extraSettingsEl.classList.contains("is-disabled")).toBe(true);
-		expect(verdictText(container)).toBe(en.t("mcp.statusConnecting"));
+		expect(badge?.textContent).toBe("Connecting");
+		expect(badge?.classList.contains("piem-badge--connecting")).toBe(true);
+		expect(verdictText(container)).toBe("");
+		expect(container.querySelector(".piem-settings-effect--error")).toBeNull();
 
 		// Same in-flight attempt → the fence refuses a second run.
 		retry.click();
@@ -393,8 +409,12 @@ describe("the MCP retry button", () => {
 		release?.();
 		await settle();
 
-		expect(verdictText(container)).toBe(en.t("mcp.statusOk", { tools: 3 }));
+		expect(container.querySelector(".piem-badge")).toBe(badge);
+		expect(badge?.textContent).toBe("Connected · 3 tools");
+		expect(badge?.classList.contains("piem-badge--connecting")).toBe(false);
+		expect(verdictText(container)).toBe("");
 		expect(retry.extraSettingsEl.classList.contains("is-disabled")).toBe(false);
+		expect(retry.extraSettingsEl.hidden).toBe(true);
 	});
 
 	it("a retry that fails again lands back on the error verdict", async () => {
@@ -408,7 +428,8 @@ describe("the MCP retry button", () => {
 		retry.click();
 		await settle();
 
-		expect(verdictText(container)).toBe(en.t("mcp.statusError", { error: "still down" }));
+		expect(container.querySelector(".piem-badge--error")?.textContent).toBe("Connection failed");
+		expect(verdictText(container)).toBe("still down");
 	});
 });
 
@@ -495,5 +516,112 @@ describe("the built-in skills section", () => {
 		expect(toggle.getValue()).toBe(false);
 		expect(host.settings.disabledSkills).toEqual(["summarize"]);
 		expect(saves()).toBe(0);
+	});
+});
+
+describe("extension row badges", () => {
+	const source = `https://example.com/${"long-source/".repeat(40)}SKILL.md`;
+	const rows: SkillRow[] = [
+		{ name: "imported", description: "Imported instructions", path: "Piem/skills/imported/SKILL.md", dirName: "imported", provenance: { url: source, kind: "raw", importedAt: "", files: {} } },
+		{ name: "authored", description: "Authored instructions", path: "Piem/skills/authored/SKILL.md", dirName: "authored" },
+		{ name: "note", description: "Note instructions", path: "Piem/skills/note.md", dirName: "" },
+	];
+
+	it("renders real provenance, separate problem counts and searchable names", async () => {
+		const base = stubHost();
+		const report = base.skills.lastSkillLoad();
+		report.vault = [0, 1].map((index) => ({ type: "warning", code: "file_info_failed", path: `Piem/skills/bad-${index}.md`, message: `Invalid file ${index}` }));
+		report.user.diagnostics = [{ type: "warning", code: "list_failed", path: "/restricted", message: "EACCES: permission denied" }];
+		report.user.skills = [{ name: "external", description: "User-provided description", content: "instructions", filePath: "/skills/external/SKILL.md", sourceDir: "/skills" }];
+		report.user.searched = [
+			{ dir: "/loaded", found: true, loaded: 1 },
+			{ dir: "/missing", found: false, loaded: 0 },
+			{ dir: "/empty", found: true, loaded: 0 },
+			{ dir: "/restricted", found: undefined, loaded: 0 },
+		];
+		const host = stubHost({ skills: { ...base.skills, list: async () => ({ rows }), lastSkillLoad: () => report, userSkillsAvailable: true } });
+		const state = new SettingsPanelState();
+		state.skillsSnapshot = { inventory: { rows }, load: report };
+		const definitions = extensionsDefinitions(host, state);
+		const container = document.createElement("div");
+		const group = new SettingGroup(container);
+		const render = (definition: SettingDefinitionRender): InstanceType<typeof Setting> => {
+			const setting = new Setting(group.listEl).setName(definition.name ?? "");
+			definition.render(setting, group);
+			return setting;
+		};
+		const vault = definitions.find((item) => "heading" in item && item.heading === en.t("skills.heading")) as SettingDefinitionGroup;
+		render(vault.items![0] as SettingDefinitionRender);
+		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("Skills2 problems");
+		for (const [index, expected] of ["Imported", "Handwritten", "Single note"].entries()) {
+			const definition = vault.items![index + 1] as SettingDefinitionRender;
+			const setting = render(definition);
+			expect(definition.name).toBe(rows[index]!.name);
+			expect(setting.nameEl.querySelector(".piem-badge")?.textContent).toBe(expected);
+			expect(setting.nameEl.firstElementChild?.textContent).toBe(definition.name);
+			if (index === 0) {
+				expect(setting.descEl.querySelector(".piem-settings-desc-body")?.textContent).toBe(source);
+				expect(setting.descEl.querySelector("button")).not.toBeNull();
+			} else {
+				expect(setting.descEl.textContent).toBe("");
+			}
+		}
+		const user = definitions.find((item) => "heading" in item && item.heading === en.t("skills.userHeading")) as SettingDefinitionGroup;
+		render(user.items![0] as SettingDefinitionRender);
+		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("User-level skills1 problem");
+		const external = render(user.items!.find((item) => item.name === "external") as SettingDefinitionRender);
+		expect(external.nameEl.querySelector(".piem-badge")?.textContent).toBe("External file");
+		expect(external.descEl.textContent).toBe("User-provided description");
+		for (const [index, expected] of ["1 skill", "Not found", "Empty", "Cannot check"].entries()) {
+			const definition = definitions.find((item) => "name" in item && item.name === report.user.searched[index]?.dir) as SettingDefinitionRender;
+			expect(definition.searchable).toBe(false);
+			const setting = render(definition);
+			expect(setting.nameEl.querySelector(".piem-badge")?.textContent).toBe(expected);
+			expect(setting.descEl.textContent).toBe("");
+		}
+		const diagnostic = definitions.filter((item) => "name" in item && item.name === "/restricted").at(-1) as SettingDefinitionRender;
+		expect(render(diagnostic).descEl.textContent).toBe("EACCES: permission denied");
+		await settle();
+		report.vault = [];
+		const cleanVault = extensionsDefinitions(host, state).find((item) => "heading" in item && item.heading === en.t("skills.heading")) as SettingDefinitionGroup;
+		render(cleanVault.items![0] as SettingDefinitionRender);
+		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("Skills");
+		expect(container.querySelector(".setting-item-heading .setting-item-name .piem-badge")).toBeNull();
+		await settle();
+	});
+
+	it.each(["ok", "error"] as const)("reconciles the badge and recovery button after enabling settles as %s", async (status) => {
+		const base = stubHost();
+		const server = { id: "mcp_1", name: "Hub", url: "https://example.com/mcp", token: "", secretRef: "", enabled: false };
+		let current: McpServerState = { ...server, status: "disabled", toolCount: 0 };
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		const host = stubHost({
+			settings: { ...base.settings, mcpServers: [server] },
+			save: async () => { await gate; current = { ...server, status, toolCount: status === "ok" ? 1 : 0, error: status === "error" ? "401 Unauthorized" : undefined }; },
+			mcp: { ...base.mcp, states: () => [current] },
+		});
+		const list = extensionsDefinitions(host, new SettingsPanelState()).find((item) => "heading" in item && item.heading === en.t("mcp.heading")) as SettingDefinitionGroup;
+		const container = document.createElement("div");
+		const group = new SettingGroup(container);
+		const setting = new Setting(group.listEl);
+		(list.items![1] as SettingDefinitionRender).render(setting, group);
+		const toggle = (setting as unknown as { toggles: ToggleStub[] }).toggles[0]!;
+		const badge = setting.nameEl.querySelector(".piem-badge");
+		const connect = setting.controlEl.querySelector<HTMLElement>(".piem-settings-connect-button")!;
+		expect(connect.hidden).toBe(true);
+		toggle.toggle(true);
+		await settle();
+		expect(badge?.textContent).toBe("Connecting");
+		expect(setting.descEl.querySelector(".piem-settings-effect")?.textContent).toBe("");
+		release?.();
+		await settle();
+		expect(setting.nameEl.querySelector(".piem-badge")).toBe(badge);
+		expect(badge?.textContent).toBe(status === "ok" ? "Connected · 1 tool" : "Connection failed");
+		expect(connect.hidden).toBe(status === "ok");
+		if (status === "error") {
+			expect(connect.getAttribute("aria-label")).toBe("Retry connection");
+			expect(setting.descEl.querySelector(".piem-settings-effect")?.textContent).toBe("401 Unauthorized");
+		}
 	});
 });

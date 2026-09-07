@@ -418,6 +418,10 @@ async function mountChat({ streamFn, settings, drive, askUserBroker, onOpenSubag
 }
 
 const SCENARIOS = {};
+SCENARIOS["settings-badges"] = async () => {
+	const { settingsBadgesPreview } = await import("./preview-settings-badges.mjs");
+	return settingsBadgesPreview({ document, styles, tokens: TOKENS, lightTokens: LIGHT_TOKENS, coreShim: OBSIDIAN_CORE_SHIM });
+};
 
 /*
  * The context chips, rebuilt as one button per note with a popover above it
@@ -2213,6 +2217,7 @@ async function main() {
 	mkdirSync(OUT_DIR, { recursive: true });
 	const CHAT_WIDTHS = [300, 390, 560];
 	const manifest = [];
+	let failed = false;
 	// A filter for iterating on one page: everything else stays out of the run,
 	// so its (possibly unrelated) failures cannot crowd out the one in focus.
 	const only = process.env.PREVIEW_ONLY;
@@ -2243,6 +2248,7 @@ async function main() {
 				await cleanup();
 			}
 		} catch (error) {
+			failed = true;
 			console.error(`scenario ${name} failed:`, error?.stack ?? error);
 		}
 	}
@@ -2250,7 +2256,7 @@ async function main() {
 	console.log(`wrote ${join(OUT_DIR, "visual-manifest.json")} (${manifest.length} pages)`);
 	// Nothing may outlive the run: React roots are unmounted above, and an
 	// un-ended service timer would otherwise keep this process alive.
-	process.exit(0);
+	process.exit(failed || manifest.length === 0 ? 1 : 0);
 }
 
 await main();
