@@ -2313,6 +2313,19 @@ button.piem-chat__latest--asking {
 	overflow-x: auto;
 	scrollbar-width: none;
 	/*
+	 * Pinned to its own height against the transcript column's shrink. This row
+	 * is a direct flex item of the scrolling `.piem-chat__messages` column, and
+	 * `overflow-x: auto` above sets its automatic minimum size to zero — the
+	 * flexbox rule that lets a scroll box shrink below its content. The moment
+	 * the turn above fills the column, the shrink phase spends its whole deficit
+	 * here (every message row is floored at its own content height) and the row
+	 * collapses to its padding: the chips stay 28px tall inside it and the row's
+	 * own scrollbar swallows them — a few pixels of pill tops, unreachable by
+	 * scroll because the crushed row no longer contributes height. Verified in
+	 * Chromium: 40-row transcript, 4px strip; with `flex-shrink: 0`, 32px.
+	 */
+	flex-shrink: 0;
+	/*
 	 * The fade at each edge, drawn as a mask rather than painted gradient overlays:
 	 * the transcript's background can be transparent and moves with the theme, so
 	 * an overlay would have to guess its color and sit above the chips with
