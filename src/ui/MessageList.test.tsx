@@ -1093,12 +1093,13 @@ describe("MessageList consecutive-tool folding", () => {
 		const host = renderMessages([both], { isStreaming: true });
 		await flushRender();
 
-		const rows = host.querySelectorAll(".piem-chat__trace");
+		const rows = Array.from(host.querySelectorAll(".piem-chat__trace"));
 		expect(rows).toHaveLength(2);
-		expect(iconNames(rows[0])).toEqual(["eye"]);
-		expect(rows[0].className).not.toContain("piem-chat__trace--running");
-		expect(iconNames(rows[1])).toEqual(["file-plus"]);
-		expect(rows[1].className).toContain("piem-chat__trace--running");
+		const [settled, streaming] = rows as [Element, Element];
+		expect(iconNames(settled)).toEqual(["eye"]);
+		expect(settled.className).not.toContain("piem-chat__trace--running");
+		expect(iconNames(streaming)).toEqual(["file-plus"]);
+		expect(streaming.className).toContain("piem-chat__trace--running");
 	});
 
 	/*
