@@ -21,8 +21,21 @@ export interface QuickAction {
 	prompt: string;
 }
 
-/** How many chips a row offers. Three scan at a glance; more becomes a menu. */
+/**
+ * How many chips the empty screen offers. The empty row wraps instead of
+ * scrolling, so three is where it stops being a scannable shortcut and starts
+ * being a menu; it is also `parseSuggestedActions`' default cap, which is what
+ * the settings page's test probe counts.
+ */
 export const MAX_QUICK_ACTIONS = 3;
+
+/**
+ * How many chips the post-reply row offers. That row scrolls horizontally
+ * instead of wrapping, so six read as a palette to swipe through rather than a
+ * menu to unpack; the ceiling travels into the model's instruction (`{count}`)
+ * and the parse's slice, so the row, the prompt, and the parse agree.
+ */
+export const MAX_REPLY_QUICK_ACTIONS = 6;
 
 /**
  * The empty screen's first moves, shaped by what is open.
