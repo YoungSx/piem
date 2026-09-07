@@ -76,6 +76,11 @@ export function installObsidianDomHelpers(): void {
 	prototype.removeClass = function removeClass(this: HTMLElement, ...classes: string[]): void {
 		this.classList.remove(...classes);
 	};
+	// Obsidian's array form (`removeClasses(classes: string[])`), which the
+	// connection-test verdict uses to drop several state classes at once.
+	prototype.removeClasses = function removeClasses(this: HTMLElement, classes: string[]): void {
+		this.classList.remove(...classes);
+	};
 	prototype.hide = function hide(this: HTMLElement): void {
 		this.style.display = "none";
 	};
