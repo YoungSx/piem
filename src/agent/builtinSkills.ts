@@ -5,6 +5,7 @@ import findSkills from "./skills/find-skills/SKILL.md";
 import linkGraph from "./skills/link-graph/SKILL.md";
 import summarize from "./skills/summarize/SKILL.md";
 import tagOrganize from "./skills/tag-organize/SKILL.md";
+import vaultMemory from "./skills/vault-memory/SKILL.md";
 
 /**
  * Virtual location used only as provenance in pi's skill metadata.
@@ -34,6 +35,7 @@ export function createBuiltinSkills(t: Translator): Skill[] {
 		createSkill("link-graph", t.t("builtinSkills.linkGraph.description"), linkGraph),
 		createSkill("summarize", t.t("builtinSkills.summarize.description"), summarize),
 		createSkill("tag-organize", t.t("builtinSkills.tagOrganize.description"), tagOrganize),
+		createSkill("vault-memory", t.t("builtinSkills.vaultMemory.description"), vaultMemory),
 	];
 }
 

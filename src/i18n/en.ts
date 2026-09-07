@@ -464,6 +464,10 @@ export const en = {
 		tagOrganize: {
 			description: "Audit tags and propose a consistent, low-noise tag structure.",
 		},
+		vaultMemory: {
+			description:
+				"Remember lessons across chats: log corrections and failures to Piem/memory/, recall them at task start, and curate what earns long-term storage.",
+		},
 	},
 
 	/**
