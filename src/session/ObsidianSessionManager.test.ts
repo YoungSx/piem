@@ -148,6 +148,41 @@ describe("ObsidianSessionManager", () => {
 		expect(await manager.readActiveSessionName()).toBeUndefined();
 	});
 
+	it("collapses a skill expansion in firstMessage back to the typed command", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await manager.createSession(DEFAULTS);
+		await manager.appendMessage({
+			role: "user",
+			content: [
+				{ type: "text", text: '<skill name="nlm-skill" location="C:\\skills\\nlm\\SKILL.md">\nReferences are relative to C:\\skills\\nlm.\n\nBody.\n</skill>\n\nAlso export the merged list' },
+			],
+			timestamp: 1,
+		});
+
+		const [info] = await manager.listSessions();
+		expect(info?.firstMessage).toBe("/nlm-skill Also export the merged list");
+	});
+
+	it("leaves plain text and non-invocation blocks in firstMessage untouched", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await manager.createSession(DEFAULTS);
+		await manager.appendMessage({
+			role: "user",
+			content: [
+				{ type: "text", text: "Plain opening question" },
+				// An injected-context block rides in the same message; a failed
+				// parse must not eat it.
+				{ type: "text", text: "see <skill name=\"x\"> doc mention" },
+			],
+			timestamp: 1,
+		});
+
+		const [info] = await manager.listSessions();
+		expect(info?.firstMessage).toBe("Plain opening question\nsee <skill name=\"x\"> doc mention");
+	});
+
 	it("reads back a name set through the local write path", async () => {
 		const adapter = new MemoryAdapter() as unknown as DataAdapter;
 		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");

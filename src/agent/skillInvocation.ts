@@ -4,13 +4,16 @@
  * `/name` never reaches the transcript as typed: `expandSkill` replaces it with
  * pi-agent-core's `formatSkillInvocation` output — the whole SKILL.md wrapped in
  * `<skill name="…" location="…">` — and *that* is what the user message carries.
- * The pill folds it back to a one-line chip; this module is the fold's eyes.
+ * Consumers read it back and fold it: the transcript pill (`MessageList`) shows
+ * a one-line chip, and the session title layer collapses it to the command the
+ * user actually typed. This module is the fold's eyes, and it lives beside
+ * `skillLoader` because expansion and read-back are the same format's two
+ * halves.
  *
- * Parsing is render-side and best-effort by design. The tag shape belongs to the
- * upstream package, so the parse is pinned to exactly what today's formatter
- * emits and anything else — a future format change, a hand-typed look-alike that
- * doesn't quite match — falls through to the plain text the transcript has always
- * drawn. A failed fold costs nothing.
+ * Parsing is best-effort by design. The tag shape belongs to the upstream
+ * package, so the parse is pinned to exactly what today's formatter emits and
+ * anything else — a future format change, a hand-typed look-alike that doesn't
+ * quite match — falls through to the plain text. A failed fold costs nothing.
  */
 
 /** One folded skill expansion, split into what the pill shows and what stays out. */
@@ -72,4 +75,18 @@ export function parseSkillInvocation(text: string): SkillInvocation | null {
 		body: rest.slice(0, cut).trim(),
 		trailing: rest.slice(cut + CLOSER.length).trim(),
 	};
+}
+
+/**
+ * Collapses an invocation back to the command the user typed — `/name`, with
+ * additional instructions trailing as they were. This is what surfaces instead
+ * of the expansion wherever a user turn must read as the user's own words:
+ * the session title layer feeds it to `extractMessageText`, so the panel
+ * header, the picker and the exported note's file name all say `/name` rather
+ * than a line of XML. The transcript keeps the full parse (pill + body); this
+ * is the lossy, human-shaped view.
+ */
+export function collapseSkillInvocation(invocation: SkillInvocation): string {
+	const command = `/${invocation.name}`;
+	return invocation.trailing ? `${command} ${invocation.trailing}` : command;
 }

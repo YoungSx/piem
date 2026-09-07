@@ -15,7 +15,7 @@ import { useT } from "./TranslatorContext";
 import type { Translator } from "../i18n";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
-import { parseSkillInvocation, type SkillInvocation } from "./skillInvocation";
+import { parseSkillInvocation, type SkillInvocation } from "../agent/skillInvocation";
 import { GENERIC_TOOL_ICON, toolIcon } from "./toolCatalog";
 import { countDiffLines, describePendingTool, describeTool, isToolIdentifier, summarizeToolPayload, summarizeToolResult } from "./traceSummary";
 import { DEFAULT_TRACE_EXPAND, traceOpensByDefault, type TraceExpandSetting } from "./traceExpand";
