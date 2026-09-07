@@ -206,16 +206,51 @@ describe("ContextRow", () => {
 		expect(action(await openPopover(pinnedHost), "Pin")).toBeNull();
 	});
 
-	it("drops the pin control once the followed note is pinned", async () => {
+	it("swaps the pin control for unpin once the followed note is pinned", async () => {
 		// Pinning the note you are looking at keeps one entry, still reported as
-		// active. Leaving the control up would give the user a live button whose
-		// second press is silently ignored.
+		// active. A control that vanished with no way back read as a bug; the
+		// slot now toggles, so the note can return to following without the user
+		// ever hunting for where the pin went.
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] });
 		const chip = await openPopover(host);
 
 		expect(action(chip, "Pin")).toBeNull();
+		expect(action(chip, "Unpin")).not.toBeNull();
 		// The dismiss control stays: following can still be turned off.
 		expect(action(chip, "Unfollow")).not.toBeNull();
+	});
+
+	it("unpins the followed chip in place, keeping the popover open", async () => {
+		const unpinned: string[] = [];
+		const host = await renderRow({
+			refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }],
+			onUnpin: (path) => unpinned.push(path),
+		});
+		const chip = await openPopover(host);
+
+		action(chip, "Unpin")?.click();
+		await flushRender();
+
+		// The chip survives the unpin — it returns to plain following — so the
+		// popover staying open is the same visible answer pinning gets, and
+		// "Remove" it is not: nothing disappeared.
+		expect(unpinned).toEqual(["Notes/today.md"]);
+		expect(host.querySelector(".piem-chat__context-chip--active")).not.toBeNull();
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).not.toBeNull();
+	});
+
+	it("keeps focus on the followed chip's verb when it is unpinned in place", async () => {
+		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] });
+		const chip = await openPopover(host);
+		const unpin = action(chip, "Unpin");
+		unpin?.focus();
+		unpin?.click();
+		await flushRender();
+
+		// The chip never unmounts, so this dismissal gets no focus handback —
+		// the handback would yank focus off the very button the user pressed.
+		// The row-level handback is reserved for removals that unmount a chip.
+		expect(document.activeElement).toBe(unpin);
 	});
 
 	it("pins the followed note, keeping the popover open as the visible answer", async () => {
@@ -410,6 +445,15 @@ describe("ContextRow", () => {
 		// Still the behaviour, not the note: a translation that said "移除"
 		// would promise something the control cannot deliver in any language.
 		expect(action(chip, "取消跟随")).not.toBeNull();
+
+		// The toggle's other face translates too — and does not become "移除",
+		// which is the pinned chip's verb for a chip that disappears.
+		document.body.replaceChildren();
+		const pinnedHost = await renderRow(
+			{ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] },
+			"zh-cn",
+		);
+		expect(action(await openPopover(pinnedHost), "取消固定")).not.toBeNull();
 	});
 
 	it("names every action for the narrow panel that strips the words", async () => {
@@ -427,6 +471,20 @@ describe("ContextRow", () => {
 		expect(named).toEqual([
 			["Open", "Open"],
 			["Pin", "Pin"],
+			["Unfollow", "Unfollow"],
+		]);
+
+		// The unpin face of the toggle carries its own name too.
+		document.body.replaceChildren();
+		const pinnedHost = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] });
+		const pinnedChip = await openPopover(pinnedHost);
+		const pinnedNamed = Array.from(
+			pinnedChip.querySelectorAll<HTMLButtonElement>(".piem-chat__context-chip-action"),
+			(button) => [button.getAttribute("aria-label"), button.querySelector(".piem-chat__context-chip-action-label")?.textContent ?? null],
+		);
+		expect(pinnedNamed).toEqual([
+			["Open", "Open"],
+			["Unpin", "Unpin"],
 			["Unfollow", "Unfollow"],
 		]);
 	});
@@ -452,29 +510,29 @@ describe("ContextRow", () => {
 });
 
 describe("popoverPlacement", () => {
-	it("anchors at the chip when the chip sits at the row's start", () => {
-		// The active chip always leads: growing toward the row's end puts the
-		// popover right beside the press.
+	// The row leads with the active chip, so a popover at the row's start always
+	// has the whole row to grow into — the placement the fix exists for.
+	it("grows toward the row's end for a chip at the start", () => {
 		expect(popoverPlacement(0, 40, 400)).toEqual({ placement: "start", offset: 0 });
-	});
-
-	it("anchors at the chip while there is still room to grow toward the end", () => {
 		expect(popoverPlacement(130, 40, 400)).toEqual({ placement: "start", offset: 130 });
 	});
 
-	it("flips to the start side once the chip has more room behind it", () => {
-		// offset is measured from the end edge: 400 - 300 - 40 = 60.
+	it("flips to the row's start for a chip near the end", () => {
+		// endRoom = 300+40 = 340 beats startRoom = 400-300 = 100.
 		expect(popoverPlacement(300, 40, 400)).toEqual({ placement: "end", offset: 60 });
 	});
 
-	it("breaks ties toward the default start placement", () => {
+	it("ties break toward the default placement", () => {
+		// startRoom = endRoom = 240: "start" needs no mirrored stylesheet rule to
+		// win, so the code reads as the asymmetry it is.
 		expect(popoverPlacement(160, 80, 400)).toEqual({ placement: "start", offset: 160 });
 	});
 
-	it("clamps degenerate or mid-layout measurements instead of inventing geometry", () => {
-		expect(popoverPlacement(-12, 40, 400)).toEqual({ placement: "start", offset: 0 });
-		expect(popoverPlacement(500, 40, 400)).toEqual({ placement: "end", offset: 0 });
-		expect(popoverPlacement(0, 0, 0)).toEqual({ placement: "start", offset: 0 });
+	it("clamps negative or degenerate measurements to a sane floor", () => {
+		// A zero-width host (tests, or a chip measured mid-layout) must not
+		// invent an offset — 0 is today's end-anchored geometry.
+		expect(popoverPlacement(-5, 40, 0)).toEqual({ placement: "end", offset: 0 });
+		expect(popoverPlacement(-5, 40, 100)).toEqual({ placement: "start", offset: 0 });
 	});
 });
 

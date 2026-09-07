@@ -294,6 +294,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		chipPopoverAria: "{name} 的操作",
 		openNote: "打开",
 		pinToChat: "固定",
+		// 不是「移除」：笔记还在，chip 只是回到跟随态。「移除」是纯固定 chip
+		// 的动词——那一条会整个消失；在这里承诺移除只会落空。
+		unpinFromChat: "取消固定",
 		stopFollowing: "取消跟随",
 		removeFromContext: "移除",
 	},

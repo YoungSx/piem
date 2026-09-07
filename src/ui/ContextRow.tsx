@@ -115,7 +115,15 @@ export function ContextRow({
 					onOpen={onOpen}
 					onPin={onPin}
 					onUnpin={(path) => {
-						pendingFocus.current = "firstControl";
+						/*
+						 * Only a removal that unmounts its chip needs the handback.
+						 * Unpinning the followed note keeps the chip — it returns to
+						 * plain following — so the pressed button survives in place and
+						 * keeps focus on its own.
+						 */
+						if (!refs.some((ref) => ref.kind === "active" && ref.path === path)) {
+							pendingFocus.current = "firstControl";
+						}
 						onUnpin(path);
 					}}
 					onStopFollowing={() => {
@@ -286,16 +294,38 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 							<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
 							<span className="piem-chat__context-chip-action-label">{t.t("contextRow.openNote")}</span>
 						</button>
-						{isActive && !contextRef.isPinned ? (
-							<button
-								type="button"
-								className="piem-chat__context-chip-action"
-								aria-label={t.t("contextRow.pinToChat")}
-								onClick={() => onPin(contextRef.path)}
-							>
-								<ObsidianIcon name="pin" className="piem-chat__context-chip-action-icon" />
-								<span className="piem-chat__context-chip-action-label">{t.t("contextRow.pinToChat")}</span>
-							</button>
+						{isActive ? (
+							/*
+							 * The pin control is a toggle, not a one-way street: once the
+							 * followed note is pinned, this same slot offers the unpin. A
+							 * dead slot — "Pin" vanishing with no way back — was what the
+							 * row used to show, and it read as a bug.
+							 */
+							contextRef.isPinned ? (
+								<button
+									type="button"
+									className="piem-chat__context-chip-action"
+									aria-label={t.t("contextRow.unpinFromChat")}
+									onClick={() => {
+										// Same visible answer as pinning: the row leaving the
+										// popover is the proof the press landed.
+										onUnpin(contextRef.path);
+									}}
+								>
+									<ObsidianIcon name="pin-off" className="piem-chat__context-chip-action-icon" />
+									<span className="piem-chat__context-chip-action-label">{t.t("contextRow.unpinFromChat")}</span>
+								</button>
+							) : (
+								<button
+									type="button"
+									className="piem-chat__context-chip-action"
+									aria-label={t.t("contextRow.pinToChat")}
+									onClick={() => onPin(contextRef.path)}
+								>
+									<ObsidianIcon name="pin" className="piem-chat__context-chip-action-icon" />
+									<span className="piem-chat__context-chip-action-label">{t.t("contextRow.pinToChat")}</span>
+								</button>
+							)
 						) : null}
 						{isActive ? (
 							/*

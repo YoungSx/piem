@@ -610,6 +610,12 @@ export const en = {
 		openNote: "Open",
 		pinToChat: "Pin",
 		/**
+		 * Not "Remove": the note stays — the chip simply returns to following.
+		 * "Remove" is the pinned chip's verb, where the chip itself goes away;
+		 * promising it here would end in a chip that never left.
+		 */
+		unpinFromChat: "Unpin",
+		/**
 		 * Names the behaviour, not the note. Dismissing the followed chip turns
 		 * following off; "Remove" would promise something the control cannot
 		 * deliver, since opening another file would bring it straight back.
