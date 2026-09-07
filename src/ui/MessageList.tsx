@@ -497,13 +497,25 @@ export function MessageList({
 				? suggestedActions
 				: emptyScreenQuickActions(hasActiveNote, t);
 	/*
+	 * Whether the run has fully settled — no turn streaming, no tidy in flight,
+	 * no tool call still out. This is the whole-run verdict, not a per-row one:
+	 * the newest entry being prose says nothing about the turn, because a run
+	 * that uses tools parks its transcript on a `toolResult` between model calls,
+	 * and a mid-run tail looks identical to a finished one.
+	 *
+	 * Every turn-level affordance reads this one predicate — the follow-up strip,
+	 * the reply's copy/insert row, the edit and fork callbacks — so "settled"
+	 * cannot mean one thing here and another two lines down.
+	 */
+	const runSettled = !isStreaming && !isCompacting && pendingToolCalls.length === 0;
+	/*
 	 * Follow-ups exist only for a settled conversation. While anything is in
 	 * flight the newest entry is not an answer the reader can react to yet, and
 	 * a row that flickers in and out around each turn reads as noise. They come
 	 * from the model alone — no built-in stand-ins, because a suggestion after a
 	 * reply is a nicety, and an empty row states that honestly.
 	 */
-	const settledIndex = !isStreaming && !isCompacting && pendingToolCalls.length === 0 ? regenerateIndex : null;
+	const settledIndex = runSettled ? regenerateIndex : null;
 	const followUpActions = !onQuickAction || settledIndex === null ? [] : suggestedActions;
 	const transcriptRef = useRef<HTMLElement | null>(null);
 	const shouldFollowRef = useRef(true);
@@ -608,22 +620,20 @@ export function MessageList({
 									replyTiming={replyTimingFor(messages, index) ?? undefined}
 									onRetry={onRetry && index === regenerateIndex ? () => onRetry(index) : undefined}
 									turnCloses={message.role === "assistant" ? closesTurn(messages, index) : undefined}
+									settled={runSettled}
 									/*
-									 * The edit hides itself on an unsettled turn too — the resend
-									 * truncates the transcript, and a turn still streaming (or
-									 * being compacted) is not a tail worth standing on. `onRetry`
-									 * leans on its caller for this; the edit owns it, because the
-									 * control sits on an *earlier* message than the streaming one
-									 * and would otherwise stay live through it.
+									 * The edit and fork hide themselves on an unsettled run — the
+									 * resend truncates the transcript, and a turn still streaming,
+									 * being compacted, or holding a tool call in the air is not a
+									 * tail worth standing on. `onRetry` leans on its caller for
+									 * this; the edit owns it, because the control sits on an
+									 * *earlier* message than the streaming one and would otherwise
+									 * stay live through it.
 									 */
 									onEdit={
-										onEditMessage && index === editIndex && !isStreaming && !isCompacting
-											? () => onEditMessage(index)
-											: undefined
+										onEditMessage && index === editIndex && runSettled ? () => onEditMessage(index) : undefined
 									}
-									onFork={
-										onFork && index === regenerateIndex && !isStreaming && !isCompacting ? () => onFork(index) : undefined
-									}
+									onFork={onFork && index === regenerateIndex && runSettled ? () => onFork(index) : undefined}
 									notPersisted={unpersistedMessages?.includes(message)}
 								/>
 							)}
@@ -885,10 +895,22 @@ interface MessageRowProps {
 	/**
 	 * Whether the copy/insert/append row belongs on this reply. A turn with tool
 	 * calls leaves several reply entries; only the last of a turn speaks for it,
-	 * and a mid-turn "let me look" has no prose worth a note action. Absent on a
-	 * streaming row too — that gate lives beside the render.
+	 * and a mid-turn "let me look" has no prose worth a note action. Absent while
+	 * the run is unsettled too — that gate lives beside the render.
 	 */
 	turnCloses?: boolean;
+	/**
+	 * Whether the whole run has settled — no turn streaming, no tidy in flight,
+	 * no tool call still out. The actions row is a turn-level affordance on a
+	 * finished conversation: a reply whose tools are still working is a tail the
+	 * reader cannot stand on yet, however finished its own words look.
+	 *
+	 * This is deliberately not {@link MessageRowProps.isStreaming}, which marks
+	 * the one row being written and says nothing about the turn — a transcript
+	 * parked on a `toolResult` between model calls has no streaming row at all
+	 * while the run is very much alive.
+	 */
+	settled?: boolean;
 	/** Opens this question in the composer; supplied only for the newest answered one. */
 	onEdit?: () => void;
 	/**
@@ -922,6 +944,7 @@ function MessageRow({
 	renderContext,
 	onRetry,
 	turnCloses,
+	settled,
 	onEdit,
 	onFork,
 	replyTiming,
@@ -1053,7 +1076,17 @@ function MessageRow({
 						<UnsavedWarning text={message.role === "assistant" ? assistantText(message) : userText(message)} />
 					) : null}
 				</div>
-				{message.role === "assistant" && !isStreaming && turnCloses !== false ? (
+				{/*
+				 * Two gates, two different questions. `settled` asks whether the whole
+				 * run is done — the dot row below says the answer is not. `turnCloses`
+				 * asks whether this entry is the one its turn speaks through, which
+				 * still matters on a settled transcript with several model calls.
+				 * The per-row `isStreaming` is neither: it marks the row being written,
+				 * and a transcript parked on a tool result between calls has no such
+				 * row while the run is very much alive — the gap that once let the
+				 * actions row surface mid-run.
+				 */}
+				{message.role === "assistant" && settled && turnCloses !== false ? (
 					<ReplyActions
 						app={renderContext.app}
 						text={assistantText(message)}

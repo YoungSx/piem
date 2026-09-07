@@ -458,6 +458,51 @@ describe("MessageList reply actions", () => {
 		expect(host.querySelector(".piem-chat__message-actions")).toBeNull();
 	});
 
+	/*
+	 * The transcript-tail blind spot: a tool-using run parks its transcript on a
+	 * `toolResult` between model calls, so no row is marked streaming and the
+	 * old per-row gate let the actions row surface while the run was very much
+	 * alive — the buttons appeared beside the working indicator.
+	 */
+	it("keeps the actions row down while the run waits between model calls", async () => {
+		const host = renderMessages([assistantMessage("the answer"), toolResultFor("read")], {
+			isStreaming: true,
+			pendingToolCalls: [pendingCall("write")],
+			onRetry: () => undefined,
+		});
+		await flushRender();
+
+		expect(host.querySelector(".piem-chat__message-actions")).toBeNull();
+	});
+
+	it("raises the actions row once the run settles", async () => {
+		const host = renderMessages([assistantMessage("the answer"), toolResultFor("read")], {
+			isStreaming: false,
+			pendingToolCalls: [],
+			onRetry: () => undefined,
+		});
+		await flushRender();
+
+		const labels = Array.from(host.querySelectorAll(".piem-chat__message-actions button"), (button) =>
+			button.getAttribute("aria-label"),
+		);
+		expect(labels).toEqual(["Copy reply", "Insert at cursor", "Append to note", "Regenerate reply"]);
+	});
+
+	/*
+	 * An older turn is not exempt either: while a new run streams, the whole
+	 * transcript is unsettled — resend would truncate work still in flight.
+	 */
+	it("hides every actions row, including older turns', while a new run streams", async () => {
+		const host = renderMessages([assistantMessage("old answer"), userMessage("new question")], {
+			isStreaming: true,
+			onRetry: () => undefined,
+		});
+		await flushRender();
+
+		expect(host.querySelector(".piem-chat__message-actions")).toBeNull();
+	});
+
 	it("shows no actions on a turn that only called tools, since there is nothing to copy", async () => {
 		const host = renderMessages([assistantToolCall("read", { path: "Note.md" })], { onRetry: () => undefined });
 		await flushRender();
