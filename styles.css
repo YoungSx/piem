@@ -2308,27 +2308,29 @@ button.piem-chat__latest--asking {
 	 * the transcript's background can be transparent and moves with the theme, so
 	 * an overlay would have to guess its color and sit above the chips with
 	 * pointer-events carve-outs, while a mask subtracts from this row's own paint
-	 * and couples to nothing. Which sides fade is data, not layout: the alpha of
-	 * each edge stop is a custom property the scroll hook writes (1 where content
-	 * still hides, 0 where the row is flush), so an alpha of 0 collapses that stop
-	 * into fully opaque and no conditional selector ever picks a mask. `var()`
-	 * substitution happens before the color function parses, which is why the
-	 * alpha rides in `rgb(... / var(...))` rather than inside a `calc` — the
-	 * latter is the older WKWebViews Obsidian ships on do not reliably parse.
-	 * Both the prefixed and standard properties are stated, matching the
-	 * `.piem-chat__messages` convention for mobile's older WebKit.
+	 * and couples to nothing. Which sides fade is data, not layout: each edge
+	 * stop's alpha is a custom property the scroll hook writes — 1 where the row
+	 * sits flush at that edge (a solid stop, nothing hidden to fade into) and 0
+	 * where content still hides behind it (transparent stop, the fade itself).
+	 * The default is 1 so a row the hook has not reached yet paints solid rather
+	 * than flashing a faded edge it cannot yet know it needs. `var()` substitution
+	 * happens before the color function parses, which is why the alpha rides in
+	 * `rgb(... / var(...))` rather than inside a `calc` — the latter is the older
+	 * WKWebViews Obsidian ships on do not reliably parse. Both the prefixed and
+	 * standard properties are stated, matching the `.piem-chat__messages`
+	 * convention for mobile's older WebKit.
 	 */
 	--piem-strip-fade: var(--size-4-5);
 	-webkit-mask-image: linear-gradient(to right,
-		rgb(0 0 0 / var(--piem-strip-fade-left, 0)) 0,
+		rgb(0 0 0 / var(--piem-strip-flush-left, 1)) 0,
 		#000 var(--piem-strip-fade),
 		#000 calc(100% - var(--piem-strip-fade)),
-		rgb(0 0 0 / var(--piem-strip-fade-right, 0)) 100%);
+		rgb(0 0 0 / var(--piem-strip-flush-right, 1)) 100%);
 	mask-image: linear-gradient(to right,
-		rgb(0 0 0 / var(--piem-strip-fade-left, 0)) 0,
+		rgb(0 0 0 / var(--piem-strip-flush-left, 1)) 0,
 		#000 var(--piem-strip-fade),
 		#000 calc(100% - var(--piem-strip-fade)),
-		rgb(0 0 0 / var(--piem-strip-fade-right, 0)) 100%);
+		rgb(0 0 0 / var(--piem-strip-flush-right, 1)) 100%);
 }
 
 .piem-chat__quick-actions--strip::-webkit-scrollbar {

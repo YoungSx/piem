@@ -46,7 +46,7 @@ function strip(host: HTMLElement): HTMLElement {
 }
 
 function fade(el: HTMLElement, side: "left" | "right"): string | null {
-	return el.style.getPropertyValue(side === "left" ? "--piem-strip-fade-left" : "--piem-strip-fade-right") || null;
+	return el.style.getPropertyValue(side === "left" ? "--piem-strip-flush-left" : "--piem-strip-flush-right") || null;
 }
 
 function scrollEvent(el: HTMLElement): void {
@@ -115,11 +115,11 @@ describe("QuickActions strip layout", () => {
 
 		const row = strip(host);
 		// happy-dom reports clientWidth == scrollWidth, so nothing is hidden and
-		// both edges are flush — the properties exist, pinned at zero.
+		// both edges are flush — the properties exist, pinned at the solid stop.
 		pinMetrics(row, 300, 300);
 		scrollEvent(row);
-		expect(fade(row, "left")).toBe("0");
-		expect(fade(row, "right")).toBe("0");
+		expect(fade(row, "left")).toBe("1");
+		expect(fade(row, "right")).toBe("1");
 	});
 
 	it("fades the trailing edge and then the leading one as the row scrolls", async () => {
@@ -130,18 +130,18 @@ describe("QuickActions strip layout", () => {
 		const row = strip(host);
 		pinMetrics(row, 300, 500);
 		scrollEvent(row);
-		expect(fade(row, "left")).toBe("0");
-		expect(fade(row, "right")).toBe("1");
+		expect(fade(row, "left")).toBe("1");
+		expect(fade(row, "right")).toBe("0");
 
 		row.scrollLeft = 100;
 		scrollEvent(row);
-		expect(fade(row, "left")).toBe("1");
-		expect(fade(row, "right")).toBe("1");
+		expect(fade(row, "left")).toBe("0");
+		expect(fade(row, "right")).toBe("0");
 
 		row.scrollLeft = 200;
 		scrollEvent(row);
-		expect(fade(row, "left")).toBe("1");
-		expect(fade(row, "right")).toBe("0");
+		expect(fade(row, "left")).toBe("0");
+		expect(fade(row, "right")).toBe("1");
 	});
 
 	it("resyncs the fades when the row's width changes", async () => {
@@ -159,7 +159,7 @@ describe("QuickActions strip layout", () => {
 		// flush yields to whichever, and a second scroll event asserts the same
 		// wiring without depending on that timing.
 		scrollEvent(row);
-		expect(fade(row, "right")).toBe("1");
+		expect(fade(row, "right")).toBe("0");
 	});
 
 	it("consumes a vertical wheel notch only while that direction hides content", async () => {
@@ -214,7 +214,7 @@ describe("QuickActions strip layout", () => {
 		pinMetrics(row, 300, 500);
 		row.scrollLeft = 120;
 		scrollEvent(row);
-		expect(fade(row, "left")).toBe("1");
+		expect(fade(row, "left")).toBe("0");
 
 		// The ids are positional, so a fresh suggestion set re-uses the DOM
 		// nodes — the reset is what stops the new chips arriving half-hidden.
@@ -223,6 +223,6 @@ describe("QuickActions strip layout", () => {
 		// New actions, same element: the host's row is the same node.
 		expect(strip(host)).toBe(row);
 		expect(row.scrollLeft).toBe(0);
-		expect(fade(row, "left")).toBe("0");
+		expect(fade(row, "left")).toBe("1");
 	});
 });
