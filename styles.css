@@ -2287,6 +2287,73 @@ button.piem-chat__latest--asking {
 	}
 }
 
+/*
+ * The reply placement's variant: chips lay out in one line and the excess
+ * scrolls away sideways instead of folding into a second row. Six wrapped
+ * chips read as a menu; the same six swiped sideways read as a palette. The
+ * empty screen keeps the wrap above — its three fixed chips fit.
+ *
+ * The scrollbar is hidden rather than styled because the fading edge is the
+ * affordance, and a visible bar under a chip row reads as document furniture;
+ * hiding it also stops the row's height jumping the bar's width when the
+ * chips overflow and when they do not.
+ */
+.piem-chat__quick-actions--strip {
+	flex-wrap: nowrap;
+	justify-content: flex-start;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.piem-chat__quick-actions--strip::-webkit-scrollbar {
+	display: none;
+}
+
+/*
+ * The fade at each edge, drawn as a mask rather than painted gradient overlays:
+ * the transcript's background can be transparent and moves with the theme, so
+ * an overlay would have to guess its color and sit above the chips with
+ * pointer-events carve-outs, while a mask subtracts from this row's own paint
+ * and couples to nothing. Which sides fade is data, not layout: the alpha of
+ * each edge stop is a custom property the scroll hook writes (1 where content
+ * still hides, 0 where the row is flush), so an alpha of 0 collapses that stop
+ * into fully opaque and no conditional selector ever picks a mask. `var()`
+ * substitution happens before the color function parses, which is why the
+ * alpha rides in `rgb(... / var(...))` rather than inside a `calc` — the
+ * latter is the older WKWebViews Obsidian ships on do not reliably parse.
+ * Both the prefixed and standard properties are stated, matching the
+ * `.piem-chat__messages` convention for mobile's older WebKit.
+ */
+.piem-chat__quick-actions--strip {
+	--piem-strip-fade: var(--size-4-5);
+	-webkit-mask-image: linear-gradient(to right,
+		rgb(0 0 0 / var(--piem-strip-fade-left, 0)) 0,
+		#000 var(--piem-strip-fade),
+		#000 calc(100% - var(--piem-strip-fade)),
+		rgb(0 0 0 / var(--piem-strip-fade-right, 0)) 100%);
+	mask-image: linear-gradient(to right,
+		rgb(0 0 0 / var(--piem-strip-fade-left, 0)) 0,
+		#000 var(--piem-strip-fade),
+		#000 calc(100% - var(--piem-strip-fade)),
+		rgb(0 0 0 / var(--piem-strip-fade-right, 0)) 100%);
+}
+
+.piem-chat__quick-actions--strip .piem-chat__quick-action {
+	flex: none;
+	white-space: nowrap;
+}
+
+/*
+ * The scrollport clips at its padding edge, and the messages-scope rule above
+ * leaves the inline-end padding at zero, so the last chip's two-pixel focus
+ * ring would be shaved off at the end of the scroll — the same family of loss
+ * `panelA11y.test.ts` guards against for focus rings inside scroll containers
+ * (issue #219). Two pixels of reserve keep the ring whole.
+ */
+.piem-chat__messages .piem-chat__quick-actions--strip {
+	padding-inline-end: 2px;
+}
+
 /* --- loading skeleton --- */
 
 /*
