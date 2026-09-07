@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { contextRefLabel, type ContextRef } from "../agent/contextRefs";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
 import { useT } from "./TranslatorContext";
@@ -177,6 +177,53 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 
 	usePointerDownOutside(wrapperRef, isOpen, () => setIsOpen(false));
 
+	/*
+	 * The popover is positioned against the row (its containing block), but it
+	 * must appear beside *this* chip. The row cannot know that in CSS — so the
+	 * chip measures itself and publishes the answer as an inline-start offset
+	 * plus a start/end placement. Both sides of the placement are clamped to the
+	 * row in the stylesheet, so the popover can never escape the leaf no matter
+	 * which side wins.
+	 *
+	 * A layout effect (first in this codebase): the popover mounts with the
+	 * offset already applied, so there is no wrong-place frame before paint.
+	 * `resize` re-measures for zoom and panel resizes that happen while the
+	 * popover is open; dragging a panel closes the popover first (the pointer
+	 * goes down outside), so that path needs nothing.
+	 *
+	 * React never renders these properties, so writing them straight onto the
+	 * node is safe — and cleaning them up keeps a closed chip free of stale
+	 * geometry.
+	 */
+	useLayoutEffect(() => {
+		if (!isOpen) {
+			return;
+		}
+		const chip = wrapperRef.current;
+		const row = chip?.closest<HTMLElement>(".piem-chat__context-row") ?? null;
+		if (!chip || !row) {
+			return;
+		}
+		const apply = (): void => {
+			// Physical start edge to logical: RTL flips what "start" means, so the
+			// offset is measured against the direction the row actually lays out
+			// in. Read through the row's own view — not the global — so a popout
+			// window (and the test realm) resolve against the right document.
+			const rtl = row.ownerDocument.defaultView?.getComputedStyle(row).direction === "rtl";
+			const startOffset = rtl ? row.clientWidth - chip.offsetLeft - chip.offsetWidth : chip.offsetLeft;
+			const { placement, offset } = popoverPlacement(startOffset, chip.offsetWidth, row.clientWidth);
+			chip.dataset.popoverPlacement = placement;
+			chip.style.setProperty("--chip-inline-offset", `${offset}px`);
+		};
+		apply();
+		window.addEventListener("resize", apply);
+		return () => {
+			window.removeEventListener("resize", apply);
+			chip.style.removeProperty("--chip-inline-offset");
+			delete chip.dataset.popoverPlacement;
+		};
+	}, [isOpen]);
+
 	return (
 		<span
 			className={`piem-chat__context-chip ${modifier}`}
@@ -281,4 +328,29 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 			) : null}
 		</span>
 	);
+}
+
+/**
+ * Where a chip's popover should sit along the row, given the chip's geometry.
+ *
+ * The chip sits `startOffset` from the row's start edge and is `width` wide; the
+ * row is `rowWidth` wide. Growing toward the row's end leaves the popover
+ * `startRoom`; growing toward the start leaves `endRoom` — so the popover opens
+ * on whichever side has more of it. The returned offset is the popover's inset
+ * from that same edge, already clamped so the popover's own width can push it
+ * no further than the row's other edge (the stylesheet clamps the width to
+ * match). Negative inputs — a measurement taken mid-layout, or a zero-width
+ * host in a test — clamp to zero, which reproduces today's end-anchored
+ * geometry rather than inventing a new one.
+ */
+export function popoverPlacement(
+	startOffset: number,
+	width: number,
+	rowWidth: number,
+): { placement: "start" | "end"; offset: number } {
+	const startRoom = Math.max(0, rowWidth - startOffset);
+	const endRoom = Math.max(0, startOffset + width);
+	return startRoom >= endRoom
+		? { placement: "start", offset: Math.max(0, startOffset) }
+		: { placement: "end", offset: Math.max(0, rowWidth - startOffset - width) };
 }
