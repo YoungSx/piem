@@ -82,16 +82,17 @@ export function wheelStep(deltaX: number, deltaY: number, deltaMode: number, edg
 /**
  * Wires a horizontal scroller's fade edges and wheel handling.
  *
- * Writes `--piem-strip-fade-left` / `--piem-strip-fade-right` (1 or 0) onto
- * the element for the stylesheet's mask to consume — via `setCssProps`, which
- * the Obsidian lint rules require so themes keep a hook on the element. The
- * wheel listener is native and `{ passive: false }` because React attaches
- * `onWheel` passively, where `preventDefault` cannot stop the transcript
- * behind the strip from scrolling too. A `ResizeObserver` re-syncs the fades
- * when the panel changes width; the chips' own content changes arrive through
- * `resetKey`, which also rewinds the scroll — fresh suggestions reuse the
- * same DOM nodes (ids are positional), and a row scrolled to its middle must
- * not greet its replacement half-hidden.
+ * Writes `--piem-strip-flush-left` / `--piem-strip-flush-right` (1 or 0) onto
+ * the element for the stylesheet's mask to consume — 1 where the row sits
+ * flush (a solid edge stop) and 0 where content still hides (the fade). Via
+ * `setCssProps`, which the Obsidian lint rules require so themes keep a hook
+ * on the element. The wheel listener is native and `{ passive: false }`
+ * because React attaches `onWheel` passively, where `preventDefault` cannot
+ * stop the transcript behind the strip from scrolling too. A `ResizeObserver`
+ * re-syncs the fades when the panel changes width; the chips' own content
+ * changes arrive through `resetKey`, which also rewinds the scroll — fresh
+ * suggestions reuse the same DOM nodes (ids are positional), and a row
+ * scrolled to its middle must not greet its replacement half-hidden.
  *
  * A null `ref` opts out entirely — the wrap layout has nothing to wire — and
  * every read guards it, since the hook runs even when the row renders nothing.
@@ -104,8 +105,8 @@ export function useStripScroll(ref: RefObject<HTMLElement | null> | null, resetK
 		}
 		const edges = stripEdges(el.scrollLeft, el.clientWidth, el.scrollWidth);
 		el.setCssProps({
-			"--piem-strip-fade-left": edges.left ? "1" : "0",
-			"--piem-strip-fade-right": edges.right ? "1" : "0",
+			"--piem-strip-flush-left": edges.left ? "0" : "1",
+			"--piem-strip-flush-right": edges.right ? "0" : "1",
 		});
 	}, [ref]);
 
