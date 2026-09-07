@@ -442,6 +442,12 @@ SCENARIOS["chat-context-chips"] = async () => {
 		["closed", false, 390],
 		["closed, narrow", false, 300],
 		["popover open", true, 390],
+		// The narrow panel strips the popover's verbs down to glyphs — the shape a
+		// phone actually draws — so it gets its own cell with the popover open.
+		["popover open, narrow", true, 300],
+		// The wide counterpart proves the strip is bound to the container query and
+		// not a global: above 32rem the verbs come back.
+		["popover open, wide", true, 560],
 	]) {
 		// One cell at a time in the document: the next mount replaces the
 		// previous panel, so every `document.querySelector` below unambiguously
@@ -548,7 +554,7 @@ ${cells
 	.join("\n")}
 </body></html>`;
 	await Promise.all(cells.map(({ cleanup }) => cleanup()));
-	return { element: null, cleanup: async () => {}, html, width: 390 + 300 + 390 + 390 + 300 + 4 * 20 + 32 + 40, height: 700 };
+	return { element: null, cleanup: async () => {}, html, width: 390 + 300 + 390 + 300 + 560 + 390 + 300 + 6 * 20 + 32 + 40, height: 700 };
 };
 
 /*

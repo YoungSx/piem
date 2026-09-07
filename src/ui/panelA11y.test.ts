@@ -55,7 +55,12 @@ const allDeclarations = declarations(styles);
  * against one selector.
  */
 function mediaBlocks(query: string): string[] {
-	const gate = `@media (${query}) {`;
+	return blocksFor(`@media (${query}) {`);
+}
+
+/** The bodies of every block opening with `opener`, found by the same brace walk. */
+function blocksFor(opener: string): string[] {
+	const gate = opener;
 	const blocks: string[] = [];
 	for (let at = allDeclarations.indexOf(gate); at !== -1; at = allDeclarations.indexOf(gate, at + 1)) {
 		let depth = 0;
@@ -688,6 +693,17 @@ describe("narrow-panel layout is keyed on the panel, not the window", () => {
 
 	it("queries that container rather than the viewport", () => {
 		expect(allDeclarations).toContain("@container piem-chat (max-width: 32rem)");
+	});
+
+	it("hides the chip popover's verbs on the narrow panel the other reflows answer to", () => {
+		// On a phone the three verbs were the widest thing in the disclosure, and
+		// their icons already name the actions (the TSX keeps an `aria-label` per
+		// button, which is what a hidden span leaves behind). The strip must live
+		// inside the container query — a bare rule would strip the words on every
+		// panel, and a viewport media query would be unreachable in a leaf.
+		const narrow = blocksFor("@container piem-chat (max-width: 32rem) {").find((block) => block.includes(".piem-chat__context-chip-action-label"));
+		expect(narrow).toBeDefined();
+		expect(narrow).toContain(".piem-chat__context-chip-action-label {\n\t\tdisplay: none;\n\t}");
 	});
 
 	it("has no viewport-width breakpoint left anywhere", () => {

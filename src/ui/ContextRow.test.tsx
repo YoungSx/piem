@@ -412,6 +412,25 @@ describe("ContextRow", () => {
 		expect(action(chip, "取消跟随")).not.toBeNull();
 	});
 
+	it("names every action for the narrow panel that strips the words", async () => {
+		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] });
+
+		// Below the 32rem container breakpoint the stylesheet hides the verb and
+		// leaves the glyph. A hidden span contributes nothing to the accessible
+		// name, so each button must also carry an `aria-label` — the only thing
+		// left saying what the icon does on a phone.
+		const chip = await openPopover(host);
+		const named = Array.from(chip.querySelectorAll<HTMLButtonElement>(".piem-chat__context-chip-action"), (button) => [
+			button.getAttribute("aria-label"),
+			button.querySelector(".piem-chat__context-chip-action-label")?.textContent ?? null,
+		]);
+		expect(named).toEqual([
+			["Open", "Open"],
+			["Pin", "Pin"],
+			["Unfollow", "Unfollow"],
+		]);
+	});
+
 	it("translates the resume control, the one way back from a dismissal", async () => {
 		const host = await renderRow({ refs: [], isFollowingActive: false }, "zh-cn");
 

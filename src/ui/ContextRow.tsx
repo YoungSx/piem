@@ -228,6 +228,7 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 						<button
 							type="button"
 							className="piem-chat__context-chip-action"
+							aria-label={t.t("contextRow.openNote")}
 							onClick={() => {
 								// Close before navigating: the leaf takes over, and a popover
 								// left hanging over the composer would outlive its own subject.
@@ -236,16 +237,17 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 							}}
 						>
 							<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
-							{t.t("contextRow.openNote")}
+							<span className="piem-chat__context-chip-action-label">{t.t("contextRow.openNote")}</span>
 						</button>
 						{isActive && !contextRef.isPinned ? (
 							<button
 								type="button"
 								className="piem-chat__context-chip-action"
+								aria-label={t.t("contextRow.pinToChat")}
 								onClick={() => onPin(contextRef.path)}
 							>
 								<ObsidianIcon name="pin" className="piem-chat__context-chip-action-icon" />
-								{t.t("contextRow.pinToChat")}
+								<span className="piem-chat__context-chip-action-label">{t.t("contextRow.pinToChat")}</span>
 							</button>
 						) : null}
 						{isActive ? (
@@ -257,19 +259,21 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 							<button
 								type="button"
 								className="piem-chat__context-chip-action"
+								aria-label={t.t("contextRow.stopFollowing")}
 								onClick={onStopFollowing}
 							>
 								<ObsidianIcon name="eye-off" className="piem-chat__context-chip-action-icon" />
-								{t.t("contextRow.stopFollowing")}
+								<span className="piem-chat__context-chip-action-label">{t.t("contextRow.stopFollowing")}</span>
 							</button>
 						) : (
 							<button
 								type="button"
 								className="piem-chat__context-chip-action"
+								aria-label={t.t("contextRow.removeFromContext")}
 								onClick={() => onUnpin(contextRef.path)}
 							>
 								<ObsidianIcon name="x" className="piem-chat__context-chip-action-icon" />
-								{t.t("contextRow.removeFromContext")}
+								<span className="piem-chat__context-chip-action-label">{t.t("contextRow.removeFromContext")}</span>
 							</button>
 						)}
 					</div>
