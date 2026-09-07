@@ -14,7 +14,7 @@ import { installObsidianStub } from "./testUtils/obsidianStub";
 // "Cannot find package 'obsidian'".
 installObsidianStub();
 const { createObsidianModels } = await import("./net/streamFn");
-const { testModelConnection, testProviderConnection } = await import("./connectionTest");
+const { testModelConnection, testProviderConnection, testSuggestionConnection } = await import("./connectionTest");
 
 /** Verdicts are phrased through a translator, so each test states which language it reads. */
 const t = getT("en");
@@ -572,5 +572,89 @@ describe("a subscription row's connection test", () => {
 		});
 		expect(result.detail).toContain("rejected the sign-in");
 		expect(result.detail).not.toContain("API key");
+	});
+});
+
+describe("testSuggestionConnection", () => {
+	const SUGGESTION_JSON = JSON.stringify([
+		{ label: "Summarize", prompt: "Summarize this note." },
+		{ label: "Outline", prompt: "Outline this note." },
+	]);
+
+	it("reports success with the count of usable suggestions and the elapsed time", async () => {
+		const { models, faux } = modelsWith("prov-1");
+		faux.setResponses([fauxAssistantMessage(`Here are some:\n${SUGGESTION_JSON}`)]);
+
+		const result = await testSuggestionConnection(models, model(), provider(), t, { language: "en" });
+		expect(result.ok).toBe(true);
+		expect(result.detail).toContain("2");
+		expect(result.detail).toContain("My gateway");
+		// No warning when the answer parses and the standard probe is fast.
+		expect(result.ok && result.warn !== undefined).toBe(false);
+	});
+
+	it("fails on a stream that ends in error, relaying the server's own wording", async () => {
+		const { models, faux } = modelsWith("prov-1");
+		faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "401 invalid api key" })]);
+
+		const result = await testSuggestionConnection(models, model(), provider(), t, { language: "en" });
+		expect(result.ok).toBe(false);
+		expect(result.detail).toBe("401 invalid api key");
+	});
+
+	it("warns, without failing, when the model answers nothing that parses", async () => {
+		// Reachable but suggestion-hostile: the feature would silently show no
+		// chips, so this is the verdict a user would otherwise learn by absence.
+		const { models, faux } = modelsWith("prov-1");
+		faux.setResponses([fauxAssistantMessage("I cannot produce structured suggestions, sorry.")]);
+
+		const result = await testSuggestionConnection(models, model(), provider(), t, { language: "en" });
+		expect(result.ok).toBe(true);
+		expect(result.ok ? result.warn : "").toContain("nothing in it parsed");
+	});
+
+	it("warns when the answer is slower than the suggestion standard", async () => {
+		const { models, faux } = modelsWith("prov-1");
+		faux.setResponses([fauxAssistantMessage(SUGGESTION_JSON)]);
+
+		const result = await testSuggestionConnection(models, model(), provider(), t, {
+			language: "en",
+			// A real sleep would be flaky and slow. The faux provider answers inside
+			// the same millisecond, so elapsedMs can be exactly 0 — a standard of 0
+			// would compare `0 > 0` and never fire. -1 means "everything is slow",
+			// exercising the same comparison the 5s default makes, minus the clock.
+			slowAfterMs: -1,
+		});
+		expect(result.ok).toBe(true);
+		expect(result.ok ? result.warn : "").toContain("Slower than");
+	});
+
+	it("points at the empty key field instead of the server when no key is set", async () => {
+		const { models, faux } = modelsWith("prov-1");
+		const result = await testSuggestionConnection(models, model(), provider({ apiKey: "   " }), t, { language: "en" });
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain("API key");
+		expect(faux.state.callCount).toBe(0);
+	});
+
+	it("sends the exact suggestion request shape, not a lookalike", async () => {
+		// A pass here is only meaningful for the feature if the probe's body is the
+		// feature's body: the shared options object pins toolChoice "none", the
+		// token cap, and no reasoning key — absence is off. Any drift in the shape
+		// must be a deliberate edit to SUGGESTION_STREAM_OPTIONS, not silent.
+		const { models, faux } = modelsWith("prov-1");
+		let seen: Partial<Record<"toolChoice" | "maxTokens" | "reasoning", unknown>> | undefined;
+		faux.setResponses([
+			(_context, options) => {
+				seen = { toolChoice: options?.toolChoice, maxTokens: options?.maxTokens, reasoning: options?.reasoning };
+				return fauxAssistantMessage(SUGGESTION_JSON);
+			},
+		]);
+
+		const result = await testSuggestionConnection(models, model(), provider(), t, { language: "en" });
+		expect(result.ok).toBe(true);
+		expect(seen?.toolChoice).toBe("none");
+		expect(seen?.maxTokens).toBe(512);
+		expect(seen?.reasoning).toBeUndefined();
 	});
 });

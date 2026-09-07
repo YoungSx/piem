@@ -5,7 +5,7 @@ import type { QuickAction } from "../ui/quickActionSuggestions";
 
 const chips = (label: string): QuickAction[] => [{ id: "suggested-0", label, prompt: `Prompt for ${label}.` }];
 
-const key = (language: string, notePath: string | null, workspace = ""): SuggestionCacheKey => ({ language, notePath, workspace });
+const key = (language: string, notePath: string | null, modelKey = "p/m", workspace = ""): SuggestionCacheKey => ({ language, notePath, modelKey, workspace });
 
 describe("QuickActionSuggestionCache", () => {
 	it("returns undefined for a key never answered", () => {
@@ -44,9 +44,21 @@ describe("QuickActionSuggestionCache", () => {
 
 	it("separates entries by workspace, so changed open tabs do not serve chips for a room the user left", () => {
 		const cache = new QuickActionSuggestionCache();
-		cache.set(key("en", null, "tab-a.md|tab-b.md"), chips("With tabs"));
-		expect(cache.get(key("en", null, "tab-c.md"))).toBeUndefined();
-		expect(cache.get(key("en", null, "tab-a.md|tab-b.md"))?.[0]?.label).toBe("With tabs");
+		cache.set(key("en", null, "p/m", "tab-a.md|tab-b.md"), chips("With tabs"));
+		expect(cache.get(key("en", null, "p/m", "tab-c.md"))).toBeUndefined();
+		expect(cache.get(key("en", null, "p/m", "tab-a.md|tab-b.md"))?.[0]?.label).toBe("With tabs");
+	});
+
+	it("separates entries by model, so a model switch does not resurrect another model's chips", () => {
+		// The bug this pins: the key used to name only the prompt's inputs, so the
+		// cache could not tell which model produced an answer — switching models
+		// served the previous model's chips until the entry aged out.
+		const cache = new QuickActionSuggestionCache();
+		cache.set(key("en", "notes/a.md", "p/fast"), chips("Fast"));
+		expect(cache.get(key("en", "notes/a.md", "p/heavy"))).toBeUndefined();
+		cache.set(key("en", "notes/a.md", "p/heavy"), chips("Heavy"));
+		expect(cache.get(key("en", "notes/a.md", "p/heavy"))?.[0]?.label).toBe("Heavy");
+		expect(cache.get(key("en", "notes/a.md", "p/fast"))?.[0]?.label).toBe("Fast");
 	});
 
 	it("joins the workspace parts deterministically, so the key survives a round-trip", () => {

@@ -21,6 +21,9 @@ const {
 	getConfiguredApiKey,
 	getSelectedModel,
 	normalizeSettings,
+	getSuggestionConfiguration,
+	resolveSuggestionModel,
+	suggestionModelKey,
 	DEFAULT_SETTINGS,
 } = await import("./settings");
 
@@ -250,6 +253,96 @@ describe("normalizeSettings with configured providers", () => {
 		const settings = normalizeSettings({ providers: [], models: [model], activeModelId: "m1" });
 		expect(settings.models).toEqual([]);
 		expect(settings.activeModelId).toBeUndefined();
+	});
+});
+
+describe("normalizeSettings with suggestionModelId", () => {
+	const provider: ProviderConfig = {
+		id: "p1",
+		name: "DeepSeek",
+		baseUrl: "https://api.deepseek.com/v1",
+		protocol: "anthropic-messages",
+		apiKey: "sk-1",
+		secretRef: "",
+		source: "user",
+		oauthFlow: "",
+	};
+	const model: ModelConfig = { id: "m1", providerId: "p1", modelApiId: "deepseek-v4-pro", displayName: "DeepSeek V4 Pro", reasoning: true, supportsImages: false };
+
+	it("keeps a suggestion pick that still names a configured model", () => {
+		const settings = normalizeSettings({ providers: [provider], models: [model], suggestionModelId: "m1" });
+		expect(settings.suggestionModelId).toBe("m1");
+	});
+
+	it("clears a suggestion pick pointing at a model that no longer exists", () => {
+		// Same dangling rule as activeModelId: a deleted model must not leave the
+		// suggestion channel pointed at a lookup that answers nothing forever.
+		const settings = normalizeSettings({ providers: [provider], models: [model], suggestionModelId: "deleted" });
+		expect(settings.suggestionModelId).toBeUndefined();
+	});
+
+	it("clears a suggestion pick when the whole provider row is gone", () => {
+		const settings = normalizeSettings({ providers: [], models: [model], suggestionModelId: "m1" });
+		expect(settings.suggestionModelId).toBeUndefined();
+	});
+
+	it("absent means absent, never a written empty string", () => {
+		// The follow-session default must stay a missing key so getSuggestionConfiguration's
+		// truthiness branch reads "not set", not "set to a pick that dropped out".
+		const settings = normalizeSettings({ providers: [provider], models: [model] });
+		expect(settings.suggestionModelId).toBeUndefined();
+	});
+});
+
+describe("resolveSuggestionModel and getSuggestionConfiguration", () => {
+	function withSuggestion(overrides: Partial<PiemSettings> = {}): PiemSettings {
+		return normalizeSettings({
+			providers: [{ id: "p1", name: "My gateway", baseUrl: "https://gw/v1", protocol: "openai-completions", apiKey: "sk-1", secretRef: "", source: "user", oauthFlow: "" }],
+			models: [
+				{ id: "m1", providerId: "p1", modelApiId: "qwen-token-plan-individual", displayName: "Qwen Plus", reasoning: false, supportsImages: false },
+				{ id: "m2", providerId: "p1", modelApiId: "gpt-4o-mini", displayName: "Mini", reasoning: false, supportsImages: false },
+			],
+			activeModelId: "m1",
+			...overrides,
+		});
+	}
+
+	it("resolves an explicit suggestion pick, distinct from the session model", () => {
+		const settings = withSuggestion({ suggestionModelId: "m2" });
+		const model = resolveSuggestionModel(settings);
+		expect(model?.id).toBe("gpt-4o-mini");
+		expect(model?.provider).toBe("p1");
+		const pair = getSuggestionConfiguration(settings);
+		expect(pair?.model.id).toBe("m2");
+		expect(pair?.provider.id).toBe("p1");
+	});
+
+	it("follows the session model when no suggestion pick is set", () => {
+		const settings = withSuggestion();
+		expect(resolveSuggestionModel(settings)?.id).toBe("qwen-token-plan-individual");
+		expect(getSuggestionConfiguration(settings)?.model.id).toBe("m1");
+	});
+
+	it("resolves to nothing when nothing is configured, without a builtin fallback", () => {
+		// The builtin catalog is render-only and cannot send: pretending otherwise
+		// would start a suggestion request on a model with no credential behind it.
+		expect(resolveSuggestionModel(builtinSettings())).toBeUndefined();
+		expect(getSuggestionConfiguration(builtinSettings())).toBeUndefined();
+	});
+
+	it("resolves to nothing when the explicit pick's provider was deleted", () => {
+		// normalizeSettings drops a model whose provider is gone, so the pick
+		// dangles; an explicit-id miss must answer undefined, not fall through to
+		// the session model behind the caller's back.
+		const settings = withSuggestion({ providers: [], models: [], suggestionModelId: "m2" });
+		expect(resolveSuggestionModel(settings)).toBeUndefined();
+	});
+
+	it("keys the cache on provider plus api id, not the display name", () => {
+		// Two providers can share an api id; buildConfiguredModel sets Model.id to
+		// the api id, so the provider is the only discriminator.
+		const model = resolveSuggestionModel(withSuggestion({ suggestionModelId: "m2" }));
+		expect(model && suggestionModelKey(model)).toBe("p1/gpt-4o-mini");
 	});
 });
 

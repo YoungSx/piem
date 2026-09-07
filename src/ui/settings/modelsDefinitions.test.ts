@@ -203,6 +203,140 @@ describe("modelsDefinitions", () => {
 		// job is to update the status and model suffixes without rebuilding focus.
 		expect(active.control).toBeUndefined();
 	});
+
+	it("places the suggestion section between the model list and the network group", () => {
+		const defs = modelsDefinitions(host()) as unknown as ReadonlyArray<Record<string, unknown>>;
+		const indexOf = (match: (def: Record<string, unknown>) => boolean) => defs.findIndex(match);
+		const models = indexOf((def) => def.heading === en.t("settings.modelsHeading"));
+		const suggestion = indexOf((def) => def.name === en.t("quickActions.suggestSettings.name"));
+		const network = indexOf((def) => def.heading === en.t("settings.networkHeading"));
+		// Adjacent to the models it configures, ahead of the unrelated network rows.
+		expect(models).toBeLessThan(suggestion);
+		expect(suggestion).toBeLessThan(network);
+	});
+});
+
+describe("suggestionSection", () => {
+	/** Renders the suggestion section into a stub Setting and returns its row element. */
+	function renderSection(current: SettingsPanelHost): HTMLElement {
+		const item = modelsDefinitions(current).find((def) => (def as { name?: string }).name === en.t("quickActions.suggestSettings.name")) as {
+			render?: (setting: unknown) => void;
+		};
+		expect(item).toBeDefined();
+		const setting = new (Setting as unknown as new (el: HTMLElement) => { settingEl: HTMLElement })(document.createElement("div"));
+		item.render?.(setting);
+		return setting.settingEl;
+	}
+
+	function withModels(apiKey = "sk-1"): { current: SettingsPanelHost; settings: SettingsPanelHost["settings"]; saves: () => number } {
+		const settings = host().settings;
+		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey, secretRef: "", source: "user", oauthFlow: "" });
+		settings.models.push({ id: "m1", providerId: "p", modelApiId: "fast-model", displayName: "Fast", reasoning: false, supportsImages: false });
+		// Follow-session resolves through the active model, so the fixture needs one
+		// picked — otherwise the test row's target is "nothing configured" even
+		// with a model present.
+		settings.activeModelId = "m1";
+		let saves = 0;
+		const current = host({ settings, save: async () => { saves += 1; } });
+		return { current, settings, saves: () => saves };
+	}
+
+	it("folds two rows behind an advanced disclosure, collapsed by default", () => {
+		const { current } = withModels();
+		const root = renderSection(current);
+
+		const details = root.querySelector("details.piem-settings-advanced") as unknown as HTMLDetailsElement;
+		expect(details).toBeDefined();
+		// Most readers never think about suggestions: the group must not open itself.
+		expect(details.open).toBe(false);
+		expect(details.querySelector("summary")?.textContent).toContain(en.t("quickActions.suggestSettings.section"));
+		const rows = details.querySelectorAll(".piem-settings-advanced__body > .setting-item");
+		expect(rows).toHaveLength(2);
+	});
+
+	it("leads the dropdown with follow-session and offers the configured models after it", () => {
+		const { current } = withModels();
+		const root = renderSection(current);
+
+		const select = root.querySelector("select.dropdown") as HTMLSelectElement;
+		const options = Array.from(select.options);
+		// "" IS the default — the session's model — so it leads the list and is
+		// selected before the user touches anything.
+		expect(options[0]?.value).toBe("");
+		expect(options[0]?.textContent).toBe(en.t("quickActions.suggestSettings.followSession"));
+		expect(select.value).toBe("");
+		expect(options.slice(1).map((option) => option.value)).toEqual(["m1"]);
+	});
+
+	it("preselects the stored suggestion pick instead of follow-session", () => {
+		const { current, settings } = withModels();
+		settings.suggestionModelId = "m1";
+		const root = renderSection(current);
+		const select = root.querySelector("select.dropdown") as HTMLSelectElement;
+		expect(select.value).toBe("m1");
+	});
+
+	it("writes the pick back and saves on change", async () => {
+		const { current, settings, saves } = withModels();
+		const root = renderSection(current);
+		const select = root.querySelector("select.dropdown") as HTMLSelectElement;
+
+		select.value = "m1";
+		select.dispatchEvent(new Event("change"));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(settings.suggestionModelId).toBe("m1");
+		expect(saves()).toBe(1);
+
+		// Back to "" unsets rather than writing an empty string: undefined is what
+		// the resolver reads as "follow the session".
+		select.value = "";
+		select.dispatchEvent(new Event("change"));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(settings.suggestionModelId).toBeUndefined();
+		expect(saves()).toBe(2);
+	});
+
+	it("clears a stale verdict when the pick changes", async () => {
+		const { current } = withModels("");
+		const root = renderSection(current);
+		const select = root.querySelector("select.dropdown") as HTMLSelectElement;
+		const testButton = Array.from(root.querySelectorAll("button")).find((button) => button.textContent === en.t("test.button")) as HTMLButtonElement;
+		expect(testButton).toBeDefined();
+
+		// A deterministic fail with no network: the provider has no key, so the
+		// probe short-circuits on the credential before any request is built.
+		testButton.click();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		let verdict = root.querySelector(".piem-test-result") as HTMLElement;
+		expect(verdict.classList.contains("piem-test-result--error")).toBe(true);
+		expect(verdict.textContent).toContain("API key");
+
+		// The verdict described the previous pick; the change must drop it rather
+		// than let a red cross vouch for a model it never measured.
+		select.value = "m1";
+		select.dispatchEvent(new Event("change"));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		verdict = root.querySelector(".piem-test-result") as HTMLElement;
+		expect(verdict.textContent).toBe("");
+		expect(verdict.className).not.toContain("piem-test-result--error");
+	});
+
+	it("fails the test row without reaching the network when nothing is configured", async () => {
+		// Follow-session with an empty vault resolves to no pair at all: probing
+		// would mean inventing a target, so the row says so before any request.
+		const { current } = withModels();
+		current.settings.providers = [];
+		current.settings.models = [];
+		const root = renderSection(current);
+
+		const testButton = Array.from(root.querySelectorAll("button")).find((button) => button.textContent === en.t("test.button")) as HTMLButtonElement;
+		testButton.click();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const verdict = root.querySelector(".piem-test-result") as HTMLElement;
+		expect(verdict.classList.contains("piem-test-result--error")).toBe(true);
+		expect(verdict.textContent).toBe(en.t("connectionTest.suggestionNoModel"));
+	});
 });
 
 describe("logConnectionTest", () => {
