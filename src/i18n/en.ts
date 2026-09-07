@@ -592,6 +592,21 @@ export const en = {
 		 */
 		openFollowed: "Open {path}, followed automatically",
 		openPinned: "Open {path}, pinned",
+		/**
+		 * The chip's own accessible names, now that the chip is one button that
+		 * discloses its actions rather than a row of them. The kind word moves
+		 * from the verb ("open") to the identity ("what this note is here as") —
+		 * the button no longer opens anything directly, so promising it would lie.
+		 */
+		chipFollowed: "{path}, followed automatically",
+		chipPinned: "{path}, pinned",
+		/** The disclosure's own group name, so the popover is announced as a whole. */
+		chipPopoverAria: "{name} actions",
+		/**
+		 * The one action whose name needs no interpolation: every popover has it,
+		 * and it always means the same note the popover is about.
+		 */
+		openNote: "Open note",
 		pinToChat: "Pin {name} to this chat",
 		/**
 		 * Names the behaviour, not the note. Dismissing the followed chip turns

@@ -110,7 +110,7 @@ describe("icon contrast in the resting state (WCAG 1.4.11)", () => {
 	 * one, both under the 3:1 floor. Raising the number does not fix the shape of
 	 * the problem — 0.70 measured 2.68:1.
 	 */
-	for (const selector of [".piem-chat__message-actions", ".piem-chat__context-action"]) {
+	for (const selector of [".piem-chat__message-actions"]) {
 		it(`mutes ${selector} with a colour token, not opacity`, () => {
 			const body = ruleBody(selector);
 
@@ -166,14 +166,13 @@ describe("icon contrast in the resting state (WCAG 1.4.11)", () => {
 	 */
 	it("restores full strength on keyboard focus, ungated", () => {
 		// Both tokens have to move, or Obsidian's own hover rule wins.
-		for (const body of [ruleBody(".piem-chat__message-actions:focus-within"), ruleBody(".piem-chat__context-chip:focus-within .piem-chat__context-action")]) {
-			expect(body).toContain("--icon-color: var(--text-normal)");
-			expect(body).toContain("--icon-color-hover: var(--text-normal)");
-		}
+		const body = ruleBody(".piem-chat__message-actions:focus-within");
+		expect(body).toContain("--icon-color: var(--text-normal)");
+		expect(body).toContain("--icon-color-hover: var(--text-normal)");
 	});
 
 	it("restores full strength on hover, behind a hover-capable pointer", () => {
-		for (const selector of [".piem-chat__message-actions:hover", ".piem-chat__context-chip:hover .piem-chat__context-action"]) {
+		for (const selector of [".piem-chat__message-actions:hover"]) {
 			expect(ruleBody(selector)).toContain("--icon-color: var(--text-normal)");
 			expect(ruleBody(selector)).toContain("--icon-color-hover: var(--text-normal)");
 			expect(gatingBlockFor(selector)).not.toBeNull();
@@ -184,6 +183,39 @@ describe("icon contrast in the resting state (WCAG 1.4.11)", () => {
 		// Deliberately untouched: `:disabled` is exempt, and this value is itself
 		// the fix for a real bug (a full-strength Send that did nothing).
 		expect(ruleBody(".piem-chat__icon-button:disabled")).toContain("opacity: 0.4");
+	});
+});
+
+describe("the context chips mute through colour, not opacity (WCAG 1.4.11)", () => {
+	/*
+	 * The chips stopped being rows of icon buttons and became one bare text
+	 * button apiece, which freed them from `.clickable-icon`'s opacity
+	 * machinery — but the temptation to mute with `opacity` remains, and there
+	 * it would compound against nothing and still read as a second-class
+	 * control. The resting state is `--text-muted`, chosen to clear 4.5:1 at
+	 * this chip's 12px (see `styles.css`); the disclosure carries the full
+	 * actions, so nothing needs to promise more from a distance.
+	 */
+	it("mutes the chip with a colour token, not opacity", () => {
+		for (const modifier of [".piem-chat__context-chip--active", ".piem-chat__context-chip--pinned"]) {
+			const body = ruleBody(modifier);
+			expect(declarations(body)).not.toMatch(/(^|[^-])opacity\s*:/);
+			expect(body).toContain("color: var(--text-muted)");
+		}
+	});
+
+	it("restores full strength on hover, behind a hover-capable pointer", () => {
+		const body = ruleBody(".piem-chat__context-open:hover");
+		expect(body).toContain("color: var(--text-normal)");
+		expect(gatingBlockFor(".piem-chat__context-open:hover")).not.toBeNull();
+	});
+
+	it("draws the keyboard focus ring on every chip button, ungated", () => {
+		// Focus on every device — the counterpart to the hover gate above.
+		for (const selector of [".piem-chat__context-open:focus-visible", ".piem-chat__context-chip-action:focus-visible"]) {
+			expect(gatingBlockFor(selector)).toBeNull();
+			expect(ruleBody(selector)).toContain("outline: 2px solid var(--background-modifier-border-focus)");
+		}
 	});
 });
 
@@ -443,13 +475,20 @@ describe("touch targets (WCAG 2.5.5 / 2.5.8)", () => {
 		expect(rule?.[1]).toContain("max-height: 50vh");
 	});
 
-	it("leaves the in-chip buttons at 32px, which is a reasoned trade-off", () => {
-		// Growing these to 48px would leave a 300px sidebar no room for the label;
-		// they already clear the 24px WCAG 2.5.8 floor and sit inside a row that is
-		// itself comfortably tappable.
-		const body = ruleBody(".piem-chat__context-chip .piem-chat__context-action");
-		expect(body).toContain("min-height: var(--size-4-8)");
-		expect(body).toContain("min-width: var(--size-4-8)");
+	it("grows the chip and its button to 36px under a coarse pointer, not 48px", () => {
+		// The global coarse rule grows every icon button to --size-4-12, which
+		// would leave a 300px sidebar no room for the label. The chip is a
+		// whole-surface target like a trace row, so it takes the 36px tier that
+		// already clears the 24px WCAG 2.5.8 floor. The coarse blocks are
+		// flat — every rule inside is one level deep — so a lazy scan over each
+		// block's body finds the rule wherever in the file it lives.
+		const coarseBodies = Array.from(styles.matchAll(/^@media \(any-pointer: coarse\) \{\n([\s\S]*?)^\}/gm), (m) => m[1] ?? "");
+		expect(coarseBodies).not.toEqual([]);
+		for (const selector of [".piem-chat__context-chip", ".piem-chat__context-open"]) {
+			const body = coarseBodies.find((text) => text.includes(selector));
+			expect(body).toBeDefined();
+			expect(body).toContain("min-height: var(--size-4-9)");
+		}
 	});
 });
 
@@ -623,7 +662,7 @@ describe("hover on touch (Obsidian's own convention)", () => {
 	it("leaves focus states ungated, so they survive on touch", () => {
 		// The counterpart to the rule above: if a later edit sweeps focus into the
 		// media query alongside hover, keyboard users lose the affordance on mobile.
-		for (const selector of [".piem-chat__message-actions:focus-within", ".piem-chat__context-chip:focus-within .piem-chat__context-action"]) {
+		for (const selector of [".piem-chat__message-actions:focus-within", ".piem-chat__context-open:focus-visible"]) {
 			expect(gatingBlockFor(selector)).toBeNull();
 		}
 	});
@@ -860,7 +899,7 @@ describe("focus rings survive their scroll container (issue #219)", () => {
 	 */
 	it("insets the ring where both the scroller and the ring are ours", () => {
 		for (const selector of [
-			".piem-chat__context-row .piem-chat__icon-button:focus-visible",
+			".piem-chat__context-open:focus-visible",
 			".piem-chat__trace-summary:focus-visible",
 			".piem-chat__messages:focus-visible",
 		]) {

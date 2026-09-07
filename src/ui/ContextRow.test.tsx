@@ -46,6 +46,31 @@ function labels(host: HTMLElement): (string | null)[] {
 	return Array.from(host.querySelectorAll("button"), (button) => button.getAttribute("aria-label"));
 }
 
+/**
+ * Opens chip `index`'s disclosure and returns that chip's wrapper.
+ *
+ * The chip button no longer opens the note — its whole job now is to identify
+ * the note and disclose the actions — so nearly every action test starts here.
+ */
+async function openPopover(host: HTMLElement, index = 0): Promise<HTMLElement> {
+	const chip = host.querySelectorAll<HTMLElement>(".piem-chat__context-chip")[index]!;
+	chip.querySelector<HTMLButtonElement>(".piem-chat__context-open")?.click();
+	await flushRender();
+	return chip;
+}
+
+/**
+ * The popover's action button whose visible text is `text`.
+ *
+ * The rows carry their name as rendered text, not an `aria-label` — they are
+ * ordinary labelled buttons, so `labels()` above cannot see them.
+ */
+function action(chip: HTMLElement, text: string): HTMLButtonElement | null {
+	return Array.from(chip.querySelectorAll<HTMLButtonElement>(".piem-chat__context-chip-action")).find(
+		(button) => button.textContent === text,
+	) ?? null;
+}
+
 describe("ContextRow", () => {
 	beforeEach(() => {
 		document.body.replaceChildren();
@@ -77,20 +102,44 @@ describe("ContextRow", () => {
 		expect(host.querySelectorAll(".piem-chat__context-chip--pinned")).toHaveLength(1);
 	});
 
-	it("shows the file name but exposes the full path", async () => {
+	it("discloses actions instead of opening on the press itself", async () => {
+		const opened: string[] = [];
+		const host = await renderRow({
+			refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }],
+			onOpen: (path) => opened.push(path),
+		});
+		const chip = await openPopover(host);
+
+		// A first press that opened the note would make the popover unreachable
+		// on the second — the toggle *is* the disclosure. The note opens from the
+		// popover's own row instead.
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).not.toBeNull();
+		expect(chip.querySelector<HTMLButtonElement>(".piem-chat__context-open")?.getAttribute("aria-expanded")).toBe("true");
+		expect(opened).toEqual([]);
+
+		chip.querySelector<HTMLButtonElement>(".piem-chat__context-open")?.click();
+		await flushRender();
+
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).toBeNull();
+	});
+
+	it("shows the file name, and the full path only once disclosed", async () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Projects/2026/Q3/weekly-0827.md", isPinned: false }] });
 
 		// A real vault path has no chance in a 300px sidebar, but the folder is the
-		// one thing a screen reader user cannot recover from context. The path
-		// rides the accessible name only: a `title` beside it stacked a second
-		// tooltip on top of Obsidian's on every hover.
+		// one thing a reader cannot recover from context — it comes back in the
+		// popover, where there is room for it. A `title` beside it stacked a second
+		// tooltip on top of Obsidian's on every hover, so there is none.
 		expect(host.querySelector(".piem-chat__context-chip-label")?.textContent).toBe("weekly-0827");
 		const open = host.querySelector(".piem-chat__context-open");
 		expect(open?.getAttribute("title")).toBeNull();
-		expect(open?.getAttribute("aria-label")).toBe("Open Projects/2026/Q3/weekly-0827.md, followed automatically");
+		expect(open?.getAttribute("aria-label")).toBe("Projects/2026/Q3/weekly-0827.md, followed automatically");
+
+		const chip = await openPopover(host);
+		expect(chip.querySelector(".piem-chat__context-chip-path")?.textContent).toBe("Projects/2026/Q3/weekly-0827.md");
 	});
 
-	it("names the kind in the accessible name, not only in the border style", async () => {
+	it("names the kind in the accessible name, not only in the fill", async () => {
 		const host = await renderRow({
 			refs: [
 				{ kind: "active", path: "Notes/followed.md", isPinned: false },
@@ -98,23 +147,30 @@ describe("ContextRow", () => {
 			],
 		});
 
-		// Visually the two differ by a dashed vs solid border and one step of text
-		// colour, and the icons are aria-hidden. Without this a screen reader user
-		// could not tell a note that will change by itself from one they chose.
+		// Visually the two differ by a fill the other lacks, and the icons are
+		// aria-hidden. Without this a screen reader user could not tell a note
+		// that will change by itself from one they chose. The kind word moved from
+		// the verb ("open") to the identity once the button stopped opening
+		// anything directly — promising "open" would now lie.
 		const names = Array.from(host.querySelectorAll(".piem-chat__context-open"), (button) => button.getAttribute("aria-label"));
-		expect(names).toEqual(["Open Notes/followed.md, followed automatically", "Open Notes/kept.md, pinned"]);
+		expect(names).toEqual(["Notes/followed.md, followed automatically", "Notes/kept.md, pinned"]);
 	});
 
-	it("opens the note when the label is activated", async () => {
+	it("opens the note from the chip's popover, closing first", async () => {
 		const opened: string[] = [];
 		const host = await renderRow({
 			refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }],
 			onOpen: (path) => opened.push(path),
 		});
+		const chip = await openPopover(host);
 
-		host.querySelector<HTMLButtonElement>(".piem-chat__context-open")?.click();
+		chip.querySelector<HTMLButtonElement>(".piem-chat__context-chip-action")?.click();
+		await flushRender();
 
+		// The popover closes before navigating: a panel left hanging over the
+		// composer would outlive its own subject.
 		expect(opened).toEqual(["Notes/today.md"]);
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).toBeNull();
 	});
 
 	it("labels the dismiss control by the behaviour it stops, not the note", async () => {
@@ -122,32 +178,32 @@ describe("ContextRow", () => {
 
 		// Naming the note would promise something the control cannot deliver:
 		// opening another file would bring it right back.
-		expect(labels(host)).toContain("Stop following the active note");
+		const chip = await openPopover(host);
+		expect(action(chip, "Stop following the active note")).not.toBeNull();
 	});
 
-	it("stops following when the followed chip is dismissed", async () => {
+	it("stops following from the followed chip's popover", async () => {
 		const follows: boolean[] = [];
 		const host = await renderRow({
 			refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }],
 			onSetFollowActive: (follow) => follows.push(follow),
 		});
+		const chip = await openPopover(host);
 
-		const dismiss = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
-			(button) => button.getAttribute("aria-label") === "Stop following the active note",
-		);
-		dismiss?.click();
+		action(chip, "Stop following the active note")?.click();
+		await flushRender();
 
 		expect(follows).toEqual([false]);
 	});
 
 	it("offers a pin control on the followed note only", async () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] });
-		expect(labels(host)).toContain("Pin today to this chat");
+		expect(action(await openPopover(host), "Pin today to this chat")).not.toBeNull();
 
 		document.body.replaceChildren();
 		const pinnedHost = await renderRow({ refs: [{ kind: "pinned", path: "Notes/today.md", isPinned: true }] });
 		// Already pinned; a second pin control would do nothing.
-		expect(labels(pinnedHost)).not.toContain("Pin today to this chat");
+		expect(action(await openPopover(pinnedHost), "Pin today to this chat")).toBeNull();
 	});
 
 	it("drops the pin control once the followed note is pinned", async () => {
@@ -155,24 +211,29 @@ describe("ContextRow", () => {
 		// active. Leaving the control up would give the user a live button whose
 		// second press is silently ignored.
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] });
+		const chip = await openPopover(host);
 
-		expect(labels(host)).not.toContain("Pin today to this chat");
+		expect(action(chip, "Pin today to this chat")).toBeNull();
 		// The dismiss control stays: following can still be turned off.
-		expect(labels(host)).toContain("Stop following the active note");
+		expect(action(chip, "Stop following the active note")).not.toBeNull();
 	});
 
-	it("pins the followed note", async () => {
+	it("pins the followed note, keeping the popover open as the visible answer", async () => {
 		const pinned: string[] = [];
 		const host = await renderRow({
 			refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }],
 			onPin: (path) => pinned.push(path),
 		});
+		const chip = await openPopover(host);
 
-		Array.from(host.querySelectorAll<HTMLButtonElement>("button"))
-			.find((button) => button.getAttribute("aria-label") === "Pin today to this chat")
-			?.click();
+		action(chip, "Pin today to this chat")?.click();
+		await flushRender();
 
+		// Closing here would leave the reader unsure whether the press landed.
+		// The pin row leaving the popover is the answer; the popover staying is
+		// the proof nothing was lost.
 		expect(pinned).toEqual(["Notes/today.md"]);
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).not.toBeNull();
 	});
 
 	it("removes a pin by its own name", async () => {
@@ -181,13 +242,41 @@ describe("ContextRow", () => {
 			refs: [{ kind: "pinned", path: "Notes/spec.md", isPinned: true }],
 			onUnpin: (path) => unpinned.push(path),
 		});
+		const chip = await openPopover(host);
 
-		expect(labels(host)).toContain("Remove spec from context");
-		Array.from(host.querySelectorAll<HTMLButtonElement>("button"))
-			.find((button) => button.getAttribute("aria-label") === "Remove spec from context")
-			?.click();
+		action(chip, "Remove spec from context")?.click();
+		await flushRender();
 
 		expect(unpinned).toEqual(["Notes/spec.md"]);
+	});
+
+	it("closes on Escape, returning focus to the chip that opened it", async () => {
+		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] });
+		const chip = await openPopover(host);
+		const toggle = chip.querySelector<HTMLButtonElement>(".piem-chat__context-open")!;
+
+		toggle.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		await flushRender();
+
+		// The composer and the transcript have their own Escape handlers; this
+		// press is about the popover. And an unmount without the focus handback
+		// would drop a keyboard user to <body>.
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).toBeNull();
+		expect(document.activeElement).toBe(toggle);
+	});
+
+	it("dismisses on a press outside the chip", async () => {
+		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] });
+		const chip = await openPopover(host);
+
+		// Tapping elsewhere does not reliably move focus on iOS Safari, so blur
+		// alone would leave a touch reader with an open panel and no way to shut
+		// it. The press is dispatched on `body`, outside the React root, so wait
+		// for the close rather than for a flush.
+		document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+		await flushRender(() => chip.querySelector(".piem-chat__context-chip-popover") === null);
+
+		expect(chip.querySelector(".piem-chat__context-chip-popover")).toBeNull();
 	});
 
 	it("offers a way back once following is dismissed", async () => {
@@ -243,9 +332,8 @@ describe("ContextRow", () => {
 		render();
 		await flushRender();
 
-		const dismiss = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
-			(button) => button.getAttribute("aria-label") === "Stop following the active note",
-		);
+		const chip = await openPopover(host);
+		const dismiss = action(chip, "Stop following the active note");
 		dismiss?.focus();
 		dismiss?.click();
 		await flushRender();
@@ -279,14 +367,15 @@ describe("ContextRow", () => {
 		render();
 		await flushRender();
 
-		const remove = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
-			(button) => button.getAttribute("aria-label") === "Remove second from context",
-		);
+		const chip = await openPopover(host, 1);
+		const remove = action(chip, "Remove second from context");
 		remove?.focus();
 		remove?.click();
 		await flushRender();
 
-		expect(document.activeElement?.getAttribute("aria-label")).toBe("Open Notes/first.md, pinned");
+		// The removed chip unmounts with its popover; the row's first remaining
+		// control — the other chip's toggle — is where the user's place now is.
+		expect(document.activeElement?.getAttribute("aria-label")).toBe("Notes/first.md, pinned");
 	});
 
 	it("translates the accessible names, which is the row's only channel for the kind", async () => {
@@ -305,24 +394,24 @@ describe("ContextRow", () => {
 		// looked fully translated — the chips render file names, which are data —
 		// while the one channel carrying "followed" vs "pinned" spoke a foreign
 		// language to exactly the users who had nothing else to read.
-		const names = Array.from(host.querySelectorAll(".piem-chat__context-open"), (button) =>
-			button.getAttribute("aria-label"),
-		);
-		expect(names).toEqual(["打开 Notes/today.md，自动跟随中", "打开 Notes/spec.md，已固定"]);
+		const names = Array.from(host.querySelectorAll(".piem-chat__context-open"), (button) => button.getAttribute("aria-label"));
+		expect(names).toEqual(["Notes/today.md，自动跟随中", "Notes/spec.md，已固定"]);
 		expect(host.querySelector(".piem-chat__context-row")?.getAttribute("aria-label")).toBe("共享给 Piem 的笔记");
 	});
 
-	it("translates the controls without translating the file name", async () => {
+	it("translates the popover's actions without translating the file name", async () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] }, "zh-cn");
 
 		// The interpolated name is a real path out of the vault, so it stays
 		// verbatim inside a translated sentence — which is the whole reason these
 		// leaves take a `{name}` placeholder instead of being assembled by
 		// concatenation.
-		expect(labels(host)).toContain("把 today 固定到此对话");
+		const chip = await openPopover(host);
+		expect(action(chip, "打开笔记")).not.toBeNull();
+		expect(action(chip, "把 today 固定到此对话")).not.toBeNull();
 		// Still the behaviour, not the note: a translation that said "移除此笔记"
 		// would promise something the control cannot deliver in any language.
-		expect(labels(host)).toContain("停止跟随当前笔记");
+		expect(action(chip, "停止跟随当前笔记")).not.toBeNull();
 	});
 
 	it("translates the resume control, the one way back from a dismissal", async () => {

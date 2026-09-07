@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { contextRefLabel, type ContextRef } from "../agent/contextRefs";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
 import { useT } from "./TranslatorContext";
+import { suppressOwnTooltip } from "./tooltipSuppression";
+import { usePointerDownOutside } from "./usePointerDownOutside";
 
 interface ContextRowProps {
 	/** Notes the next turn will name, active first. Empty renders nothing. */
@@ -54,10 +56,13 @@ interface ContextRowProps {
  * straight back, having achieved nothing. Dismissing the followed chip
  * therefore turns *following* off, which is a state the row can honestly show.
  *
- * Controls are always rendered, never revealed on hover: hover-only controls are
- * unreachable by touch, and `isDesktopOnly: false` means this panel runs on a
- * phone. They sit muted until the chip is hovered or focused, and the stylesheet
- * restores them unconditionally under a coarse pointer.
+ * Each chip is one button that discloses its own actions — opening the note,
+ * pinning or dismissing — rather than carrying them inline. Inline controls cost
+ * every chip a third of its width permanently to serve a need once per note's
+ * lifetime, and they were what pushed this row to wrap onto two lines on a
+ * phone; the chip's whole width now goes to the label, and everything else one
+ * press away. It is the same shape as the subagent entry icon beside it: one
+ * control in the row, its actions in a popover above it.
  *
  * Dismissing a control unmounts it, which drops focus to `<body>` and costs a
  * keyboard user their place. Each dismissal therefore hands focus to whatever
@@ -148,72 +153,126 @@ interface ContextChipProps {
 	onStopFollowing: () => void;
 }
 
+/**
+ * One note, one button, one popover.
+ *
+ * The button's whole job is to identify the note and disclose the actions; the
+ * popover is where those actions live, because actions that fire once in a
+ * note's lifetime have no business spending row width forever. Pinning keeps
+ * the popover open on purpose: the pin row leaves it, which is the visible
+ * answer to the press. The other rows end the chip or leave the panel, and
+ * close before they go.
+ */
 function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: ContextChipProps): React.JSX.Element {
 	const t = useT();
 	const isActive = contextRef.kind === "active";
 	const label = contextRefLabel(contextRef.path);
 	const modifier = isActive ? "piem-chat__context-chip--active" : "piem-chat__context-chip--pinned";
+	const [isOpen, setIsOpen] = useState(false);
+	const wrapperRef = useRef<HTMLSpanElement | null>(null);
+	const buttonRef = useRef<HTMLButtonElement | null>(null);
+	// Wires the chip to the popover it opens, for assistive tech that announces
+	// what a toggle controls. `useId` because two chat panels could mount at once.
+	const popoverId = useId();
+
+	usePointerDownOutside(wrapperRef, isOpen, () => setIsOpen(false));
 
 	return (
-		<span className={`piem-chat__context-chip ${modifier}`}>
+		<span
+			className={`piem-chat__context-chip ${modifier}`}
+			ref={wrapperRef}
+			onKeyDown={(event) => {
+				if (event.key === "Escape" && isOpen) {
+					// The composer and the transcript have their own Escape handlers;
+					// this press is about the popover and stops here.
+					event.stopPropagation();
+					setIsOpen(false);
+					buttonRef.current?.focus();
+				}
+			}}
+		>
 			{/*
-			 * The label is a button because opening the note is the obvious thing to
-			 * want from a note reference anywhere else in Obsidian. The full path goes
-			 * in the title and the accessible name: a chip shows only the file name,
-			 * which is ambiguous across folders and is the one thing a screen reader
-			 * user cannot recover from context.
+			 * `clickable-icon`-free on purpose: this button renders text, so the bare-
+			 * button reset — not the icon-button classes — is what frees it from
+			 * Obsidian's form-control chrome.
 			 *
-			 * The accessible name also names the kind, because visually the two are
-			 * told apart only by whether the chip is filled. The icons cannot carry it
-			 * — they are `aria-hidden` — so without this a screen reader user could
-			 * not tell a note that will change by itself from one they chose to keep.
+			 * No `title` and a suppressed tooltip: the popover is one press away and
+			 * carries the full path, and the accessible name's tooltip stacking on
+			 * top of it was the defect the old chip had to shed once already.
 			 */}
 			<button
+				ref={buttonRef}
 				type="button"
 				className="piem-chat__context-open"
-				/*
-				 * No `title`: the path already rides the accessible name, and with
-				 * both channels open Obsidian showed the name's tooltip and the
-				 * browser showed the title's, one stacked on the other.
-				 */
-				aria-label={t.t(isActive ? "contextRow.openFollowed" : "contextRow.openPinned", { path: contextRef.path })}
-				onClick={() => onOpen(contextRef.path)}
+				aria-label={t.t(isActive ? "contextRow.chipFollowed" : "contextRow.chipPinned", { path: contextRef.path })}
+				aria-expanded={isOpen}
+				aria-controls={popoverId}
+				onMouseOver={suppressOwnTooltip}
+				onClick={() => setIsOpen((open) => !open)}
 			>
 				<ObsidianIcon name={isActive ? "file-text" : "pin"} className="piem-chat__context-icon" />
 				<span className="piem-chat__context-chip-label">{label}</span>
 			</button>
-			{isActive ? (
-				<>
-					{/* Hidden once the note is pinned: pressing it again does nothing, and a
-					    live control that does nothing is worse than no control. */}
-					{contextRef.isPinned ? null : (
-						<IconButton
-							icon="pin"
-							label={t.t("contextRow.pinToChat", { name: label })}
+			{isOpen ? (
+				<div
+					id={popoverId}
+					className="piem-chat__context-chip-popover"
+					role="group"
+					aria-label={t.t("contextRow.chipPopoverAria", { name: label })}
+					onMouseOver={suppressOwnTooltip}
+				>
+					{/* The chip truncates to a file name; this line is where the folder
+					    the reader cannot recover from context comes back. */}
+					<span className="piem-chat__context-chip-path">{contextRef.path}</span>
+					<button
+						type="button"
+						className="piem-chat__context-chip-action"
+						onClick={() => {
+							// Close before navigating: the leaf takes over, and a popover
+							// left hanging over the composer would outlive its own subject.
+							setIsOpen(false);
+							onOpen(contextRef.path);
+						}}
+					>
+						<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
+						{t.t("contextRow.openNote")}
+					</button>
+					{isActive && !contextRef.isPinned ? (
+						<button
+							type="button"
+							className="piem-chat__context-chip-action"
 							onClick={() => onPin(contextRef.path)}
-							className="piem-chat__context-action"
-						/>
+						>
+							<ObsidianIcon name="pin" className="piem-chat__context-chip-action-icon" />
+							{t.t("contextRow.pinToChat", { name: label })}
+						</button>
+					) : null}
+					{isActive ? (
+						/*
+						 * Not "remove this note" — focus would put it right back. What this
+						 * turns off is following the user's focus at all, which is why the
+						 * label names the behaviour rather than the note.
+						 */
+						<button
+							type="button"
+							className="piem-chat__context-chip-action"
+							onClick={onStopFollowing}
+						>
+							<ObsidianIcon name="eye-off" className="piem-chat__context-chip-action-icon" />
+							{t.t("contextRow.stopFollowing")}
+						</button>
+					) : (
+						<button
+							type="button"
+							className="piem-chat__context-chip-action"
+							onClick={() => onUnpin(contextRef.path)}
+						>
+							<ObsidianIcon name="x" className="piem-chat__context-chip-action-icon" />
+							{t.t("contextRow.removeFromContext", { name: label })}
+						</button>
 					)}
-					{/*
-					 * Not "remove this note" — focus would put it right back. What this
-					 * turns off is following the user's focus at all, which is why the
-					 * label names the behaviour rather than the note.
-					 */}
-					<IconButton
-						icon="x"
-						label={t.t("contextRow.stopFollowing")}
-						onClick={onStopFollowing}
-						className="piem-chat__context-action"
-					/>
-				</>
-			) : (
-				<IconButton
-					icon="x"
-					label={t.t("contextRow.removeFromContext", { name: label })}
-					onClick={() => onUnpin(contextRef.path)}
-					className="piem-chat__context-action"
-				/>
-			)}
+				</div>
+			) : null}
 		</span>
 	);
 }
