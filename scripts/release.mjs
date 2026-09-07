@@ -143,8 +143,11 @@ function nextVersion(current, request) {
  *
  * Checked up front, together, because each of these produces a bad release
  * rather than an error: a dirty tree tags whatever happened to be lying around,
- * a side branch tags a tree Obsidian's bot will never read, and being behind
- * `origin` cuts a release that silently omits someone else's merged work.
+ * a side branch tags a tree Obsidian's bot will never read, being behind
+ * `origin` cuts a release that silently omits someone else's merged work, and a
+ * HEAD that is already a release commit means the previous run never finished —
+ * stacking a second bump on it burns a version number (four releases in a row
+ * shipped a dead one that way, 1.0.35 through 1.0.54).
  */
 function assertReleasableState() {
 	step("Checking the working tree");
@@ -162,6 +165,26 @@ function assertReleasableState() {
 		fail(
 			"The working tree has uncommitted changes.",
 			`This script commits the version bump on its own, so anything else staged or modified would ride along into the release commit. Commit or stash first:\n\n${dirty}`,
+		);
+	}
+
+	// The re-entrancy guard. A run whose dispatch got duplicated (or that is
+	// rerun after its designed crash at the push) finds the previous run's bump
+	// already committed and the tree clean, so every check above passes and it
+	// happily bumps a second time. A HEAD that is itself a release commit means
+	// the bump is done and unfinished business remains: publish it or undo it —
+	// never stack another bump on top.
+	const lastSubject = capture("git", ["log", "-1", "--format=%s"]);
+	if (lastSubject.startsWith("chore(release):")) {
+		const bumped = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+		fail(
+			`HEAD is already a release commit ("${lastSubject}").`,
+			`The previous run bumped to ${bumped} and stopped at the push, which is its ` +
+				"designed failure point. Finish that release instead of stacking a new one:\n" +
+				`    git push origin ${bumped}\n` +
+				`    git push origin master:release/bump-${bumped}   # then open the PR\n` +
+				"or discard the bump and start over:\n" +
+				`    git tag -d ${bumped} && git reset --hard HEAD~1`,
 		);
 	}
 
