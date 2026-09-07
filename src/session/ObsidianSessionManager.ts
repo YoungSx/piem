@@ -70,6 +70,24 @@ export interface SessionSettings {
 	sessionRetention: number;
 }
 
+/**
+ * Where the panel's "which session to reopen" record lives, per device.
+ *
+ * A sync plugin copies whole session files — and, for anything vault-resident,
+ * any record stored beside them — across devices last-writer-wins, so a record
+ * that lives in the vault cannot answer "what was *this* device looking at?"
+ * Implementations must therefore keep the record off the vault entirely (the
+ * plugin uses `localStorage`, which is exactly that). Storage failures are the
+ * implementation's to swallow: the fallback is the pre-record behavior, open
+ * the newest session, and startup must never die for a convenience.
+ */
+export interface LastOpenedSessionStore {
+	/** The recorded session path, or null when there is none. */
+	read(): string | null;
+	/** Records `path` as the session this device last focused. */
+	write(path: string): void;
+}
+
 type PiSession = Session<JsonlSessionMetadata>;
 
 /**
@@ -92,6 +110,12 @@ export class ObsidianSessionManager {
 	private readonly fs: ObsidianSessionFileSystem;
 	private readonly policy: SessionPolicy;
 	private readonly cwd: string;
+	/**
+	 * This device's last-focused session, when a store was provided. Null-shaped
+	 * without one: every read and write goes through the optional chain, so the
+	 * record is simply absent rather than wrong when storage is unavailable.
+	 */
+	private readonly lastOpened: LastOpenedSessionStore | null;
 	/**
 	 * Every session the plugin currently holds live, keyed by file path.
 	 *
@@ -122,7 +146,7 @@ export class ObsidianSessionManager {
 	 */
 	onSessionDeleted: ((sessionId: string) => void) | null = null;
 
-	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string, log?: LoggerLike) {
+	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string, log?: LoggerLike, lastOpened?: LastOpenedSessionStore) {
 		this.fs = new ObsidianSessionFileSystem(adapter, undefined, log ? (event) => {
 			// The repair net's verdicts are the sync story the panel cannot show:
 			// either one means another device's file version was on disk under
@@ -135,6 +159,7 @@ export class ObsidianSessionManager {
 		} : undefined);
 		this.policy = typeof location === "string" ? fixedSessionPolicy(location) : location;
 		this.cwd = cwd;
+		this.lastOpened = lastOpened ?? null;
 	}
 
 	static forPlugin(app: App, _plugin: Plugin, getSettings: () => SessionSettings, log?: LoggerLike): ObsidianSessionManager {
@@ -142,7 +167,11 @@ export class ObsidianSessionManager {
 			sessionDir: () => getSettings().sessionDir,
 			retentionLimit: () => getSettings().sessionRetention,
 		};
-		return new ObsidianSessionManager(app.vault.adapter, policy, "piem", log);
+		// `appId` is real at runtime on every current build but absent from the
+		// public `App` type, so it is probed off the instance rather than typed.
+		const appId = (app as App & { appId?: unknown }).appId;
+		const vaultKey = typeof appId === "string" && appId ? appId : undefined;
+		return new ObsidianSessionManager(app.vault.adapter, policy, "piem", log, localStorageLastOpenedSessionStore(vaultKey));
 	}
 
 	async createSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
@@ -151,6 +180,7 @@ export class ObsidianSessionManager {
 		const metadata = await session.getMetadata();
 		this.hydrated.set(metadata.path, { session, metadata });
 		this.activePath = metadata.path;
+		this.lastOpened?.write(metadata.path);
 		await this.appendModelChange(defaults.provider, defaults.modelId);
 		await this.appendThinkingLevelChange(defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL);
 		await this.evictSurplusSessions(sessionDir);
@@ -158,6 +188,23 @@ export class ObsidianSessionManager {
 	}
 
 	async continueRecentSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
+		// The record outranks recency: with a vault sync plugin arbitrating whole
+		// files last-writer-wins, "newest file" is whichever device wrote last, so
+		// opening it would have this panel resuming a conversation another device
+		// ended — the cross-device bleed the record exists to prevent. The record
+		// lives off-vault (localStorage), so it stays per-device by construction.
+		// The read is inside the try for the same reason as everything below: a
+		// broken store must degrade to the record-less behavior, not kill startup.
+		try {
+			const recorded = this.lastOpened?.read();
+			if (recorded) {
+				return await this.loadSession(recorded);
+			}
+		} catch {
+			// Gone (deleted here, or never existed on this device), unreadable, or
+			// the store itself failed: fall through to the pre-record behavior. No
+			// write-back — the stale record is corrected when a session is focused.
+		}
 		const sessions = await this.listSessions();
 		if (sessions[0]) {
 			// Deliberately no `ensureConfiguration` here. Opening must stay a pure
@@ -188,6 +235,7 @@ export class ObsidianSessionManager {
 		const alreadyLive = this.hydrated.get(target);
 		if (alreadyLive) {
 			this.activePath = target;
+			this.lastOpened?.write(target);
 			return this.summarize(alreadyLive.metadata, alreadyLive.session);
 		}
 		const metadata = await this.findMetadata(target);
@@ -198,6 +246,7 @@ export class ObsidianSessionManager {
 		const liveMetadata = await session.getMetadata();
 		this.hydrated.set(liveMetadata.path, { session, metadata: liveMetadata });
 		this.activePath = liveMetadata.path;
+		this.lastOpened?.write(liveMetadata.path);
 		return this.summarize(liveMetadata, session);
 	}
 
@@ -936,6 +985,37 @@ export type SessionReconcileOutcome = { action: "merged" } | { action: "skipped"
 
 function fixedSessionPolicy(sessionDir: string): SessionPolicy {
 	return { sessionDir: () => sessionDir, retentionLimit: () => UNLIMITED_SESSION_RETENTION };
+}
+
+/**
+ * The production {@link LastOpenedSessionStore}: `localStorage`, keyed per vault
+ * via the app id so one machine running several vaults keeps one record each.
+ *
+ * `localStorage` is the whole point — it is device-local browser storage the
+ * vault sync never sees, unlike anything written into the vault or `data.json`,
+ * both of which a sync plugin copies wholesale. Every access is guarded because
+ * the record is a convenience: a storage failure (private mode, quota, a host
+ * without the API) must degrade to the record-less behavior, not take startup
+ * or a session switch down with it.
+ */
+export function localStorageLastOpenedSessionStore(appId: string | undefined): LastOpenedSessionStore {
+	const key = `piem:last-session:${appId || "default"}`;
+	return {
+		read(): string | null {
+			try {
+				return window.localStorage.getItem(key);
+			} catch {
+				return null;
+			}
+		},
+		write(path: string): void {
+			try {
+				window.localStorage.setItem(key, path);
+			} catch {
+				// Keep going; the fallback is the pre-record behavior.
+			}
+		},
+	};
 }
 
 export function getPluginSessionDir(app: App, plugin: Plugin): string {
