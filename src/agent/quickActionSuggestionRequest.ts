@@ -23,12 +23,20 @@
 
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, UserMessage } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { MAX_QUICK_ACTIONS, type QuickAction } from "../ui/quickActionSuggestions";
+import { MAX_QUICK_ACTIONS, MAX_REPLY_QUICK_ACTIONS, type QuickAction } from "../ui/quickActionSuggestions";
 import type { Language, Translator } from "../i18n";
 import { EMPTY_WORKSPACE_CONTEXT, hasWorkspaceFacts, renderWorkspaceLines, type WorkspaceContext } from "./workspaceContext";
 
 /** Where the suggestions are headed; the placement decides the prompt's framing. */
 export type SuggestionScope = "empty" | "reply";
+
+/**
+ * The chip ceiling each placement asks the model for and slices the answer to.
+ * The mapping lives here rather than in the ui module because the cap is the
+ * request's business — and the ui module cannot import from the agent module
+ * without closing a cycle.
+ */
+const CAPS: Record<SuggestionScope, number> = { empty: MAX_QUICK_ACTIONS, reply: MAX_REPLY_QUICK_ACTIONS };
 
 /**
  * Ceiling on the reply text quoted back to the model. A suggestion prompt
@@ -37,8 +45,14 @@ export type SuggestionScope = "empty" | "reply";
  */
 const REPLY_SAMPLE_LIMIT = 4_000;
 
-/** A JSON array of three short objects needs nowhere near a full reply. */
+/**
+ * A JSON array of three short objects needs nowhere near a full reply. The
+ * reply placement's six do — labels, prompts, and JSON syntax add up, and a
+ * request that stops mid-array fails the parse and takes the whole row with
+ * it, so the ceiling moves with the cap rather than pinching the row.
+ */
 const SUGGESTION_MAX_TOKENS = 512;
+const SUGGESTION_MAX_TOKENS_REPLY = 1_024;
 
 /**
  * The request shape every suggestion travels with, exported so the settings
@@ -79,7 +93,7 @@ export interface SuggestionResult {
  * noise there would only dilute it.
  */
 export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | null, language: Language, t: Translator, workspace?: WorkspaceContext): string {
-	const lines = [t.t("quickActions.suggest.instruction", { language: LANGUAGE_NAMES[language] })];
+	const lines = [t.t("quickActions.suggest.instruction", { language: LANGUAGE_NAMES[language], count: CAPS[scope] })];
 	if (scope === "empty") {
 		// No probed workspace means an empty one: the guard reads a real context either way.
 		const quoted = workspace ?? EMPTY_WORKSPACE_CONTEXT;
@@ -135,7 +149,7 @@ export function lastAssistantText(messages: readonly { role: string; content?: u
  * than rejecting the row. An empty result is the caller's signal to show
  * nothing.
  */
-export function parseSuggestedActions(text: string): QuickAction[] {
+export function parseSuggestedActions(text: string, cap: number = MAX_QUICK_ACTIONS): QuickAction[] {
 	const start = text.indexOf("[");
 	const end = text.lastIndexOf("]");
 	if (start === -1 || end <= start) {
@@ -151,7 +165,7 @@ export function parseSuggestedActions(text: string): QuickAction[] {
 		return [];
 	}
 	const actions: QuickAction[] = [];
-	for (const entry of parsed.slice(0, MAX_QUICK_ACTIONS)) {
+	for (const entry of parsed.slice(0, cap)) {
 		if (typeof entry !== "object" || entry === null) {
 			continue;
 		}
@@ -217,6 +231,10 @@ export async function fetchQuickActionSuggestions(options: {
 	};
 	const streamOptions: SimpleStreamOptions = {
 		...SUGGESTION_STREAM_OPTIONS,
+		// The shared shape stays untouched for the settings probe (which only
+		// ever sends the empty placement); the reply placement widens its own
+		// output budget to fit its six chips.
+		maxTokens: options.scope === "reply" ? SUGGESTION_MAX_TOKENS_REPLY : SUGGESTION_MAX_TOKENS,
 		...(options.apiKey !== undefined && { apiKey: options.apiKey }),
 		...(options.signal && { signal: options.signal }),
 	};
@@ -231,6 +249,6 @@ export async function fetchQuickActionSuggestions(options: {
 	if (options.signal?.aborted || message.stopReason === "error" || message.stopReason === "aborted") {
 		return { actions: null, usage: message.usage };
 	}
-	const actions = parseSuggestedActions(assistantMessageText(message));
+	const actions = parseSuggestedActions(assistantMessageText(message), CAPS[options.scope]);
 	return { actions: actions.length > 0 ? actions : null, usage: message.usage };
 }

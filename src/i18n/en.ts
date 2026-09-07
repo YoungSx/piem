@@ -679,7 +679,7 @@ export const en = {
 		},
 		suggest: {
 			instruction:
-				"You are generating one-tap follow-up prompts for a chat assistant. Reply with ONLY a JSON array of at most 3 objects, each {\"label\": string, \"prompt\": string}. Each label is 2-4 words shown on a button; each prompt is the full message the button sends. Do not use markdown, code fences, or any text outside the array. Write in {language}.",
+				"You are generating one-tap follow-up prompts for a chat assistant. Reply with ONLY a JSON array of at most {count} objects, each {\"label\": string, \"prompt\": string}. Each label is 2-4 words shown on a button; each prompt is the full message the button sends. Do not use markdown, code fences, or any text outside the array. Write in {language}.",
 			emptyWithNote:
 				"The conversation is empty and the user has the note \"{path}\" open as context.",
 			emptyNoNote:
