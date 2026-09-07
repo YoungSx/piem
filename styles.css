@@ -2395,29 +2395,36 @@ button.piem-chat__latest--asking {
  * Chips rather than cards: a card spends ~60px of sidebar height to carry the
  * one line of text a chip carries in ~24px. The row is absent entirely when
  * there is nothing to report, so the idle cost is zero.
+ *
+ * One line, always. The row used to wrap (`flex-wrap: wrap`) and scroll past
+ * `5.5rem`, because wrapping was its only way out of a squeeze — but a flexbox
+ * decides to wrap *before* it decides to shrink, so the chips' ellipsising
+ * labels never got their turn: the row grew a second line while every chip sat
+ * at full width. The overflow answer is now ordered — labels shrink first
+ * (weight below), and what still does not fit leaves the row for the overflow
+ * menu (`useToolbarOverflow`), which is a decision the reader can follow.
+ * Without `wrap` the popover a chip opens upward also cannot be clipped by a
+ * scrollport of its own row.
  */
 .piem-chat__context-row {
 	align-items: center;
 	display: flex;
-	flex-wrap: wrap;
 	gap: var(--size-4-1);
-	/* Past a few wrapped lines the row stops being scannable and starts eating the
-	 * transcript; scroll instead of growing without bound. */
-	max-height: 5.5rem;
-	overflow-y: auto;
+	overflow: visible;
 }
 
 /*
- * The trailing slot is a layout bystander, not a visible box: it exists so
- * ContextRow can hand back "chips, then trailing widgets" from one expression.
- * As a plain inline-flex child it would break the flex-row math — its children
- * sit in a nested inline context where `.piem-chat__subagents`' auto margin has
- * nothing to push against. `display: contents` dissolves the wrapper so the
- * widgets become flex items of `.piem-chat__context-row` directly, and the auto
- * margin finally reaches the row edge.
+ * The trailing slot (overflow menu, resume, subagent entry) pins to the row's
+ * end. `margin-inline-start: auto` absorbs the slack, so the widgets move as
+ * one clump instead of each carrying its own margin — and a shrink-0 cluster
+ * never becomes the thing that wraps.
  */
 .piem-chat__context-trailing {
-	display: contents;
+	display: inline-flex;
+	align-items: center;
+	flex-shrink: 0;
+	gap: var(--size-4-1);
+	margin-inline-start: auto;
 }
 
 .piem-chat__context-chip {
@@ -2433,7 +2440,12 @@ button.piem-chat__latest--asking {
 	max-width: 100%;
 	min-width: 0;
 	padding: 0 var(--size-4-1);
+	/* Anchors the chip's disclosure popover to itself; the same claim as
+	 * `.piem-chat__subagents` above. Without it the popover resolves against the
+	 * composer shell and lands wherever that happens to be. */
+	position: relative;
 }
+
 
 /*
  * Fill, not border.
@@ -2455,15 +2467,24 @@ button.piem-chat__latest--asking {
  * "provisional" in the colour too, but the file name is the chip's only text and
  * `--font-ui-smaller` is 12px, where Obsidian's faint tone falls under the 4.5:1
  * WCAG 1.4.3 asks of normal-size text.
+ *
+ * Shrink weights ride the same two rules. The active chip is the note the user
+ * is looking at — the one the row exists to report — so it shrinks hardest;
+ * pinned notes were chosen and give way first. `min-width: 0` is the floor the
+ * labels' ellipsis runs to: at the limit a chip is its icon and the name reads
+ * only in the popover.
  */
 .piem-chat__context-chip--active {
 	background: transparent;
 	color: var(--text-muted);
+	flex-shrink: 2;
+	min-width: 0;
 }
 
 .piem-chat__context-chip--pinned {
 	background: var(--background-primary);
 	color: var(--text-muted);
+	min-width: 0;
 }
 
 @media (hover: hover) {
@@ -2537,55 +2558,92 @@ button.piem-chat__latest--asking {
 }
 
 /*
- * Always rendered, never hover-revealed — same reasoning as the reply actions:
- * a hover-only control cannot be reached by touch. Muted so the row does not
- * compete with the composer, and restored on hover *or* keyboard focus.
- *
- * Muted via `--icon-color` for the contrast reasons spelled out on
- * `.piem-chat__message-actions`: `opacity` here compounded with the 0.85 that
- * `.clickable-icon` already applies, a plain `color` would lose to that same
- * rule's own `color` declaration, and `--icon-color-hover` has to move with it or
- * Obsidian's `.clickable-icon:hover` pulls the glyph back to muted.
+ * The chip's disclosure, the same geometry and stacking as the two popovers it
+ * sits between (the context meter's and the subagents'). `inset-inline-end: 0`
+ * rather than `left: 0` anchors it under its trigger: a chip can sit anywhere
+ * along the row, and the panel it opens must open over its own chip, not over
+ * whichever chips happen to lead. Growing rightward from a chip at the row's
+ * start is the failure the context meter's popover documents for `left: 0`,
+ * mirrored — there may be no slack to grow into at all.
  */
-.piem-chat__context-action {
-	--icon-color: var(--text-muted);
-	--icon-color-hover: var(--text-muted);
-	flex-shrink: 0;
-	transition: color 0.15s ease-out;
+.piem-chat__context-chip-popover {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	bottom: calc(100% + var(--size-4-2));
+	box-shadow: var(--shadow-s);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-width: 18rem;
+	min-width: 11rem;
+	padding: var(--size-4-1);
+	position: absolute;
+	inset-inline-end: 0;
+	text-align: start;
+	white-space: normal;
+	width: max-content;
+	z-index: var(--layer-menu, 65);
 }
 
 /*
- * The row above is a scroll box, and a chip's controls set its height, so they
- * are flush with the scrollport's top and bottom edges — where the family's ring
- * (2px at 1px offset) has nothing to be drawn into. Inset, so the ring loses
- * nothing and the row's geometry does not change: this ring is ours to move,
- * unlike the host inputs that made `.piem-settings-modal` reserve room instead,
- * and `.piem-chat__context-open` next to it is already drawn this way.
+ * The full path, where truncation hands the reader back what the chip took
+ * away: a chip shows only the file name, and the folder is the one thing a
+ * reader cannot recover from context.
  */
-.piem-chat__context-row .piem-chat__icon-button:focus-visible {
-	outline-offset: -2px;
+.piem-chat__context-chip-path {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
+	padding: var(--size-4-1) var(--size-4-2) 0;
 }
 
-/* Focus on every device, hover only where a pointer can rest — see
- * `.piem-chat__message-actions` for why. */
-.piem-chat__context-chip:focus-within .piem-chat__context-action {
-	--icon-color: var(--text-normal);
-	--icon-color-hover: var(--text-normal);
+/*
+ * The popover's rows are ordinary buttons the reader presses once. Reset off
+ * the form-control chrome the same way the chip's own label button is, so the
+ * panel reads as a menu of actions and not a form.
+ */
+.piem-chat__context-chip-action {
+	align-items: center;
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	color: var(--text-normal);
+	cursor: pointer;
+	display: flex;
+	gap: var(--size-4-2);
+	height: auto;
+	/* WCAG 2.5.8: 24px of pointer target, which is what --size-4-6 is. */
+	min-height: var(--size-4-6);
+	padding: var(--size-4-1) var(--size-4-2);
+	text-align: start;
+	white-space: normal;
+	width: 100%;
 }
 
 @media (hover: hover) {
 
-	.piem-chat__context-chip:hover .piem-chat__context-action {
-		--icon-color: var(--text-normal);
-		--icon-color-hover: var(--text-normal);
+	.piem-chat__context-chip-action:hover {
+		background: var(--background-modifier-hover);
 	}
 }
 
+.piem-chat__context-chip-action:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: -2px;
+}
+
+.piem-chat__context-chip-action-icon {
+	--icon-size: var(--icon-xs);
+	flex-shrink: 0;
+}
+
 /*
- * Full strength, unlike the per-chip controls. Once following is dismissed and
- * nothing is pinned this glyph is the row's entire content and the only way back,
- * so muting it would hide the sole exit from a state the user can otherwise not
- * leave for the rest of the conversation.
+ * Full strength. Once following is dismissed and nothing is pinned this glyph
+ * is the row's entire content and the only way back, so muting it would hide
+ * the sole exit from a state the user can otherwise not leave for the rest of
+ * the conversation.
  */
 .piem-chat__context-resume {
 	flex-shrink: 0;
@@ -2608,16 +2666,10 @@ button.piem-chat__latest--asking {
 	.piem-chat__context-open {
 		min-height: var(--size-4-9);
 	}
-
-	.piem-chat__context-chip .piem-chat__context-action {
-		min-height: var(--size-4-8);
-		min-width: var(--size-4-8);
-	}
 }
 
 @media (prefers-reduced-motion: reduce) {
 
-	.piem-chat__context-action,
 	.piem-chat__composer-shell {
 		transition: none;
 	}
@@ -4699,14 +4751,12 @@ button.piem-chat__latest--asking {
  * is measured on: it contains the button *and* the popover, so travelling from
  * one to the other never leaves it.
  *
- * The `margin-inline-start: auto` is what pins the entry icon to the context
- * row's trailing edge. It only works because `.piem-chat__context-trailing`
- * (see the context chips section) dissolves into `display: contents`, making
- * this element a direct flex item of `.piem-chat__context-row`.
+ * The trailing wrapper (see the context chips section) already absorbs the row's
+ * slack with its own `margin-inline-start: auto`, so this element only needs to
+ * hold its shape and host the popover's positioning.
  */
 .piem-chat__subagents {
 	display: inline-flex;
-	margin-inline-start: auto;
 	position: relative;
 }
 
