@@ -2723,6 +2723,30 @@ button.piem-chat__latest--asking {
 }
 
 /*
+ * Narrow panels drop the verbs and keep the glyphs. A phone's 393px leaf is
+ * below the 32rem container breakpoint the header and the thinking switcher
+ * already answer to, and there the three verbs were the widest thing in the
+ * popover — the disclosure for one chip stretched wider than the chip itself.
+ * The icons already name these actions (and each button keeps its
+ * `aria-label`), so the words are the redundant string, the same call the
+ * thinking switcher made when it hid its level word.
+ */
+@container piem-chat (max-width: 32rem) {
+
+	.piem-chat__context-chip-action-label {
+		display: none;
+	}
+
+	/*
+	 * With the word gone the button is a square around its glyph; the padding is
+	 * what keeps the pointer target at the WCAG 2.5.8 floor the base rule set.
+	 */
+	.piem-chat__context-chip-action {
+		padding: var(--size-4-2);
+	}
+}
+
+/*
  * Full strength. Once following is dismissed and nothing is pinned this glyph
  * is the row's entire content and the only way back, so muting it would hide
  * the sole exit from a state the user can otherwise not leave for the rest of
