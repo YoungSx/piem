@@ -171,14 +171,17 @@ function assertReleasableState() {
 	// The re-entrancy guard. A run whose dispatch got duplicated (or that is
 	// rerun after its designed crash at the push) finds the previous run's bump
 	// already committed and the tree clean, so every check above passes and it
-	// happily bumps a second time. A HEAD that is itself a release commit means
+	// happily bumps a second time. A HEAD that is itself a version bump means
 	// the bump is done and unfinished business remains: publish it or undo it —
-	// never stack another bump on top.
+	// never stack another bump on top. The subject is matched against a version
+	// number, not the chore(release) prefix, so chore(release) commits that only
+	// touch the script itself don't trip it.
+	const BUMP_SUBJECT = /^chore\(release\): \d+\.\d+\.\d+/;
 	const lastSubject = capture("git", ["log", "-1", "--format=%s"]);
-	if (lastSubject.startsWith("chore(release):")) {
+	if (BUMP_SUBJECT.test(lastSubject)) {
 		const bumped = JSON.parse(readFileSync("manifest.json", "utf8")).version;
 		fail(
-			`HEAD is already a release commit ("${lastSubject}").`,
+			`HEAD is already a version bump ("${lastSubject}").`,
 			`The previous run bumped to ${bumped} and stopped at the push, which is its ` +
 				"designed failure point. Finish that release instead of stacking a new one:\n" +
 				`    git push origin ${bumped}\n` +
