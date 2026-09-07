@@ -101,7 +101,7 @@ describe("probeEnvironment", () => {
 
 describe("probeWorkspaceContext", () => {
 	test("collects the paths of open Markdown leaves", () => {
-		const app = fakeApp({ leaves: [markdownLeaf("Notes/a.md"), markdownLeaf("Ideas/b.md")] });
+		const app = fakeApp({ files: { "Notes/a.md": fileEntry("Notes/a.md"), "Ideas/b.md": fileEntry("Ideas/b.md") }, leaves: [markdownLeaf("Notes/a.md"), markdownLeaf("Ideas/b.md")] });
 
 		expect(probeWorkspaceContext(app, []).openTabs).toEqual(["Ideas/b.md", "Notes/a.md"]);
 	});
@@ -110,9 +110,19 @@ describe("probeWorkspaceContext", () => {
 		// `getLeavesOfType("markdown")` is the query, but the chat panel and a
 		// deferred leaf both surface as views without a `file`; reading one blindly
 		// would put `undefined` in the block.
-		const app = fakeApp({ leaves: [{ view: { file: fileEntry("Chat/panel.md") } }, markdownLeaf(null), markdownLeaf("Notes/a.md")] });
+		const app = fakeApp({ files: { "Notes/a.md": fileEntry("Notes/a.md") }, leaves: [{ view: { file: fileEntry("Chat/panel.md") } }, markdownLeaf(null), markdownLeaf("Notes/a.md")] });
 
 		expect(probeWorkspaceContext(app, []).openTabs).toEqual(["Notes/a.md"]);
+	});
+
+	test("drops open-tab paths whose file no longer exists", () => {
+		// Measured on a real runtime: for the whole synchronous window of a vault
+		// `"delete"` event the leaves still hold the removed file's `TFile`, so an
+		// unfiltered pass lists a tab whose path the note tools cannot open — the
+		// same existence rule `recentFiles` already applies.
+		const app = fakeApp({ files: { "Notes/alive.md": fileEntry("Notes/alive.md") }, leaves: [markdownLeaf("Notes/ghost.md"), markdownLeaf("Notes/alive.md")] });
+
+		expect(probeWorkspaceContext(app, []).openTabs).toEqual(["Notes/alive.md"]);
 	});
 
 	test("drops recently-opened paths whose file no longer exists", () => {
@@ -300,7 +310,7 @@ describe("probeRunContext", () => {
 		const active = fileEntry("Notes/today.md");
 		active.parent = { path: "Notes", children: [active, fileEntry("Notes/other.md")] };
 		const app = fakeApp({
-			files: { "Notes/today.md": active, "Notes/pin.md": fileEntry("Notes/pin.md") },
+			files: { "Notes/today.md": active, "Notes/pin.md": fileEntry("Notes/pin.md"), "Ideas/x.md": fileEntry("Ideas/x.md") },
 			leaves: [markdownLeaf("Ideas/x.md")],
 			resolvedLinks: { "Notes/a.md": { "Notes/today.md": 1 } },
 			unresolvedLinks: { "Notes/today.md": { missing: 1 } },

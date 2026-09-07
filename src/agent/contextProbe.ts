@@ -64,12 +64,17 @@ export function probeEnvironment(app: App): EnvironmentFacts {
  * matching how `messageActions` walks leaves. `leaf.getViewState().state.file`
  * carries the same path but as an untyped `Record` value, and one unchecked cast
  * is a worse trade than one `instanceof`.
+ *
+ * That read needs the same existence filter as `getLastOpenFiles`: for the whole
+ * synchronous window of a vault `"delete"` event the leaves still hold the
+ * deleted file's `TFile` (measured on a real runtime), so an unfiltered pass
+ * would name a tab whose path the note tools cannot open.
  */
 function readWorkspace(app: App, activePath: string | null): WorkspaceReadout {
 	const openPaths: string[] = [];
 	for (const leaf of app.workspace.getLeavesOfType("markdown")) {
 		const view = leaf.view;
-		if (view instanceof MarkdownView && view.file) {
+		if (view instanceof MarkdownView && view.file && app.vault.getFileByPath(view.file.path) !== null) {
 			openPaths.push(view.file.path);
 		}
 	}

@@ -59,10 +59,19 @@ export function watchActiveNote(
  * when the current view is not a `FileView`, which is precisely the chat-panel
  * case. Filtered to Markdown so focusing a PDF or an image reports nothing
  * rather than a path the note tools cannot use.
+ *
+ * Measured on a real runtime: for the whole synchronous window of the vault
+ * `"delete"` event, `getActiveFile()` still hands back the just-deleted file's
+ * `TFile` — the vault index has dropped it, the workspace has not settled yet.
+ * Re-checking the index is what turns that ghost into `null` instead of a path
+ * the model would `read` into an ENOENT.
  */
 export function resolveWorkingNotePath(app: App): string | null {
 	const file = app.workspace.getActiveFile();
 	if (!file || file.extension !== "md") {
+		return null;
+	}
+	if (app.vault.getFileByPath(file.path) === null) {
 		return null;
 	}
 	return file.path;
