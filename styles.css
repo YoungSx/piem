@@ -2402,6 +2402,16 @@ button.piem-chat__latest--asking {
 	display: flex;
 	gap: var(--size-4-1);
 	overflow: visible;
+	/*
+	 * Anchors every chip's disclosure popover — the row, not the chip. A chip
+	 * can sit anywhere along the row, and one near the start leaves a popover
+	 * that grows leftward no panel to grow into: the visual smoke photographed
+	 * one escaping the leaf entirely at 390px. The row is the widest stable box
+	 * on this line, and right-aligning to its end is where the gauge's and the
+	 * subagents' popovers already open, so all three floating surfaces share one
+	 * anchor and one clamping width.
+	 */
+	position: relative;
 }
 
 /*
@@ -2431,10 +2441,6 @@ button.piem-chat__latest--asking {
 	max-width: 100%;
 	min-width: 0;
 	padding: 0 var(--size-4-1);
-	/* Anchors the chip's disclosure popover to itself; the same claim as
-	 * `.piem-chat__subagents` above. Without it the popover resolves against the
-	 * composer shell and lands wherever that happens to be. */
-	position: relative;
 }
 
 
@@ -2550,12 +2556,11 @@ button.piem-chat__latest--asking {
 
 /*
  * The chip's disclosure, the same geometry and stacking as the two popovers it
- * sits between (the context meter's and the subagents'). `inset-inline-end: 0`
- * rather than `left: 0` anchors it under its trigger: a chip can sit anywhere
- * along the row, and the panel it opens must open over its own chip, not over
- * whichever chips happen to lead. Growing rightward from a chip at the row's
- * start is the failure the context meter's popover documents for `left: 0`,
- * mirrored — there may be no slack to grow into at all.
+ * sits between (the context meter's and the subagents'). Anchored to the row,
+ * not the chip — the row's note above says why — so `inset-inline-end: 0` reads
+ * against a box that spans the composer: the panel can never grow past the leaf
+ * it lives in. `max-width` clamps to that same box, because 18rem is wider than
+ * the row itself in the narrow sidebars this row was rebuilt for.
  */
 .piem-chat__context-chip-popover {
 	background: var(--background-primary);
@@ -2566,7 +2571,7 @@ button.piem-chat__latest--asking {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	max-width: 18rem;
+	max-width: min(18rem, 100%);
 	min-width: 11rem;
 	padding: var(--size-4-1);
 	position: absolute;
@@ -2590,9 +2595,23 @@ button.piem-chat__latest--asking {
 }
 
 /*
- * The popover's rows are ordinary buttons the reader presses once. Reset off
- * the form-control chrome the same way the chip's own label button is, so the
- * panel reads as a menu of actions and not a form.
+ * The actions share one row under the path. The popover used to stack them
+ * full-width, and three rows of sentence-length buttons made a disclosure for
+ * one chip taller than a chat turn; one-word verbs laid across a line cut it
+ * to two lines of content total.
+ */
+.piem-chat__context-chip-actions {
+	display: flex;
+	gap: var(--size-4-1);
+	margin-top: var(--size-4-1);
+}
+
+/*
+ * The actions are ordinary buttons the reader presses once. Reset off the
+ * form-control chrome the same way the chip's own label button is, so the
+ * panel reads as a menu of actions and not a form. One word each, on one
+ * line: `nowrap` keeps a verb from folding mid-word if a narrow popover
+ * squeezes the row.
  */
 .piem-chat__context-chip-action {
 	align-items: center;
@@ -2603,14 +2622,12 @@ button.piem-chat__latest--asking {
 	color: var(--text-normal);
 	cursor: pointer;
 	display: flex;
-	gap: var(--size-4-2);
+	gap: var(--size-4-1);
 	height: auto;
 	/* WCAG 2.5.8: 24px of pointer target, which is what --size-4-6 is. */
 	min-height: var(--size-4-6);
 	padding: var(--size-4-1) var(--size-4-2);
-	text-align: start;
-	white-space: normal;
-	width: 100%;
+	white-space: nowrap;
 }
 
 @media (hover: hover) {

@@ -224,53 +224,55 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 					{/* The chip truncates to a file name; this line is where the folder
 					    the reader cannot recover from context comes back. */}
 					<span className="piem-chat__context-chip-path">{contextRef.path}</span>
-					<button
-						type="button"
-						className="piem-chat__context-chip-action"
-						onClick={() => {
-							// Close before navigating: the leaf takes over, and a popover
-							// left hanging over the composer would outlive its own subject.
-							setIsOpen(false);
-							onOpen(contextRef.path);
-						}}
-					>
-						<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
-						{t.t("contextRow.openNote")}
-					</button>
-					{isActive && !contextRef.isPinned ? (
+					<div className="piem-chat__context-chip-actions">
 						<button
 							type="button"
 							className="piem-chat__context-chip-action"
-							onClick={() => onPin(contextRef.path)}
+							onClick={() => {
+								// Close before navigating: the leaf takes over, and a popover
+								// left hanging over the composer would outlive its own subject.
+								setIsOpen(false);
+								onOpen(contextRef.path);
+							}}
 						>
-							<ObsidianIcon name="pin" className="piem-chat__context-chip-action-icon" />
-							{t.t("contextRow.pinToChat", { name: label })}
+							<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
+							{t.t("contextRow.openNote")}
 						</button>
-					) : null}
-					{isActive ? (
-						/*
-						 * Not "remove this note" — focus would put it right back. What this
-						 * turns off is following the user's focus at all, which is why the
-						 * label names the behaviour rather than the note.
-						 */
-						<button
-							type="button"
-							className="piem-chat__context-chip-action"
-							onClick={onStopFollowing}
-						>
-							<ObsidianIcon name="eye-off" className="piem-chat__context-chip-action-icon" />
-							{t.t("contextRow.stopFollowing")}
-						</button>
-					) : (
-						<button
-							type="button"
-							className="piem-chat__context-chip-action"
-							onClick={() => onUnpin(contextRef.path)}
-						>
-							<ObsidianIcon name="x" className="piem-chat__context-chip-action-icon" />
-							{t.t("contextRow.removeFromContext", { name: label })}
-						</button>
-					)}
+						{isActive && !contextRef.isPinned ? (
+							<button
+								type="button"
+								className="piem-chat__context-chip-action"
+								onClick={() => onPin(contextRef.path)}
+							>
+								<ObsidianIcon name="pin" className="piem-chat__context-chip-action-icon" />
+								{t.t("contextRow.pinToChat")}
+							</button>
+						) : null}
+						{isActive ? (
+							/*
+							 * Not "remove this note" — focus would put it right back. What this
+							 * turns off is following the user's focus at all, which is why the
+							 * label names the behaviour rather than the note.
+							 */
+							<button
+								type="button"
+								className="piem-chat__context-chip-action"
+								onClick={onStopFollowing}
+							>
+								<ObsidianIcon name="eye-off" className="piem-chat__context-chip-action-icon" />
+								{t.t("contextRow.stopFollowing")}
+							</button>
+						) : (
+							<button
+								type="button"
+								className="piem-chat__context-chip-action"
+								onClick={() => onUnpin(contextRef.path)}
+							>
+								<ObsidianIcon name="x" className="piem-chat__context-chip-action-icon" />
+								{t.t("contextRow.removeFromContext")}
+							</button>
+						)}
+					</div>
 				</div>
 			) : null}
 		</span>
