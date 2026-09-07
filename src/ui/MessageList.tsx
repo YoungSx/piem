@@ -479,7 +479,7 @@ export function MessageList({
 	const pairPlan = planToolPairs(messages);
 	const foldPlan = planTraceFolds(messages, { mode: traceExpand, showAgentDetails, pairs: pairPlan });
 	const compactionPlan = planCompactionRows({ messages, event: compactionEvent, retained: compactionRetained });
-	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, runningToolCalls, contextWindow, t };
+	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, runningToolCalls, streamingMessageIndex: activeIndex, contextWindow, t };
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
 	/*
@@ -1281,8 +1281,24 @@ interface MessageContext {
 	 * the other seven read as finished while they are still out. Blocks that have
 	 * no id keep `liveRow` — a thought is not a call, and "the last block is still
 	 * growing" is exactly right for it.
+	 *
+	 * Neither answer covers the seconds before execution starts: pi joins a call
+	 * to this set only at `tool_execution_start`, but the row is drawn while the
+	 * arguments stream in. {@link streamingMessageIndex} is that window's answer.
 	 */
 	runningToolCalls: ReadonlySet<string>;
+	/**
+	 * Which message the stream is still writing, as its index into `messages` —
+	 * `null` once nothing is streaming.
+	 *
+	 * A tool row reads this as a second answer to "why has this no result yet".
+	 * `runningToolCalls` only gains a call when its execution starts, but the call
+	 * row is on screen seconds before that: the model is still streaming the
+	 * arguments in, and for a write those arguments are the whole note. A call in
+	 * that window must not read as the one state `circle-slash` is left to mean —
+	 * the turn was interrupted before the answer arrived.
+	 */
+	streamingMessageIndex: number | null;
 	/**
 	 * Copy for the render helpers.
 	 *
@@ -1472,7 +1488,7 @@ function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): Re
 		if (slot) {
 			return slot.head ? <FoldedTrace key={blockIndex} group={slot.group} context={context} /> : null;
 		}
-		return <ToolCallTrace key={blockIndex} call={content} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} />;
+		return <ToolCallTrace key={blockIndex} call={content} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} index={args.index} blockIndex={blockIndex} />;
 	});
 }
 
@@ -1577,12 +1593,13 @@ function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, 
  * one thing, and the two halves the reader wanted (which note, and did it work)
  * split across them with a truncation each.
  *
- * `result` is the message that answered this call, or `null` — and the two ways a
- * row gets there are now told apart. A call pi still has out is running; a call
- * with no result and nothing running behind it is a turn interrupted before the
- * answer arrived, and `circle-slash` is left to mean exactly that. Both used to
- * be one state, so an interrupted call and seven concurrent ones drew the same
- * row.
+ * `result` is the message that answered this call, or `null` — and the ways a
+ * row gets there are told apart. A call pi still has out is running; a call
+ * whose message the stream is still writing is in the arguments window (execution
+ * has not started, so the running set cannot know it yet); a call with neither is
+ * a turn interrupted before the answer arrived, and `circle-slash` is left to mean
+ * exactly that. All three used to be one state, so an interrupted call, seven
+ * concurrent ones, and a write still streaming its note drew the same row.
  *
  * A row that has its result wears `--result` so it keeps the height bound on its
  * body: the call's own payload is a few lines of JSON, but a grep's output is not,
@@ -1592,13 +1609,26 @@ function ToolCallTrace({
 	call,
 	result,
 	context,
+	index,
+	blockIndex,
 }: {
 	call: ToolCall;
 	result: ToolResultMessage | null;
 	context: MessageContext;
+	/**
+	 * Where the call lives in the transcript, so the row can tell "the message
+	 * I sit in is still being written" from "no message is". `streaming` is
+	 * message-scoped on purpose — a call that finished inside a message the
+	 * model is still writing takes the static tool icon, not the breath; only
+	 * the block the stream is on (`live`) breathes.
+	 */
+	index: number;
+	blockIndex: number;
 }): React.JSX.Element {
 	const showDetails = context.showAgentDetails;
 	const running = context.runningToolCalls.has(call.id);
+	const streaming = context.streamingMessageIndex === index;
+	const live = streaming && isLiveBlock(context, index, blockIndex);
 	const diff = result ? extractDiff(result.details) : null;
 	const payload = showDetails ? <pre className="piem-chat__text">{JSON.stringify(call.arguments, null, 2)}</pre> : null;
 	/*
@@ -1619,12 +1649,12 @@ function ToolCallTrace({
 	) : null;
 	return (
 		<Trace
-			icon={traceIcon(call.name, running, result)}
+			icon={traceIcon(call.name, running, streaming, result)}
 			name={describeTool(call.name, showDetails, context.t)}
 			nameIsIdentifier={isToolIdentifier(call.name, showDetails)}
 			detail={pairedDetail(call, result, diff, context.t)}
-			className={traceClasses(running, result)}
-			busy={running}
+			className={traceClasses(running || live, result)}
+			busy={running || live}
 			// A diff-bearing row opens itself under `highValue`: the critique called
 			// the undo story the panel's biggest gap, and what an edit changed is the
 			// one thing a reader answers by reading rather than by deciding to read.
@@ -1654,14 +1684,21 @@ function ToolCallTrace({
  * seconds and minutes apart. So a running row keeps the tool's own picture and
  * lets the motion carry the state; the hourglass a `wait_subagent` row now shows
  * is the honest picture of the wait, where the spinner was a picture of nothing.
+ *
+ * `streaming` covers the other way a row is still going: its arguments are still
+ * arriving, before `tool_execution_start` has put its id into the running set at
+ * all. A call in that window is alive by the plainest evidence there is — the
+ * model is writing it — and keeping it in the tool-icon state is what leaves
+ * `circle-slash` meaning one thing: the turn ended and the answer never came.
  */
-function traceIcon(name: string, running: boolean, result: ToolResultMessage | null): IconName {
+function traceIcon(name: string, running: boolean, streaming: boolean, result: ToolResultMessage | null): IconName {
 	if (result) {
 		return result.isError ? "alert-triangle" : toolIcon(name);
 	}
-	// No result, for one of two reasons the row must not blur: pi still has the
-	// call out, or the turn ended without ever answering it.
-	return running ? toolIcon(name) : "circle-slash";
+	// No result, for one of three reasons the row must not blur: pi still has the
+	// call out, the model is still writing it, or the turn ended without ever
+	// answering it. Only the last is the interrupted state.
+	return running || streaming ? toolIcon(name) : "circle-slash";
 }
 
 /** Modifier classes for a paired row: the body bound, the failure tint, the breath. */
@@ -1811,6 +1848,8 @@ function FoldedTrace({ group, context }: { group: TraceFoldGroup; context: Messa
 							call={row.call}
 							result={pairedResult(context.pairPlan, row.ref.message, row.ref.block ?? -1)}
 							context={context}
+							index={row.ref.message}
+							blockIndex={row.ref.block ?? -1}
 						/>
 					) : (
 						<ToolResultTrace key={`${row.ref.message}:result`} message={row.result} context={context} />
