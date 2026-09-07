@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Platform, type App } from "obsidian";
+import { Menu, type App } from "obsidian";
 import type { ChatSnapshot } from "../agent/ObsidianAgentService";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import type { SessionSearchResult } from "../session/sessionSearch";
@@ -70,11 +70,10 @@ export function ChatHeader({
 }: ChatHeaderProps): React.JSX.Element {
 	const t = useT();
 	const activeSession = snapshot.session;
-	// The dedicated history button's availability. On a phone it leaves the row
-	// entirely — see the actions row below — and this same check gates the menu
-	// item that replaces it, so the two doors share one answer. Available mid-run
-	// too (issue #252): opening the picker never touches the run in flight, and
-	// the rows already mark which sessions are mid-run.
+	// The history button's availability, shared with nothing — it is the only
+	// door to the picker. Available mid-run too (issue #252): opening the picker
+	// never touches the run in flight, and the rows already mark which sessions
+	// are mid-run.
 	const canPickSession = sessions.length >= 2 || (sessions.length === 1 && onSearchSessions !== undefined);
 	const openPicker = (): void => {
 		openSessionPicker(
@@ -102,9 +101,9 @@ export function ChatHeader({
 	 * precisely when a user goes looking for settings, since a wrong model or a
 	 * missing key is what they are trying to fix.
 	 *
-	 * On a phone this menu is also the history picker's only door: the dedicated
-	 * button leaves the header row so the row can be one line tall, and the item
-	 * takes its availability from the same check the button used.
+	 * Every item in this menu is a single act on this chat or the plugin —
+	 * rename, export, settings, delete — and each is conditional on the state
+	 * that gives it something to act on.
 	 *
 	 * A mirror of the slash-command list lived here too, as a second door to
 	 * templates and skills, one menu row per invocation. It is gone. Every other
@@ -121,14 +120,7 @@ export function ChatHeader({
 	 */
 	const openMenu = (event: React.MouseEvent<HTMLButtonElement>): void => {
 		const menu = new Menu();
-		const historyItem = Platform.isMobile && canPickSession;
-		if (historyItem) {
-			menu.addItem((item) => item.setTitle(t.t("chat.openChatHistory")).setIcon("history").onClick(openPicker));
-		}
 		if (activeSession) {
-			if (historyItem) {
-				menu.addSeparator();
-			}
 			menu.addItem((item) =>
 				item
 					.setTitle(t.t("chat.renameChat"))
@@ -142,7 +134,7 @@ export function ChatHeader({
 			}
 		}
 		if (onOpenSettings) {
-			if (activeSession || historyItem) {
+			if (activeSession) {
 				menu.addSeparator();
 			}
 			menu.addItem((item) => item.setTitle(t.t("chat.openSettings")).setIcon("settings").onClick(onOpenSettings));
@@ -179,23 +171,18 @@ export function ChatHeader({
 				onMouseOver={suppressOwnTooltip}
 			>
 				{/*
-				 * Always mounted so the button positions never shift as the vault
-				 * accumulates chats; disabled until there is a second one to pick.
-				 *
-				 * Except on a phone, where the button is not mounted at all: a
-				 * two-button row under the title is the second line of chrome a
-				 * squeezed transcript cannot afford, and the picker it opens is one
-				 * menu item away in `openMenu`. On a desktop the row never wraps
-				 * anyway, so the button costs nothing there.
+				 * Always mounted, on every platform, so the button positions never
+				 * shift as the vault accumulates chats; disabled until there is a
+				 * second one to pick. It once left the row on a phone — one line of
+				 * chrome for a squeezed transcript — but the menu detour buried the
+				 * picker behind a second tap, so it is back where the desktop has it.
 				 */}
-				{Platform.isMobile ? null : (
-					<IconButton
-						icon="history"
-						label={t.t("chat.openChatHistory")}
-						onClick={openPicker}
-						disabled={!canPickSession}
-					/>
-				)}
+				<IconButton
+					icon="history"
+					label={t.t("chat.openChatHistory")}
+					onClick={openPicker}
+					disabled={!canPickSession}
+				/>
 				<IconButton icon="square-pen" label={t.t("chat.newChat")} onClick={onNewSession} />
 				{/* Disabled only when the menu would open empty — see `openMenu`. Three
 				    doors keep it alive; the slash-command list used to be a fourth, and
@@ -206,7 +193,7 @@ export function ChatHeader({
 					label={t.t("chat.moreActions")}
 					onClick={openMenu}
 					hasPopup="menu"
-					disabled={!activeSession && !onOpenSettings && !(Platform.isMobile && canPickSession)}
+					disabled={!activeSession && !onOpenSettings}
 				/>
 			</div>
 		</header>
