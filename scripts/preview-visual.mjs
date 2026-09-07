@@ -376,13 +376,13 @@ async function settle(done, tries = 20) {
  * mount effect owns initialization — drives it with `drive`, then hands back
  * the panel element.
  */
-async function mountChat({ streamFn, settings, drive, askUserBroker }) {
+async function mountChat({ streamFn, settings, drive, askUserBroker, onOpenSubagents }) {
 	const { service, sessionManager } = makeService({ streamFn, settings });
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	const root = reactDomClient.createRoot(host);
 	root.render(
-		React.createElement(ChatApp, { service, inputController: new ChatInputController(), component: {}, askUserBroker }),
+		React.createElement(ChatApp, { service, inputController: new ChatInputController(), component: {}, askUserBroker, onOpenSubagents }),
 	);
 	// Cold start: the mount effect initializes the service, which creates the
 	// session and (on the empty screen) asks the model for chips.
@@ -418,6 +418,138 @@ async function mountChat({ streamFn, settings, drive, askUserBroker }) {
 }
 
 const SCENARIOS = {};
+
+/*
+ * The context chips, rebuilt as one button per note with a popover above it
+ * (PR #356). Nothing here can be drawn by hand: the whole point is what a real
+ * chip does at the width where the old inline buttons wrapped onto two lines.
+ *
+ * The row is fed through the service's own public API — `setActiveNotePath` for
+ * the followed chip, `pinContextRef` for the pinned ones — so the page renders
+ * whatever the service would really report, not a hand-shaped copy of it.
+ * No note is written to the vault: the chips read `contextRefList`, which
+ * names paths without opening anything, and the popover's "open" row is a
+ * click that goes nowhere in this harness.
+ *
+ * The first cell shows the row as it usually looks. The second opens the
+ * followed chip's popover, which has to clear the chip above it and stay
+ * inside the composer shell — the anchor (`position: relative` on the chip)
+ * and the z-order are the parts a DOM diff cannot see.
+ */
+SCENARIOS["chat-context-chips"] = async () => {
+	const cells = [];
+	for (const [label, open, width] of [
+		["closed", false, 390],
+		["closed, narrow", false, 300],
+		["popover open", true, 390],
+	]) {
+		// One cell at a time in the document: the next mount replaces the
+		// previous panel, so every `document.querySelector` below unambiguously
+		// means the cell being built.
+		document.body.replaceChildren();
+		const { element, cleanup } = await mountChat({
+			streamFn: scriptedStreamFn([CHIPS_JSON, "Noted — I am reading `Books/Deep Work.md` with you."]),
+			drive: async (service) => {
+				// A path long enough that the chip must truncate it, and one pinned
+				// note so the row carries both kinds the tests separate.
+				service.setActiveNotePath("Projects/2026/Q3/reading-notes/Deep Work — weekly audit.md");
+				service.pinContextRef("Books/Deep Work.md");
+				if (open) {
+					await flushRender();
+					const chip = document.querySelectorAll(".piem-chat__context-chip")[0];
+					const button = chip?.querySelector(".piem-chat__context-open");
+					if (!(button instanceof HTMLElement)) {
+						throw new Error("the followed chip never rendered");
+					}
+					button.click();
+					await flushRender();
+				}
+			},
+		});
+		cells.push({ label, element, width, cleanup });
+	}
+
+	/*
+	 * The row with every neighbour lit. The context row does not sit alone on the
+	 * composer top: the mobile fold chevron and the subagent entry icon ride the
+	 * same line, and the width this PR is about is exactly the width where that
+	 * company matters. Each fixture is the real control through its real gate —
+	 * `Platform.isMobile` for the chevron, the registry's own spawn for the icon —
+	 * so the page shows the shapes the app draws, not stand-ins.
+	 */
+	const { platformMock } = await import("../src/testUtils/obsidianStub.ts");
+	const previousMobile = platformMock.isMobile;
+	platformMock.isMobile = true;
+	try {
+		for (const [label, width] of [
+			["full row", 390],
+			["full row, narrow", 300],
+		]) {
+			document.body.replaceChildren();
+			const { element, cleanup } = await mountChat({
+				streamFn: scriptedStreamFn([CHIPS_JSON, "Noted — I am reading `Books/Deep Work.md` with you."]),
+				// The icon needs a way into the monitor; this harness click goes nowhere.
+				onOpenSubagents: () => {},
+				drive: async (service) => {
+					service.setActiveNotePath("Projects/2026/Q3/reading-notes/Deep Work — weekly audit.md");
+					service.pinContextRef("Books/Deep Work.md");
+					// One live child through the real registry: a never-settling start is
+					// what a running child looks like to the snapshot, badge included.
+					const registry = service.getSubagentRegistry();
+					registry.spawn({
+						id: registry.nextId(),
+						parentSignal: undefined,
+						ownerId: service.getSnapshot().session?.path,
+						abort: () => undefined,
+						dispose: () => undefined,
+						task: "Sweep the vault for duplicate reading notes",
+						depth: 1,
+						// The snapshot reads the name; the rest of the role never reaches
+						// the composer, so the stub stops where the pixels stop.
+						role: { name: "scout" },
+						model: { id: "m-deepseek-pro" },
+						thinkingLevel: "off",
+						start: () => new Promise(() => {}),
+					});
+					await flushRender();
+					// A silent miss here would publish a "full row" page with two of the
+					// three residents dark, and nothing else would say so.
+					if (document.querySelector(".piem-chat__subagents-button") === null) {
+						throw new Error("the subagent entry icon never rendered");
+					}
+					if (document.querySelector(".piem-chat__composer-toggle") === null) {
+						throw new Error("the fold chevron never rendered");
+					}
+				},
+			});
+			cells.push({ label, element, width, cleanup });
+		}
+	} finally {
+		platformMock.isMobile = previousMobile;
+	}
+
+	const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>context chips and their popover</title><style>
+:root {${TOKENS}}
+body { background: #191919; color: var(--text-normal); font-family: var(--font-interface); margin: 0; padding: 16px; display: flex; gap: 20px; align-items: flex-start; }
+figure { margin: 0; }
+figcaption { color: #777; font-size: 10px; margin-bottom: 3px; }
+/* Phone width — the width that broke the old inline-button row. */
+.harness-leaf { background: var(--background-secondary); contain: strict; isolation: isolate; height: 640px; }
+.view-content { height: 100%; width: 100%; }
+${styles}
+${OBSIDIAN_CORE_SHIM}
+</style></head><body>
+${cells
+	.map(
+		({ label, element, width }) =>
+			`<figure style="width: ${width}px"><figcaption>${label} · ${width}px</figcaption><div class="harness-leaf" style="width: ${width}px"><div class="view-content">${element.outerHTML}</div></div></figure>`,
+	)
+	.join("\n")}
+</body></html>`;
+	await Promise.all(cells.map(({ cleanup }) => cleanup()));
+	return { element: null, cleanup: async () => {}, html, width: 390 + 300 + 390 + 390 + 300 + 4 * 20 + 32 + 40, height: 700 };
+};
 
 /*
  * The mobile composer fold: the top row with its chevron, and what pressing

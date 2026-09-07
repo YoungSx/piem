@@ -603,18 +603,19 @@ export const en = {
 		/** The disclosure's own group name, so the popover is announced as a whole. */
 		chipPopoverAria: "{name} actions",
 		/**
-		 * The one action whose name needs no interpolation: every popover has it,
-		 * and it always means the same note the popover is about.
+		 * One-word verbs, laid out on one row — the popover spends its height on
+		 * the path, not on three stacked sentences. Each always means the note
+		 * the popover is about, so none takes a name placeholder.
 		 */
-		openNote: "Open note",
-		pinToChat: "Pin {name} to this chat",
+		openNote: "Open",
+		pinToChat: "Pin",
 		/**
 		 * Names the behaviour, not the note. Dismissing the followed chip turns
-		 * following off; "remove this note" would promise something the control
-		 * cannot deliver, since opening another file would bring it straight back.
+		 * following off; "Remove" would promise something the control cannot
+		 * deliver, since opening another file would bring it straight back.
 		 */
-		stopFollowing: "Stop following the active note",
-		removeFromContext: "Remove {name} from context",
+		stopFollowing: "Unfollow",
+		removeFromContext: "Remove",
 	},
 
 	/** Reply action buttons and their failure notices. */

@@ -292,10 +292,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 		chipFollowed: "{path}，自动跟随中",
 		chipPinned: "{path}，已固定",
 		chipPopoverAria: "{name} 的操作",
-		openNote: "打开笔记",
-		pinToChat: "把 {name} 固定到此对话",
-		stopFollowing: "停止跟随当前笔记",
-		removeFromContext: "从上下文中移除 {name}",
+		openNote: "打开",
+		pinToChat: "固定",
+		stopFollowing: "取消跟随",
+		removeFromContext: "移除",
 	},
 
 	replyActions: {

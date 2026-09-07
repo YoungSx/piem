@@ -179,7 +179,7 @@ describe("ContextRow", () => {
 		// Naming the note would promise something the control cannot deliver:
 		// opening another file would bring it right back.
 		const chip = await openPopover(host);
-		expect(action(chip, "Stop following the active note")).not.toBeNull();
+		expect(action(chip, "Unfollow")).not.toBeNull();
 	});
 
 	it("stops following from the followed chip's popover", async () => {
@@ -190,7 +190,7 @@ describe("ContextRow", () => {
 		});
 		const chip = await openPopover(host);
 
-		action(chip, "Stop following the active note")?.click();
+		action(chip, "Unfollow")?.click();
 		await flushRender();
 
 		expect(follows).toEqual([false]);
@@ -198,12 +198,12 @@ describe("ContextRow", () => {
 
 	it("offers a pin control on the followed note only", async () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] });
-		expect(action(await openPopover(host), "Pin today to this chat")).not.toBeNull();
+		expect(action(await openPopover(host), "Pin")).not.toBeNull();
 
 		document.body.replaceChildren();
 		const pinnedHost = await renderRow({ refs: [{ kind: "pinned", path: "Notes/today.md", isPinned: true }] });
 		// Already pinned; a second pin control would do nothing.
-		expect(action(await openPopover(pinnedHost), "Pin today to this chat")).toBeNull();
+		expect(action(await openPopover(pinnedHost), "Pin")).toBeNull();
 	});
 
 	it("drops the pin control once the followed note is pinned", async () => {
@@ -213,9 +213,9 @@ describe("ContextRow", () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] });
 		const chip = await openPopover(host);
 
-		expect(action(chip, "Pin today to this chat")).toBeNull();
+		expect(action(chip, "Pin")).toBeNull();
 		// The dismiss control stays: following can still be turned off.
-		expect(action(chip, "Stop following the active note")).not.toBeNull();
+		expect(action(chip, "Unfollow")).not.toBeNull();
 	});
 
 	it("pins the followed note, keeping the popover open as the visible answer", async () => {
@@ -226,7 +226,7 @@ describe("ContextRow", () => {
 		});
 		const chip = await openPopover(host);
 
-		action(chip, "Pin today to this chat")?.click();
+		action(chip, "Pin")?.click();
 		await flushRender();
 
 		// Closing here would leave the reader unsure whether the press landed.
@@ -244,7 +244,7 @@ describe("ContextRow", () => {
 		});
 		const chip = await openPopover(host);
 
-		action(chip, "Remove spec from context")?.click();
+		action(chip, "Remove")?.click();
 		await flushRender();
 
 		expect(unpinned).toEqual(["Notes/spec.md"]);
@@ -333,7 +333,7 @@ describe("ContextRow", () => {
 		await flushRender();
 
 		const chip = await openPopover(host);
-		const dismiss = action(chip, "Stop following the active note");
+		const dismiss = action(chip, "Unfollow");
 		dismiss?.focus();
 		dismiss?.click();
 		await flushRender();
@@ -368,7 +368,7 @@ describe("ContextRow", () => {
 		await flushRender();
 
 		const chip = await openPopover(host, 1);
-		const remove = action(chip, "Remove second from context");
+		const remove = action(chip, "Remove");
 		remove?.focus();
 		remove?.click();
 		await flushRender();
@@ -399,19 +399,17 @@ describe("ContextRow", () => {
 		expect(host.querySelector(".piem-chat__context-row")?.getAttribute("aria-label")).toBe("共享给 Piem 的笔记");
 	});
 
-	it("translates the popover's actions without translating the file name", async () => {
+	it("translates the popover's actions", async () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] }, "zh-cn");
 
-		// The interpolated name is a real path out of the vault, so it stays
-		// verbatim inside a translated sentence — which is the whole reason these
-		// leaves take a `{name}` placeholder instead of being assembled by
-		// concatenation.
+		// Each verb means the note the popover is about, so none carries the name;
+		// the file name is the path line's job.
 		const chip = await openPopover(host);
-		expect(action(chip, "打开笔记")).not.toBeNull();
-		expect(action(chip, "把 today 固定到此对话")).not.toBeNull();
-		// Still the behaviour, not the note: a translation that said "移除此笔记"
+		expect(action(chip, "打开")).not.toBeNull();
+		expect(action(chip, "固定")).not.toBeNull();
+		// Still the behaviour, not the note: a translation that said "移除"
 		// would promise something the control cannot deliver in any language.
-		expect(action(chip, "停止跟随当前笔记")).not.toBeNull();
+		expect(action(chip, "取消跟随")).not.toBeNull();
 	});
 
 	it("translates the resume control, the one way back from a dismissal", async () => {
