@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { DataAdapter, ListedFiles, Stat } from "obsidian";
-import { ObsidianSessionManager, sessionIdFromSessionPath, type SessionPolicy } from "./ObsidianSessionManager";
+import { ObsidianSessionManager, sessionIdFromSessionPath, type LastOpenedSessionStore, type SessionPolicy } from "./ObsidianSessionManager";
 import { UNLIMITED_SESSION_RETENTION } from "./retention";
 
 const CONFIG_DIR = `.${"obsidian"}`;
@@ -192,6 +192,111 @@ describe("ObsidianSessionManager", () => {
 		// rename path treat it, so the comparison in the service treats "  " the
 		// same as an explicit clear.
 		expect(await manager.readActiveSessionName()).toBeUndefined();
+	});
+});
+
+/**
+ * A sync plugin refreshes session files with whatever another device wrote, so
+ * "newest file" on this device can be another device's conversation. The
+ * last-opened record exists so the panel reopens *this device's* chat instead
+ * of following the synced recency — and the store lives off-vault (localStorage
+ * in production) precisely so the record itself cannot be synced away.
+ */
+describe("ObsidianSessionManager last-opened record", () => {
+	class MemoryStore implements LastOpenedSessionStore {
+		value: string | null = null;
+		read(): string | null {
+			return this.value;
+		}
+		write(path: string): void {
+			this.value = path;
+		}
+	}
+
+	/** Two chats, then the sync story: another device's file stamped newest. */
+	async function seedTwoSessions(adapter: DataAdapter): Promise<{ first: string; second: string }> {
+		const writer = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const first = (await writer.createSession(DEFAULTS)).path;
+		await writer.appendMessage({ role: "user", content: [{ type: "text", text: "First" }], timestamp: 1 });
+		const second = (await writer.createSession(DEFAULTS)).path;
+		await writer.appendMessage({ role: "user", content: [{ type: "text", text: "Second" }], timestamp: 2 });
+		return { first, second };
+	}
+
+	it("reopens the recorded session even when a synced file is newer", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const { first, second } = await seedTwoSessions(adapter);
+		// The other device touched the second chat; its synced copy is now the
+		// newest file on disk — the thing the pre-record behavior would open.
+		(adapter as unknown as MemoryAdapter).setMtime(second, Date.parse("2099-01-01T00:00:00.000Z"));
+
+		const store = new MemoryStore();
+		store.value = first;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, store);
+		const info = await manager.continueRecentSession(DEFAULTS);
+
+		expect(info.path).toBe(first);
+	});
+
+	it("falls back to the newest session when the record points at a deleted one", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const { second } = await seedTwoSessions(adapter);
+		// The newest file on disk is another device's chat, but this device's
+		// record names a session the sync never brought over.
+		(adapter as unknown as MemoryAdapter).setMtime(second, Date.parse("2099-01-01T00:00:00.000Z"));
+
+		const store = new MemoryStore();
+		store.value = "Piem/chats/2001-01-01T00-00-00_abcdef.jsonl";
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, store);
+		const info = await manager.continueRecentSession(DEFAULTS);
+
+		expect(info.path).toBe(second);
+	});
+
+	it("behaves as before when no record is stored", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const { second } = await seedTwoSessions(adapter);
+		(adapter as unknown as MemoryAdapter).setMtime(second, Date.parse("2099-01-01T00:00:00.000Z"));
+
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, new MemoryStore());
+		const info = await manager.continueRecentSession(DEFAULTS);
+
+		expect(info.path).toBe(second);
+	});
+
+	it("keeps working when the store throws", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const { second } = await seedTwoSessions(adapter);
+		(adapter as unknown as MemoryAdapter).setMtime(second, Date.parse("2099-01-01T00:00:00.000Z"));
+
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, {
+			read(): string | null {
+				throw new Error("storage unavailable");
+			},
+			// The interface's contract puts failure-swallowing on the store, so a
+			// broken *read* is the defect this test survives; the write is the
+			// production store's silent-on-failure shape.
+			write(): void {},
+		});
+		const info = await manager.continueRecentSession(DEFAULTS);
+
+		expect(info.path).toBe(second);
+	});
+
+	it("records the session each focus lands on", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const { first, second } = await seedTwoSessions(adapter);
+		const store = new MemoryStore();
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, store);
+
+		await manager.loadSession(first);
+		expect(store.value).toBe(first);
+		await manager.loadSession(second);
+		expect(store.value).toBe(second);
+
+		// A fresh chat is a focus too: "new session" then reopen must land on it.
+		const fresh = (await manager.createSession(DEFAULTS)).path;
+		expect(store.value).toBe(fresh);
 	});
 });
 
