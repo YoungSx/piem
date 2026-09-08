@@ -30,6 +30,7 @@ describe("builtinSkills", () => {
 
 	it("pins the memory skill to the vault memory root and the injection defense", () => {
 		const memory = skills.find((skill) => skill.name === "vault-memory");
+		expect(memory).toBeDefined();
 		// The protocol must teach the real directory, not a paraphrase of it.
 		expect(memory?.content).toContain("Piem/memory/MEMORY.md");
 		expect(memory?.content).toContain("Piem/memory/YYYY-MM-DD.md");

@@ -242,7 +242,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		},
 		vaultMemory: {
 			description:
-				"跨对话记住教训：把纠正和失败记进 Piem/memory/，任务开始时先回顾，再甄别哪些配得上长期保存。",
+				"跨对话记住教训：把纠正和失败记进 Piem/memory/，任务开始时或被问及过往教训时先回顾，再甄别哪些值得长期保存。",
 		},
 	},
 
