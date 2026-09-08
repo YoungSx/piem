@@ -76,13 +76,16 @@ export class PiemChatView extends ItemView {
 		// name never sees. Same constructor-not-onOpen reasoning as above. While the
 		// panel is closed nothing displays the name, so no watcher runs then; the
 		// seed below re-syncs on the next open instead.
-		for (const ref of watchSessionFile(
-			this.app,
-			() => this.service.getActiveSessionPath(),
-			() => void this.service.syncExternalSessionChange(),
-		)) {
-			this.registerEvent(ref);
-		}
+		//
+		// `register`, not `registerEvent`: this watcher debounces, so its teardown
+		// is the vault listener *and* a pending timer. See {@link watchSessionFile}.
+		this.register(
+			watchSessionFile(
+				this.app,
+				() => this.service.getActiveSessionPath(),
+				() => void this.service.syncExternalSessionChange(),
+			),
+		);
 		// Seeds the name comparison the same way the note path is seeded: the events
 		// only report that the file *may* have changed, and opening the panel is the
 		// moment a name changed while it was closed becomes visible. The drift sync
