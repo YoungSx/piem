@@ -1046,27 +1046,28 @@ export const en = {
 	/**
 	 * The Skills tab.
 	 *
-	 * The copy keeps the two lists honest about ownership: vault skills are
-	 * this plugin's files and can be managed here; user-level skills belong to
-	 * the machine and are shown, not managed.
+	 * One list holds every skill the agent can load, with a badge naming the
+	 * layer each row came from; the copy keeps the layer consequences honest:
+	 * vault rows are managed here, and the user-level section below is folders
+	 * and their read report, not skill rows.
 	 */
 	skills: {
 		heading: "Skills",
-		desc: "Instructions the agent can load on request. They are files in your vault — edit them like any note, and the next message picks up the change.",
 		/**
-		 * The section heading for the switch rows, and the shared toggle copy.
+		 * One sentence for all three layers the unified list draws from.
 		 *
-		 * "Takes effect on the next message" is the honest boundary: a live
-		 * conversation's prompt is rewritten on the save, so the wording of the
-		 * next turn is the first thing the switch governs — an ongoing run that
-		 * already read a skill keeps the instructions it loaded.
+		 * The badge beside each row names which of the three it came from, so
+		 * this line only has to say what a skill is and where the kinds live;
+		 * it deliberately does not enumerate the layers, which is the badge's
+		 * job. "Takes effect on the next message" is the honest boundary kept
+		 * from the old built-in note: a live conversation's prompt is rewritten
+		 * on the save, so the wording of the next turn is the first thing a
+		 * switch governs — an ongoing run that already read a skill keeps the
+		 * instructions it loaded.
 		 */
-		builtinHeading: "Built-in skills",
-		builtinDesc:
-			"Included with Piem and kept outside your vault. A switch turned off here removes that skill from the agent's list, taking effect on the next message.",
-		enabledLabel: "Enabled",
+		desc: "Instructions the agent can load on request. The badge on each row says where it lives — in your vault, in a folder on this computer, or shipped with Piem. A switch turned off removes that skill from the agent's list, taking effect on the next message.",
 		import: "Import from URL",
-		empty: "No skills yet. Import one from a URL, or create a folder in Piem/skills with a SKILL.md inside.",
+		empty: "Your vault has no skills yet. Import one from a URL, or create a folder in Piem/skills with a SKILL.md inside.",
 		open: "Open",
 		update: "Check for updates",
 		delete: "Delete",
@@ -1111,8 +1112,7 @@ export const en = {
 		 * searched list below states the actual set, refreshed from what was
 		 * really read, so this line only has to say the kind of place they are.
 		 */
-		userDesc: "Loaded automatically from folders on this computer, outside this vault. The list below shows which folders were read.",
-		userEmpty: "No user-level skills found on this computer.",
+		userDesc: "Skills also load from folders on this computer, outside this vault. The searched list below shows which folders were actually read.",
 		userDirName: "Extra skills folder",
 		/**
 		 * Names both accepted spellings, so they are not discovered from a
@@ -1159,10 +1159,10 @@ export const en = {
 		mcpPending: "Not connected",
 		mcpConnecting: "Connecting",
 		disabled: "Disabled",
-		imported: "Imported",
-		handAuthored: "Handwritten",
-		rootFile: "Single note",
-		external: "External file",
+		/** The layer a skill row came from: which copy won the merge. */
+		builtin: "Built-in",
+		user: "Global",
+		vault: "Vault",
 		missing: "Not found",
 		empty: "Empty",
 		unknown: "Cannot check",

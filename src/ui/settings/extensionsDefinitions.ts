@@ -1,6 +1,7 @@
 import { Notice, TFile, type App, type ButtonComponent, type ExtraButtonComponent, type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import type { SkillDiagnostic } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../../i18n";
+import type { SkillCatalogEntry } from "../../agent/skillLoader";
 import type { SkillRow } from "../../skills/skillManager";
 import { type SettingsPanelState, type SkillsSnapshot } from "./panelState";
 import { createMcpServerConfig, type McpServerConfig } from "../../mcp/mcpConfig";
@@ -21,12 +22,11 @@ import {
 import {
 	appendSettingBadge,
 	describeMcpBadge,
-	externalFileBadge,
 	mcpPendingBadge,
 	problemCountBadge,
 	searchedReadingBadge,
 	setBadge,
-	skillProvenanceBadge,
+	skillSourceBadge,
 } from "./badges";
 import {
 	describeUserSkillsDirProblem,
@@ -149,51 +149,16 @@ function problemKey(diagnostic: SkillDiagnostic): string {
 	return `${path}|${message}`;
 }
 
-/** The Extensions tab's sections: built-in skills, vault skills, user skills, then MCP servers. */
+/** The Extensions tab's sections: one unified skill list, the user-level folders, then MCP servers. */
 export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPanelState): SettingDefinitionItem[] {
 	revalidateSkills(host, state);
 	const snapshot = state.skillsSnapshot;
 	return [
-		builtinSkillsSection(host),
-		vaultSkillsList(host, state, snapshot),
+		unifiedSkillsList(host, state, snapshot),
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
 		mcpList(host),
 	];
-}
-
-/**
- * The factory-shipped skills, each with its enable switch.
- *
- * A `group` rather than a `list`: these rows cannot be added, updated, or
- * deleted — they are constants inside the plugin — so the only control they
- * carry is the switch. The rows come from the agent's catalog, not from a
- * builtin constant read here, for the same reason the reports below do: a
- * vault skill named like a builtin shadows it in the merge, and the catalog is
- * what says so — the shadowed builtin must not render a switch for a skill the
- * agent no longer has, while the vault row below carries the real one.
- *
- * First on the tab, ahead of the vault list: these load for every install and
- * are the switches a reader is most likely hunting for, while the vault section
- * owns the import affordance that defines it.
- */
-function builtinSkillsSection(host: SettingsPanelHost): SettingDefinitionItem {
-	const { t } = host;
-	const builtins = host.skills.catalog().filter((entry) => entry.source === "builtin");
-	return {
-		type: "group",
-		heading: t.t("skills.builtinHeading"),
-		items: [
-			sectionNote(t.t("skills.builtinDesc")),
-			...builtins.map(
-				(entry): SettingGroupItem => ({
-					name: entry.skill.name,
-					desc: entry.skill.description,
-					render: (setting) => configureSkillToggle(setting, host, entry.skill.name),
-				}),
-			),
-		],
-	};
 }
 
 /**
@@ -226,17 +191,27 @@ function configureSkillToggle(setting: Setting, host: SettingsPanelHost, name: s
 }
 
 /**
- * The vault's own skills: what the agent can load on request.
+ * Every skill the agent can load, in one list with a source badge per row.
  *
- * A `list` because these are exactly what one is for — entries the user adds and
- * removes. Import is the add affordance; Reload is a header button because it is
- * not an add, it is the recovery for every problem the reports below can name:
- * fix the file, fix the folder's permissions, then press this. It is also the
- * only way to re-trigger a load with the log panel open, which is how the
- * underlying failure gets diagnosed at all.
+ * A `list` because it is still the home of add-and-remove: Import is the add
+ * affordance; Reload is a header button because it is not an add, it is the
+ * recovery for every problem the reports below can name: fix the file, fix the
+ * folder's permissions, then press this. It is also the only way to re-trigger
+ * a load with the log panel open, which is how the underlying failure gets
+ * diagnosed at all.
+ *
+ * One list rather than the three sections it replaces because the reader's
+ * question is "what can the agent load" — the same question the prompt's own
+ * skill listing answers — and that list is merged, last layer winning. The
+ * rows come from the agent's catalog in the merge's own order (builtins, then
+ * user-level, then vault, a shadowed layer's copy never appearing), so screen
+ * and prompt cannot disagree. Each row carries a badge naming the layer that
+ * won; the layer's consequences live in the row's affordances, not in three
+ * headings a reader would have to know to look under.
  */
-function vaultSkillsList(host: SettingsPanelHost, state: SettingsPanelState, snapshot: SkillsSnapshot | undefined): SettingDefinitionItem {
+function unifiedSkillsList(host: SettingsPanelHost, state: SettingsPanelState, snapshot: SkillsSnapshot | undefined): SettingDefinitionItem {
 	const { t } = host;
+	const rows = snapshot?.inventory.rows ?? [];
 	return {
 		type: "list",
 		heading: t.t("skills.heading"),
@@ -276,13 +251,13 @@ function vaultSkillsList(host: SettingsPanelHost, state: SettingsPanelState, sna
 		],
 		// No `emptyState`: a list holding the section note is never empty, so the
 		// framework would never draw it. The empty sentence joins the note instead —
-		// and only once a read has landed, since before that the folder has not been
-		// looked in and claiming it is empty would be a guess.
+		// and only once a read has landed, since before that the vault folder has
+		// not been looked in and claiming it is empty would be a guess.
 		items: [
 			sectionNoteWithHeadingBadge(t.t("skills.heading"), problemCountBadge(snapshot?.load.vault.length ?? 0, t), [
-				t.t("skills.desc"), snapshot && snapshot.inventory.rows.length === 0 ? t.t("skills.empty") : undefined,
+				t.t("skills.desc"), snapshot && rows.length === 0 ? t.t("skills.empty") : undefined,
 			]),
-			...(snapshot?.inventory.rows ?? []).map((row) => vaultSkillRow(host, state, row)),
+			...host.skills.catalog().map((entry) => unifiedSkillRow(host, state, entry, rows.find((row) => row.name === entry.skill.name))),
 		],
 	};
 }
@@ -329,42 +304,59 @@ function reloadSkills(host: SettingsPanelHost, state: SettingsPanelState): void 
 	revalidateSkills(host, state);
 }
 
-function vaultSkillRow(host: SettingsPanelHost, state: SettingsPanelState, row: SkillRow): SettingGroupItem {
+/**
+ * One row of the unified list, from a catalog entry.
+ *
+ * The catalog carries names and layers; the vault file operations need
+ * `SkillRow` (path, provenance, directory) from the panel's own read, joined
+ * by name. Before the first read lands, or when the two reads disagree, the
+ * row still renders with its badge, description, and switch — the entry is in
+ * the agent's catalog, which is the thing the list describes — and simply
+ * carries no file buttons. That join is also what keeps the consequences in
+ * the right place: a vault skill shows Open/Update/Delete because the vault is
+ * the one layer whose files this panel can act on.
+ */
+function unifiedSkillRow(host: SettingsPanelHost, state: SettingsPanelState, entry: SkillCatalogEntry, vaultRow: SkillRow | undefined): SettingGroupItem {
 	const { t } = host;
 	return {
-		name: row.name,
-		aliases: row.provenance ? [row.provenance.url] : undefined,
+		name: entry.skill.name,
+		aliases: vaultRow?.provenance ? [vaultRow.provenance.url] : undefined,
 		render: (setting) => {
-			appendSettingBadge(setting, skillProvenanceBadge(row, t));
-			const source = describeSkillRow(row);
-			if (source) setFoldableDescription(setting, source, t);
-			// The switch rides ahead of the file actions, mirroring the toggle's
-			// place on the built-in rows: on/off is the question a reader answers
-			// most often, and Open/Update/Delete are the rarer errands.
-			configureSkillToggle(setting, host, row.name);
+			appendSettingBadge(setting, skillSourceBadge(entry.source, t));
+			// Vault rows fold the description with the source URL beneath it; the
+			// other layers have no URL to add and their descriptions ride the fold
+			// the same way, so one path serves every row.
+			const text = [entry.skill.description, vaultRow ? describeSkillRow(vaultRow) : undefined].filter(Boolean).join("\n");
+			if (text) setFoldableDescription(setting, text, t);
+			// The switch rides ahead of the file actions: on/off is the question a
+			// reader answers most often, and Open/Update/Delete are the rarer errands.
+			configureSkillToggle(setting, host, entry.skill.name);
+			if (!vaultRow) {
+				return;
+			}
 			// The path always names a real file: pi only reports skills it actually
 			// loaded, so opening it needs no existence check beyond TFile's own.
 			setting.addButton((button) => {
 				button.setButtonText(t.t("skills.open"));
-				button.onClick(() => void openVaultPath(host.app, row.path));
+				button.onClick(() => void openVaultPath(host.app, vaultRow.path));
 			});
-			if (row.provenance) {
+			if (vaultRow.provenance) {
 				setting.addButton((button) => {
 					button.setButtonText(t.t("skills.update"));
-					button.onClick(() => void runSkillUpdate(host, row, button, async () => reloadSkills(host, state)));
+					button.onClick(() => void runSkillUpdate(host, vaultRow, button, async () => reloadSkills(host, state)));
 				});
 			}
 			// Deletion is directory-only: a root-level skill file is an ordinary note
 			// the user owns, and the panel does not trash notes from a settings row.
-			if (row.dirName !== "") {
+			if (vaultRow.dirName !== "") {
 				setting.addButton((button) => {
 					button.setButtonText(t.t("skills.delete"));
 					button.onClick(() => {
 						openConfirmDelete(host.app, {
-							subject: t.t("confirmDelete.skillSubject", { name: row.name }),
+							subject: t.t("confirmDelete.skillSubject", { name: vaultRow.name }),
 							consequences: [t.t("deletion.skillFiles")],
 							t,
-							onConfirm: () => runSkillRemove(host, row, async () => reloadSkills(host, state)),
+							onConfirm: () => runSkillRemove(host, vaultRow, async () => reloadSkills(host, state)),
 						});
 					});
 				});
@@ -411,18 +403,19 @@ function problemRows(diagnostics: readonly SkillDiagnostic[], copy: SkillProblem
 }
 
 /**
- * The user-level skills section: the extra-folder row, then what was loaded.
+ * The user-level skills folders: the extra-folder row, then what was read.
  *
- * Skill files themselves are read-only — they live outside the vault by
- * definition, so their management belongs to pi and the user's editor. The one
- * thing this panel *does* own is the folder list's extra member, which is a
- * plugin setting like any other, and the report of what was actually read, which
- * is the section's whole reason to exist: pi's loader treats a missing directory
- * as "no skills here" and says nothing, so an unread folder is indistinguishable
- * from an empty one anywhere else.
+ * The skills themselves live in the unified list above — their rows are
+ * catalogued there with a badge, because the reader's question ("what can the
+ * agent load") is answered in one place. What remains here is the folder
+ * infrastructure the vault's own list has no equivalent of: the extra folder,
+ * which is a plugin setting like any other, and the report of what was
+ * actually read, which is the section's whole reason to exist: pi's loader
+ * treats a missing directory as "no skills here" and says nothing, so an
+ * unread folder is indistinguishable from an empty one anywhere else.
  *
  * Absent entirely on mobile, where the node filesystem these live in does not
- * exist and a section promising skills that can never load is noise.
+ * exist and a section promising folders that can never be configured is noise.
  */
 function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, snapshot: SkillsSnapshot | undefined): SettingDefinitionItem[] {
 	if (!host.skills.userSkillsAvailable) {
@@ -442,28 +435,6 @@ function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, s
 					desc: userSkillsDirDescription(t),
 					render: (setting) => configureUserSkillsDir(setting, host, state),
 				},
-				// Skills first — the list the heading promises — then the searched
-				// report, then the problems, because a reader's first question is what
-				// the agent can do, the second is why something is missing from that
-				// answer, and the third is what the machine said about it.
-				...(user && user.skills.length === 0
-					? [{ name: t.t("skills.userEmpty"), searchable: false } satisfies SettingGroupItem]
-					: (user?.skills ?? []).map(
-							(skill): SettingGroupItem => ({
-								name: skill.name,
-								render: (setting) => {
-									appendSettingBadge(setting, externalFileBadge(t));
-									// Frontmatter descriptions are written by outside hands with no
-									// length limit; past the budget the row folds instead of
-									// stretching the list.
-									setFoldableDescription(setting, skill.description, t);
-									// The same switch every other skill row carries — these are
-									// read-only as files, but whether the agent may use them is
-									// this panel's own setting.
-									configureSkillToggle(setting, host, skill.name);
-								},
-							}),
-						)),
 			],
 		},
 		// Nothing to frame means no frame: without this guard a zero-folder report
@@ -482,9 +453,9 @@ function userSkillsSection(host: SettingsPanelHost, state: SettingsPanelState, s
 						}),
 					),
 				]),
-		// Last, and after the user's own skills rather than at the top of the tab.
-		// This is where someone already is when they ask why a folder was skipped,
-		// and it is the long-form answer to a row reading "Cannot check".
+		// Last, rather than at the top of the tab: this is where someone already is
+		// when they ask why a folder was skipped, and it is the long-form answer to
+		// a row reading "Cannot check".
 		...problemRows(user?.diagnostics ?? [], userSkillProblemsCopy(t)),
 	];
 }
