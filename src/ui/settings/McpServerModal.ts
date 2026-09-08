@@ -35,7 +35,8 @@ export interface McpServerModalOptions {
  * The token field accepts the saved token as its starting value. Unlike the
  * provider form there is no "unchanged" sentinel to model — the in-memory
  * settings object holds plaintext, so echoing it back into a password field is
- * safe here and keeps the round trip a plain copy.
+ * safe here. A keychain-bound row is not echoed verbatim, though: the binding
+ * resolves again at open, against the keychain as it stands now.
  */
 export class McpServerModal extends Modal {
 	private draft: McpServerConfig;
@@ -53,6 +54,16 @@ export class McpServerModal extends Modal {
 		// A new draft carries its real id from the start: the panel upserts by id,
 		// so add and edit share one submit path and a reopened form keeps its row.
 		this.draft = options.server ? { ...options.server } : { id: generateMcpServerId(), name: "", url: "", token: "", secretRef: "", enabled: true };
+		// A binding resolves at open, not at plugin load: the settings object
+		// holds the plaintext as it was read then, and a keychain entry rotated
+		// since would leave this form probing — and saving — the stale snapshot.
+		// Re-picking the entry already healed it; resolving here makes that the
+		// default instead of a trick. A dangling entry resolves to `""`, which is
+		// the honest value — it is what the probe would send. Runs before the
+		// dirty baseline, so the resolution is never an edit the user must discard.
+		if (this.draft.secretRef !== "") {
+			this.draft.token = this.options.readSecret(this.draft.secretRef);
+		}
 		this.originalDraft = JSON.stringify(normalizeServerDraft(this.draft));
 		this.guard = new DiscardGuard(() => {
 			this.status?.showError(options.t.t("discard.warning"));

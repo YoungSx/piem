@@ -14,6 +14,14 @@
  * keychain entry is the durable home. `data.json` holds only the reference,
  * which is a user-chosen id and not sensitive.
  *
+ * Being a snapshot taken at load, the in-memory copy can drift from its entry
+ * while the session runs. The policy is that drift heals at the boundary where
+ * credentials are about to be used, not in the background: the edit forms
+ * resolve their own draft on open (the keychain is the home, the snapshot only
+ * a cache of it), and the panel's reconnect re-runs
+ * {@link resolveSecretRefs} before connecting. The reads are cheap and
+ * idempotent, so staleness survives only until the next boundary.
+ *
  * Free of `obsidian` imports at runtime: the keychain arrives as a
  * {@link Keychain}, and the only import from `settings.ts` is type-only and
  * therefore erased.

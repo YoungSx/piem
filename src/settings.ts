@@ -21,6 +21,7 @@ import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
 import { DEFAULT_LOG_LEVEL, readLogLevel, type LogLevelSetting } from "./logging/logLevel";
+import { resolveSecretRefs } from "./settingsSecrets";
 import type { SettingsPanelHost } from "./ui/settings/panelHost";
 import { buildSettingDefinitions } from "./ui/settings/settingDefinitions";
 import { SettingsPanelState } from "./ui/settings/panelState";
@@ -774,7 +775,16 @@ export class PiemSettingTab extends PluginSettingTab {
 				// next states() reports.
 				states: () => this.plugin.mcpManager.getServerStates(),
 				test: (server) => this.plugin.mcpManager.testServer(server),
-				reconnect: () => this.plugin.mcpManager.connect(),
+				// A retry is the user asking "is it fixed yet?": resolve the keychain
+				// bindings first, so an entry corrected since load reaches the servers
+				// here and not only through the edit form. The read is the same
+				// idempotent pass the load path runs — see settingsSecrets.ts.
+				reconnect: () => {
+					if (this.secretEnvironment) {
+						resolveSecretRefs(this.plugin.settings, this.secretEnvironment.keychain());
+					}
+					return this.plugin.mcpManager.connect();
+				},
 			},
 		};
 	}

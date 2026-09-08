@@ -92,6 +92,12 @@ export class ProviderModal extends Modal {
 		this.options = options;
 		this.isNew = options.provider === undefined;
 		this.draft = options.provider ? { ...options.provider } : emptyProviderConfig();
+		// A keychain binding resolves at open, as in the MCP form: the plaintext
+		// the settings object holds was read at plugin load and may lag a rotated
+		// entry. Before the dirty baseline, so the resolution is never an edit.
+		if (this.draft.secretRef !== "") {
+			this.draft.apiKey = this.options.readSecret(this.draft.secretRef);
+		}
 		// An edited row reports the preset it came from, so the form never claims a
 		// hand-typed gateway is one of ours — or hides that a saved row is Anthropic.
 		this.presetChoice = matchProviderPreset(this.draft)?.id ?? CUSTOM_PRESET_ID;

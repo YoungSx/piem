@@ -18,7 +18,8 @@ const { ProviderModal } = await import("./ProviderModal");
 const t = getT("en");
 
 /** A form, opened, with its DOM reachable. */
-function openForm(provider?: ProviderConfig): {
+function openForm(provider?: ProviderConfig, readSecret: (id: string) => string = () => ""): {
+	modal: InstanceType<typeof ProviderModal>;
 	content: HTMLElement;
 	saved: ProviderConfig[];
 	close: () => void;
@@ -30,7 +31,7 @@ function openForm(provider?: ProviderConfig): {
 		// The plainest tier: its key row is one text field, so nothing this test
 		// asserts on is hidden behind a keychain picker.
 		secretStorage: "manual",
-		readSecret: () => "",
+		readSecret,
 		t,
 		test: async () => ({ ok: true, detail: "" }),
 		onSubmit: async (entry) => {
@@ -38,7 +39,7 @@ function openForm(provider?: ProviderConfig): {
 		},
 	});
 	modal.open();
-	return { content: modal.contentEl, saved, close: () => modal.close() };
+	return { modal, content: modal.contentEl, saved, close: () => modal.close() };
 }
 
 /**
@@ -288,6 +289,70 @@ describe("ProviderModal preset row", () => {
 		expect(saved[0]?.protocol).toBe("openai-completions");
 		expect(saved[0]?.apiKey).toBe("sk-key");
 		expect(saved[0]?.source).toBe("user");
+		close();
+	});
+});
+
+/**
+ * The keychain is the home of a bound key; the settings object only holds the
+ * snapshot read at plugin load. Opening the form on a ref-bound row has to
+ * resolve the binding against the keychain as it stands, or the form shows —
+ * and a save persists — a key the user has already rotated.
+ */
+describe("ProviderModal keychain resolution at open", () => {
+	const boundProvider = (apiKey: string): ProviderConfig => ({
+		id: "p3",
+		name: "My gateway",
+		baseUrl: "https://gw.example.com/v1",
+		protocol: "openai-completions",
+		apiKey,
+		secretRef: "kc-gateway",
+		source: "user",
+		oauthFlow: "",
+	});
+	const rotatedKeychain = (id: string): string => (id === "kc-gateway" ? "fresh-from-keychain" : "");
+
+	it("opens on the keychain's current key, not the row's load-time copy", () => {
+		const { content, close } = openForm(boundProvider("stale-from-load"), rotatedKeychain);
+
+		expect(inputWithPlaceholder(content, t.t("providerModal.apiKeyPlaceholder")).value).toBe("fresh-from-keychain");
+		close();
+	});
+
+	it("closes without a discard warning, since resolving is not an edit", () => {
+		// The resolution runs before the dirty baseline, so a form opened on a
+		// rotated entry closes on the first Esc. A regression that counted the
+		// resolution as an edit would leave the modal open here.
+		const { modal, close } = openForm(boundProvider("stale-from-load"), rotatedKeychain);
+
+		close();
+
+		expect(modal.contentEl.childElementCount).toBe(0);
+	});
+
+	it("saves the resolved key when nothing else changed", async () => {
+		const { content, saved, close } = openForm(boundProvider("stale-from-load"), rotatedKeychain);
+
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.save"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.apiKey).toBe("fresh-from-keychain");
+		expect(saved[0]?.secretRef).toBe("kc-gateway");
+		close();
+	});
+
+	it("leaves an inline key exactly as saved", () => {
+		// With no binding there is nothing to resolve: the typed value is the
+		// storage itself, and readSecret must not overwrite it.
+		const row = boundProvider("typed-inline");
+		row.secretRef = "";
+		const { content, close } = openForm(row, () => "should-not-be-read");
+
+		expect(inputWithPlaceholder(content, t.t("providerModal.apiKeyPlaceholder")).value).toBe("typed-inline");
 		close();
 	});
 });
