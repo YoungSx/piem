@@ -90,6 +90,17 @@ const NARROW_ENOUGH_TO_OVERFLOW = 400;
 const WITHIN_TURN = 4;
 const ACROSS_SPEAKERS = 16;
 
+/*
+ * The vertical bound on machine traffic, in pixels at the harness's root size.
+ *
+ * Stated as a number rather than read back off the element, because reading the
+ * computed value and then asserting it matches itself is the check that let this
+ * bound ship unmeasured: the stylesheet test already pins the declaration, and
+ * what this harness adds is whether the cap *bites*. So the number is repeated
+ * here on purpose, and the assertion below is about clipping, not about the cap.
+ */
+const BOUNDED_BODY_PX = 288;
+
 const failures = [];
 for (const panel of panels) {
 	/*
@@ -112,6 +123,73 @@ for (const panel of panels) {
 	}
 	if ((panel.rhythm ?? []).length === 0) {
 		failures.push(`${panel.panel}: no rhythm pairs were measured — the fixture or its data-rhythm marks went missing, and the vertical half of this harness is asserting nothing`);
+	}
+	/*
+	 * The vertical bound, which until now was asserted only as a declaration in
+	 * `traceBodyBound.test.ts` and measured by nothing. A cap that never bites is
+	 * invisible to that test and to every screenshot: the fixtures it had were one
+	 * and two lines long, so nothing in this page ever reached eighteen rem.
+	 *
+	 * Three questions, because the bound is a pair and the exemption is a third
+	 * thing: does the cap resolve to the height it claims, does the box actually
+	 * clip its content, and does the row that must stay unbounded stay unbounded.
+	 */
+	for (const box of panel.bounds ?? []) {
+		/*
+		 * A seam bounds its own box at its own number, for a reason that is not this
+		 * one — so it is neither asserted against the machine-traffic bound nor held
+		 * to the live row's exemption. Skipped rather than absent from the report,
+		 * because a seam that lost its bound entirely is a fault this page would
+		 * otherwise be the natural place to catch, and the count below says how many
+		 * bodies were considered.
+		 */
+		if (box.ownBound) {
+			continue;
+		}
+		if (box.shouldBound) {
+			if (box.maxHeight !== BOUNDED_BODY_PX) {
+				failures.push(`${panel.panel}: ${box.case} — its body caps at ${box.maxHeight ?? "nothing"}px, but the machine-traffic bound is ${BOUNDED_BODY_PX}px`);
+				continue;
+			}
+			/*
+			 * The cap is only *demonstrably* working on a body that holds more than it
+			 * allows. The short fixtures on this page are shorter than any bound and
+			 * correctly scroll nothing; demanding a scrollbar from them would fail the
+			 * rows that are right. The tall fixtures are the witnesses, and the count
+			 * below is what stops them from going missing unnoticed.
+			 */
+			if (box.overflows && !box.clips) {
+				failures.push(
+					`${panel.panel}: ${box.case} — the ${BOUNDED_BODY_PX}px cap is declared but does not bite: ${box.scrollHeight}px of content sits in a ${box.clientHeight}px box with overflow-y ${box.overflowY}`,
+				);
+			}
+			continue;
+		}
+		/*
+		 * The live row's exemption, asserted as a consequence too. A cap here would
+		 * park the newest sentences behind an inner scrollbar that the transcript's
+		 * own follow-scroll can never reach, so this is the one body that must be
+		 * able to grow past the bound.
+		 */
+		if (box.maxHeight !== null) {
+			failures.push(`${panel.panel}: ${box.case} — a live think is capped at ${box.maxHeight}px, so following it would need a scrollbar the transcript cannot reach`);
+		}
+	}
+	/*
+	 * The witnesses have to exist. Every assertion above is vacuous on a page whose
+	 * bodies are all shorter than the bound — which is exactly the state this page
+	 * was in before the tall fixtures landed, and why a cap that never bit went
+	 * unnoticed through every run of this harness. One clipped body per panel is
+	 * the floor; three is what the fixtures provide.
+	 */
+	const witnesses = (panel.bounds ?? []).filter((box) => box.shouldBound && box.overflows);
+	if (witnesses.length === 0) {
+		failures.push(
+			`${panel.panel}: no trace body on this page is taller than the ${BOUNDED_BODY_PX}px bound — the tall fixtures went missing, and the vertical bound is asserted by nothing again`,
+		);
+	}
+	if (!(panel.bounds ?? []).some((box) => !box.shouldBound && !box.ownBound)) {
+		failures.push(`${panel.panel}: no live thinking row was measured — the exemption from the bound is asserted by nothing`);
 	}
 	if (panel.panelScrollsSideways) {
 		const blame = panel.pushers.map((p) => `${p.case} (${p.scrollWidth}px)`).join(", ") || "unknown";
@@ -158,7 +236,9 @@ for (const panel of panels) {
 		`${panel.panel.padEnd(16)} column=${String(panel.client).padStart(3)}px scrollWidth=${String(panel.scrollWidth).padStart(4)}px ` +
 			`overflow-x=${panel.overflowX.padEnd(7)} ${panel.panelScrollsSideways ? "SCROLLS SIDEWAYS" : "holds still"} ` +
 			`contained=${panel.contained.length} reachable=${panel.reachable.filter((b) => b.rightInside).length}/${panel.reachable.length} ` +
-			`gaps=${[...new Set((panel.rhythm ?? []).map((r) => `${r.gap}px`))].sort().join("/")}`,
+			`gaps=${[...new Set((panel.rhythm ?? []).map((r) => `${r.gap}px`))].sort().join("/")} ` +
+			`clipped=${(panel.bounds ?? []).filter((b) => b.shouldBound && b.overflows && b.clips).length}/${(panel.bounds ?? []).filter((b) => b.shouldBound && b.overflows).length}` +
+			`${(panel.bounds ?? []).some((b) => !b.shouldBound && b.maxHeight === null) ? " live=unbounded" : ""}`,
 	);
 }
 
@@ -171,5 +251,6 @@ if (failures.length > 0) {
 }
 console.log(
 	`\nall ${panels.length} panel widths hold their column still, every wide construct stays reachable inside its own scroller,` +
-		` and the gaps are ${WITHIN_TURN}px everywhere inside a turn, ${ACROSS_SPEAKERS}px where the speaker changes`,
+		` the gaps are ${WITHIN_TURN}px everywhere inside a turn, ${ACROSS_SPEAKERS}px where the speaker changes,` +
+		` and long machine traffic clips at ${BOUNDED_BODY_PX}px while a live think stays free to grow`,
 );

@@ -144,6 +144,17 @@ const LONG_PATH = "/Users/someone/Library/Mobile Documents/iCloud~md~obsidian/Do
 const LONG_TOKEN = "a".repeat(96);
 
 /*
+ * A body taller than the bound that is supposed to cap it.
+ *
+ * The horizontal fixtures above are one or two lines each, which is all their own
+ * axis needs — and is why the vertical bound went unmeasured for as long as it
+ * did: at two lines, a rule capping the box at 18rem and no rule at all produce
+ * the same layout. Forty lines is past the cap at every panel width in this page,
+ * so the box either scrolls or the bound is not biting.
+ */
+const TALL_BODY = Array.from({ length: 40 }, (_, i) => `line ${i + 1} of a think that outruns the column`).join("\n");
+
+/*
  * A provider error as the panel receives one: `\n`-joined, with an unbreakable
  * path and token in it. Both halves of `.piem-chat__cutoff-raw`'s contract are in
  * here — the breaks it must keep, and the tokens it must break inside.
@@ -213,6 +224,36 @@ function traceRow(variant, name, detail, body) {
 }
 
 /**
+ * A thinking row in one of its three states, which is three different boxes.
+ *
+ * `live` is the row while the model is still writing it: it wears
+ * `--running`, and the bound deliberately does not apply — the reader is
+ * following the newest sentence, and an inner scrollbox would park it out of
+ * reach of the transcript's own follow-scroll.
+ *
+ * The other two are both settled and differ only in what the body holds, which is
+ * not cosmetic here: `MessageList.tsx` renders a thinking block through
+ * `MarkdownText`, which emits a bare `<pre>` while the message streams and a
+ * rendered Markdown container once it settles. The cap has to bite on both, and
+ * they are different enough boxes — one replaced-content block, one flow of
+ * paragraphs — that measuring only the `pre` would leave the shape the reader
+ * actually ends up looking at unmeasured.
+ */
+function thinkingRow(state, body) {
+	const running = state === "live" ? " piem-chat__trace--running" : "";
+	const inner = state === "settled-markdown"
+		? `<div class="piem-chat__markdown piem-chat__text--prose">${body
+				.split("\n")
+				.map((line) => `<p>${line}</p>`)
+				.join("")}</div>`
+		: `<pre class="piem-chat__text piem-chat__text--prose">${body}</pre>`;
+	return `<details class="piem-chat__trace piem-chat__trace--thinking${running}" data-case="trace-thinking/${state}"${state === "live" ? ' aria-busy="true"' : ""} open>
+	<summary class="piem-chat__trace-summary"><span class="piem-chat__trace-name piem-chat__trace-name--label">${state === "live" ? "Thinking…" : "Thought it through"}</span></summary>
+	<div class="piem-chat__trace-body">${inner}</div>
+</details>`;
+}
+
+/**
  * One assistant turn, split across rows the way `pi` splits it.
  *
  * This is the fixture for the *vertical* half of what this page measures, and it
@@ -274,6 +315,15 @@ rows.push(messageRow("assistant", "plain-prose", plainBlock("prose", `Reading ${
 rows.push(traceRow("result", "long-output", LONG_PATH, `${LONG_PATH}\n${LONG_TOKEN}`));
 rows.push(traceRow("harness", "wide-columns", LONG_PATH, `col_a\tcol_b\n${LONG_PATH}\t1`));
 rows.push(traceRow("call", "flat", LONG_PATH, ""));
+/*
+ * The vertical bound, on every variant that carries it and the one that is exempt.
+ * The bodies here are deliberately tall; the rows above are deliberately wide.
+ */
+rows.push(traceRow("result", "tall-output", LONG_PATH, TALL_BODY));
+rows.push(traceRow("harness", "tall-output", LONG_PATH, TALL_BODY));
+rows.push(thinkingRow("live", TALL_BODY));
+rows.push(thinkingRow("settled-pre", TALL_BODY));
+rows.push(thinkingRow("settled-markdown", TALL_BODY));
 /*
  * The question card, both lives.
  *
@@ -552,8 +602,74 @@ for (const leaf of document.querySelectorAll(".harness-leaf")) {
 			gap: Math.round((boxB.getBoundingClientRect().top - boxA.getBoundingClientRect().bottom) * 10) / 10,
 		});
 	}
+	/*
+	 * The vertical bound on machine traffic. Read as consequences, not
+	 * declarations: a max-height resolving to a pixel value says a cap was
+	 * declared, while a scroll height past the client height with a scrollable
+	 * overflow is the only evidence it actually clipped anything — a cap on a box
+	 * whose ancestor never gave it a height is a cap that does nothing, which is
+	 * exactly the failure no substring check can see.
+	 *
+	 * The live thinking row is measured the same way and asserted the other way
+	 * round: it must come out unbounded, because its reader is following a stream
+	 * the transcript is scrolling for them.
+	 *
+	 * No backticks in this comment: it lives inside the page template literal and
+	 * one would close it.
+	 */
+	const bounds = [];
+	for (const body of msgs.querySelectorAll("[data-case] .piem-chat__trace-body")) {
+		const host = body.closest("[data-case]");
+		const style = getComputedStyle(body);
+		/*
+		 * Whether this body is one the bound is supposed to hold, decided off the
+		 * classes the plugin sets rather than off a list of case names here: the
+		 * variants are what the rule names, and a fixture renamed in the section above
+		 * must not quietly drop out of the assertion.
+		 *
+		 * A live think is the exemption and is the one row asserted the other way, so
+		 * it is excluded here rather than being absent: a settled think, a tool result
+		 * and a harness block are bounded, and the same row while running is not.
+		 */
+		const trace = body.closest(".piem-chat__trace");
+		const running = trace.classList.contains("piem-chat__trace--running");
+		const bounded = !running && ["piem-chat__trace--result", "piem-chat__trace--harness", "piem-chat__trace--thinking"].some((cls) => trace.classList.contains(cls));
+		/*
+		 * A seam carries a bound of its own, at its own number and for its own reason
+		 * (a conversation summary is long, and it is not machine traffic). It is
+		 * neither the trio nor the exemption, so it is reported and left to the
+		 * consumer rather than being forced into a yes/no this collector cannot
+		 * honestly answer.
+		 */
+		const seam = trace.classList.contains("piem-chat__trace--seam");
+		// The absence of a cap (the engine spells it "none") is reported as null, so
+		// the consumer never has to know which spelling came back.
+		const cap = style.maxHeight === "none" ? null : Math.round(parseFloat(style.maxHeight));
+		const scrollable = style.overflowY === "auto" || style.overflowY === "scroll";
+		bounds.push({
+			case: host.dataset.case,
+			shouldBound: bounded,
+			ownBound: seam,
+			maxHeight: cap,
+			overflowY: style.overflowY,
+			clientHeight: body.clientHeight,
+			scrollHeight: body.scrollHeight,
+			/*
+			 * Whether this body holds more than its cap allows. Only a body that does
+			 * can testify that the cap bites: a two-line result is shorter than any
+			 * bound and correctly scrolls nothing, and asking it for a scrollbar would
+			 * fail the fixtures that are right. The tall fixtures are the witnesses,
+			 * and this flag is what marks them as such.
+			 */
+			overflows: cap !== null && body.scrollHeight > cap + 1,
+			// The cap biting, which is the only thing that distinguishes a rule that
+			// works from one declared on a box no ancestor ever gave a height.
+			clips: scrollable && body.scrollHeight > body.clientHeight + 1,
+		});
+	}
 	out.push({
 		panel: label,
+		bounds,
 		rhythm,
 		reachable,
 		width: Number(leaf.dataset.width),
