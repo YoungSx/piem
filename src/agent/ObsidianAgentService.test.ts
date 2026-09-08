@@ -404,6 +404,44 @@ describe("ObsidianAgentService", () => {
 		expect((await service.listSessions()).length).toBe(1);
 	});
 
+	it("sweeps the untouched blank sheet when a session switch leaves it", async () => {
+		const service = createService();
+		await service.sendPrompt("Something to return to");
+		const first = service.getSnapshot().session;
+
+		// New chat mints a fresh file; switching back to the first session is the
+		// moment the blank one proves unwanted and must not linger on disk.
+		await service.newSession();
+		const blank = service.getSnapshot().session;
+		expect(blank?.id).not.toBe(first?.id);
+		if (!first?.path) throw new Error("fixture: first session has no path");
+
+		await service.openSession(first.path);
+
+		expect(service.getSnapshot().session?.id).toBe(first?.id);
+		expect((await service.listSessions()).map((session) => session.id)).toEqual([first?.id]);
+	});
+
+	it("keeps a left-behind session that has a conversation", async () => {
+		const service = createService();
+		await service.sendPrompt("First conversation");
+		const first = service.getSnapshot().session;
+
+		// The other direction of the same switch: a chat that holds turns is a
+		// real session, whatever the reason the user left it.
+		await service.newSession();
+		await service.sendPrompt("Second conversation");
+		const second = service.getSnapshot().session;
+		if (!first?.path || !second?.id) throw new Error("fixture: missing session identity");
+
+		await service.openSession(first.path);
+
+		expect(service.getSnapshot().session?.id).toBe(first.id);
+		expect((await service.listSessions()).map((session) => session.id).sort()).toEqual(
+			[first.id, second.id].sort()
+		);
+	});
+
 	it("collapses a double-click on new chat into a single fresh session", async () => {
 		const service = createService();
 		await service.sendPrompt("Something to leave behind");
