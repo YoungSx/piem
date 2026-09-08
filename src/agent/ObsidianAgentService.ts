@@ -3903,9 +3903,9 @@ export class ObsidianAgentService {
 	/**
 	 * {@link reloadSkills} with the skill layer's failures contained.
 	 *
-	 * The loaders promise never to throw — every {@link NodeHomeEnv} operation
-	 * returns a `Result` — but that is a contract, not a structural guarantee, and
-	 * the seam is injectable. On the startup path the difference mattered: a throw
+	 * The user loader contains bridge failures and Pi returns filesystem errors
+	 * as a `Result`, but that contract is not a structural guarantee: the seam
+	 * is injectable. On the startup path the difference mattered: a throw
 	 * from here reached {@link initialize}'s handler, became
 	 * {@link initializationError}, and surfaced as the assertive red banner, which
 	 * also gates sending. A folder the user's operating system refuses to read

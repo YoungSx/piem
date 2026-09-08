@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPluginBundle } from "./pluginLoader";
@@ -18,14 +18,29 @@ import { loadPluginBundle } from "./pluginLoader";
  * "simplifies" the shim away and silently turns the smoke test into a no-op.
  */
 
+const directories: string[] = [];
+afterEach(() => {
+	for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function bundleFixture(source: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "pi-loader-fixture-"));
+	directories.push(dir);
 	const file = join(dir, "main.js");
 	writeFileSync(file, source, "utf8");
 	return file;
 }
 
 describe("loadPluginBundle", () => {
+	it("can refuse real Node builtins even though the test runner provides them", () => {
+		const bundlePath = bundleFixture(`module.exports = require("node:fs");`);
+		const requests: string[] = [];
+		expect(() => loadPluginBundle({
+			bundlePath, modules: {}, allowNodeBuiltins: false, onRequire: (id) => requests.push(id),
+		})).toThrow("Cannot find module 'node:fs'");
+		expect(requests).toEqual(["node:fs"]);
+	});
+
 	it("rejects a literal dynamic import of a bare package, as Obsidian's renderer does", async () => {
 		// The exact construct 0.1.0-alpha.3 shipped.
 		const bundlePath = bundleFixture(`module.exports = { probe: () => import("electron") };`);

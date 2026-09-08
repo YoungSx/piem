@@ -1,4 +1,4 @@
-import type { HostRequire } from "./nodeHomeEnv";
+import type { HostRequire } from "./nodeSkillsHost";
 
 /**
  * What counts as a usable extra directory for user-level skills.
@@ -16,8 +16,8 @@ import type { HostRequire } from "./nodeHomeEnv";
  * where a translator can own it.
  *
  * What this deliberately does not answer is whether the directory exists. It is
- * a host path, read by {@link import("./nodeHomeEnv").NodeHomeEnv}, and the
- * settings panel that validates it may be running on a phone with no filesystem
+ * a host path, read through Pi's NodeExecutionEnv, and the settings panel that
+ * validates it may be running on a phone with no filesystem
  * to ask. The only questions answered here are the ones a string can answer.
  */
 
@@ -67,7 +67,7 @@ function hostModuleLookup(id: string): unknown {
  * The two predicates, or `undefined` when this platform has none.
  *
  * Guarded member by member, for the reason
- * {@link import("./nodeHomeEnv").NodeHomeEnv} documents at length: a missing
+ * {@link import("./nodeSkillsHost").nodeSkillsHome} also guards against: a missing
  * `require` throws, but a mobile shim that answers every id with `undefined`
  * throws nothing, and returning its answer verbatim hands back a
  * populated-looking object whose members blow up on the first call. So the check
@@ -109,7 +109,7 @@ function isHomeRooted(path: string): boolean {
  * resolves the path, not to the field that accepts it.
  *
  * Rejected: a bare relative path. There is no base to resolve it against that
- * the user would recognise — {@link import("./nodeHomeEnv").NodeHomeEnv} runs
+ * the user would recognise — the user-skills environment runs
  * with the home directory as its cwd, so `skills` would quietly mean
  * `~/skills`, a directory the user never named. Nobody reports that as a bug,
  * because nothing looks wrong.
@@ -123,7 +123,7 @@ function isHomeRooted(path: string): boolean {
  * Refusing it would be a rule enforcing a boundary that is not there.
  *
  * @param hostRequire Overrides the module lookup, following
- * {@link import("./nodeHomeEnv").NodeHomeEnv}: `undefined` means "use the
+ * {@link import("./nodeSkillsHost").nodeSkillsHome}: `undefined` means "use the
  * host's", and an explicit `null` models a shell exposing none — the only way a
  * test can reach the no-node branch, since the bundle's `require` is resolved at
  * evaluation time.
@@ -148,7 +148,7 @@ export function normalizeUserSkillsDir(input: unknown, hostRequire?: HostRequire
 	if (!flavours) {
 		// Without node, telling absolute from relative would mean re-implementing
 		// two platforms' rules, and there is no filesystem for either answer to
-		// matter: on mobile every NodeHomeEnv operation is `not_supported`, so
+		// matter: on mobile the user-skills loader skips the scan, so
 		// this directory is inert whatever it says. Faced with a verdict that
 		// cannot be trusted and cannot be acted on, accepting is the safer error.
 		// The value is shared settings — a phone that rejected the Windows path

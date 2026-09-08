@@ -1,4 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createRequire } from "node:module";
 import { installDom } from "./testUtils/dom";
 import { createObsidianHostModule, createStubApp, loadPluginBundle, type PluginHostRecord } from "./testUtils/pluginLoader";
 
@@ -28,7 +32,25 @@ const MOBILE = { isDesktop: false, isDesktopApp: false, isMobile: true, isMobile
 interface LoadedPlugin {
 	onload(): Promise<void>;
 	onunload?(): void;
+	settings: { userSkillsDir?: string };
+	refreshAgentSkills(): Promise<void>;
+	agentSkillLoad(): {
+		user: {
+			skills: Array<{ name: string; content: string; filePath: string; sourceDir: string }>;
+			diagnostics: Array<{ code: string; message: string }>;
+			searched: Array<{ dir: string; found: boolean | undefined; loaded: number }>;
+		};
+	};
+	agentSkillCatalog(): Array<{ skill: { name: string }; source: string }>;
 }
+
+const loadedPlugins: LoadedPlugin[] = [];
+const temporaryHomes: string[] = [];
+const nodeRequire = createRequire(import.meta.url);
+afterEach(() => {
+	for (const plugin of loadedPlugins.splice(0)) plugin.onunload?.();
+	for (const home of temporaryHomes.splice(0)) rmSync(home, { recursive: true, force: true });
+});
 
 /**
  * Loads the bundle under one platform shape and returns the constructed plugin.
@@ -43,13 +65,22 @@ function instantiate(options: {
 	modules?: Record<string, unknown>;
 	exposeGlobalRequire?: boolean;
 	secretStorage?: unknown;
+	allowNodeBuiltins?: boolean;
+	onRequire?: (id: string) => void;
+	onDynamicImport?: (id: string) => void;
 }): { plugin: LoadedPlugin; record: PluginHostRecord } {
 	const record = emptyRecord();
 	const modules: Record<string, unknown> = {
 		obsidian: createObsidianHostModule(record, options.platform),
 		...options.modules,
 	};
-	const exports = loadPluginBundle({ modules, exposeGlobalRequire: options.exposeGlobalRequire });
+	const exports = loadPluginBundle({
+		modules,
+		exposeGlobalRequire: options.exposeGlobalRequire,
+		allowNodeBuiltins: options.allowNodeBuiltins ?? !options.platform.isMobile,
+		onRequire: options.onRequire,
+		onDynamicImport: options.onDynamicImport,
+	});
 	const PluginClass = (exports as { default?: unknown }).default ?? exports;
 	expect(typeof PluginClass).toBe("function");
 	const plugin = new (PluginClass as new (app: unknown, manifest: unknown) => LoadedPlugin)(
@@ -59,6 +90,7 @@ function instantiate(options: {
 			version: "test",
 		},
 	);
+	loadedPlugins.push(plugin);
 	return { plugin, record };
 }
 
@@ -185,5 +217,108 @@ describe("built bundle loads under Obsidian's loader", () => {
 		for (const icon of record.ribbonIcons) {
 			expect(record.icons.has(icon)).toBe(true);
 		}
+	});
+});
+
+describe("built bundle loads user skills through Pi's lazy Node environment", () => {
+	for (const [name, modules] of [
+		["rejects Node modules", {}],
+		["returns undefined", { "node:fs/promises": undefined, "node:os": undefined, "node:path": undefined }],
+		["returns partial modules", { "node:fs/promises": {}, "node:os": { homedir: () => "/home/tester" }, "node:path": {} }],
+	] as const) {
+		it(`skips scanning when the host ${name}, without initializing the bridge`, async () => {
+			const requests: string[] = [];
+			const dynamicImports: string[] = [];
+			const { plugin } = instantiate({
+				platform: MOBILE,
+				modules,
+				exposeGlobalRequire: false,
+				allowNodeBuiltins: false,
+				onRequire: (id) => requests.push(id),
+				onDynamicImport: (id) => dynamicImports.push(id),
+			});
+			await plugin.onload();
+			expect(requests.filter((id) => id.startsWith("node:"))).toEqual([]);
+			await plugin.refreshAgentSkills();
+			const user = plugin.agentSkillLoad().user;
+			expect(user.skills).toEqual([]);
+			expect(user.diagnostics).toEqual([]);
+			expect(user.searched).toEqual(["~/.pi/agent/skills", "~/.agents/skills"].map((dir) => ({ dir, found: undefined, loaded: 0 })));
+			expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(true);
+			expect(requests).not.toContain("node:child_process");
+			expect(requests).not.toContain("node:readline");
+			expect(dynamicImports).toEqual([]);
+		});
+	}
+
+	it("reads isolated real directories, honors precedence and refreshes edited skills", async () => {
+		const home = mkdtempSync(join(tmpdir(), "piem-bundle-skills-"));
+		temporaryHomes.push(home);
+		const put = (path: string, name: string, body: string) => {
+			const file = join(home, path);
+			mkdirSync(join(file, ".."), { recursive: true });
+			writeFileSync(file, `---\nname: ${name}\ndescription: ${body}\n---\n${body}\n`);
+			return file;
+		};
+		const custom = put("chosen/shared/SKILL.md", "shared", "chosen wins");
+		put(".pi/agent/skills/shared/SKILL.md", "shared", "pi loses");
+		put(".agents/skills/shared/SKILL.md", "shared", "agents loses");
+		put(".pi/agent/skills/pi-only/SKILL.md", "pi-only", "pi body");
+		put(".agents/skills/agents-only/SKILL.md", "agents-only", "agents body");
+		put(".agents/skills/ignored/SKILL.md", "ignored", "ignored body");
+		writeFileSync(join(home, ".agents/skills/.gitignore"), "ignored/\n");
+		put("linked/linked/SKILL.md", "linked", "linked body");
+		symlinkSync(join(home, "linked/linked"), join(home, ".agents/skills/linked"));
+		symlinkSync(join(home, "missing"), join(home, ".agents/skills/dangling"));
+		const requests: string[] = [];
+		const forbidden: string[] = [];
+		const refuse = (name: string) => () => { forbidden.push(name); throw new Error(`unexpected ${name}`); };
+		const fs = nodeRequire("node:fs/promises") as typeof import("node:fs/promises");
+		const { plugin } = instantiate({
+			platform: DESKTOP,
+			onRequire: (id) => requests.push(id),
+			modules: {
+				"node:os": { ...nodeRequire("node:os"), homedir: () => home },
+				"node:child_process": { spawn: refuse("spawn") },
+				"node:fs/promises": { ...fs, mkdtemp: refuse("mkdtemp"), writeFile: refuse("writeFile") },
+			},
+		});
+		await plugin.onload();
+		expect(requests.filter((id) => id.startsWith("node:"))).toEqual([]);
+		plugin.settings.userSkillsDir = "~/chosen";
+		await plugin.refreshAgentSkills();
+		const user = plugin.agentSkillLoad().user;
+		expect(user.diagnostics).toEqual([]);
+		expect(user.skills.map((s) => s.name).sort()).toEqual(["agents-only", "linked", "pi-only", "shared"]);
+		expect(user.skills.find((s) => s.name === "shared")).toMatchObject({ filePath: custom, sourceDir: "~/chosen", content: "chosen wins" });
+		expect(user.searched).toEqual([
+			{ dir: "~/chosen", found: true, loaded: 1 },
+			{ dir: "~/.pi/agent/skills", found: true, loaded: 1 },
+			{ dir: "~/.agents/skills", found: true, loaded: 2 },
+		]);
+		put("chosen/shared/SKILL.md", "shared", "edited body");
+		await plugin.refreshAgentSkills();
+		expect(plugin.agentSkillLoad().user.skills.find((s) => s.name === "shared")?.content).toBe("edited body");
+		expect(requests).toContain("node:child_process");
+		expect(forbidden).toEqual([]);
+	});
+
+	it("contains bridge initialization failure without discarding the builtin catalog", async () => {
+		const { plugin } = instantiate({
+			platform: DESKTOP,
+			allowNodeBuiltins: false,
+			modules: {
+				"node:fs/promises": nodeRequire("node:fs/promises"),
+				"node:path": nodeRequire("node:path"),
+				"node:os": { homedir: () => "/home/tester" },
+			},
+		});
+		await plugin.onload();
+		await plugin.refreshAgentSkills();
+		const user = plugin.agentSkillLoad().user;
+		expect(user.skills).toEqual([]);
+		expect(user.diagnostics).toEqual([expect.objectContaining({ code: "read_failed" })]);
+		expect(user.searched.every((entry) => entry.found === undefined)).toBe(true);
+		expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(true);
 	});
 });
