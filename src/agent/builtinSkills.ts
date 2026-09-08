@@ -1,5 +1,6 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../i18n";
+import distillSkill from "./skills/distill-skill/SKILL.md";
 import efficientWebResearch from "./skills/efficient-web-research/SKILL.md";
 import findSkills from "./skills/find-skills/SKILL.md";
 import linkGraph from "./skills/link-graph/SKILL.md";
@@ -30,6 +31,7 @@ const BUILTIN_SKILLS_ROOT = "/__piem_builtin_skills__";
  */
 export function createBuiltinSkills(t: Translator): Skill[] {
 	return [
+		createSkill("distill-skill", t.t("builtinSkills.distillSkill.description"), distillSkill),
 		createSkill("efficient-web-research", t.t("builtinSkills.efficientWebResearch.description"), efficientWebResearch),
 		createSkill("find-skills", t.t("builtinSkills.findSkills.description"), findSkills),
 		createSkill("link-graph", t.t("builtinSkills.linkGraph.description"), linkGraph),
