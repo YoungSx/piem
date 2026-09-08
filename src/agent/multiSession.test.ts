@@ -485,12 +485,19 @@ function echoStreamFn(): StreamFn {
 // Shared sequencing
 // ---------------------------------------------------------------------------
 
-/** Seeds two sessions: A holds one echoed turn, B is the freshly minted sheet. */
+/**
+ * Seeds two sessions, each holding one echoed turn.
+ *
+ * Both must carry a message: a sheet left blank on switch-away is retired by
+ * the blank-sheet sweep, and these tests are about concurrency semantics, not
+ * about giving a blank sheet a reason to die.
+ */
 async function seedTwoSessions(service: ObsidianAgentServiceType): Promise<{ pathA: string; pathB: string }> {
 	await service.sendPrompt("seed-a");
 	const pathA = service.getSnapshot().session?.path;
 	expect(pathA).toBeDefined();
 	await service.newSession();
+	await service.sendPrompt("seed-b");
 	const pathB = service.getSnapshot().session?.path;
 	expect(pathB).toBeDefined();
 	expect(pathB).not.toBe(pathA);

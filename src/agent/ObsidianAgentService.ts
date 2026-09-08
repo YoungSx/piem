@@ -2554,6 +2554,7 @@ export class ObsidianAgentService {
 		if (this.sessionManager.getActiveSessionPath() === path) {
 			return;
 		}
+		const abandonedPath = this.currentPath;
 
 		let info: ActiveSessionInfo;
 		try {
@@ -2568,10 +2569,15 @@ export class ObsidianAgentService {
 
 		// Deliberately no abort of the session being left. Its runtime keeps
 		// running in the background; `abortSession(path)` is the opt-in kill.
+		// The untouched blank sheet is the one exception — nothing is running
+		// there to keep, and the sweep below is its retirement.
 		this.currentPath = path;
 		const rt = this.runtimeFor(path);
 		rt.sessionInfo = info;
 		this.sessionInfo = info;
+		// Sweep only after the target loaded: a failed load must leave the blank
+		// sheet exactly as it was, still holding the panel.
+		await this.sweepAbandonedBlankSheet(abandonedPath);
 		// A runtime that already holds an agent is re-focused, not re-opened, and
 		// everything below this line would undo it. `agent.state.messages` is the
 		// live transcript — a run still in flight has written nothing to the log
@@ -2613,6 +2619,47 @@ export class ObsidianAgentService {
 		this.sessionInfo = info;
 		rt.sessionInfo = info;
 		this.notify();
+	}
+
+	/**
+	 * Retires the session just left when it never became a conversation.
+	 *
+	 * "New chat" is not a promise to store a file: it means a blank sheet, and
+	 * the runtime that served it already reuses an untouched one (`newSession`'s
+	 * blank-sheet guard). The switch away is the moment a fresh sheet proves
+	 * unwanted, and only then — a session the user typed one character into, or
+	 * whose run is still streaming in the background, is a real conversation
+	 * and keeps every protection the runtime pool grants it. Same predicate as
+	 * that guard, read off the abandoned runtime.
+	 *
+	 * Best effort by design: a refusal to sweep must never block the switch
+	 * the user asked for, so a failure logs and leaves the blank session to
+	 * the retention sweep it would have outlived anyway.
+	 */
+	private async sweepAbandonedBlankSheet(abandonedPath: string | null): Promise<void> {
+		if (!abandonedPath) {
+			return;
+		}
+		const abandoned = this.runtimes.get(abandonedPath);
+		const agent = abandoned?.agent;
+		if (!agent || agent.state.isStreaming || agent.state.messages.length > 0) {
+			return;
+		}
+		try {
+			// Belt-and-braces: the predicate above excludes a streaming run, so
+			// this is idempotent at worst. Abort first — a sweep on a live run
+			// would delete the file the ledger is still appending to.
+			await this.abortSession(abandonedPath);
+			await this.sessionManager.deleteSession(abandonedPath);
+			this.removeRuntime(abandoned);
+			this.sessionRevision += 1;
+			this.notify();
+		} catch (error) {
+			this.log.warn("Blank session sweep failed; leaving it for retention", () => ({
+				path: abandonedPath,
+				error: causeMessage(error),
+			}));
+		}
 	}
 
 	/**
