@@ -466,7 +466,7 @@ export const en = {
 		},
 		vaultMemory: {
 			description:
-				"Remember lessons across chats: log corrections and failures to Piem/memory/, recall them at task start, and curate what earns long-term storage.",
+				"Remember lessons across chats: log corrections and failures to Piem/memory/, recall them at task start or when asked about a past lesson, and curate what earns long-term storage.",
 		},
 	},
 
