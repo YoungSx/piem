@@ -1,13 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { getT } from "../../i18n";
+import type { SkillSource } from "../../agent/skillLoader";
 import type { McpServerState } from "../../mcp/mcpManager";
-import type { SkillRow } from "../../skills/skillManager";
 import { installDom } from "../../testUtils/dom";
-import { appendBadge, describeMcpBadge, externalFileBadge, mcpPendingBadge, problemCountBadge, setBadge, skillProvenanceBadge } from "./badges";
+import { appendBadge, describeMcpBadge, mcpPendingBadge, problemCountBadge, setBadge, skillSourceBadge } from "./badges";
 
 const server: McpServerState = { id: "one", name: "One", url: "https://example.com/mcp", enabled: true, status: "ok", toolCount: 1 };
-const skill: SkillRow = { name: "notes", description: "A description", path: "Piem/skills/notes/SKILL.md", dirName: "notes" };
 
 describe("extension badge facts", () => {
 	for (const language of ["en", "zh-cn"] as const) {
@@ -24,11 +23,13 @@ describe("extension badge facts", () => {
 			expect(mcpPendingBadge(t).tone).toBe("connecting");
 		});
 
-		it(`${language}: derives skill identity from provenance and path`, () => {
-			expect(skillProvenanceBadge(skill, t).label).toBe(t.t("badges.handAuthored"));
-			expect(skillProvenanceBadge({ ...skill, dirName: "" }, t).label).toBe(t.t("badges.rootFile"));
-			expect(skillProvenanceBadge({ ...skill, provenance: { url: "https://example.com/skill.md", kind: "raw", importedAt: "", files: {} } }, t).label).toBe(t.t("badges.imported"));
-			expect(externalFileBadge(t).label).toBe(t.t("badges.external"));
+		it(`${language}: names a skill row's layer, neutrally`, () => {
+			const sources: SkillSource[] = ["builtin", "user", "vault"];
+			for (const source of sources) {
+				const badge = skillSourceBadge(source, t);
+				expect(badge.tone).toBe("neutral");
+				expect(badge.label).toBe(t.t(`badges.${source}`));
+			}
 			expect(problemCountBadge(0, t)).toBeUndefined();
 			expect(problemCountBadge(1, t)?.label).toBe(t.t("badges.problemOne"));
 			expect(problemCountBadge(2, t)?.label).toBe(t.t("badges.problemMany", { count: 2 }));

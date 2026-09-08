@@ -1,7 +1,7 @@
 import type { Setting, SettingGroup } from "obsidian";
 import type { Translator } from "../../i18n";
+import type { SkillSource } from "../../agent/skillLoader";
 import type { McpServerState } from "../../mcp/mcpManager";
-import type { SkillRow } from "../../skills/skillManager";
 import { countSkills, type UserSkillsDirReading } from "./userSkillsCopy";
 
 export type BadgeTone = "ok" | "connecting" | "error" | "warn" | "untested" | "disabled" | "neutral";
@@ -70,15 +70,20 @@ export function mcpPendingBadge(t: Translator): SettingBadge {
 	return { label: t.t("badges.mcpConnecting"), tone: "connecting" };
 }
 
-export function skillProvenanceBadge(row: SkillRow, t: Translator): SettingBadge {
+/**
+ * The layer a skill row came from, as a single neutral badge.
+ *
+ * One badge per row rather than per-file provenance because the unified list
+ * mixes all three layers and a reader scanning for "which of these can I
+ * touch" reads the badge first; the file-level distinctions (imported vs.
+ * hand-written vs. single note) remain in the data (`SkillRow.provenance`)
+ * and drive the row's Update/Delete affordances instead of the badge.
+ */
+export function skillSourceBadge(source: SkillSource, t: Translator): SettingBadge {
 	return {
-		label: row.provenance ? t.t("badges.imported") : row.dirName === "" ? t.t("badges.rootFile") : t.t("badges.handAuthored"),
+		label: t.t(source === "builtin" ? "badges.builtin" : source === "user" ? "badges.user" : "badges.vault"),
 		tone: "neutral",
 	};
-}
-
-export function externalFileBadge(t: Translator): SettingBadge {
-	return { label: t.t("badges.external"), tone: "neutral" };
 }
 
 export function searchedReadingBadge(reading: UserSkillsDirReading, t: Translator): SettingBadge {

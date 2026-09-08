@@ -434,7 +434,7 @@ describe("the MCP connection button", () => {
 });
 
 /**
- * The built-in section and the per-skill disable switch.
+ * The unified skill list and the per-skill disable switch.
  *
  * The switch's whole contract is one array on the settings object: removing the
  * name enables, appending it disables. The panel renders the agent's catalog
@@ -443,7 +443,7 @@ describe("the MCP connection button", () => {
  * not save: `setValue` is called to reflect stored state before the change
  * callback is registered, so a fresh render writes nothing.
  */
-describe("the built-in skills section", () => {
+describe("the unified skills list", () => {
 	const summarize = { name: "summarize", description: "Summarize", content: "body", filePath: "/__piem_builtin_skills__/summarize/SKILL.md" };
 	const custom = { name: "custom", description: "Custom", content: "body", filePath: "/Piem/skills/custom/SKILL.md" };
 	const catalog: SettingsPanelHost["skills"]["catalog"] = () => [
@@ -451,7 +451,7 @@ describe("the built-in skills section", () => {
 		{ skill: custom, source: "vault" },
 	];
 
-	function mount(disabled: string[] = []) {
+	function mount(disabled: string[] = [], rows: SkillRow[] = []) {
 		let saves = 0;
 		const base = stubHost();
 		const host = stubHost({
@@ -459,38 +459,39 @@ describe("the built-in skills section", () => {
 			save: async () => {
 				saves += 1;
 			},
-			skills: { ...base.skills, catalog },
+			skills: { ...base.skills, catalog, list: async () => ({ rows }) },
 		});
-		// The built-in group leads the page; its first item is the section note.
-		const group = extensionsDefinitions(host, new SettingsPanelState())[0] as {
+		// The unified list leads the page; its first item is the section note.
+		const list = extensionsDefinitions(host, new SettingsPanelState())[0] as {
 			heading?: string;
 			items: Array<{ name?: string; render?: (setting: unknown) => void }>;
 		};
-		return { group, host, saves: () => saves };
+		return { list, host, saves: () => saves };
 	}
 
-	function renderRow(group: { items: Array<{ name?: string; render?: (setting: unknown) => void }> }, name: string): ToggleStub {
+	function renderRow(list: { items: Array<{ name?: string; render?: (setting: unknown) => void }> }, name: string): ToggleStub {
 		const container = document.createElement("div");
 		const setting = new (Setting as unknown as new (el: HTMLElement) => { toggles: ToggleStub[] })(container);
-		const row = group.items.find((item) => item.name === name);
-		if (!row) throw new Error(`no builtin row named ${name}`);
+		const row = list.items.find((item) => item.name === name);
+		if (!row) throw new Error(`no skill row named ${name}`);
 		row.render?.(setting);
 		return setting.toggles[0] as ToggleStub;
 	}
 
-	it("splits the built-in rows from the vault list", async () => {
-		const { group } = mount();
+	it("holds every layer in one list, in the catalog's own order, badged", async () => {
+		const { list } = mount();
 		await settle();
 
-		expect(group.heading).toBe(en.t("skills.builtinHeading"));
-		// Only the built-in layer belongs here: the vault skill rides in the
-		// folder's own list below, not in a row that delete could never remove.
-		expect(group.items.map((item) => item.name)).toEqual([en.t("skills.builtinDesc"), summarize.name]);
+		expect(list.heading).toBe(en.t("skills.heading"));
+		// One list answers "what can the agent load", in the merge's own order —
+		// the same order the prompt's skill listing uses — with the layer that
+		// won named on each row.
+		expect(list.items.map((item) => item.name)).toEqual([en.t("skills.desc"), summarize.name, custom.name]);
 	});
 
 	it("flipping the switch writes the disabled list and saves", async () => {
-		const { group, host, saves } = mount();
-		const toggle = renderRow(group, summarize.name);
+		const { list, host, saves } = mount();
+		const toggle = renderRow(list, summarize.name);
 		expect(toggle.getValue()).toBe(true);
 
 		toggle.toggle(false);
@@ -508,8 +509,8 @@ describe("the built-in skills section", () => {
 	});
 
 	it("renders a disabled skill with its switch down, without saving on mount", async () => {
-		const { group, host, saves } = mount(["summarize"]);
-		const toggle = renderRow(group, summarize.name);
+		const { list, host, saves } = mount(["summarize"]);
+		const toggle = renderRow(list, summarize.name);
 
 		// The switch reflects stored state and the mount itself writes nothing —
 		// `setValue` runs before the change callback exists to hear it.
@@ -521,13 +522,15 @@ describe("the built-in skills section", () => {
 
 describe("extension row badges", () => {
 	const source = `https://example.com/${"long-source/".repeat(40)}SKILL.md`;
-	const rows: SkillRow[] = [
-		{ name: "imported", description: "Imported instructions", path: "Piem/skills/imported/SKILL.md", dirName: "imported", provenance: { url: source, kind: "raw", importedAt: "", files: {} } },
-		{ name: "authored", description: "Authored instructions", path: "Piem/skills/authored/SKILL.md", dirName: "authored" },
-		{ name: "note", description: "Note instructions", path: "Piem/skills/note.md", dirName: "" },
-	];
+	const importedRow: SkillRow = {
+		name: "imported",
+		description: "Imported instructions",
+		path: "Piem/skills/imported/SKILL.md",
+		dirName: "imported",
+		provenance: { url: source, kind: "raw", importedAt: "", files: {} },
+	};
 
-	it("renders real provenance, separate problem counts and searchable names", async () => {
+	it("badges every layer with the one that won and folds the vault URL beneath it", async () => {
 		const base = stubHost();
 		const report = base.skills.lastSkillLoad();
 		report.vault = [0, 1].map((index) => ({ type: "warning", code: "file_info_failed", path: `Piem/skills/bad-${index}.md`, message: `Invalid file ${index}` }));
@@ -539,9 +542,14 @@ describe("extension row badges", () => {
 			{ dir: "/empty", found: true, loaded: 0 },
 			{ dir: "/restricted", found: undefined, loaded: 0 },
 		];
-		const host = stubHost({ skills: { ...base.skills, list: async () => ({ rows }), lastSkillLoad: () => report, userSkillsAvailable: true } });
+		const skills: SettingsPanelHost["skills"]["catalog"] = () => [
+			{ skill: { name: "summarize", description: "Built-in description", content: "body", filePath: "/__piem_builtin_skills__/summarize/SKILL.md" }, source: "builtin" },
+			{ skill: { name: "external", description: "User-provided description", content: "instructions", filePath: "/skills/external/SKILL.md" }, source: "user" },
+			{ skill: { name: "imported", description: "Imported instructions", content: "body", filePath: "Piem/skills/imported/SKILL.md" }, source: "vault" },
+		];
+		const host = stubHost({ skills: { ...base.skills, catalog: skills, list: async () => ({ rows: [importedRow] }), lastSkillLoad: () => report, userSkillsAvailable: true } });
 		const state = new SettingsPanelState();
-		state.skillsSnapshot = { inventory: { rows }, load: report };
+		state.skillsSnapshot = { inventory: { rows: [importedRow] }, load: report };
 		const definitions = extensionsDefinitions(host, state);
 		const container = document.createElement("div");
 		const group = new SettingGroup(container);
@@ -553,25 +561,28 @@ describe("extension row badges", () => {
 		const vault = definitions.find((item) => "heading" in item && item.heading === en.t("skills.heading")) as SettingDefinitionGroup;
 		render(vault.items![0] as SettingDefinitionRender);
 		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("Skills2 problems");
-		for (const [index, expected] of ["Imported", "Handwritten", "Single note"].entries()) {
+		const layered = [
+			{ name: "summarize", badge: "Built-in" },
+			{ name: "external", badge: "Global" },
+			{ name: "imported", badge: "Vault" },
+		];
+		for (const [index, expected] of layered.entries()) {
 			const definition = vault.items![index + 1] as SettingDefinitionRender;
 			const setting = render(definition);
-			expect(definition.name).toBe(rows[index]!.name);
-			expect(setting.nameEl.querySelector(".piem-badge")?.textContent).toBe(expected);
+			expect(definition.name).toBe(expected.name);
+			expect(setting.nameEl.querySelector(".piem-badge")?.textContent).toBe(expected.badge);
 			expect(setting.nameEl.firstElementChild?.textContent).toBe(definition.name);
-			if (index === 0) {
-				expect(setting.descEl.querySelector(".piem-settings-desc-body")?.textContent).toBe(source);
-				expect(setting.descEl.querySelector("button")).not.toBeNull();
-			} else {
-				expect(setting.descEl.textContent).toBe("");
-			}
 		}
+		// The vault row folds its source URL beneath the description, the fold
+		// button present because the combined text clears the fold limit.
+		const vaultSetting = render(vault.items![3] as SettingDefinitionRender);
+		expect(vaultSetting.descEl.querySelector(".piem-settings-desc-body")?.textContent).toBe("Imported instructions\n" + source);
+		expect(vaultSetting.descEl.querySelector("button")).not.toBeNull();
+		// The user-level row's badge now lives on the unified row, so the section's
+		// own group holds only the folder infrastructure.
 		const user = definitions.find((item) => "heading" in item && item.heading === en.t("skills.userHeading")) as SettingDefinitionGroup;
 		render(user.items![0] as SettingDefinitionRender);
 		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("User-level skills1 problem");
-		const external = render(user.items!.find((item) => item.name === "external") as SettingDefinitionRender);
-		expect(external.nameEl.querySelector(".piem-badge")?.textContent).toBe("External file");
-		expect(external.descEl.textContent).toBe("User-provided description");
 		for (const [index, expected] of ["1 skill", "Not found", "Empty", "Cannot check"].entries()) {
 			const definition = definitions.find((item) => "name" in item && item.name === report.user.searched[index]?.dir) as SettingDefinitionRender;
 			expect(definition.searchable).toBe(false);
@@ -587,6 +598,44 @@ describe("extension row badges", () => {
 		render(cleanVault.items![0] as SettingDefinitionRender);
 		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("Skills");
 		expect(container.querySelector(".setting-item-heading .setting-item-name .piem-badge")).toBeNull();
+		await settle();
+	});
+
+	it("gives a joined vault row its file buttons and a stranded one none", async () => {
+		const skills: SettingsPanelHost["skills"]["catalog"] = () => [
+			{ skill: { name: "imported", description: "Imported instructions", content: "body", filePath: "Piem/skills/imported/SKILL.md" }, source: "vault" },
+			{ skill: { name: "custom", description: "Custom instructions", content: "body", filePath: "Piem/skills/custom/SKILL.md" }, source: "vault" },
+		];
+		const base = stubHost();
+		const host = stubHost({
+			skills: { ...base.skills, catalog: skills, list: async () => ({ rows: [importedRow] }) },
+		});
+		const state = new SettingsPanelState();
+		state.skillsSnapshot = { inventory: { rows: [importedRow] }, load: base.skills.lastSkillLoad() };
+		const list = extensionsDefinitions(host, state).find((item) => "heading" in item && item.heading === en.t("skills.heading")) as SettingDefinitionGroup;
+		const container = document.createElement("div");
+		const group = new SettingGroup(container);
+		const render = (name: string): InstanceType<typeof Setting> => {
+			const setting = new Setting(group.listEl).setName(name);
+			(list.items!.find((item) => item.name === name) as SettingDefinitionRender).render(setting, group);
+			return setting;
+		};
+
+		// Joined: a vault row whose name matches the panel's own read gets the file
+		// operations, in the order the reader reaches them — open, then the
+		// provenance update, then the directory delete.
+		const joined = render("imported");
+		expect(joined.nameEl.querySelector(".piem-badge")?.textContent).toBe("Vault");
+		const buttons = (joined as unknown as { buttons: Array<{ text: string | undefined }> }).buttons.map((button) => button.text);
+		expect(buttons).toEqual([en.t("skills.open"), en.t("skills.update"), en.t("skills.delete")]);
+
+		// Stranded: the catalog row whose name joins nothing — the read has not
+		// caught up, or the layers disagree — still renders with badge and switch,
+		// but carries no file buttons: acting on a row the agent's own read does
+		// not confirm would fire an operation at a name that may not exist.
+		const stranded = render("custom");
+		expect(stranded.nameEl.querySelector(".piem-badge")?.textContent).toBe("Vault");
+		expect((stranded as unknown as { buttons: unknown[] }).buttons).toEqual([]);
 		await settle();
 	});
 
