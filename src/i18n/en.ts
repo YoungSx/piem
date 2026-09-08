@@ -449,6 +449,10 @@ export const en = {
 	},
 
 	builtinSkills: {
+		distillSkill: {
+			description:
+				"Turn a procedure you just completed into a reusable skill under Piem/skills/, once it has proven itself and the user approves the draft.",
+		},
 		efficientWebResearch: {
 			description: "Research the web token-efficiently: classify the input, then fetch the minimum needed to answer.",
 		},

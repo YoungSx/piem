@@ -225,6 +225,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 	},
 
 	builtinSkills: {
+		distillSkill: {
+			description:
+				"把刚跑通的流程提炼成 Piem/skills/ 下可复用的技能：先确认它值得沉淀，再把草案交给用户批准。",
+		},
 		efficientWebResearch: {
 			description: "省 token 地做网络调研：先判断输入类型，只抓取回答问题所需的最少内容。",
 		},
