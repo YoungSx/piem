@@ -51,6 +51,9 @@ const context = await esbuild.context({
 	},
 	bundle: true,
 	external: [
+		// Pi's NodeExecutionEnv uses the prefixed spelling. Keep builtins in
+		// the desktop host while bundling Pi itself into the lazy bridge.
+		"node:*",
 		"obsidian",
 		"electron",
 		"@codemirror/autocomplete",

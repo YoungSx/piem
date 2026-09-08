@@ -49,17 +49,6 @@ export default tseslint.config(
 		},
 	},
 	{
-		// The user-level skill directories live on the user's machine, outside
-		// any vault, so reading them needs the node filesystem — desktop only.
-		// The require call sits behind a lazy try/catch (see nodeHomeEnv.ts's
-		// header) so a mobile bundle never reaches it; the builtin-module ban is
-		// scoped off for that one file rather than opened up generally.
-		files: ["src/skills/nodeHomeEnv.ts"],
-		rules: {
-			"import/no-nodejs-modules": "off",
-		},
-	},
-	{
 		// The SDK shims (issue #92) reproduce the two provider SDKs' HTTP surface
 		// so the real packages stay out of the bundle. They never touch a global
 		// fetch themselves — the caller injects one — but the file references

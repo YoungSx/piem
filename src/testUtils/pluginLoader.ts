@@ -38,6 +38,10 @@ export interface LoadPluginBundleOptions {
 	 * reads it off `globalThis`, so the two platforms differ only here.
 	 */
 	exposeGlobalRequire?: boolean;
+	/** False models a mobile host instead of silently falling back to the test runner's Node. */
+	allowNodeBuiltins?: boolean;
+	/** Records attempted host imports, including rejected lookups. */
+	onRequire?: (id: string) => void;
 	/**
 	 * Receives every specifier the bundle tried to import dynamically.
 	 *
@@ -106,10 +110,11 @@ export function loadPluginBundle(options: LoadPluginBundleOptions): unknown {
 	}
 
 	const hostRequire = (id: string): unknown => {
+		options.onRequire?.(id);
 		if (id in options.modules) {
 			return options.modules[id];
 		}
-		if (id.startsWith("node:")) {
+		if (id.startsWith("node:") && (options.allowNodeBuiltins ?? true)) {
 			return nodeRequire(id);
 		}
 		// Mirrors a shell without the module: production code must treat a

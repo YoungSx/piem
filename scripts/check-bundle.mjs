@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved six
+ * The number is anchored to measurement, not taste, and it has moved seven
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -64,6 +64,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *    them as vault files read on demand — not the ruler. For scale, the seven
  *    bodies together are ~21 KiB against react-dom's 128 KiB and the MCP
  *    client's 171 KiB, so they are not where start-up time is spent.
+ * 7. Replacing NodeHomeEnv with Pi's public NodeExecutionEnv entry and a lazy
+ *    bridge took 1,692,093 B to 1,728,334 B (+36,241 B). The ceiling follows
+ *    to 1.66 MiB: the public entry costs ~35 KiB but retires the duplicated
+ *    filesystem implementation without a private upstream import.
  *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
@@ -74,7 +78,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.62 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.66 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -132,8 +136,17 @@ const BANNED_MODULES = new Map([
 ]);
 
 /**
- * Internal pi files reached by relative path, which the bundle must therefore
- * contain.
+ * The public pi-agent-core/node barrel leaves one empty lazy initializer for
+ * faux.js after tree shaking: 17 bytes, with every faux export removed. Allow
+ * only that exact file and budget; importing even fauxText exceeds it. Every
+ * other provider remains banned, including zero-byte entries if one appears.
+ */
+const EMPTY_FAUX_INITIALIZER = "node_modules/@earendil-works/pi-ai/dist/providers/faux.js";
+const EMPTY_FAUX_INITIALIZER_BYTES = 17;
+
+/**
+ * Pi implementations the bundle must contain, including internal files reached
+ * by relative path and the public Node execution environment.
  *
  * src/vault/editDiff.ts imports pi's edit/diff engine through its location
  * under node_modules because it is not in the package's exports map (see that
@@ -145,6 +158,10 @@ const BANNED_MODULES = new Map([
  * {@link BANNED_MODULES}, so a nested or pnpm-style layout is caught too.
  */
 const REQUIRED_MODULES = new Map([
+	[
+		"node_modules/@earendil-works/pi-agent-core/dist/harness/env/nodejs.js",
+		"User skills must use the bundled public NodeExecutionEnv implementation. A missing input means the bridge no longer reaches Pi's filesystem or Pi was incorrectly externalized.",
+	],
 	[
 		"node_modules/@earendil-works/pi-agent-core/dist/harness/tools/edit-diff.js",
 		"src/vault/editDiff.ts reaches this file by relative path because it is not in pi's exports map. A missing input means the path broke — likely a package-manager layout change or a pi rename. See that file's header.",
@@ -160,8 +177,8 @@ function formatSize(bytes) {
 }
 
 /**
- * Every module that contributed bytes to the bundle, as `node_modules`-relative
- * paths, or undefined when no metafile sits beside it.
+ * Modules and their byte contributions, keyed by esbuild's input paths, or
+ * undefined when no metafile sits beside the bundle.
  */
 function readBundleInputs() {
 	let meta;
@@ -171,7 +188,7 @@ function readBundleInputs() {
 		return undefined;
 	}
 	const output = meta.outputs?.[BUNDLE];
-	return output?.inputs ? Object.keys(output.inputs) : undefined;
+	return output?.inputs;
 }
 
 /**
@@ -355,17 +372,17 @@ if (!/module\.exports\b/.test(source)) {
 const bundleInputs = readBundleInputs();
 if (bundleInputs) {
 	for (const [segment, why] of BANNED_MODULES) {
-		const offenders = bundleInputs.filter((input) => input.includes(segment));
+		const offenders = Object.entries(bundleInputs).filter(([input, contribution]) =>
+			input.includes(segment) && !(input.endsWith(EMPTY_FAUX_INITIALIZER) && contribution.bytesInOutput === EMPTY_FAUX_INITIALIZER_BYTES),
+		);
 		if (offenders.length > 0) {
 			failures.push({ name: `banned module in bundle: ${segment} (${offenders.length} file(s))`, why, at: "-" });
 		}
 	}
 	for (const [segment, why] of REQUIRED_MODULES) {
-		// The mirror of the ban above: a relative path into node_modules cannot be
-		// policed at the import site, so the gate is that its module actually made
-		// it into the bundle. Checked against the same inputs list so the two
-		// rules can never drift apart.
-		if (!bundleInputs.some((input) => input.includes(segment))) {
+		// The mirror of the ban: a relative path must keep resolving, and Pi's
+		// public Node entry must be bundled rather than delegated to the host.
+		if (!Object.entries(bundleInputs).some(([input, contribution]) => input.includes(segment) && contribution.bytesInOutput > 0)) {
 			failures.push({ name: `required module missing from bundle: ${segment}`, why, at: "-" });
 		}
 	}

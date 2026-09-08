@@ -1,6 +1,6 @@
 import type { ExecutionEnv, Skill, SkillDiagnostic } from "@earendil-works/pi-agent-core";
 import { loadSourcedSkills } from "@earendil-works/pi-agent-core";
-import { NodeHomeEnv } from "./nodeHomeEnv";
+import { createUserSkillsEnv, nodeSkillsHome } from "./nodeSkillsHost";
 import { normalizeUserSkillsDir } from "./userSkillsDir";
 
 /**
@@ -63,8 +63,8 @@ export interface UserSkillsLoad {
  *
  * These skills live outside the vault by definition — that is what makes them
  * portable across projects — so the vault-backed env cannot see them.
- * {@link NodeHomeEnv} covers exactly the surface {@link loadSourcedSkills}
- * touches, and degrades to an empty set on mobile, where the node filesystem
+ * Pi's NodeExecutionEnv supplies the filesystem behind a lazy desktop bridge
+ * and degrades to an empty set on mobile, where the node filesystem
  * does not exist: inheriting user skills is a desktop capability, silently.
  *
  * The degradation is a skip, not a load that yields nothing. pi's loader
@@ -76,16 +76,48 @@ export interface UserSkillsLoad {
  * through {@link userSkillsSupported} to the surfaces that need it, and here
  * it simply means the directories were never consulted (`found: undefined`).
  *
+ * A bridge or filesystem failure stays in this layer's diagnostics so it
+ * cannot discard vault skills the service has already loaded. Only an env
+ * created for this call is cleaned up; an injected env belongs to its caller.
+ *
  * @param customDir The user's own directory, or `undefined` for none.
- * @param env Overrides the node-backed environment. Following
- * {@link loadUserSkillsFromEnv}'s test seam, an injected one lets a test drive
- * the unavailable branch that the real bundle only reaches on mobile.
  */
-export async function loadUserSkills(customDir?: string, env: ExecutionEnv = new NodeHomeEnv()): Promise<UserSkillsLoad> {
-	if (env instanceof NodeHomeEnv && !env.available) {
-		return unsupportedLoad();
+export async function loadUserSkills(
+	customDir?: string,
+	options: { env?: ExecutionEnv; createEnv?: () => Promise<ExecutionEnv | undefined> } = {},
+): Promise<UserSkillsLoad> {
+	let env: ExecutionEnv | undefined;
+	let result = unsupportedLoad();
+	try {
+		env = options.env ?? await (options.createEnv ?? createUserSkillsEnv)();
+		if (env) result = await loadUserSkillsFromEnv(env, customDir);
+	} catch (error) {
+		const dirs = userSkillsDirs(customDir);
+		result = {
+			skills: [],
+			diagnostics: [loadDiagnostic("load", error, dirs[0] ?? "~")],
+			searched: dirs.map((dir) => ({ dir, found: undefined, loaded: 0 })),
+		};
+	} finally {
+		if (env && !options.env) {
+			try {
+				await env.cleanup();
+			} catch (error) {
+				// Keep successfully loaded skills even if releasing the env fails.
+				result.diagnostics.push(loadDiagnostic("clean up", error, env.cwd));
+			}
+		}
 	}
-	return loadUserSkillsFromEnv(env, customDir);
+	return result;
+}
+
+function loadDiagnostic(action: string, error: unknown, path: string): SkillDiagnostic {
+	return {
+		type: "warning",
+		code: "read_failed",
+		message: `Could not ${action} user skills: ${error instanceof Error ? error.message : String(error)}`,
+		path,
+	};
 }
 
 /**
@@ -110,12 +142,17 @@ function unsupportedLoad(): UserSkillsLoad {
  *
  * Replaces the panel's old `Platform.isDesktop` guess: desktop Electron
  * exposes `require`, but the platform name is a correlation, not the
- * capability — this asks {@link NodeHomeEnv} directly, the same question
+ * capability — this asks {@link nodeSkillsHome} directly, the same question
  * {@link loadUserSkills} answers by skipping. Synchronous and cheap because
- * the probe is construction-time module resolution, not filesystem I/O.
+ * the probe only resolves modules and reads the home path, without filesystem I/O.
  */
 export function userSkillsSupported(): boolean {
-	return new NodeHomeEnv().available;
+	return nodeSkillsHome() !== undefined;
+}
+
+function userSkillsDirs(customDir?: string): string[] {
+	const custom = normalizeUserSkillsDir(customDir);
+	return custom && !USER_SKILLS_DIRS.includes(custom) ? [custom, ...USER_SKILLS_DIRS] : USER_SKILLS_DIRS;
 }
 
 /**
@@ -135,13 +172,12 @@ export function userSkillsSupported(): boolean {
  * whitespace-only value folds to "no extra directory" in the same call.
  */
 export async function loadUserSkillsFromEnv(env: ExecutionEnv, customDir?: string): Promise<UserSkillsLoad> {
-	const custom = normalizeUserSkillsDir(customDir);
 	// A setting naming one of the built-ins is deduped rather than honoured
 	// twice. It is a reasonable thing to type — it is how someone would try to
 	// raise that folder's precedence — and left in, the folder would be listed on
 	// two rows of the report and its skills would shadow themselves, which reads
 	// as a conflict with another folder that does not exist.
-	const dirs = custom && !USER_SKILLS_DIRS.includes(custom) ? [custom, ...USER_SKILLS_DIRS] : USER_SKILLS_DIRS;
+	const dirs = userSkillsDirs(customDir);
 	const inputs = dirs.map((path) => ({ path, source: path }));
 	const { skills: sourced, diagnostics } = await loadSourcedSkills<string, UserSkill>(env, inputs, (skill, source) => ({
 		...skill,

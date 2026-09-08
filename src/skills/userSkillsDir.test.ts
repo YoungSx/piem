@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { HostRequire } from "./nodeHomeEnv";
+import type { HostRequire } from "./nodeSkillsHost";
 import { normalizeUserSkillsDir, USER_SKILLS_DIR_PLACEHOLDER } from "./userSkillsDir";
 
 /**
@@ -16,7 +16,7 @@ import { normalizeUserSkillsDir, USER_SKILLS_DIR_PLACEHOLDER } from "./userSkill
  *
  * The module reaches `node:path` through the host lookup, so a `null` lookup is
  * how a test reaches the mobile branch on a desktop runner — the same injection
- * point {@link import("./nodeHomeEnv").NodeHomeEnv} uses, for the same reason.
+ * point {@link import("./nodeSkillsHost").nodeSkillsHome} uses, for the same reason.
  */
 
 /** A host serving nothing, as a mobile shim does: present, and answering `undefined`. */
@@ -85,7 +85,7 @@ describe("normalizeUserSkillsDir on a host with node", () => {
 	});
 
 	it("rejects a bare relative path, which would silently mean somewhere else", () => {
-		// NodeHomeEnv resolves against the home directory, so `skills` would read
+		// The user-skills environment resolves against home, so `skills` would read
 		// `~/skills` — a directory the user never typed, and a mismatch with no
 		// symptom to report.
 		expect(normalizeUserSkillsDir("skills")).toBeUndefined();

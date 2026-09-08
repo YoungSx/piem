@@ -1,8 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 
 const { USER_SKILLS_DIRS, loadUserSkills, loadUserSkillsFromEnv, userSkillsSupported } = await import("./userSkills");
-const { NodeHomeEnv } = await import("./nodeHomeEnv");
+const { createUserSkillsEnv } = await import("./nodeSkillsHost");
 
 /** Minimal ExecutionEnv over a fixed path→content map; paths are literal, so tests use the raw `~` form. */
 function fakeHomeEnv(files: Record<string, string>): ExecutionEnv {
@@ -110,16 +110,16 @@ describe("loadUserSkills where node is unavailable", () => {
 	// is unavailable" notice on every agent start — blaming the user's files
 	// for a capability the device never had. The skip is the fix; these pin it.
 	it("skips the load entirely instead of collecting diagnostics", async () => {
-		const env = new NodeHomeEnv({ hostRequire: null });
-		const { skills, diagnostics } = await loadUserSkills(undefined, env);
+		const options = { createEnv: () => createUserSkillsEnv(null) };
+		const { skills, diagnostics } = await loadUserSkills(undefined, options);
 
 		expect(skills).toEqual([]);
 		expect(diagnostics).toEqual([]);
 	});
 
 	it("names the built-in pair as unconsulted, not absent", async () => {
-		const env = new NodeHomeEnv({ hostRequire: null });
-		const { searched } = await loadUserSkills(undefined, env);
+		const options = { createEnv: () => createUserSkillsEnv(null) };
+		const { searched } = await loadUserSkills(undefined, options);
 
 		expect(searched).toEqual(
 			USER_SKILLS_DIRS.map((dir) => ({ dir, found: undefined, loaded: 0 })),
@@ -127,8 +127,8 @@ describe("loadUserSkills where node is unavailable", () => {
 	});
 
 	it("leaves the configured extra folder out of the report, since nothing probed it", async () => {
-		const env = new NodeHomeEnv({ hostRequire: null });
-		const { searched } = await loadUserSkills("~/Sync/skills", env);
+		const options = { createEnv: () => createUserSkillsEnv(null) };
+		const { searched } = await loadUserSkills("~/Sync/skills", options);
 
 		expect(searched.map((entry) => entry.dir)).toEqual(USER_SKILLS_DIRS);
 	});
@@ -137,9 +137,53 @@ describe("loadUserSkills where node is unavailable", () => {
 describe("userSkillsSupported", () => {
 	it("follows the env's probe rather than a platform guess", async () => {
 		// The test runner has a real `require`, so the honest answer here is
-		// yes; the no-node side is covered by NodeHomeEnv's own unavailable
+		// yes; the no-node side is covered by nodeSkillsHost's unavailable
 		// cases above, which this flag reads.
 		expect(userSkillsSupported()).toBe(true);
+	});
+});
+
+describe("user-skills environment ownership and failures", () => {
+	it("cleans up an environment created for the load", async () => {
+		const env = fakeHomeEnv({});
+		env.cleanup = mock(async () => undefined);
+		await loadUserSkills(undefined, { createEnv: async () => env });
+		expect(env.cleanup).toHaveBeenCalledTimes(1);
+	});
+
+	it("leaves an injected environment under its caller's ownership", async () => {
+		const env = fakeHomeEnv({});
+		env.cleanup = mock(async () => undefined);
+		await loadUserSkills(undefined, { env });
+		expect(env.cleanup).not.toHaveBeenCalled();
+	});
+
+	it("reports bridge failure with unknown paths, including the custom folder", async () => {
+		const result = await loadUserSkills("~/Sync/skills", {
+			createEnv: async () => { throw new Error("Node bridge failed"); },
+		});
+		expect(result.skills).toEqual([]);
+		expect(result.diagnostics).toEqual([expect.objectContaining({ message: "Could not load user skills: Node bridge failed" })]);
+		expect(result.searched).toEqual(["~/Sync/skills", ...USER_SKILLS_DIRS].map((dir) => ({ dir, found: undefined, loaded: 0 })));
+	});
+
+	it("cleans up after a throwing filesystem without rejecting the whole skill load", async () => {
+		const env = fakeHomeEnv({});
+		env.fileInfo = async () => { throw new Error("scan failed"); };
+		env.cleanup = mock(async () => undefined);
+		const result = await loadUserSkills(undefined, { createEnv: async () => env });
+		expect(result.diagnostics[0]?.message).toContain("scan failed");
+		expect(result.searched.every((entry) => entry.found === undefined)).toBe(true);
+		expect(env.cleanup).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps loaded skills when cleanup fails and reports that failure", async () => {
+		const env = fakeHomeEnv({ "~/.pi/agent/skills/keep/SKILL.md": "---\nname: keep\ndescription: d\n---\nBody" });
+		env.cleanup = mock(async () => { throw new Error("cleanup failed"); });
+		const result = await loadUserSkills(undefined, { createEnv: async () => env });
+		expect(result.skills.map((s) => s.name)).toEqual(["keep"]);
+		expect(result.diagnostics[0]?.message).toBe("Could not clean up user skills: cleanup failed");
+		expect(result.searched[0]?.loaded).toBe(1);
 	});
 });
 

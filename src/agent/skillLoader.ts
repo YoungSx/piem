@@ -2,8 +2,8 @@ import type { PromptTemplateDiagnostic, SkillDiagnostic, Skill } from "@earendil
 import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "@earendil-works/pi-agent-core";
 import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 // Type-only, and it must stay that way: `../skills/userSkills` reaches the node
-// filesystem through `NodeHomeEnv`, and `src/subagent/` is allowed to import
-// this module. A value import here would pull a `require` into that bundle.
+// filesystem through a lazy NodeExecutionEnv bridge, and `src/subagent/` is
+// allowed to import this module. A value import would pull in a `require`.
 import type { UserSkillsLoad } from "../skills/userSkills";
 
 /**
