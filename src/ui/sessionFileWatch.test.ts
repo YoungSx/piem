@@ -34,6 +34,12 @@ class FakeVault {
 		return { name, callback } as unknown as EventRef;
 	}
 
+	/** What `Events.offref` does to a ref this `on` handed out. */
+	offref(ref: EventRef): void {
+		const { name, callback } = ref as unknown as { name: string; callback: (file: { path: string }) => void };
+		this.handlers.get(name)?.delete(callback);
+	}
+
 	trigger(name: string, path: string): void {
 		for (const callback of this.handlers.get(name) ?? []) {
 			callback({ path });
@@ -55,13 +61,43 @@ const DEBOUNCE_MS = 10;
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS * 4));
 
 describe("watchSessionFile", () => {
-	it("subscribes to vault modify events", () => {
+	it("subscribes to vault modify events and hands back one disposer", () => {
 		const { app, vault } = createApp();
 
-		const refs = watchSessionFile(app, () => null, () => undefined, DEBOUNCE_MS);
+		const stop = watchSessionFile(app, () => null, () => undefined, DEBOUNCE_MS);
 
-		expect(refs).toHaveLength(1);
+		expect(typeof stop).toBe("function");
 		expect(vault.handlerCount("modify")).toBe(1);
+	});
+
+	it("drops the subscription when disposed", async () => {
+		const { app, vault } = createApp();
+		const seen: string[] = [];
+
+		const stop = watchSessionFile(app, () => "Piem/chats/a.jsonl", (path) => seen.push(path), DEBOUNCE_MS);
+		stop();
+		vault.trigger("modify", "Piem/chats/a.jsonl");
+		await settle();
+
+		expect(vault.handlerCount("modify")).toBe(0);
+		expect(seen).toEqual([]);
+	});
+
+	it("cancels a debounce that was already armed when disposed", async () => {
+		const { app, vault } = createApp();
+		const seen: string[] = [];
+
+		const stop = watchSessionFile(app, () => "Piem/chats/a.jsonl", (path) => seen.push(path), DEBOUNCE_MS);
+		// The ordinary shape of a panel closing: a burst lands, then the view
+		// unloads inside the same quiet period. Dropping the subscription alone
+		// leaves the armed timer to fire afterwards, calling back into a service
+		// that is being torn down — which is the whole reason this returns a
+		// disposer rather than the refs.
+		vault.trigger("modify", "Piem/chats/a.jsonl");
+		stop();
+		await settle();
+
+		expect(seen).toEqual([]);
 	});
 
 	it("does not report anything before an event fires", async () => {

@@ -11,10 +11,16 @@ import type { App, EventRef, TAbstractFile } from "obsidian";
  * in that file, and pi's `getName()` reads an in-memory state hydrated once at
  * open, so without this watcher the panel shows a stale name forever.
  *
- * Follows the {@link activeNoteWatch} contract on purpose: the refs are returned
- * rather than registered, so the owning view keeps lifecycle control and this
- * stays testable without an `ItemView`; nothing fires at registration, and
- * seeding the first comparison is the caller's job.
+ * Like {@link activeNoteWatch} it registers nothing itself, so the owning view
+ * keeps lifecycle control and this stays testable without an `ItemView`; nothing
+ * fires at registration, and seeding the first comparison is the caller's job.
+ * It hands back a disposer rather than the refs, though, because the debounce
+ * outlives the subscription: `registerEvent` drops the vault listener at unload
+ * but has no hook that could disarm a timer already armed, so a burst landing in
+ * the last quiet period would still call `onChange` — against a view whose
+ * service is being torn down. One handle covering both is what keeps them from
+ * being half-wired; {@link watchWindowFocus} has the same shape for the same
+ * reason.
  *
  * @param getWatchedPath Resolved fresh on every event, never captured — the
  * active session can be switched or created at any moment, and a path captured
@@ -27,13 +33,15 @@ import type { App, EventRef, TAbstractFile } from "obsidian";
  * an external edit.
  * @param debounceMs Trailing debounce. Streaming appends many lines in bursts;
  * each burst is one disk re-read, not one per line.
+ * @returns The call that stops watching: it drops the vault subscription and
+ * cancels a pending debounce, so nothing reaches `onChange` afterwards.
  */
 export function watchSessionFile(
 	app: App,
 	getWatchedPath: () => string | null,
 	onChange: (path: string) => void,
 	debounceMs = 500,
-): EventRef[] {
+): () => void {
 	let timer: number | null = null;
 	let pendingPath: string | null = null;
 
@@ -52,12 +60,19 @@ export function watchSessionFile(
 		}, debounceMs);
 	};
 
-	return [
-		app.vault.on("modify", (file: TAbstractFile) => {
-			// Re-ask rather than capture: the watcher outlives session switches.
-			if (getWatchedPath() === file.path) {
-				schedule(file.path);
-			}
-		}),
-	];
+	const ref: EventRef = app.vault.on("modify", (file: TAbstractFile) => {
+		// Re-ask rather than capture: the watcher outlives session switches.
+		if (getWatchedPath() === file.path) {
+			schedule(file.path);
+		}
+	});
+
+	return () => {
+		app.vault.offref(ref);
+		if (timer !== null) {
+			window.clearTimeout(timer);
+			timer = null;
+		}
+		pendingPath = null;
+	};
 }
