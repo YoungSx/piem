@@ -183,7 +183,7 @@ export function ChatHeader({
 					onClick={openPicker}
 					disabled={!canPickSession}
 				/>
-				<IconButton icon="square-pen" label={t.t("chat.newChat")} onClick={onNewSession} />
+				<IconButton icon="square-plus" label={t.t("chat.newChat")} onClick={onNewSession} />
 				{/* Disabled only when the menu would open empty — see `openMenu`. Three
 				    doors keep it alive; the slash-command list used to be a fourth, and
 				    its removal is why a vault with skills but no session and no settings
