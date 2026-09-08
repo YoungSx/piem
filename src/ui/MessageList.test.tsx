@@ -1861,3 +1861,135 @@ function harnessMessage(text: string): AgentMessage {
 }
 
 const roots = new WeakMap<HTMLElement, import("react-dom/client").Root>();
+
+/**
+ * Pins scroll geometry onto a scroller, because happy-dom lays nothing out:
+ * `scrollHeight` is permanently 0 there, so the follow logic would read "already
+ * at the bottom" no matter what. The `scrollTop` setter clamps like a real
+ * browser — the follow code reads the value back after writing, so a
+ * non-clamping stub would let a write past the bottom lie about where the
+ * reader is.
+ */
+function pinScrollGeometry(
+	el: HTMLElement,
+	geometry: { scrollHeight: number; clientHeight: number; scrollTop: number },
+): void {
+	Object.defineProperty(el, "scrollHeight", { configurable: true, get: () => geometry.scrollHeight });
+	Object.defineProperty(el, "clientHeight", { configurable: true, get: () => geometry.clientHeight });
+	Object.defineProperty(el, "scrollTop", {
+		configurable: true,
+		get: () => geometry.scrollTop,
+		set: (next: number) => {
+			const max = Math.max(0, geometry.scrollHeight - geometry.clientHeight);
+			geometry.scrollTop = Math.min(Math.max(0, next), max);
+		},
+	});
+}
+
+function scrollerOf(host: HTMLElement): HTMLElement {
+	const scroller = host.querySelector<HTMLElement>(".piem-chat__messages");
+	if (!scroller) {
+		throw new Error("probe could not find the .piem-chat__messages scroller");
+	}
+	return scroller;
+}
+
+describe("MessageList follow-scroll", () => {
+	/**
+	 * Re-renders the SAME root — a send is an update of a mounted transcript,
+	 * not a fresh mount, and only the update path can carry a stale gate.
+	 */
+	function renderInto(
+		host: HTMLElement,
+		messages: Parameters<typeof MessageList>[0]["messages"],
+		overrides: Partial<Parameters<typeof MessageList>[0]> = {},
+	): void {
+		const root = roots.get(host);
+		if (!root) {
+			throw new Error("probe re-render needs a host renderMessages already mounted");
+		}
+		root.render(
+			<MessageList
+				messages={messages}
+				isStreaming={false}
+				pendingToolCalls={[]}
+				app={app}
+				component={component}
+				sourcePath=""
+				{...overrides}
+			/>,
+		);
+	}
+
+	/** Fires the scroll event the browser dispatches after a programmatic write. */
+	function echoScroll(host: HTMLElement): void {
+		scrollerOf(host).dispatchEvent(new Event("scroll"));
+	}
+
+	it("pins the tail when a send renders the waiting dots", async () => {
+		const geometry = { scrollHeight: 800, clientHeight: 400, scrollTop: 0 };
+		const earlier = [userMessage("earlier question"), assistantMessage("earlier answer")];
+		const host = renderMessages(earlier);
+		await flushRender();
+		pinScrollGeometry(scrollerOf(host), geometry);
+		// Re-render so the follow effect runs against the pinned geometry.
+		renderInto(host, earlier);
+		await flushRender();
+		expect(geometry.scrollTop).toBe(400);
+
+		// The send: one more user turn plus the streaming flag — the dots.
+		geometry.scrollHeight = 1000;
+		renderInto(host, [...earlier, userMessage("new question")], { isStreaming: true });
+		await flushRender();
+		expect(geometry.scrollTop).toBe(600);
+	});
+
+	it("a late echo of our own scroll must not close the follow gate", async () => {
+		// The race: the follow write lands, THEN async markdown render grows the
+		// content, and only afterwards does the browser dispatch the scroll event
+		// that write owed. The event finds a reader far from a taller bottom —
+		// content grew, nobody moved — and must not read that as the user leaving.
+		const geometry = { scrollHeight: 800, clientHeight: 400, scrollTop: 0 };
+		const earlier = [userMessage("earlier question"), assistantMessage("earlier answer")];
+		const host = renderMessages(earlier);
+		await flushRender();
+		pinScrollGeometry(scrollerOf(host), geometry);
+		renderInto(host, earlier);
+		await flushRender();
+		expect(geometry.scrollTop).toBe(400);
+
+		// Content grew under the fold after the write; the owed event arrives late.
+		geometry.scrollHeight = 1200;
+		echoScroll(host);
+		await flushRender();
+		// Nobody scrolled: the gate must stay open, no "Latest" affordance appears.
+		expect(host.querySelector(".piem-chat__latest")).toBeNull();
+
+		// So the next send still chases the bottom.
+		renderInto(host, [...earlier, userMessage("new question")], { isStreaming: true });
+		await flushRender();
+		expect(geometry.scrollTop).toBe(800);
+	});
+
+	it("a reader who scrolled up keeps their place; sends do not yank them back", async () => {
+		const geometry = { scrollHeight: 800, clientHeight: 400, scrollTop: 0 };
+		const earlier = [userMessage("earlier question"), assistantMessage("earlier answer")];
+		const host = renderMessages(earlier);
+		await flushRender();
+		pinScrollGeometry(scrollerOf(host), geometry);
+		renderInto(host, earlier);
+		await flushRender();
+
+		// The reader scrolled up by hand: the gate closes and "Latest" appears.
+		geometry.scrollTop = 40;
+		echoScroll(host);
+		await flushRender();
+		expect(host.querySelector(".piem-chat__latest")).not.toBeNull();
+
+		// A send must respect that: the dots render, the view stays put.
+		geometry.scrollHeight = 1000;
+		renderInto(host, [...earlier, userMessage("new question")], { isStreaming: true });
+		await flushRender();
+		expect(geometry.scrollTop).toBe(40);
+	});
+});

@@ -519,6 +519,16 @@ export function MessageList({
 	const followUpActions = !onQuickAction || settledIndex === null ? [] : suggestedActions;
 	const transcriptRef = useRef<HTMLElement | null>(null);
 	const shouldFollowRef = useRef(true);
+	/*
+	 * The last position the reader demonstrably sat at. A scroll event whose
+	 * scrollTop equals this is not a reader action — it is the async echo of
+	 * our own programmatic write, or a pure content resize (markdown finished
+	 * rendering, a suggestion strip mounted) re-firing the event with nobody
+	 * having moved. Only a position that differs from the last measured one
+	 * counts as the reader scrolling, which keeps the follow gate honest
+	 * without bookkeeping that can desynchronize from event arrival.
+	 */
+	const lastReaderScrollTopRef = useRef(0);
 	const [isAtLatest, setIsAtLatest] = useState(true);
 
 	useEffect(() => {
@@ -528,6 +538,9 @@ export function MessageList({
 		}
 		const frame = window.requestAnimationFrame(() => {
 			transcript.scrollTop = transcript.scrollHeight;
+			// The write moved the reader, so record the position we chose; the
+			// echo event it owes will report this same value and be skipped.
+			lastReaderScrollTopRef.current = transcript.scrollTop;
 		});
 		return () => window.cancelAnimationFrame(frame);
 		// The pending question joins the dependency list for the same reason the
@@ -544,6 +557,12 @@ export function MessageList({
 		if (!transcript) {
 			return;
 		}
+		// A scroll event that did not move the reader is not a reader action:
+		// it is our own write's echo or a content resize. Leave the gate as it was.
+		if (transcript.scrollTop === lastReaderScrollTopRef.current) {
+			return;
+		}
+		lastReaderScrollTopRef.current = transcript.scrollTop;
 		const distanceFromBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
 		const atLatest = distanceFromBottom < 72;
 		shouldFollowRef.current = atLatest;
@@ -557,6 +576,11 @@ export function MessageList({
 		}
 		shouldFollowRef.current = true;
 		setIsAtLatest(true);
+		// Smooth scrolling animates through intermediate positions, each
+		// dispatching a scroll event; each one differs from the last measured
+		// position, so the gate re-measures to "at latest" — a no-op while the
+		// animation runs and a settled truth once it lands. A real user scroll
+		// that starts mid-animation is likewise just another differing position.
 		transcript.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" });
 	};
 
