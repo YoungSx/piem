@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { getT } from "../../i18n";
-import {
+import { installObsidianStub } from "../../testUtils/obsidianStub";
+installObsidianStub();
+const {
 	describeUserSkillsDirProblem,
 	USER_SKILLS_DIR_PLACEHOLDER,
 	userSkillsDirDescription,
 	userSkillsSearchedDescription,
-} from "./userSkillsCopy";
-import { searchedReadingBadge } from "./badges";
+} = await import("./userSkillsCopy");
+const { searchedReadingBadge } = await import("./badges");
 
 /**
  * This copy is the entire feedback loop for a folder the plugin reads on a

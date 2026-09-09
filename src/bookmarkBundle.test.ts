@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { installDom } from "./testUtils/dom";
 import { MemoryAdapter } from "./testUtils/memoryAdapter";
-import { createObsidianHostModule, createStubApp, loadPluginBundle, type PluginHostRecord } from "./testUtils/pluginLoader";
+import { createObsidianHostModule, createStubApp, type PluginHostRecord } from "./testUtils/pluginLoader";
+import { loadBrowserPluginBundle } from "./testUtils/browserPluginLoader";
 
 installDom();
 const cleanup: Array<() => void> = [];
@@ -30,7 +31,8 @@ async function load(memory: MemoryAdapter) {
 	const record: PluginHostRecord = { views: [], commands: [], ribbonIcons: [], icons: new Map(), settingTabs: 0, savedData: [] };
 	const required: string[] = [];
 	const dynamic: string[] = [];
-	const output = loadPluginBundle({ modules: { obsidian: createObsidianHostModule(record, platform) }, exposeGlobalRequire: false, allowNodeBuiltins: false, onRequire: id => required.push(id), onDynamicImport: id => dynamic.push(id) });
+	const realm = loadBrowserPluginBundle({ modules: { obsidian: createObsidianHostModule(record, platform) }, onRequire: id => required.push(id), onDynamicImport: id => dynamic.push(id) });
+	const output = realm.exports;
 	const Plugin = (output as { default: new (app: unknown, manifest: unknown) => LoadedPlugin }).default;
 	const app = createStubApp() as { vault: { adapter: MemoryAdapter } };
 	app.vault.adapter = memory;
@@ -38,7 +40,7 @@ async function load(memory: MemoryAdapter) {
 	cleanup.push(() => plugin.onunload());
 	await plugin.onload();
 	await plugin.agentService.initialize();
-	return { plugin, record, required, dynamic };
+	return { plugin, record, required, dynamic, realm };
 }
 
 describe("shipped bookmark extension without Node", () => {
@@ -48,13 +50,14 @@ describe("shipped bookmark extension without Node", () => {
 		expect(first.record.commands).toEqual(expect.arrayContaining(["bookmark-reply", "unbookmark-reply", "view-bookmarks"]));
 		const path = first.plugin.agentService.getActiveSessionPath()!;
 		await first.plugin.sessionManager.appendMessageFor(path, message("Remember this"));
+		expect(await first.realm.evaluate('Promise.resolve().then(() => [typeof process, typeof Buffer, typeof globalThis.require, typeof window.process, typeof window.Buffer, typeof Bun])')).toEqual(Array(6).fill("undefined"));
 		await first.plugin.agentService.newSession({ force: true });
 		const other = first.plugin.agentService.getActiveSessionPath()!;
 		const requirementsBefore = first.required.length;
 		expect((await first.plugin.agentService.runBookmark(path, "bookmark", "From mobile")).kind).toBe("saved");
 		expect(await first.plugin.agentService.listBookmarks(other)).toEqual([]);
 		expect(first.required.slice(requirementsBefore)).toEqual([]);
-		expect(new Set(first.required)).toEqual(new Set(["obsidian", "node:fs/promises"]));
+		expect(new Set(first.required)).toEqual(new Set(["obsidian"]));
 		expect(first.dynamic).toEqual([]);
 		const second = await load(memory);
 		await second.plugin.agentService.openSession(path);

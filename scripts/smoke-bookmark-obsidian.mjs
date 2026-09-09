@@ -1,26 +1,32 @@
 /**
  * Opt-in smoke against a real, isolated Obsidian instance. No model/key needed.
- * Usage: node scripts/smoke-bookmark-obsidian.mjs <CDP-port> <output-directory>
+ * Usage: node scripts/smoke-bookmark-obsidian.mjs <CDP-port> <output-directory> [--expect-mobile]
+ * For mobile, first call app.emulateMobile(true) in Obsidian and use a phone viewport.
  * The vault must be <output-directory>/vault, with the built plugin installed.
  * Leaves its fixture chats and results.json in that directory for inspection.
  */
 import { resolve } from "node:path";
+import { observePluginNodeAccess } from "./obsidian-plugin-node-audit.mjs";
 
-async function runSmoke(root) {
+async function runSmoke(root, expectMobile, observeNodeAccess) {
+ const wait=async test=>{for(let i=0;i<200;i++){if(await test())return;await new Promise(r=>setTimeout(r,20));}throw new Error('Condition timed out');};
+ // Mode changes reload Obsidian. Wait before installing any observer that needs cleanup.
+ await wait(()=>window.app?.plugins?.plugins?.piem?.bookmarkDialogs);
  if (app.vault.adapter.getBasePath() !== root + '/vault') throw new Error('Use an isolated smoke vault at <output-dir>/vault.');
  const fs=require('node:fs/promises');
  const crypto=require('node:crypto');
  const cp=require('node:child_process');
  const report={checks:[],errors:[],cycles:[],versions:{obsidian:document.title.match(/Obsidian ([0-9.]+)/)?.[1],electron:process.versions.electron,node:process.versions.node,chrome:process.versions.chrome}};
  const record=(name,value)=>{if(!value)throw new Error(name);report.checks.push(name);};
- const wait=async test=>{for(let i=0;i<200;i++){if(await test())return;await new Promise(r=>setTimeout(r,20));}throw new Error('Condition timed out');};
+ report.environment={officialMobileEmulation:app.isMobile,phone:document.body.classList.contains('is-phone'),viewport:{width:innerWidth,height:innerHeight},devToolsHasNode:typeof require==='function'&&typeof process==='object'};
+ record('expected Obsidian device mode',app.isMobile===expectMobile);
+ if(expectMobile)record('official phone layout active',document.body.classList.contains('emulate-mobile')&&report.environment.phone);
  const error=e=>report.errors.push(String(e.error??e.reason??e.message));
  window.addEventListener('error',error);window.addEventListener('unhandledrejection',error);
  const spawn=cp.spawn;let spawnCalls=0;cp.spawn=(...args)=>{spawnCalls++;throw new Error('Unexpected process spawn');};
  const handles=()=>process._getActiveHandles().map(x=>x.constructor?.name).filter(x=>['ChildProcess','FSWatcher','FSEvent'].includes(x)).sort();
  const startHandles=handles();
  const oldFetch=window.fetch;let fetchCalls=0;window.fetch=(...args)=>{fetchCalls++;return oldFetch(...args);};
- await wait(()=>app.plugins.plugins.piem?.bookmarkDialogs);
  let plugin=app.plugins.plugins.piem;
  const message=text=>({role:'assistant',content:[{type:'text',text}],api:'openai-completions',provider:'test',model:'test',usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},stopReason:'stop',timestamp:Date.now()});
  const defaults={provider:'test',modelId:'test',thinkingLevel:'off'};
@@ -31,6 +37,8 @@ async function runSmoke(root) {
  const type=value=>{input().value=value;input().dispatchEvent(new Event('input',{bubbles:true}));};
  const dismiss=()=>document.querySelector('.modal-header-button,.modal-close-button')?.click();
  const labels=path=>plugin.agentService.listBookmarks(path);
+ const nodeAudit=expectMobile?observeNodeAccess('piem'):undefined;
+ if(nodeAudit)report.nodeAccess=nodeAudit.report;
  let originalAppend;
  try {
   record('plugin ready',!!plugin?.agentService); for(const modal of [...plugin.bookmarkDialogs.openModals])modal.close();
@@ -43,7 +51,9 @@ async function runSmoke(root) {
   await service.openSession(a.path);
   record('Chinese command registered',app.commands.commands['piem:bookmark-reply'].name.includes('书签'));
   command('bookmark-reply');await wait(()=>input());
-  record('native modal focuses label',document.activeElement===input());
+  // Obsidian only auto-focuses with a physical keyboard; phones wait for a tap.
+  if(expectMobile)input().focus();
+  record(expectMobile?'phone label accepts focus':'native modal focuses label',document.activeElement===input());
   type('周五整理');await service.openSession(b.path);button().click();
   await wait(()=>!input());
   record('captured dialog owner saved', (await labels(a.path)).some(x=>x.entryId===aId&&x.label==='周五整理'));
@@ -54,6 +64,7 @@ async function runSmoke(root) {
   document.querySelector('.suggestion-item').click();await wait(()=>document.querySelector('.piem-bookmark-text'));
   record('picker opens persisted reply',document.querySelector('.piem-bookmark-text').textContent.includes('周五整理笔记'));
   dismiss();
+  await wait(()=>!document.querySelector('.piem-bookmark-text'));
   originalAppend=app.vault.adapter.append;
   app.vault.adapter.append=async function(path,data,...rest){if(path===a.path&&data.includes('"fact":"label"'))throw new Error('Smoke disk full');return originalAppend.call(this,path,data,...rest);};
   command('bookmark-reply');await wait(()=>input());type('失败后重试');button().click();await wait(()=>document.querySelector('.modal [role=alert]')?.textContent.includes('Smoke disk full'));
@@ -95,15 +106,22 @@ async function runSmoke(root) {
   record('no subprocess created',spawnCalls===0);
   record('no new child or watcher handles',JSON.stringify(startHandles)===JSON.stringify(handles()));
   record('no renderer errors or unhandled rejections',report.errors.length===0);
+  if(nodeAudit){
+   record('official plugin loader blocks Node and Electron',nodeAudit.report.controls.length===6&&nodeAudit.report.controls.every(item=>!item.provided));
+   record('all plugin reloads observed',nodeAudit.report.evaluations===4);
+   record('plugin requests only Obsidian throughout smoke',nodeAudit.report.requests.length>0&&nodeAudit.report.requests.every(item=>item.id==='obsidian'&&item.provided));
+   record('no unexpected console errors',nodeAudit.report.consoleErrors.every(item=>item.control));
+  }
   report.paths={a:a.path,b:b.path,fork:fork.path};report.passed=true;
   window.__bookmarkSmoke=report;
   return report;
  } catch(cause){report.failure=String(cause.stack??cause);window.__bookmarkSmoke=report;throw cause;}
- finally {if(originalAppend)app.vault.adapter.append=originalAppend;cp.spawn=spawn;window.fetch=oldFetch;window.removeEventListener('error',error);window.removeEventListener('unhandledrejection',error);await fs.writeFile(root+'/results.json',JSON.stringify(report,null,2));}
+ finally {if(originalAppend)app.vault.adapter.append=originalAppend;nodeAudit?.restore();cp.spawn=spawn;window.fetch=oldFetch;window.removeEventListener('error',error);window.removeEventListener('unhandledrejection',error);await fs.writeFile(root+(expectMobile?'/results-mobile.json':'/results.json'),JSON.stringify(report,null,2));}
 }
 
-const [port, outputDirectory] = process.argv.slice(2);
-if (!port || !/^\d+$/.test(port) || !outputDirectory) throw new Error("Usage: node scripts/smoke-bookmark-obsidian.mjs <CDP-port> <output-directory>");
+const [port, outputDirectory, mode, ...extra] = process.argv.slice(2);
+if (!port || !/^\d+$/.test(port) || !outputDirectory || (mode && mode !== '--expect-mobile') || extra.length) throw new Error("Usage: node scripts/smoke-bookmark-obsidian.mjs <CDP-port> <output-directory> [--expect-mobile]");
+const expectMobile = mode === '--expect-mobile';
 const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) })).json();
 const target = targets.find(item => item.type === "page" && item.url.startsWith("app://"));
 if (!target) throw new Error("No Obsidian page on this debugging port.");
@@ -130,13 +148,13 @@ try {
   const id = ++nextId;
   waiters.set(id, { resolve: resolveResult, reject });
   socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: {
-   expression: `(${runSmoke.toString()})(${JSON.stringify(resolve(outputDirectory))})`, awaitPromise: true, returnByValue: true,
+   expression: `(${runSmoke.toString()})(${JSON.stringify(resolve(outputDirectory))},${expectMobile},${observePluginNodeAccess.toString()})`, awaitPromise: true, returnByValue: true,
   } }));
  });
  if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
  const report = result.result.value;
  if (!report.passed) throw new Error("Smoke did not pass.");
- console.log(JSON.stringify({ passed: true, checks: report.checks.length, artifactSha256: report.artifactSha256, results: resolve(outputDirectory, "results.json") }));
+ console.log(JSON.stringify({ passed: true, checks: report.checks.length, environment: report.environment, artifactSha256: report.artifactSha256, results: resolve(outputDirectory, expectMobile ? "results-mobile.json" : "results.json") }));
 } finally {
  clearTimeout(timeout);
  socket.close();
