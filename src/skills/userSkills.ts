@@ -153,13 +153,13 @@ function unsupportedLoad(): UserSkillsLoad {
 }
 
 /**
- * Whether user-level skills can be read on this device, decided by probing.
+ * Whether user-level skills can be read on this device.
  *
  * Replaces the panel's old `Platform.isDesktop` guess: desktop Electron
  * exposes `require`, but the platform name is a correlation, not the
- * capability — this asks {@link nodeSkillsHome} directly, the same question
- * {@link loadUserSkills} answers by skipping. Synchronous and cheap because
- * the probe only resolves modules and reads the home path, without filesystem I/O.
+ * capability — desktops still probe {@link nodeSkillsHome}. Mobile skips even
+ * that probe because Obsidian emits a visible notice for a Node lookup there.
+ * The loader and settings use the same check, without filesystem I/O.
  */
 export function userSkillsSupported(): boolean {
 	return nodeSkillsHome() !== undefined;

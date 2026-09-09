@@ -242,6 +242,7 @@ describe("built bundle loads user skills through Pi's lazy Node environment", ()
 			});
 			await plugin.onload();
 			expect(requests.filter((id) => id.startsWith("node:"))).toEqual([]);
+			plugin.settings.userSkillsDir = "C:\\Users\\smoke\\skills";
 			await plugin.refreshAgentSkills();
 			const user = plugin.agentSkillLoad().user;
 			expect(user.skills).toEqual([]);
@@ -250,6 +251,7 @@ describe("built bundle loads user skills through Pi's lazy Node environment", ()
 			expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(false);
 			expect(requests).not.toContain("node:child_process");
 			expect(requests).not.toContain("node:readline");
+			expect(requests.filter((id) => id.startsWith("node:"))).toEqual([]);
 			expect(dynamicImports).toEqual([]);
 		});
 	}

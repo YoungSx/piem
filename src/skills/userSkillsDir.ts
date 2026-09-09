@@ -1,4 +1,5 @@
 import type { HostRequire } from "./nodeSkillsHost";
+import { Platform } from "obsidian";
 
 /**
  * What counts as a usable extra directory for user-level skills.
@@ -140,6 +141,9 @@ export function normalizeUserSkillsDir(input: unknown, hostRequire?: HostRequire
 	if (!trimmed) {
 		return undefined;
 	}
+	// A synced desktop path is inert on mobile. Preserve it without asking
+	// the host for node:path, which emits a notice in Obsidian's emulator.
+	if (Platform.isMobile) return trimmed;
 	if (isHomeRooted(trimmed)) {
 		return trimmed;
 	}
