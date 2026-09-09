@@ -1,5 +1,22 @@
 # Third-party notices
 
+## Original Pi bookmark extension and platform dependencies
+
+- `@earendil-works/pi-coding-agent` 0.84.3: the unmodified bookmark example,
+  factory loader, runner, event bus and their bundled support modules.
+  Source: https://github.com/earendil-works/pi/tree/v0.84.3/packages/coding-agent
+  Copyright (c) 2025 Mario Zechner. MIT.
+- `pathe` 2.0.3: browser-compatible path operations.
+  Source: https://github.com/unjs/pathe
+  Copyright (c) Pooya Parsa and Daniel Roe; includes notices for Joyent, Inc.
+  and other Node contributors, and Fabio Spampinato's zeptomatch. MIT.
+- `events` 3.3.0: browser-compatible EventEmitter used by Pi's original event bus.
+  Source: https://github.com/browserify/events
+  Copyright Joyent, Inc. and other Node contributors. MIT.
+
+The complete [license texts](licenses/pi-extension-bridge.txt) are also embedded
+in the generated `main.js` banner so the standard plugin release carries them.
+
 ## Vercel Skills: `find-skills`
 
 Piem's bundled `find-skills` skill is adapted for Obsidian's vault-only tool

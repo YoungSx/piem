@@ -831,6 +831,16 @@ const obsidianStub = {
 			return mod || event.button === 1 ? "tab" : false;
 		},
 	},
+	Component: class Component {
+		private cleanups: Array<() => void> = [];
+		load(): void {}
+		unload(): void { for (const cleanup of this.cleanups.splice(0).reverse()) cleanup(); }
+		register(callback: () => void): void { this.cleanups.push(callback); }
+		registerDomEvent(el: EventTarget, type: string, callback: EventListener): void {
+			el.addEventListener(type, callback);
+			this.register(() => el.removeEventListener(type, callback));
+		}
+	},
 	Plugin: class Plugin {},
 	/**
 	 * Modal with the element scaffold Obsidian's real one builds in its

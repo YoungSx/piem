@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved seven
+ * The number is anchored to measurement, not taste, and it has moved eight
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -68,6 +68,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *    bridge took 1,692,093 B to 1,728,334 B (+36,241 B). The ceiling follows
  *    to 1.66 MiB: the public entry costs ~35 KiB but retires the duplicated
  *    filesystem implementation without a private upstream import.
+ * 8. The original Pi bookmark, loader/runner, limited platform bridge, native
+ *    dialogs and license notices took 1,720,434 B to 1,783,412 B (+62,978 B).
+ *    The ceiling follows to 1.71 MiB. Dynamic loading, terminal UI and syntax
+ *    highlighting stay excluded and have their own composition bans below.
  *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
@@ -78,7 +82,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.66 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.71 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -117,6 +121,10 @@ const KNOWN_OPAQUE_DYNAMIC_IMPORTS = 1;
  * as a substring so a nested or pnpm-style layout is caught too.
  */
 const BANNED_MODULES = new Map([
+	["node_modules/jiti/", "Built-in Pi extensions are statically bundled. The dynamic JS/TS loader must stay unreachable."],
+	["node_modules/@earendil-works/pi-tui/", "The bookmark uses Obsidian dialogs. Pi's terminal runtime must not enter the mobile bundle."],
+	["node_modules/highlight.js/", "Terminal syntax highlighting is unused by the built-in bookmark."],
+	["node_modules/cross-spawn/", "The limited extension bridge refuses subprocess execution. No process launcher belongs in this graph."],
 	[
 		"node_modules/@earendil-works/pi-ai/dist/providers/",
 		"283 KiB that Obsidian parses on every launch, 164 KiB of it catalog JSON. Every provider entrypoint imports its own `X_MODELS` at module scope and names it inside `createProvider`, so a factory cannot be taken without its data and esbuild cannot shake the data loose — importing one provider costs its whole model list. Nothing needs them: the builtin fallback is a literal in src/net/builtinCatalog.ts, dispatch goes through createConfiguredProvider in src/net/streamFn.ts, connection details for known vendors live in src/net/providerPresets.ts, and capability hints come from the live models.dev index. If this appears, an import reached for a provider or a `*.models` entrypoint (or a barrel that re-exports one, such as `providers/all`).",
@@ -158,6 +166,10 @@ const EMPTY_FAUX_INITIALIZER_BYTES = 17;
  * {@link BANNED_MODULES}, so a nested or pnpm-style layout is caught too.
  */
 const REQUIRED_MODULES = new Map([
+	["node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js", "The bundled bookmark must use Pi's original factory loader."],
+	["node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js", "The bundled bookmark must use Pi's original extension runner."],
+	["node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js", "The bundled extension must use Pi's original event bus."],
+	["node_modules/@earendil-works/pi-coding-agent/examples/extensions/bookmark.ts", "The original bookmark example must be present, not a local reimplementation."],
 	[
 		"node_modules/@earendil-works/pi-agent-core/dist/harness/env/nodejs.js",
 		"User skills must use the bundled public NodeExecutionEnv implementation. A missing input means the bridge no longer reaches Pi's filesystem or Pi was incorrectly externalized.",

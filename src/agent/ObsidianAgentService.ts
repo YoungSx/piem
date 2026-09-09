@@ -37,6 +37,7 @@ import { vendorIconName } from "../net/vendorIcons";
 import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent } from "./compaction";
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
+import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
 import type { AskUserBroker } from "../tools/askUserBroker";
 import { fetchQuickActionSuggestions, lastAssistantText, type SuggestionScope } from "./quickActionSuggestionRequest";
@@ -1133,11 +1134,18 @@ export class ObsidianAgentService {
 		// guard and could reject the call outright. Everything below now
 		// resolves `false` and lands on the banner; nothing escapes.
 		const rt = this.runtimeForFocused();
+		if (rt.bookmarkWork || rt.bookmarkClosing) {
+			this.setNotice(rt, this.t().t("bookmarks.saving"));
+			return false;
+		}
+		rt.promptPreparations += 1;
 		try {
 			return await this.resolveAndDeliver(rt, prompt, images);
 		} catch (error) {
 			this.setError(rt, causeMessage(error));
 			return false;
+		} finally {
+			rt.promptPreparations -= 1;
 		}
 	}
 
@@ -1606,6 +1614,11 @@ export class ObsidianAgentService {
 		if (!agent) {
 			return;
 		}
+		if (rt.bookmarkWork || rt.bookmarkClosing) {
+			rt.promptQueue.restore(entries);
+			return;
+		}
+		rt.promptPreparations += 1;
 		let tailBefore: AgentMessage | undefined;
 		try {
 			// Captured as the first statement of the block, before the notify
@@ -1621,6 +1634,7 @@ export class ObsidianAgentService {
 			rt.promptQueue.restore(entries);
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
+			rt.promptPreparations -= 1;
 			rt.activeRunContext = null;
 			await this.notifySettledState(rt);
 		}
@@ -1637,11 +1651,12 @@ export class ObsidianAgentService {
 	 */
 	async resumeInterruptedRun(): Promise<void> {
 		const rt = this.runtimeForFocused();
-		rt.resumableLanes.delete(rt.activeLane);
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming) {
+		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
 			return;
 		}
+		rt.resumableLanes.delete(rt.activeLane);
+		rt.promptPreparations += 1;
 		const stopEpoch = rt.stopEpoch;
 		let tailBefore: AgentMessage | undefined;
 		try {
@@ -1665,6 +1680,7 @@ export class ObsidianAgentService {
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
+			rt.promptPreparations -= 1;
 			rt.activeRunContext = null;
 			await this.notifySettledState(rt);
 		}
@@ -1991,7 +2007,7 @@ export class ObsidianAgentService {
 		prompt: string,
 		images: ImageContent[] = [],
 	): Promise<boolean> {
-		if (agent.state.isStreaming || rt.isCompacting || rt.branchSummaryController || rt.retryInFlight) {
+		if (agent.state.isStreaming || rt.isCompacting || rt.branchSummaryController || rt.retryInFlight || rt.bookmarkWork || rt.bookmarkClosing) {
 			return false;
 		}
 		// Preflight before anything destructive: the rewind throws the original
@@ -2496,7 +2512,7 @@ export class ObsidianAgentService {
 		await this.initialize();
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController) {
+		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing) {
 			return false;
 		}
 		const replyMessage = agent.state.messages[index];
@@ -2505,14 +2521,78 @@ export class ObsidianAgentService {
 			return false;
 		}
 		let forkedPath: string;
+		rt.sessionOperations += 1;
 		try {
 			forkedPath = (await this.sessionManager.forkSession(rt.sessionPath, replyEntryId)).path;
 		} catch (error) {
 			this.toast("chat.forkFailed", error);
 			return false;
-		}
+		} finally { rt.sessionOperations -= 1; }
 		await this.openSession(forkedPath);
 		return true;
+	}
+
+	/** Bookmark commands capture their owner before a modal or any other await can change focus. */
+	async runBookmark(path: string, command: BookmarkCommand, label = ""): Promise<BookmarkOutcome> {
+		const rt = this.runtimes.get(path);
+		if (!rt) throw new Error(this.t().t("bookmarks.unavailable"));
+		const host = this.bookmarksFor(rt);
+		const release = this.sessionManager.claimOperation(path);
+		rt.bookmarkWork += 1;
+		try {
+			const result = await host.run(command, label);
+			rt.sessionRevision += 1;
+			this.notify();
+			return result;
+		} finally {
+			rt.bookmarkWork -= 1;
+			release();
+			if (!rt.bookmarkWork && !rt.bookmarkClosing) await this.notifySettledState(rt);
+		}
+	}
+
+	async listBookmarks(path: string): Promise<ChatBookmark[]> {
+		const rt = this.runtimes.get(path);
+		if (!rt) throw new Error(this.t().t("bookmarks.unavailable"));
+		const host = this.bookmarksFor(rt);
+		const release = this.sessionManager.claimOperation(path);
+		rt.bookmarkWork += 1;
+		try { return await host.list(); }
+		finally {
+			rt.bookmarkWork -= 1;
+			release();
+			if (!rt.bookmarkWork && !rt.bookmarkClosing) await this.notifySettledState(rt);
+		}
+	}
+
+	private bookmarksFor(rt: SessionRuntime): BookmarkHost {
+		rt.bookmarkHost ??= new BookmarkHost({
+			assertAvailable: (session) => {
+				if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || !this.sessionManager.isLoaded(rt.sessionPath)) {
+					throw new Error(this.t().t("bookmarks.unavailable"));
+				}
+				if (!rt.agent || rt.agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.compaction || rt.promptPreparations || rt.sessionRefreshing || rt.sessionOperations || rt.activeRunContext || rt.promptQueue.size > 0 || rt.steeredPrompts.length > 0 || rt.compactionPending) {
+					throw new Error(this.t().t("bookmarks.busy"));
+				}
+				if (session && this.sessionManager.getSessionFor(rt.sessionPath) !== session) {
+					throw new Error(this.t().t("bookmarks.changed"));
+				}
+			},
+			load: async () => {
+				const result = await this.sessionManager.reconcileExternalDrift(rt.sessionPath);
+				if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) throw new Error(this.t().t("bookmarks.unavailable"));
+				if (result.action === "conflict") throw new Error(this.t().t("bookmarks.changed"));
+				if (result.action === "merged") {
+					const context = await this.sessionManager.buildSessionContextFor(rt.sessionPath, rt.activeLane);
+					if (rt.bookmarkClosing) throw new Error(this.t().t("bookmarks.unavailable"));
+					await this.adoptSessionContext(rt, context);
+					rt.lastCompaction = await this.sessionManager.getLastCompactionFor(rt.sessionPath, rt.activeLane);
+					rt.sessionRevision += 1;
+				}
+				return this.sessionManager.getSessionFor(rt.sessionPath);
+			},
+		});
+		return rt.bookmarkHost;
 	}
 
 	/** Sessions for this vault, newest first. */
@@ -2707,9 +2787,15 @@ export class ObsidianAgentService {
 		if (!rt) {
 			return;
 		}
+		if (rt.bookmarkWork || rt.bookmarkClosing) {
+			this.setNotice(rt, this.t().t("bookmarks.saving"));
+			return;
+		}
 
 		const trimmedName = name.trim();
-		await this.sessionManager.appendSessionInfoFor(rt.sessionPath, trimmedName || undefined);
+		rt.sessionOperations += 1;
+		try { await this.sessionManager.appendSessionInfoFor(rt.sessionPath, trimmedName || undefined); }
+		finally { rt.sessionOperations -= 1; }
 		// Patch the cached summary in place: the manager summarises the active
 		// path only, and a rename already knows the one field that moved.
 		if (rt.sessionInfo) {
@@ -2877,9 +2963,16 @@ export class ObsidianAgentService {
 			return;
 		}
 		const rt = this.runtimes.get(activePath);
-		if (!rt || rt.agent?.state.isStreaming) {
+		if (!rt || rt.agent?.state.isStreaming || rt.bookmarkWork || rt.sessionRefreshing) {
 			return;
 		}
+		rt.sessionRefreshing = true;
+		try {
+			await this.reconcileRuntimeDrift(rt, activePath);
+		} finally { rt.sessionRefreshing = false; }
+	}
+
+	private async reconcileRuntimeDrift(rt: SessionRuntime, activePath: string): Promise<void> {
 		let outcome: SessionReconcileOutcome;
 		try {
 			outcome = await this.sessionManager.reconcileExternalDrift(activePath);
@@ -2924,9 +3017,15 @@ export class ObsidianAgentService {
 		await this.initialize();
 		const rt = this.runtimes.get(path);
 		const wasActive = this.sessionManager.getActiveSessionPath() === path;
+		if (rt) {
+			rt.bookmarkClosing = true;
+			rt.bookmarkHost?.dispose();
+			await rt.bookmarkHost?.settled();
+		}
 		try {
 			await this.sessionManager.deleteSession(path);
 		} catch (error) {
+			if (rt) { rt.bookmarkClosing = false; rt.bookmarkHost = undefined; }
 			this.toast("chat.sessionDeleteFailed", error);
 			return;
 		}
@@ -3081,7 +3180,9 @@ export class ObsidianAgentService {
 		}
 		agent.state.thinkingLevel = level;
 		if (this.sessionManager.isLoaded(rt.sessionPath)) {
-			await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, level, rt.activeLane);
+			rt.sessionOperations += 1;
+			try { await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, level, rt.activeLane); }
+			finally { rt.sessionOperations -= 1; }
 		}
 		this.notify();
 	}
@@ -3097,6 +3198,11 @@ export class ObsidianAgentService {
 			// MCP configuration belongs to the plugin, even before a chat exists.
 			// The settings row awaits this path for its connection verdict.
 			await this.fetchExternalTools();
+			this.notify();
+			return;
+		}
+		if (rt.bookmarkWork) {
+			rt.pendingConfiguration = { ...rt.pendingConfiguration, modelId: this.getSettings().activeModelId };
 			this.notify();
 			return;
 		}
@@ -3116,6 +3222,12 @@ export class ObsidianAgentService {
 	 * the configuration rows the session file records.
 	 */
 	private async reconfigureRuntime(rt: SessionRuntime): Promise<void> {
+		rt.sessionOperations += 1;
+		try { await this.applyRuntimeConfiguration(rt); }
+		finally { rt.sessionOperations -= 1; }
+	}
+
+	private async applyRuntimeConfiguration(rt: SessionRuntime): Promise<void> {
 		const agent = rt.agent;
 		if (!agent || !this.sessionManager.isLoaded(rt.sessionPath)) {
 			return;
@@ -3163,7 +3275,7 @@ export class ObsidianAgentService {
 	 */
 	private isBusy(rt: SessionRuntime): boolean {
 		const agent = rt.agent;
-		return Boolean(agent?.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.compaction);
+		return Boolean(agent?.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.compaction || rt.bookmarkWork || rt.bookmarkClosing);
 	}
 
 	/**
@@ -4303,7 +4415,7 @@ export class ObsidianAgentService {
 		// A failed start leaves no agent, and the banner already carries why —
 		// same reasoning as the matching guard in `sendPrompt`.
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming) {
+		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
 			return;
 		}
 		if (!this.hasApiKey()) {

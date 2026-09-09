@@ -16,6 +16,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 	},
 
 	commands: {
+		addBookmark: "为最近回复添加书签",
+		removeBookmark: "移除最近书签",
+		listBookmarks: "查看对话书签",
 		openChat: "打开对话",
 		newChat: "新建对话",
 		stopResponse: "停止回复",
@@ -33,6 +36,28 @@ export const zhCN: DeepPartial<EnCopy> = {
 		searchChats: "搜索对话",
 		openSubagents: "打开子代理面板",
 		couldNotOpenSubagents: "无法打开子代理面板。",
+	},
+
+	bookmarks: {
+		excerpt: "这里显示前 4000 个字符，完整回复仍保留在对话中。",
+		addTitle: "为最近回复添加书签",
+		description: "标记最后保存的助手回复，包括回退后保留的回复；替换该回复已有的标签。",
+		label: "标签",
+		placeholder: "取个名称，方便以后找到",
+		save: "保存书签",
+		labelRequired: "请输入 1–160 个字符的标签。",
+		saved: "书签已保存：{label}",
+		removed: "书签已移除。",
+		none: "这段对话还没有书签。",
+		noMessage: "还没有可标记的已保存助手回复。",
+		noChat: "请先打开一段对话。",
+		search: "搜索这段对话的书签…",
+		noMatch: "没有匹配的书签。",
+		busy: "请等待这段对话处理完毕后重试。",
+		saving: "正在保存书签，请稍后重试。",
+		unavailable: "这段对话已不可用。",
+		changed: "对话已发生变化，请重新打开后重试。",
+		failed: "无法更新书签：{reason}",
 	},
 
 	chat: {

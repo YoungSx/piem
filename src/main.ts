@@ -21,6 +21,7 @@ import { BUILTIN_SKILL_ASSET, BUILTIN_SKILLS_DEVELOPMENT } from "./skills/builti
 import { BuiltinSkillInstaller } from "./skills/builtinSkillInstaller";
 import { builtinSkillVault } from "./skills/builtinSkillVault";
 import { emptyBuiltinSkillReport } from "./skills/builtinSkillState";
+import { BookmarkDialogs } from "./ui/bookmarkDialogs";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
 import { requestNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
@@ -38,6 +39,7 @@ export default class PiemPlugin extends Plugin {
 	// so the shared DEFAULT_SETTINGS object is never mutated in place.
 	settings: PiemSettings = normalizeSettings(null);
 	private agentService: ObsidianAgentService | null = null;
+	private bookmarkDialogs?: BookmarkDialogs;
 	private builtinSkillInstaller?: BuiltinSkillInstaller;
 	private settingsTab?: PiemSettingTab;
 	private settingsWrite?: Promise<void>;
@@ -365,6 +367,7 @@ export default class PiemPlugin extends Plugin {
 			// The one instance for the session; see `requireCredentialStore`.
 			credentials: this.requireCredentialStore(),
 		});
+		this.bookmarkDialogs = new BookmarkDialogs(this.app, this.agentService, () => this.t());
 		this.draftStore = DraftStore.forPlugin(this.app, this, this.requirePluginLogger().logger);
 		// A chat that loses its session file loses its draft file with it, or the
 		// draft outlives its conversation forever — retention eviction in
@@ -425,6 +428,9 @@ export default class PiemPlugin extends Plugin {
 				void this.openSessionSearch();
 			},
 		});
+		this.addCommand({ id: "bookmark-reply", name: t.t("commands.addBookmark"), callback: () => this.bookmarkDialogs?.add() });
+		this.addCommand({ id: "unbookmark-reply", name: t.t("commands.removeBookmark"), callback: () => { void this.bookmarkDialogs?.remove(); } });
+		this.addCommand({ id: "view-bookmarks", name: t.t("commands.listBookmarks"), callback: () => { void this.bookmarkDialogs?.list(); } });
 		this.addCommand({
 			id: "abort-chat",
 			name: t.t("commands.stopResponse"),
@@ -533,6 +539,8 @@ export default class PiemPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.bookmarkDialogs?.dispose();
+		this.bookmarkDialogs = undefined;
 		this.builtinSkillInstaller?.dispose();
 		this.builtinSkillInstaller = undefined;
 		this.settingsTab = undefined;

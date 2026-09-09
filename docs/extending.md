@@ -175,6 +175,45 @@ There is no OAuth flow either. A static bearer token covers the servers a
 personal vault realistically talks to, and the flow it replaces would be a
 browser round-trip Obsidian is not well placed to host.
 
+## Built-in Pi extensions
+
+Piem includes Pi's original **bookmark** extension. Open a conversation, then use
+Obsidian's command palette:
+
+- **Piem: Bookmark the latest reply** — enter a label of 1–160 characters.
+- **Piem: Remove latest bookmark** — remove the label from the last labelled entry.
+- **Piem: View conversation bookmarks** — search labels and reply excerpts, then
+  select one to read it. Long replies show their first 4,000 characters.
+
+The extension uses the existing conversation file. Labels survive reloads and
+travel with that file through vault sync. A fork carries labels whose replies
+are included in the copy. A save belongs to the conversation in which you opened
+the dialog, even if you switch chats before saving. Piem reports success only
+after the write completes; a failed write leaves the label available to retry.
+Wait for a conversation's reply, retry or compaction to finish before using these
+commands.
+
+Selection follows Pi's original rule: **the last appended assistant reply in the
+whole conversation log**, including replies retained after a rewind. It can differ
+from the last reply currently displayed. Removing a bookmark likewise walks all
+entries backwards; it does not use the time at which a label was assigned.
+Synchronizing simultaneous edits to the same label follows the existing session
+merge rule: the arriving file wins. Sync is not a cross-device transaction.
+
+This built-in extension works offline and adds no network requests. It ships in
+`main.js` and changes only with a normal plugin release. Piem does not download or
+execute JS/TS extensions from the vault or a URL.
+
+For maintainers: `@earendil-works/pi-coding-agent` is pinned to **0.84.3**. The
+official factory loader, runner, event bus and `examples/extensions/bookmark.ts`
+are imported directly. The build verifies the audited files' hashes, supplies
+virtual paths and a read-only package resource, and removes unused terminal and
+dynamic-loader dependencies. Unsupported filesystem access, process execution
+and runtime module loading throw explicit errors. This bridge supports the
+bundled bookmark's required interfaces; other Pi extensions need their own
+compatibility review. It does not replace the existing Pi agent, tools or session
+store. See [third-party notices](../THIRD_PARTY_NOTICES.md) for attribution.
+
 ## Developing built-in skills
 
 The repository's `skills/<name>/SKILL.md` is the source of truth. Add a valid

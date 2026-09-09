@@ -21,6 +21,9 @@ export const en = {
 
 	/** Commands, the ribbon icon, and the workspace menu. */
 	commands: {
+		addBookmark: "Bookmark latest reply",
+		removeBookmark: "Remove latest bookmark",
+		listBookmarks: "View conversation bookmarks",
 		openChat: "Open chat",
 		newChat: "New chat",
 		stopResponse: "Stop response",
@@ -41,6 +44,28 @@ export const en = {
 	},
 
 	/** Chat panel — header, banner, composer, message list, and trace rows. */
+	bookmarks: {
+		excerpt: "Showing the first 4,000 characters. The full reply remains in the conversation.",
+		addTitle: "Bookmark the latest reply",
+		description: "Marks the last saved assistant reply, including replies kept after a rewind. Replaces its existing label.",
+		label: "Label",
+		placeholder: "A name to find this reply later",
+		save: "Save bookmark",
+		labelRequired: "Enter a label of 1–160 characters.",
+		saved: "Bookmark saved: {label}",
+		removed: "Bookmark removed.",
+		none: "This conversation has no bookmarks.",
+		noMessage: "There is no saved assistant reply to bookmark.",
+		noChat: "Open a conversation first.",
+		search: "Search this conversation’s bookmarks…",
+		noMatch: "No matching bookmarks.",
+		busy: "Wait for this conversation to finish working, then try again.",
+		saving: "A bookmark is being saved. Try again when it finishes.",
+		unavailable: "This conversation is no longer available.",
+		changed: "The conversation changed. Reopen it and try again.",
+		failed: "Could not update bookmarks: {reason}",
+	},
+
 	chat: {
 		/**
 		 * Doubles as the only advert for slash commands: the composer has no other

@@ -24,6 +24,17 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: Error })
 }
 
 describe("ObsidianSessionFileSystem", () => {
+	it("rejects a label whose reply disappeared during sync instead of reporting success", async () => {
+		const { adapter, repo } = setup();
+		const created = await repo.create({ cwd: CWD });
+		const path = adapter.filePaths()[0]!;
+		const empty = await adapter.read(path);
+		const { id } = await created.appendEntry({ type: "message", id: "answer", message: userMessage("answer") }, "main");
+		await adapter.write(path, empty);
+		await expect(created.setLabel(id, "Must not claim success")).rejects.toThrow("no longer on disk");
+		expect(await created.getLabel(id)).toBeUndefined();
+		expect(await adapter.read(path)).toBe(empty);
+	});
 	it("keeps paths vault-relative, so stored session paths need no translation", async () => {
 		const { fs } = setup();
 
