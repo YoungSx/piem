@@ -1,5 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import { installObsidianStub } from "../testUtils/obsidianStub";
+
+installObsidianStub();
 
 const { USER_SKILLS_DIRS, loadUserSkills, loadUserSkillsFromEnv, userSkillsSupported } = await import("./userSkills");
 const { createUserSkillsEnv } = await import("./nodeSkillsHost");

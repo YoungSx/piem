@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { createUserSkillsEnv, nodeSkillsHome, type HostRequire } from "./nodeSkillsHost";
+import type { HostRequire } from "./nodeSkillsHost";
+import { installObsidianStub, platformMock } from "../testUtils/obsidianStub";
+
+installObsidianStub();
+const { createUserSkillsEnv, nodeSkillsHome } = await import("./nodeSkillsHost");
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -23,6 +27,20 @@ const unavailableHosts: Array<[string, HostRequire | null]> = [
 ];
 
 describe("user-skills host capabilities", () => {
+	it("never probes Node on mobile, even when the emulator has a require function", async () => {
+		const before = platformMock.isMobile;
+		const requested: string[] = [];
+		platformMock.isMobile = true;
+		try {
+			const lookup: HostRequire = (id) => { requested.push(id); return nodeRequire(id); };
+			expect(nodeSkillsHome(lookup)).toBeUndefined();
+			expect(await createUserSkillsEnv(lookup)).toBeUndefined();
+			expect(requested).toEqual([]);
+		} finally {
+			platformMock.isMobile = before;
+		}
+	});
+
 	for (const [name, lookup] of unavailableHosts) {
 		it(`skips ${name} without constructing an environment`, async () => {
 			expect(nodeSkillsHome(lookup)).toBeUndefined();

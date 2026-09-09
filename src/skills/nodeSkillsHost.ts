@@ -1,4 +1,5 @@
 import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import { Platform } from "obsidian";
 
 /** Obsidian injects a module lookup on desktop; mobile may throw or return nothing. */
 export type HostRequire = (id: string) => unknown;
@@ -16,7 +17,9 @@ function hostModuleLookup(id: string): unknown {
  * and does not initialize the Node execution environment.
  */
 export function nodeSkillsHome(lookup: HostRequire | null = hostModuleLookup): string | undefined {
-	if (!lookup) return undefined;
+	// Obsidian's mobile emulator reports every attempted Node lookup as a
+	// visible notice, even when the caller catches it. Never probe on mobile.
+	if (Platform.isMobile || !lookup) return undefined;
 	try {
 		const fs = lookup("node:fs/promises") as Record<string, unknown> | undefined;
 		const path = lookup("node:path") as Record<string, unknown> | undefined;

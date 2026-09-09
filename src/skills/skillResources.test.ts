@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { AgentTool, ExecutionEnv } from "@earendil-works/pi-agent-core";
 import { createReadSkillTool } from "../tools/skillTools";
-import { loadUserSkills } from "./userSkills";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import { createSkillVault } from "../testUtils/skillVault";
 
 installObsidianStub();
+const { loadUserSkills } = await import("./userSkills");
 const { TFile, TFolder } = await import("obsidian");
 const { VaultExecutionEnv } = await import("../vault/VaultExecutionEnv");
 const { loadVaultSkills } = await import("../agent/skillLoader");

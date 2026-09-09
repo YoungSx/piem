@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { HostRequire } from "./nodeSkillsHost";
-import { normalizeUserSkillsDir, USER_SKILLS_DIR_PLACEHOLDER } from "./userSkillsDir";
+import { installObsidianStub, platformMock } from "../testUtils/obsidianStub";
+
+installObsidianStub();
+const { normalizeUserSkillsDir, USER_SKILLS_DIR_PLACEHOLDER } = await import("./userSkillsDir");
 
 /**
  * The extra skills directory is the one place a user names a path outside the
@@ -118,6 +121,19 @@ describe("normalizeUserSkillsDir on a host with node", () => {
 });
 
 describe("normalizeUserSkillsDir where node is unavailable", () => {
+	it("preserves a synced desktop path on mobile without resolving any host module", () => {
+		const before = platformMock.isMobile;
+		const requested: string[] = [];
+		platformMock.isMobile = true;
+		try {
+			const lookup: HostRequire = (id) => { requested.push(id); throw new Error("Node lookup emits a mobile notice"); };
+			expect(normalizeUserSkillsDir(" C:\\Users\\smoke\\skills ", lookup)).toBe("C:\\Users\\smoke\\skills");
+			expect(requested).toEqual([]);
+		} finally {
+			platformMock.isMobile = before;
+		}
+	});
+
 	for (const [shape, lookup] of nodelessHosts) {
 		describe(shape, () => {
 			it("answers without throwing, since the settings panel runs here too", () => {
