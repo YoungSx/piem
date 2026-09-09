@@ -1,8 +1,13 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { Model, Api } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type Context, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { DEFAULT_TURN_MAX_DELAY_MS, withTurnRetry } from "./streamRetry";
+import { stubWindowTimers } from "../testUtils/windowStub";
+
+let restoreWindow: () => void;
+beforeEach(() => { restoreWindow = stubWindowTimers(); });
+afterEach(() => restoreWindow());
 
 /*
  * The wrapper's contract, pinned at the edges that matter:
