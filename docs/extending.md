@@ -77,10 +77,26 @@ Templates/Weekly.md.
 - `description` — what the model reads when deciding whether the skill applies.
   Write it for the model, not for yourself.
 
-At the start of every turn Piem lists each loaded skill in the system prompt, so
-the model knows they exist without you naming them. Skills are read fresh from
-disk on every turn: editing or adding one takes effect on your **next message**,
-with no plugin reload.
+Piem uses Pi's skill loader and prompt formatter for the
+[Agent Skills format](https://agentskills.io/specification). The model first sees
+a catalog of skill names, descriptions and locations. When one applies, it calls
+`read_skill` for the instructions; typing `/name` provides them directly.
+Referenced files inside the vault are read separately when needed. This is
+**progressive disclosure**: caching the skill bodies in memory does not add them
+all to the model's context.
+
+Skills are read fresh from disk before each new user turn: editing or adding one
+takes effect on your **next message**, with no plugin reload. Disabled skills are
+excluded; `disable-model-invocation: true` hides a skill from the model's catalog
+while keeping explicit invocation available.
+
+Some skills need capabilities beyond these instructions. User-level skills outside
+the vault can supply their main instructions, but Piem's built-in file tools cannot
+read their companion resources. Piem provides no shell for bundled scripts.
+`read_skill` also caps output at 50 KiB or 2,000 lines and has no continuation
+parameter; split long instructions into references inside the vault. Earlier skill
+instructions can be summarized during conversation compaction rather than kept
+verbatim; invoke the skill again when its exact steps are needed.
 
 In **Extensions**, badges show **Built-in**, **Global**, or **Vault**. Built-in
 and vault files have an **Open** button; imported vault skills also keep their
@@ -96,7 +112,13 @@ pick a repo or a subfolder, review the plan, and Piem writes the `SKILL.md`
 files into `Piem/skills/` along with a provenance sidecar. That sidecar is what
 lets the **Update** button refetch later.
 
-Imports are markdown-only. Nothing executable comes down the wire.
+The general GitHub importer currently filters known binary formats, but can also
+download text files such as scripts. Piem does not execute those scripts. This
+differs from the built-in release resource, which enforces Markdown-only files.
+For a skill with references, select its parent collection folder: importing a URL
+that points directly at the skill folder currently copies only `SKILL.md` and
+omits its companion files. Single-file URLs also import only that file. Check the
+plan for the references your skill needs.
 
 ## Prompt templates
 
