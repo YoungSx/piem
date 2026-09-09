@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved eight
+ * The number is anchored to measurement, not taste, and it has moved seven
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -56,26 +56,29 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 6. The `vault-memory` and `distill-skill` builtins took the bundle past the
  *    1.61 line by 1999 bytes. The ceiling follows to 1.62 MiB.
  *
- *    At that point the `.md` text loader inlined the seven skill bodies
- *    (~21 KiB) in `main.js`, so they counted against this budget. They now
- *    ship as a separate Markdown resource, checked by `check:skills`; importing
- *    their bodies back into the bundle is caught by the composition gate below.
+ *    Bundled skill bodies count against this budget rather than being exempt
+ *    from it: the `.md` text loader inlines each `SKILL.md` as a string literal
+ *    in `main.js`, so Obsidian parses all of them on every launch. Excluding a
+ *    body from this gate would cost the same start-up time with nothing left
+ *    measuring it. Making them free means changing the mechanism — shipping
+ *    them as vault files read on demand — not the ruler. For scale, the seven
+ *    bodies together are ~21 KiB against react-dom's 128 KiB and the MCP
+ *    client's 171 KiB, so they are not where start-up time is spent.
  * 7. Replacing NodeHomeEnv with Pi's public NodeExecutionEnv entry and a lazy
  *    bridge took 1,692,093 B to 1,728,334 B (+36,241 B). The ceiling follows
  *    to 1.66 MiB: the public entry costs ~35 KiB but retires the duplicated
  *    filesystem implementation without a private upstream import.
- * 8. After the standard-skill migration, vault memory and bounded conversation
- *    recall take 1,720,434 B to 1,734,386 B (+13,952 B), without new dependencies.
- *    The ceiling follows to 1.67 MiB, leaving ~16 KiB for the implementation.
- *    Necessary behavior and clear prompts take precedence over the old byte
- *    budget; the import and composition gates stay.
  *
- * Adjust the ceiling in measured 0.01 MiB steps when useful capabilities need
- * room. Bumps 4 and 5 left 8.4 KiB and ~10 KiB of headroom, not the 80 KiB an
- * earlier draft claimed. Keep enough room for maintainable code and prompts,
- * while catching an accidental catalog-sized dependency on a user's phone.
+ * The ceiling moves one 0.01 MiB notch past the measured size, which is what
+ * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
+ * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
+ * a rounding-level change does not trip the gate, and tight enough that a
+ * regression of catalog size — or anything else of that order — lands above
+ * the line and gets caught here rather than on a user's phone. Re-opening a
+ * large margin for a small feature would retire the ruler: a ratchet left
+ * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.67 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.66 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

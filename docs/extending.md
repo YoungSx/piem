@@ -22,11 +22,13 @@ later sources overriding earlier skills of the same name:
 
 `vault-memory` teaches recall and autonomous maintenance of useful facts;
 `distill-skill` teaches saving a useful, verified procedure as a vault skill.
+Their workflows live entirely in `SKILL.md` and use ordinary vault file tools.
 One successful run can be enough. The agent can create or improve a skill
 without asking you to approve each draft, preferring an existing skill over a
 near duplicate. Newer user corrections replace outdated steps in place.
 An unverified attempt remains a dated observation, not a claimed working recipe.
-Nothing runs just because a skill was saved. See [Memory and past conversations](tools.md#memory-and-past-conversations).
+New and edited skills load on the next user turn; saving does not execute them.
+See [Memory and past conversations](tools.md#memory-and-past-conversations).
 
 ### Built-in files and updates
 

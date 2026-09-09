@@ -38,11 +38,6 @@ describe("projectSessionEntryText", () => {
 		expect(projectSessionEntryText(META, messageEntry({ role: "user", content: "body", timestamp: 0 }), "pinned")).toBe("body pinned");
 	});
 
-	test("excludes tool-result bodies, including labels on those results", () => {
-		const tool = messageEntry({ role: "toolResult", toolCallId: "t1", toolName: "read", content: [{ type: "text", text: "external command payload" }], isError: false, timestamp: 0 });
-		expect(projectSessionEntryText(META, tool, "tool label")).toBe("");
-	});
-
 	test("configuration entries carry no searchable body", () => {
 		const modelChange = { type: "model_change", id: "m1", seq: 3, parentId: null, timestamp: 0, provider: "anthropic", modelId: "claude" } as Entry;
 		expect(projectSessionEntryText(META, modelChange)).toBe("");

@@ -23,19 +23,21 @@ its remedy is verified. Skip routine steps that add no value when written down.
 1. Check `<available_skills>` for an existing skill covering the procedure. Read
    it with `read_skill`; inspect the target vault file before editing it.
 2. Prefer correcting or extending the existing vault skill over adding a near
-   duplicate. If a bundled or user-level skill needs a vault-specific change,
+   duplicate. If a built-in or user-level skill needs a vault-specific change,
    write a vault override of the same name and explain the override briefly.
 3. Write the file at `Piem/skills/<name>/SKILL.md`. Use lowercase letters, digits,
    and single hyphens, with no leading or trailing hyphen. Match the frontmatter
-   name to its directory. An existing file is edited with a unique anchor;
-   creating a new file uses `write`.
+   name to its directory. Read an existing target before changing it; use `edit`
+   with unique, non-overlapping `oldText` anchors for existing content. Use
+   `write` for a missing or confirmed-empty file. A failed read leaves it intact.
 4. Include the trigger, prerequisites, the steps that mattered, how to check the
    result, and the scope of verification. Replace incorrect steps in place;
    keep the procedure internally consistent.
-5. Tell the user what was saved or improved in one sentence. Ordinary skill
-   creation and maintenance need no extra approval. If the requested behavior
-   itself needs a decision, clarify that decision rather than asking permission
-   to save the skill.
+5. Check the tool result or diff before reporting success; after an interrupted
+   write, read the file before retrying. Tell the user what was saved or improved
+   in one sentence. Ordinary skill creation and maintenance need no extra
+   approval. If the requested behavior itself needs a decision, clarify that
+   decision rather than asking permission to save the skill.
 
 ```markdown
 ---

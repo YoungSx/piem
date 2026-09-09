@@ -18,7 +18,7 @@ import type { PiemSettings } from "../settings";
 import type { ObsidianAgentService as ObsidianAgentServiceType, ObsidianAgentServiceOptions, PendingToolCall } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { spyLogger } from "../testUtils/logSpy";
-import { stubWindowMembers, stubWindowTimers } from "../testUtils/windowStub";
+import { stubWindowTimers } from "../testUtils/windowStub";
 import { getT } from "../i18n";
 import type { LoggerLike } from "../logging/Logger";
 
@@ -172,74 +172,6 @@ class UntrashableAdapter extends MemoryAdapter {
 }
 
 describe("ObsidianAgentService", () => {
-	it("persists a first memory, corrects it, and recalls only the current value in new chats", async () => {
-		const restoreCrypto = stubWindowMembers({ crypto: globalThis.crypto });
-		const vaultFiles: Record<string, string> = {};
-		const memoryPath = "Piem/memory/MEMORY.md";
-		const oldFact = "- 2026-09-09 | vault-wide | User: reply in English";
-		const currentFact = "- 2026-09-09 | vault-wide | User: reply in Chinese";
-		let step = 0;
-		const observations: Context[] = [];
-		const scripted: StreamFn = (model, context) => {
-			observations.push(context);
-			switch (++step) {
-				case 1: return scriptedToolCallStream(model, "save-memory", "update_memory", { edits: [{ type: "append", text: oldFact }] });
-				case 3: return scriptedToolCallStream(model, "correct-memory", "update_memory", { edits: [{ type: "replace", oldText: oldFact, newText: currentFact }] });
-				case 5: return scriptedToolCallStream(model, "recall-memory", "read_memory", {});
-				default: return scriptedTextStream(model, "Done.");
-			}
-		};
-		const service = createService(new MemoryAdapter(), { vaultFiles, streamFn: scripted });
-		try {
-			await service.sendPrompt("Remember: reply in English.");
-			expect(service.getSnapshot().errorMessage).toBeUndefined();
-			expect(service.getSnapshot().messages.filter((message) => message.role === "toolResult").map((message) => message.isError)).toEqual([false]);
-			expect(vaultFiles[memoryPath]).toContain(oldFact);
-			await service.newSession();
-			await service.sendPrompt("Correction: reply in Chinese from now on.");
-			expect(vaultFiles[memoryPath]).toContain(currentFact);
-			expect(vaultFiles[memoryPath]).not.toContain(oldFact);
-			await service.newSession();
-			await service.sendPrompt("Recall my reply preference.");
-			const snapshot = service.getSnapshot();
-			const results = snapshot.messages.filter((message) => message.role === "toolResult");
-			expect(JSON.stringify(results)).toContain(currentFact);
-			expect(JSON.stringify(results)).not.toContain(oldFact);
-			expect(snapshot.errorMessage).toBeUndefined();
-			// The provider is scripted: this proves real wiring and persistence,
-			// not that an arbitrary model chooses the right action from prose.
-			expect(observations[0]?.systemPrompt).toContain("read_memory");
-			expect(observations[0]?.systemPrompt).not.toContain(oldFact);
-			expect(observations[0]?.tools?.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read_memory", "update_memory", "session_search"]));
-			expect(JSON.stringify(snapshot.messages)).not.toContain('"name":"ask_user"');
-		} finally {
-			service.dispose();
-			restoreCrypto();
-		}
-	});
-
-	it("lets the model search a previous chat through the session manager", async () => {
-		let calls = 0;
-		const scripted: StreamFn = (model) => {
-			calls += 1;
-			if (calls === 2) return scriptedToolCallStream(model, "find-history", "session_search", { query: "violet-cedar" });
-			return scriptedTextStream(model, "Done.");
-		};
-		const service = createService(new MemoryAdapter(), { streamFn: scripted });
-		try {
-			await service.sendPrompt("The project nickname is violet-cedar.");
-			const original = service.getSnapshot().session!.path;
-			await service.newSession();
-			await service.sendPrompt("Find the earlier project nickname.");
-			const results = service.getSnapshot().messages.filter((message) => message.role === "toolResult");
-			expect(JSON.stringify(results)).toContain(original);
-			expect(JSON.stringify(results)).toContain("violet-cedar");
-			expect(service.getSnapshot().errorMessage).toBeUndefined();
-		} finally {
-			service.dispose();
-		}
-	});
-
 	it("notifies listeners after a prompt settles", async () => {
 		const service = createService();
 		const snapshots = [service.getSnapshot()];
@@ -302,7 +234,6 @@ describe("ObsidianAgentService", () => {
 		expect(childToolNames[0]).toContain("read_skill");
 		expect(childToolNames[0]).toContain("write");
 		expect(childToolNames[0]).toContain("grep");
-		expect(childToolNames[0]).toEqual(expect.arrayContaining(["read_memory", "update_memory", "session_search"]));
 	});
 
 	it("lets a child spawn once more and caps the tree below that", async () => {
@@ -4088,6 +4019,116 @@ describe("vault skills", () => {
 	});
 });
 
+describe("memory through ordinary skills and file tools", () => {
+	// Scripted provider responses exercise the real service and tools. They prove
+	// the workflow is executable, not how reliably a model chooses to follow it.
+	function workflow(calls: Array<[string, Record<string, unknown>] | null>, contexts: Context[]): StreamFn {
+		let index = 0;
+		return (model, context) => {
+			contexts.push({ ...context, messages: [...context.messages] });
+			const call = calls[index++];
+			return call
+				? scriptedToolCallStream(model, `skill_step_${index}`, call[0], call[1])
+				: scriptedTextStream(model, "Done");
+		};
+	}
+
+	it("saves, corrects, and recalls a preference across three chats with ordinary file tools", async () => {
+		const vaultFiles = officialSkillFiles();
+		const path = "Piem/memory/MEMORY.md";
+		const original = "# Memory\n\n- Project Atlas: release notes in English. Source: user.\n- Vault-wide: link source notes in summaries. Source: user.\n";
+		const corrected = original.replace("release notes in English", "release notes in Chinese");
+		const contexts: Context[] = [];
+		const calls: Array<[string, Record<string, unknown>] | null> = [
+			["read_skill", { name: "vault-memory" }],
+			["find", { pattern: "Piem/memory/*" }],
+			["write", { path, content: original }],
+			null,
+			["read_skill", { name: "vault-memory" }],
+			["read", { path }],
+			["edit", { path, edits: [{ oldText: "release notes in English", newText: "release notes in Chinese" }] }],
+			null,
+			["read_skill", { name: "vault-memory" }],
+			["grep", { path: "Piem/memory", pattern: "Project Atlas" }],
+			["read", { path }],
+			null,
+		];
+		const service = createService(new MemoryAdapter(), { vaultFiles, streamFn: workflow(calls, contexts) });
+		try {
+			expect(await service.sendPrompt("Remember: Atlas release notes in English; link source notes in summaries vault-wide.")).toBe(true);
+			expect(vaultFiles[path]).toBe(original);
+
+			await service.newSession();
+			expect(await service.sendPrompt("Correction: Atlas release notes should be in Chinese.")).toBe(true);
+			expect(vaultFiles[path]).toBe(corrected);
+
+			await service.newSession();
+			expect(await service.sendPrompt("What are my Atlas release-note and summary preferences?")).toBe(true);
+
+			// Discovery is the native skill index; the body arrives only through
+			// read_skill. No memory value is injected into the system prompt.
+			expect(contexts[0]?.systemPrompt).toContain("<name>vault-memory</name>");
+			expect(contexts[0]?.systemPrompt).toContain("Piem/builtin-skills/vault-memory/SKILL.md");
+			for (const context of contexts) {
+				expect(context.systemPrompt).not.toContain("## Save when useful");
+				expect(context.systemPrompt).not.toContain("release notes in Chinese");
+				for (const name of ["read_memory", "update_memory", "session_search"]) {
+					expect(context.tools?.map((tool) => tool.name)).not.toContain(name);
+				}
+			}
+			const finalContext = contexts.at(-1)!;
+			expect(lastUserContent(finalContext)).toContain("What are my Atlas release-note and summary preferences?");
+			expect(JSON.stringify(finalContext.messages)).not.toContain("Correction: Atlas release notes should be in Chinese.");
+			const results = finalContext.messages.filter((message) => message.role === "toolResult");
+			expect(results.map((result) => result.toolName)).toEqual(["read_skill", "grep", "read"]);
+			expect(JSON.stringify(results[0]?.content)).toContain("## Save when useful");
+			expect(JSON.stringify(results.at(-1)?.content)).toContain("release notes in Chinese");
+			expect(JSON.stringify(results.at(-1)?.content)).toContain("link source notes in summaries");
+			expect(JSON.stringify(finalContext.messages)).not.toContain("release notes in English");
+			expect(contexts).toHaveLength(calls.length);
+			const allResults = contexts.flatMap((context) => context.messages.filter((message) => message.role === "toolResult"));
+			expect(allResults.filter((result) => result.isError)).toEqual([]);
+			expect(allResults.some((result) => result.toolName === "ask_user")).toBe(false);
+		} finally {
+			service.dispose();
+		}
+	});
+
+	it("writes a procedure with distill-skill and invokes the saved file on the next turn", async () => {
+		const vaultFiles = officialSkillFiles();
+		const path = "Piem/skills/weekly-review/SKILL.md";
+		const procedure = "Collect unresolved tasks from the requested week's notes and retain their source links.";
+		const content = `---\nname: weekly-review\ndescription: Review weekly notes and unresolved tasks.\n---\n\n# Weekly review\n\n${procedure}\n\nVerified against this vault's weekly notes.\n`;
+		const contexts: Context[] = [];
+		const service = createService(new MemoryAdapter(), {
+			vaultFiles,
+			streamFn: workflow([
+				["read_skill", { name: "distill-skill" }],
+				["write", { path, content }],
+				null,
+				null,
+			], contexts),
+		});
+		try {
+			expect(await service.sendPrompt("Save the weekly review procedure that worked as a skill.")).toBe(true);
+			expect(vaultFiles[path]).toBe(content);
+			expect(contexts[0]?.systemPrompt).toContain("<name>distill-skill</name>");
+			const results = service.getSnapshot().messages.filter((message) => message.role === "toolResult");
+			expect(results.map((result) => result.toolName)).toEqual(["read_skill", "write"]);
+			expect(results.every((result) => !result.isError)).toBe(true);
+			expect(JSON.stringify(results[0]?.content)).toContain("## Save or improve it");
+
+			expect(await service.sendPrompt("/weekly-review this week")).toBe(true);
+			expect(contexts).toHaveLength(4);
+			expect(contexts.at(-1)?.systemPrompt).toContain("<name>weekly-review</name>");
+			expect(lastUserContent(contexts.at(-1))).toContain(procedure);
+			expect(lastUserContent(contexts.at(-1))).toContain("this week");
+		} finally {
+			service.dispose();
+		}
+	});
+});
+
 function createService(
 	memoryAdapter: MemoryAdapter = new MemoryAdapter(),
 	overrides: {
@@ -4623,7 +4664,7 @@ function createFakeApp(
 
 	folderAt("");
 	for (const [path, content] of Object.entries(vaultFiles)) {
-		registerFile(path, content.length);
+		registerFile(path, new TextEncoder().encode(content).byteLength);
 	}
 	for (const [path, bytes] of imageFiles ?? []) {
 		registerFile(path, bytes.byteLength);
@@ -4634,28 +4675,27 @@ function createFakeApp(
 			adapter,
 			getName: () => "Test",
 			getFiles: () => Array.from(files.values()),
-			getMarkdownFiles: () => Array.from(files.values()).filter((file) => file.extension === "md"),
 			getRoot: () => folderAt(""),
 			getFileByPath: (path: string) => files.get(path) ?? null,
 			getFolderByPath: (path: string) => folders.get(path) ?? null,
 			getAbstractFileByPath: (path: string) => files.get(path) ?? folders.get(path) ?? null,
 			read: async (file: TFile) => vaultFiles[file.path] ?? "",
 			cachedRead: async (file: TFile) => vaultFiles[file.path] ?? "",
-			readBinary: async (file: { path: string }) => imageFiles?.get(file.path) ?? new ArrayBuffer(0),
+			// Pi's read tool sniffs bytes even for Markdown, then decodes text.
+			readBinary: async (file: { path: string }) => imageFiles?.get(file.path) ?? new TextEncoder().encode(vaultFiles[file.path] ?? "").buffer,
 			// Writes register the file in the same map the readers resolve, so a
 			// test that creates a note can read it back through the same stub.
 			create: async (path: string, content: string) => {
-				registerFile(path, content.length);
+				registerFile(path, new TextEncoder().encode(content).byteLength);
 				vaultFiles[path] = content;
 				return files.get(path)!;
 			},
-			createFolder: async (path: string) => folderAt(path),
-			process: async (file: TFile, transform: (text: string) => string) => {
-				const next = transform(vaultFiles[file.path] ?? "");
-				vaultFiles[file.path] = next;
-				file.stat.size = next.length;
-				return next;
+			modify: async (file: TFile, content: string) => {
+				vaultFiles[file.path] = content;
+				file.stat.size = new TextEncoder().encode(content).byteLength;
+				file.stat.mtime = Date.now();
 			},
+			createFolder: async (path: string) => folderAt(path),
 		},
 		metadataCache: {
 			getFirstLinkpathDest: (linkpath: string, sourcePath: string) => linkIndex?.(linkpath, sourcePath) ?? null,
