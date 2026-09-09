@@ -157,6 +157,8 @@ describe("tool registration", () => {
 			"ls",
 			"find",
 			"grep",
+			"read_memory",
+			"update_memory",
 			"list_tasks",
 			"summarize_tasks",
 			"get_note_links",
@@ -215,6 +217,7 @@ describe("tool registration", () => {
 		const registered = createObsidianTools(app, createVaultHarnessContext(app).env, defaultSettings(), {
 			getSkills: () => [],
 			askUserBroker: new AskUserBroker(),
+			searchSessions: async () => ({ hits: [], nextOffset: null, scanned: 0, skipped: [] }),
 		});
 
 		const unmarked = registered.filter((tool) => tool.executionMode === undefined).map((tool) => tool.name);
@@ -231,6 +234,8 @@ describe("tool registration", () => {
 				"get_note_metadata",
 				"get_active_note",
 				"read_skill",
+				"read_memory",
+				"session_search",
 			].sort(),
 		);
 		expect(registered.filter((tool) => tool.executionMode === "sequential").map((tool) => tool.name).sort()).toEqual(
@@ -238,6 +243,7 @@ describe("tool registration", () => {
 				"write",
 				"edit",
 				"update_frontmatter",
+				"update_memory",
 				"move_note",
 				"trash_note",
 				"open_note",

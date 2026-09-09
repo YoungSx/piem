@@ -817,6 +817,7 @@ export class ObsidianAgentService {
 			createVaultTools: (getSkills) =>
 				createObsidianTools(this.app, this.env, this.getSettings(), {
 					getSkills: getSkills ?? (() => this.toolRuntime?.skills ?? this.skills),
+					searchSessions: (query, options) => this.sessionManager.searchStoredSessionsPage(query, options),
 					// A subagent gets the same question surface as its parent: the user
 					// has one attention, and the broker queues so two agents asking at
 					// once produce two cards in turn rather than two dialogs stacked.

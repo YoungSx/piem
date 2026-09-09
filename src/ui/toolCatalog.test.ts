@@ -36,6 +36,7 @@ function shippedToolIds(): string[] {
 	const vaultTools = createObsidianTools(app, createVaultHarnessContext(app).env, settings, {
 		getSkills: () => [],
 		askUserBroker: new AskUserBroker(),
+		searchSessions: async () => ({ hits: [], nextOffset: null, scanned: 0, skipped: [] }),
 	});
 	const extension = createSubagentExtension({
 		createVaultTools: () => [],

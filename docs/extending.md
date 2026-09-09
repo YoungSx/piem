@@ -20,6 +20,14 @@ later sources overriding earlier skills of the same name:
 3. **Vault** — your own or imported files under `Piem/skills/<name>/SKILL.md`.
    A vault skill overrides both other sources.
 
+`vault-memory` teaches recall and autonomous maintenance of useful facts;
+`distill-skill` teaches saving a useful, verified procedure as a vault skill.
+One successful run can be enough. The agent can create or improve a skill
+without asking you to approve each draft, preferring an existing skill over a
+near duplicate. Newer user corrections replace outdated steps in place.
+An unverified attempt remains a dated observation, not a claimed working recipe.
+Nothing runs just because a skill was saved. See [Memory and past conversations](tools.md#memory-and-past-conversations).
+
 ### Built-in files and updates
 
 Piem downloads the built-in Markdown resource from the GitHub release matching

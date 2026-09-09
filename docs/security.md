@@ -15,6 +15,7 @@ Sent to the model provider you configured:
   or not your question is about it;
 - vault content returned by tools — note bodies, search results, file listings,
   frontmatter;
+- saved memory and past-conversation excerpts when the agent recalls them;
 - tool results, including anything `web_fetch` brought back;
 - image attachments you staged.
 
@@ -37,7 +38,7 @@ model sees the listing.
 
 ## There is no confirmation step
 
-The agent can `write`, `edit`, `move_note`, and `trash_note` immediately. No
+The agent can `write`, `edit`, `update_memory`, `move_note`, and `trash_note` immediately. No
 dialog, no diff to approve, no "are you sure".
 
 This is a deliberate product decision, not a missing feature. What to do about
@@ -51,6 +52,12 @@ it:
   ordinary way.
 
 ## Where your keys live
+
+Memory notes and their recovery copies are ordinary Markdown, stored and synced
+with the vault. They are not a credential store. The memory protocol tells the
+agent to keep keys and passwords out; it is not a general secret detector.
+Current facts can be removed without deleting their recovery copies or source
+conversations. See [Memory and past conversations](tools.md#memory-and-past-conversations).
 
 API keys and MCP bearer tokens are stored with Obsidian plugin data.
 
