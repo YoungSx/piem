@@ -4,7 +4,9 @@ import { getT } from "../../i18n";
 import type { SkillSource } from "../../agent/skillLoader";
 import type { McpServerState } from "../../mcp/mcpManager";
 import { installDom } from "../../testUtils/dom";
-import { appendBadge, describeMcpBadge, mcpPendingBadge, problemCountBadge, setBadge, skillSourceBadge } from "./badges";
+import { installObsidianStub } from "../../testUtils/obsidianStub";
+installObsidianStub();
+const { appendBadge, describeMcpBadge, mcpPendingBadge, problemCountBadge, setBadge, skillSourceBadge } = await import("./badges");
 
 const server: McpServerState = { id: "one", name: "One", url: "https://example.com/mcp", enabled: true, status: "ok", toolCount: 1 };
 

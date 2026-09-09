@@ -29,6 +29,8 @@ function emptyRecord(): PluginHostRecord {
 
 const DESKTOP = { isDesktop: true, isDesktopApp: true, isMobile: false, isMobileApp: false, isIosApp: false, isAndroidApp: false };
 const MOBILE = { isDesktop: false, isDesktopApp: false, isMobile: true, isMobileApp: true, isIosApp: true, isAndroidApp: false };
+// Official desktop mobile emulation keeps isDesktopApp=true while isMobile=true.
+const MOBILE_EMULATION = { ...DESKTOP, isDesktop: false, isMobile: true };
 
 interface LoadedPlugin {
 	onload(): Promise<void>;
@@ -224,6 +226,17 @@ describe("built bundle loads under Obsidian's loader", () => {
 });
 
 describe("built bundle loads user skills through Pi's lazy Node environment", () => {
+	it("never probes Node for synced desktop skill paths in official mobile emulation", async () => {
+		const requests: string[] = [];
+		const { plugin } = instantiate({ platform: MOBILE_EMULATION, allowNodeBuiltins: false, onRequire: id => requests.push(id) });
+		await plugin.onload();
+		plugin.settings.userSkillsDir = "C:\\Users\\smoke\\skills";
+		await plugin.refreshAgentSkills();
+		expect(plugin.settings.userSkillsDir).toBe("C:\\Users\\smoke\\skills");
+		expect(plugin.agentSkillLoad().user.skills).toEqual([]);
+		expect(plugin.agentSkillLoad().user.diagnostics).toEqual([]);
+		expect(new Set(requests)).toEqual(new Set(["obsidian"]));
+	});
 	for (const [name, modules] of [
 		["rejects Node modules", {}],
 		["returns undefined", { "node:fs/promises": undefined, "node:os": undefined, "node:path": undefined }],
