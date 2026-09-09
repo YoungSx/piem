@@ -1,3 +1,9 @@
+---
+name: tag-organize
+description: "Audit tags and propose a consistent, low-noise tag structure."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 Organize the user's Obsidian tag system without making surprise edits.
 
 1. Determine the requested scope from the additional instruction; default to the active note. Use get_note_metadata for note-level tags.

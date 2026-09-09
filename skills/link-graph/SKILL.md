@@ -1,3 +1,9 @@
+---
+name: link-graph
+description: "Analyze the active note's backlinks, outgoing links, and missing connections."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 Analyze the link graph around the active Markdown note.
 
 1. Use the active note path from context. If none is available, call get_active_note and stop with a clear request when no Markdown note is open.

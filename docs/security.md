@@ -22,8 +22,14 @@ Sent to an MCP server, additionally: the arguments of any tool that server
 exposes. Each MCP tool's description says so in its own text, so the model knows
 it too.
 
-Sent nowhere else. There is no telemetry, no analytics, no crash reporter, and
-no Piem-operated backend — there is no Piem server to phone.
+Built-in skill preparation sends a GET request to GitHub for the resource belonging
+to the installed plugin version. GitHub and its download hosts receive the resource
+URL (including that version), the device's IP address and ordinary request metadata.
+No vault notes, conversation content or provider keys accompany this download.
+The resource is checksum-verified Markdown, written under `Piem/builtin-skills/`;
+no scripts execute and it never follows a newer release independently of the plugin.
+
+There is no telemetry, analytics, crash reporter or Piem-operated backend.
 
 The practical consequence: **point Piem at a vault you are willing to send to
 your model provider.** A search that touches a file lists that file, and the
@@ -91,12 +97,19 @@ obfuscated payload.
 
 **Network requests.** Roughly twenty call sites, all through one transport layer:
 model provider streams, the connection test, the models.dev catalog suggestion,
-remote MCP servers, skill imports, and the `web_fetch` tool. Your
+remote MCP servers, skill imports, built-in skill preparation, and the `web_fetch` tool. Your
 `requestUrl`-vs-`fetch` choice steers the requests where streaming matters —
-model streams and the connection test; the catalog, skill imports, and
-`web_fetch` always ride `requestUrl`, because they fetch whole responses and
+model streams and the connection test; the catalog, skill imports, built-in
+skill preparation, and `web_fetch` always ride `requestUrl`, because they fetch whole responses and
 must reach hosts that send no CORS headers. Egress stays inspectable in one
 place rather than scattered across the codebase.
+
+Built-in preparation stops waiting after 15 seconds and does not loop on failure.
+Unloading cancels the preparation and prevents late responses from starting file
+writes. Obsidian's `requestUrl` cannot physically cancel a request already sent;
+the underlying request may finish after the plugin stops waiting. Existing files
+remain usable offline. The **Retry preparation** and **Restore missing files**
+actions in Extensions are explicit recovery paths.
 
 ## Reporting something
 

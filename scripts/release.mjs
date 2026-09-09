@@ -69,6 +69,7 @@ const RELEASE_BRANCH = "master";
 const GATES = [
 	{ name: "build", command: ["npm", "run", "build"] },
 	{ name: "bundle size and loader compatibility", command: ["npm", "run", "check:bundle"] },
+	{ name: "standard skill resource", command: ["npm", "run", "check:skills"] },
 	{ name: "hardcoded user-visible copy", command: ["npm", "run", "check:copy"] },
 	{ name: "version drift", command: ["npm", "run", "check:version"] },
 	{ name: "tests", command: ["bun", "test"] },

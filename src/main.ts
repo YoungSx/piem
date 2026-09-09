@@ -16,8 +16,11 @@ import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
 import { ObsidianAgentService } from "./agent/ObsidianAgentService";
 import { McpManager } from "./mcp/mcpManager";
-import { emptySkillLoadReport, mergeSkillsWithSource, type SkillCatalogEntry, type SkillLoadReport } from "./agent/skillLoader";
-import { createBuiltinSkills } from "./agent/builtinSkills";
+import { emptySkillLoadReport, type SkillCatalogEntry, type SkillLoadReport } from "./agent/skillLoader";
+import { BUILTIN_SKILL_ASSET, BUILTIN_SKILLS_DEVELOPMENT } from "./skills/builtinSkillAsset";
+import { BuiltinSkillInstaller } from "./skills/builtinSkillInstaller";
+import { builtinSkillVault } from "./skills/builtinSkillVault";
+import { emptyBuiltinSkillReport } from "./skills/builtinSkillState";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
 import { requestNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
@@ -35,6 +38,9 @@ export default class PiemPlugin extends Plugin {
 	// so the shared DEFAULT_SETTINGS object is never mutated in place.
 	settings: PiemSettings = normalizeSettings(null);
 	private agentService: ObsidianAgentService | null = null;
+	private builtinSkillInstaller?: BuiltinSkillInstaller;
+	private settingsTab?: PiemSettingTab;
+	private settingsWrite?: Promise<void>;
 	/**
 	 * Assembled once per load, before settings: the settings migration is the
 	 * first code that can fail, and its catch block is where logging has to
@@ -307,7 +313,37 @@ export default class PiemPlugin extends Plugin {
 			},
 		});
 		this.askUserBroker = askUserBroker;
+		if (BUILTIN_SKILL_ASSET) {
+			this.builtinSkillInstaller = new BuiltinSkillInstaller({
+				version: this.manifest.version,
+				asset: BUILTIN_SKILL_ASSET,
+				files: builtinSkillVault(this.app.vault),
+				// GitHub's release redirects have no CORS permission. Like imports,
+				// this whole-file download must use Obsidian's native transport.
+				fetch: createObsidianRequestUrlFetch(),
+				getState: () => this.settings.builtinSkillState,
+				saveState: async (state) => {
+					const previous = this.settings.builtinSkillState;
+					this.settings.builtinSkillState = state;
+					try {
+						await this.saveSettings({ reconfigure: false });
+					} catch (error) {
+						if (this.settings.builtinSkillState === state) this.settings.builtinSkillState = previous;
+						throw error;
+					}
+				},
+				// Watch builds ship the JSON beside main.js; this branch is removed
+				// in production, whose asset always comes from the matching release.
+				readPackage: BUILTIN_SKILLS_DEVELOPMENT
+					? () => this.app.vault.adapter.read(`${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`}/builtin-skills.json`)
+					: undefined,
+			});
+		}
 		this.agentService = new ObsidianAgentService(this.app, () => this.settings, sessionManager, {
+			builtinSkills: {
+				names: BUILTIN_SKILL_ASSET?.names ?? [],
+				report: () => this.builtinSkillInstaller?.getReport() ?? emptyBuiltinSkillReport(),
+			},
 			logger: this.requirePluginLogger().logger,
 			askUserBroker,
 			// The chat panel's model switcher writes `activeModelId`; this is what
@@ -352,7 +388,8 @@ export default class PiemPlugin extends Plugin {
 		);
 		this.registerView(VIEW_TYPE_PIEM_LOGS, (leaf) => this.createLogView(leaf));
 		this.registerView(VIEW_TYPE_PIEM_SUBAGENTS, (leaf) => new PiemSubagentView(leaf, this.requireAgentService()));
-		this.addSettingTab(new PiemSettingTab(this.app, this, this.requireSecretEnvironment()));
+		this.settingsTab = new PiemSettingTab(this.app, this, this.requireSecretEnvironment());
+		this.addSettingTab(this.settingsTab);
 		this.addCommand({
 			id: "open-chat",
 			name: t.t("commands.openChat"),
@@ -481,9 +518,24 @@ export default class PiemPlugin extends Plugin {
 				});
 			}),
 		);
+		const installer = this.builtinSkillInstaller;
+		if (installer) {
+			this.app.workspace.onLayoutReady(() => {
+				if (this.builtinSkillInstaller !== installer) return;
+				void installer.prepare().then(async (report) => {
+					if (this.builtinSkillInstaller !== installer) return;
+					if (report.status === "failed" || report.problems.length) this.log.warn("Built-in skill preparation needs attention", () => ({ status: report.status, error: report.error ?? "", problems: report.problems.map((problem) => ({ path: problem.path, reason: problem.reason, message: problem.message ?? "" })) }));
+					await this.refreshAgentSkills();
+					if (this.settingsTab?.containerEl.isConnected) this.settingsTab.update();
+				}).catch((error: unknown) => this.log.warn("Built-in skill refresh failed", () => ({ error: String(error) })));
+			});
+		}
 	}
 
 	onunload(): void {
+		this.builtinSkillInstaller?.dispose();
+		this.builtinSkillInstaller = undefined;
+		this.settingsTab = undefined;
 		// Fire-and-forget: `flush` never rejects, and a final record landing after
 		// teardown still beats one lost to a dispose-then-queue race.
 		void this.pluginLogger?.fileSink.flush();
@@ -576,7 +628,12 @@ export default class PiemPlugin extends Plugin {
 	 * writes through, so a reload cannot resurrect the old choice.
 	 */
 	async saveSettings(options?: { reconfigure?: boolean }): Promise<void> {
-		await this.saveData(persistedSettings(this.settings));
+		// Snapshot inside the queue: a concurrent installer save must include the
+		// user's latest settings, and an older write must never finish last.
+		const write = (this.settingsWrite ?? Promise.resolve()).catch(() => undefined)
+			.then(() => this.saveData(persistedSettings(this.settings)));
+		this.settingsWrite = write;
+		await write;
 		if (options?.reconfigure !== false) {
 			await this.agentService?.refreshConfiguration();
 		}
@@ -597,6 +654,13 @@ export default class PiemPlugin extends Plugin {
 		await this.agentService?.refreshSkills();
 	}
 
+	/** Explicit retry or restoration; ordinary skill reloads never install files. */
+	async prepareBuiltinSkills(restore = false): Promise<void> {
+		const report = await this.builtinSkillInstaller?.prepare({ retry: true, restore });
+		if (report?.status === "failed") this.log.warn("Built-in skill preparation failed", () => ({ error: report.error ?? "" }));
+		await this.refreshAgentSkills();
+	}
+
 	/**
 	 * Warnings from the agent's last skill load, for the Skills settings tab.
 	 *
@@ -613,15 +677,10 @@ export default class PiemPlugin extends Plugin {
 	 * Every skill the agent's last load merged in, with provenance, for the
 	 * Skills tab's toggle rows.
 	 *
-	 * Falls back to the builtin catalog when there is no service — the same
-	 * reasoning as {@link agentSkillLoad}: the settings tab outlives a failed
-	 * `onload`, and its rows must name skills a fresh install actually ships.
+	 * Empty before a real load: a file that has not been read is not available.
 	 */
 	agentSkillCatalog(): SkillCatalogEntry[] {
-		if (!this.agentService) {
-			return mergeSkillsWithSource(createBuiltinSkills(getT(resolveLanguage(this.app.vault as LanguageHost, this.settings.language))));
-		}
-		return this.agentService.getSkillCatalog();
+		return this.agentService?.getSkillCatalog() ?? [];
 	}
 
 	private async startNewChat(): Promise<void> {

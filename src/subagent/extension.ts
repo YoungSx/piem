@@ -26,7 +26,7 @@ export interface SubagentModelChoice {
 
 export interface SubagentHost {
 	/** The vault tool set a subagent runs with, before the extension adds delegation. */
-	createVaultTools(): AgentTool[];
+	createVaultTools(getSkills?: () => readonly Skill[]): AgentTool[];
 	getModel(): Model<string>;
 	getStreamFn(): StreamFn;
 	getThinkingLevel(): ThinkingLevel;
@@ -113,7 +113,7 @@ export function createSubagentExtension(
 	host: SubagentHost,
 	options?: { waitPacing?: WaitPacing },
 ): {
-	createTools(): AgentTool[];
+	createTools(getSkills?: () => readonly Skill[]): AgentTool[];
 	disposeAll(): void;
 	/**
 	 * The registry behind the tools, for read-only observers.
@@ -144,7 +144,7 @@ export function createSubagentExtension(
 		getSkills: () => host.getSkills(),
 		getOwnerId: host.getOwnerId ? () => host.getOwnerId?.() : undefined,
 		registry,
-		createChildTools: (childDepth: number, ownerId: string) => buildTools(childDepth, ownerId),
+		createChildTools: (childDepth, ownerId, skills) => buildTools(childDepth, ownerId, () => skills),
 		waitPacing: options?.waitPacing,
 	};
 
@@ -154,8 +154,9 @@ export function createSubagentExtension(
 	 * always given one, because the host can no longer name it by the time a
 	 * grandchild's tool runs.
 	 */
-	function buildTools(depth: number, ownerId?: string): AgentTool[] {
-		const tools = host.createVaultTools();
+	function buildTools(depth: number, ownerId?: string, getSkills: () => readonly Skill[] = () => host.getSkills()): AgentTool[] {
+		const tools = host.createVaultTools(getSkills);
+		const scopedContext = { ...context, getSkills };
 		if (depth < SUBAGENT_DEPTH_LIMIT) {
 			// The five travel together: a level that may spawn must also be able to
 			// collect, enumerate, stop, and re-task what it spawned. Handing out spawn
@@ -165,11 +166,11 @@ export function createSubagentExtension(
 			// owner scope, so what a level may collect is exactly what it may see,
 			// what it may stop, and what it may re-task.
 			tools.push(
-				createSpawnSubagentTool(context, depth, ownerId),
+				createSpawnSubagentTool(scopedContext, depth, ownerId),
 				createWaitSubagentTool(context, ownerId),
 				createListSubagentsTool(context, ownerId),
 				createKillSubagentTool(context, ownerId),
-				createFollowUpSubagentTool(context, ownerId),
+				createFollowUpSubagentTool(scopedContext, ownerId),
 			);
 		}
 		// External tools join every set, at every depth — the delegation cap bounds
@@ -180,7 +181,7 @@ export function createSubagentExtension(
 	}
 
 	return {
-		createTools: () => buildTools(0),
+		createTools: (getSkills) => buildTools(0, undefined, getSkills),
 		disposeAll: () => registry.disposeAll(),
 		registry,
 	};

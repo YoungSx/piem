@@ -1,3 +1,4 @@
+import { emptySkillLoadReport } from "../../agent/skillLoader";
 import { describe, expect, it } from "bun:test";
 import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
@@ -36,7 +37,7 @@ const en = getT("en");
  * rather than as the assertion that actually failed.
  */
 function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
-	const skillLoad = { vault: [], user: { skills: [], searched: [], diagnostics: [] } };
+	const skillLoad = emptySkillLoadReport();
 	return {
 		app: {} as SettingsPanelHost["app"],
 		settings: {
@@ -79,6 +80,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost
 			update: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["update"]>>,
 			remove: async () => {},
 			refreshAgent: async () => {},
+			prepareBuiltins: async () => {},
 			lastSkillLoad: () => skillLoad as unknown as ReturnType<SettingsPanelHost["skills"]["lastSkillLoad"]>,
 			userSkillsAvailable: false,
 		},

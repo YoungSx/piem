@@ -1,3 +1,9 @@
+---
+name: distill-skill
+description: "Turn a procedure you just completed into a reusable skill under Piem/skills/, once it has proven itself and the user approves the draft."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 # Distill Skill
 
 Turn a procedure you just carried out into a reusable skill in the vault, so the

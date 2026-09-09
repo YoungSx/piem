@@ -436,6 +436,7 @@ export const en = {
 		 * points at.
 		 */
 		unknownCommandSkillProblems: "Some skills could not be read. See Settings \u2192 Extensions.",
+		builtinSkillUnavailable: "/{name} is not available yet. Open Settings → Extensions to check built-in skills or retry preparation.",
 		/** A template keeps the short name; the skill remains reachable explicitly. */
 		commandConflict: "Both a prompt and skill use /{name}. Used the prompt; use /skill:{name} for the skill.",
 		/** Notice summarizing non-fatal warnings from loading prompt templates. */
@@ -448,31 +449,6 @@ export const en = {
 		nothingToCompact: "Nothing to tidy up yet.",
 	},
 
-	builtinSkills: {
-		distillSkill: {
-			description:
-				"Turn a procedure you just completed into a reusable skill under Piem/skills/, once it has proven itself and the user approves the draft.",
-		},
-		efficientWebResearch: {
-			description: "Research the web token-efficiently: classify the input, then fetch the minimum needed to answer.",
-		},
-		findSkills: {
-			description: "Find reputable agent skills and explain how to add them to Piem.",
-		},
-		linkGraph: {
-			description: "Analyze the active note's backlinks, outgoing links, and missing connections.",
-		},
-		summarize: {
-			description: "Summarize the active note or selection without changing it.",
-		},
-		tagOrganize: {
-			description: "Audit tags and propose a consistent, low-noise tag structure.",
-		},
-		vaultMemory: {
-			description:
-				"Remember lessons across chats: log corrections and failures to Piem/memory/, recall them at task start or when asked about a past lesson, and curate what earns long-term storage.",
-		},
-	},
 
 	/**
 	 * The chat status bar, between the transcript and the composer.
@@ -1052,6 +1028,23 @@ export const en = {
 	 * and their read report, not skill rows.
 	 */
 	skills: {
+		builtinHeading: "Built-in skill files",
+		builtinDisclosure: "Downloaded from GitHub for the installed Piem version into Piem/builtin-skills. No notes or API keys are sent. Existing files work offline.",
+		builtinIdle: "Ready to prepare the built-in files.",
+		builtinPreparing: "Preparing the built-in files… Chat is available while you wait.",
+		builtinReady: "Built-in files are ready. To customize one, copy it into Piem/skills with the same name.",
+		builtinIssues: "Some files need attention. Your local content has been kept.",
+		builtinFailed: "Preparation failed. Check the connection and retry. Existing skills and chat remain available.",
+		builtinNewer: "These files belong to a newer Piem version and were left unchanged.",
+		builtinRetry: "Retry preparation",
+		builtinRestore: "Restore missing files",
+		builtinRemoved: "Removed skills: {names}. Restore missing files to bring them back.",
+		builtinModified: "Customized files: {names}. Your edits are kept.",
+		builtinProblemModified: "Locally changed or removed. Kept as you left it.",
+		builtinProblemUnowned: "An existing file occupies this path. Piem has kept it.",
+		builtinProblemRead: "Could not read this file. Check its availability and retry.",
+		builtinProblemWrite: "Could not save this file. Check that the vault is writable and retry.",
+		builtinProblemRetired: "No longer supplied by this release. Kept for you to review.",
 		heading: "Skills",
 		/**
 		 * One sentence for all three layers the unified list draws from.

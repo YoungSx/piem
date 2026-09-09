@@ -1,3 +1,9 @@
+---
+name: efficient-web-research
+description: "Research the web token-efficiently: classify the input, then fetch the minimum needed to answer."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 # Efficient Web Research Skill
 
 A protocol for accessing web content in the most token-efficient, accurate, and structured way —

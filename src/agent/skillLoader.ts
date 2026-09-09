@@ -5,6 +5,8 @@ import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 // filesystem through a lazy NodeExecutionEnv bridge, and `src/subagent/` is
 // allowed to import this module. A value import would pull in a `require`.
 import type { UserSkillsLoad } from "../skills/userSkills";
+import { BUILTIN_SKILLS_DIR } from "../skills/builtinSkillPackage";
+import { emptyBuiltinSkillReport, type BuiltinSkillReport } from "../skills/builtinSkillState";
 
 /**
  * Folder user-authored skills live in, relative to the vault root.
@@ -40,12 +42,17 @@ export async function loadVaultSkills(
 	return loadSkills(env, `/${skillsDir}`);
 }
 
+/** Official defaults use the same parser and real Vault paths as authored skills. */
+export async function loadBuiltinSkills(env: ExecutionEnv): Promise<{ skills: Skill[]; diagnostics: SkillDiagnostic[] }> {
+	return loadSkills(env, `/${BUILTIN_SKILLS_DIR}`);
+}
+
 /**
  * Where a merged skill came from.
  *
  * The settings panel splits rows by layer because the layers' consequences
  * differ — a vault row can be opened in the editor, a user-level one only
- * named, a builtin one exists only inside the plugin — so the merge has to
+ * named, a builtin one is installed by the plugin — so the merge has to
  * record which layer won, not merely emit the winner.
  */
 export type SkillSource = "builtin" | "user" | "vault";
@@ -117,7 +124,7 @@ export function mergeSkills(...layers: Skill[][]): Skill[] {
 }
 
 /** Exact, case-sensitive lookup, matching prompt-template command routing. */
-export function findSkill(skills: Skill[], name: string): Skill | undefined {
+export function findSkill(skills: readonly Skill[], name: string): Skill | undefined {
 	return skills.find((skill) => skill.name === name);
 }
 
@@ -144,10 +151,11 @@ export function expandSkill(skill: Skill, additionalInstructions?: string): stri
  * reattaches between them leaves the panel reporting clean while the prompt was
  * built without those skills.
  *
- * Builtins contribute nothing here: they are constants, so only the two layers
- * read off disk can fail.
+ * Builtins are files too; their install state and parser diagnostics accompany
+ * the same load, never a separate settings-panel scan.
  */
 export interface SkillLoadReport {
+	builtin: { diagnostics: SkillDiagnostic[]; install: BuiltinSkillReport };
 	/** Warnings from the vault's own skills folder. */
 	vault: SkillDiagnostic[];
 	/** The user-level load in full: skills, warnings, and the folders consulted. */
@@ -178,7 +186,7 @@ export interface SkillLoadReport {
  * "nobody asked".
  */
 export function emptySkillLoadReport(): SkillLoadReport {
-	return { vault: [], user: { skills: [], diagnostics: [], searched: [] }, templates: [] };
+	return { builtin: { diagnostics: [], install: emptyBuiltinSkillReport() }, vault: [], user: { skills: [], diagnostics: [], searched: [] }, templates: [] };
 }
 
 /**
@@ -196,5 +204,5 @@ export function composeSystemPrompt(basePrompt: string, skills: readonly Skill[]
 	if (!formatted) {
 		return basePrompt;
 	}
-	return `${basePrompt}\n\n${formatted}\n\nIn Piem, use the read_skill tool with the listed name to read a skill's complete instructions. Do not pass a skill location to the vault read tool.`;
+	return `${basePrompt}\n\n${formatted}\n\nIn Piem, use the read_skill tool with the listed name to read a skill's complete instructions. For referenced resources inside the vault, use the vault read tool with the vault-relative path. User-level skill locations outside the vault are not accessible to the vault read tool.`;
 }

@@ -1,3 +1,4 @@
+import { emptySkillLoadReport } from "../../agent/skillLoader";
 import { afterEach, describe, expect, it } from "bun:test";
 import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
@@ -84,8 +85,9 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 			update: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["update"]>>,
 			remove: async () => {},
 			refreshAgent: async () => {},
+			prepareBuiltins: async () => {},
 			lastSkillLoad: () =>
-				({ vault: [], user: { skills: [], searched: [], diagnostics: [] }, templates: [] }) as unknown as ReturnType<
+				emptySkillLoadReport() as unknown as ReturnType<
 					SettingsPanelHost["skills"]["lastSkillLoad"]
 				>,
 			userSkillsAvailable: false,
@@ -444,7 +446,7 @@ describe("the MCP connection button", () => {
  * callback is registered, so a fresh render writes nothing.
  */
 describe("the unified skills list", () => {
-	const summarize = { name: "summarize", description: "Summarize", content: "body", filePath: "/__piem_builtin_skills__/summarize/SKILL.md" };
+	const summarize = { name: "summarize", description: "Summarize", content: "body", filePath: "/Piem/builtin-skills/summarize/SKILL.md" };
 	const custom = { name: "custom", description: "Custom", content: "body", filePath: "/Piem/skills/custom/SKILL.md" };
 	const catalog: SettingsPanelHost["skills"]["catalog"] = () => [
 		{ skill: summarize, source: "builtin" },
@@ -543,7 +545,7 @@ describe("extension row badges", () => {
 			{ dir: "/restricted", found: undefined, loaded: 0 },
 		];
 		const skills: SettingsPanelHost["skills"]["catalog"] = () => [
-			{ skill: { name: "summarize", description: "Built-in description", content: "body", filePath: "/__piem_builtin_skills__/summarize/SKILL.md" }, source: "builtin" },
+			{ skill: { name: "summarize", description: "Built-in description", content: "body", filePath: "/Piem/builtin-skills/summarize/SKILL.md" }, source: "builtin" },
 			{ skill: { name: "external", description: "User-provided description", content: "instructions", filePath: "/skills/external/SKILL.md" }, source: "user" },
 			{ skill: { name: "imported", description: "Imported instructions", content: "body", filePath: "Piem/skills/imported/SKILL.md" }, source: "vault" },
 		];

@@ -1,3 +1,9 @@
+---
+name: summarize
+description: "Summarize the active note or selection without changing it."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 Summarize the active Markdown note.
 
 1. Call get_active_note with includeContent and includeSelection enabled. If a selection exists, summarize it unless the additional instruction explicitly asks for the whole note.

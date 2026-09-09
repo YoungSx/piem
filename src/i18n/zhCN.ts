@@ -220,35 +220,11 @@ export const zhCN: DeepPartial<EnCopy> = {
 		skillPillLabel: "技能 · {name}",
 		unknownCommand: "未知命令：/{name}",
 		unknownCommandSkillProblems: "有技能没能读取成功。请查看「设置 \u2192 扩展能力」。",
+		builtinSkillUnavailable: "/{name} 尚未就绪。请打开「设置 → 扩展能力」查看内置技能，或重试准备。",
 		commandConflict: "提示和技能都使用 /{name}。本次已使用提示；如需技能，请输入 /skill:{name}。",
 		nothingToCompact: "暂时没有可整理的内容。",
 	},
 
-	builtinSkills: {
-		distillSkill: {
-			description:
-				"把刚跑通的流程提炼成 Piem/skills/ 下可复用的技能：先确认它值得沉淀，再把草案交给用户批准。",
-		},
-		efficientWebResearch: {
-			description: "省 token 地做网络调研：先判断输入类型，只抓取回答问题所需的最少内容。",
-		},
-		findSkills: {
-			description: "查找可信的 agent skill，并说明如何加入 Piem。",
-		},
-		linkGraph: {
-			description: "分析当前笔记的出链、反向链接和缺失连接。",
-		},
-		summarize: {
-			description: "总结当前笔记或所选内容，不修改原文。",
-		},
-		tagOrganize: {
-			description: "审计标签并提出一致、低噪声的标签结构。",
-		},
-		vaultMemory: {
-			description:
-				"跨对话记住教训：把纠正和失败记进 Piem/memory/，任务开始时或被问及过往教训时先回顾，再甄别哪些值得长期保存。",
-		},
-	},
 
 	chatStatus: {
 		opening: "正在打开对话…",
@@ -584,6 +560,23 @@ export const zhCN: DeepPartial<EnCopy> = {
 	// 一个列表收拢代理能加载的所有技能，每行徽章标明来自哪一层；文案对层级
 	// 后果保持诚实：仓库行在这里管理，下方的用户级分区只有文件夹和读取报告。
 	skills: {
+		builtinHeading: "内置技能文件",
+		builtinDisclosure: "从 GitHub 下载与当前 Piem 版本匹配的技能，保存在 Piem/builtin-skills。不会发送笔记或 API 密钥。已有文件可离线使用。",
+		builtinIdle: "内置技能文件尚未准备。",
+		builtinPreparing: "正在准备内置技能文件……等待期间可以继续聊天。",
+		builtinReady: "内置技能文件已就绪。需要定制时，可复制到 Piem/skills，保留相同名称。",
+		builtinIssues: "部分文件需要处理，已保留你的本地内容。",
+		builtinFailed: "准备失败。请检查网络后重试。已有技能和聊天仍可使用。",
+		builtinNewer: "这些文件来自更新的 Piem 版本，已保持原样。",
+		builtinRetry: "重试准备",
+		builtinRestore: "恢复缺失文件",
+		builtinRemoved: "已移除技能：{names}。选择「恢复缺失文件」可重新安装。",
+		builtinModified: "已定制文件：{names}。已保留你的修改。",
+		builtinProblemModified: "本地已修改或移除，已保持原样。",
+		builtinProblemUnowned: "该位置已有文件，Piem 已保留它。",
+		builtinProblemRead: "无法读取此文件，请检查文件是否可用后重试。",
+		builtinProblemWrite: "无法保存此文件，请检查笔记库是否可写后重试。",
+		builtinProblemRetired: "当前版本不再提供此文件，已保留供你查看。",
 		heading: "技能",
 		// 一句话盖住三层：徽章负责「来自哪层」，这句只负责「技能是什么、住在
 		// 哪 kinds 的地方」，故意不枚举三层。保留原内置注记的核心承诺——

@@ -281,6 +281,7 @@ export function createObsidianHostModule(record: PluginHostRecord, platform: Rec
 		PluginSettingTab: class PluginSettingTab {
 			app: unknown;
 			plugin: unknown;
+			containerEl = { isConnected: false };
 			constructor(app: unknown, plugin: unknown) {
 				this.app = app;
 				this.plugin = plugin;

@@ -2,6 +2,8 @@ import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 import { parse } from "yaml";
 import type { FetchFn } from "../net/obsidianFetch";
 import { DEFAULT_SKILLS_DIR } from "../agent/skillLoader";
+import { sha256Hex } from "./skillHash";
+export { sha256Hex } from "./skillHash";
 
 /**
  * Sidecar written next to every imported skill's SKILL.md.
@@ -210,13 +212,6 @@ export function parseSkillFrontmatter(content: string): { name?: string; descrip
 	const raw = parsed as Record<string, unknown>;
 	const read = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
 	return { name: read(raw.name), description: read(raw.description) };
-}
-
-export async function sha256Hex(content: string): Promise<string> {
-	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
-	return Array.from(new Uint8Array(digest))
-		.map((byte) => byte.toString(16).padStart(2, "0"))
-		.join("");
 }
 
 /**

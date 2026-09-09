@@ -6,10 +6,10 @@ describe("read_skill", () => {
 		name: "summarize",
 		description: "Summarize a note",
 		content: "Read the active note, then summarize it.",
-		filePath: "/__piem_builtin_skills__/summarize/SKILL.md",
+		filePath: "/Piem/builtin-skills/summarize/SKILL.md",
 	};
 
-	it("returns the complete loaded content without needing a vault file", async () => {
+	it("returns the complete loaded content from the loaded file snapshot", async () => {
 		const result = await createReadSkillTool(() => [skill]).execute("call-1", { name: "summarize" });
 
 		const content = result.content[0];

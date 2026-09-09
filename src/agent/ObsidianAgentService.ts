@@ -79,13 +79,16 @@ import {
 	emptySkillLoadReport,
 	expandSkill,
 	findSkill,
+	loadBuiltinSkills,
 	loadVaultSkills,
 	mergeSkillsWithSource,
 	type SkillCatalogEntry,
 	type SkillLoadReport,
 } from "./skillLoader";
 import { loadUserSkills, type UserSkillsLoad } from "../skills/userSkills";
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill, SkillDiagnostic } from "@earendil-works/pi-agent-core";
+import { BUILTIN_SKILLS_DIR } from "../skills/builtinSkillPackage";
+import { emptyBuiltinSkillReport, type BuiltinSkillReport } from "../skills/builtinSkillState";
 import { describeAgentEvent } from "./agentEventLog";
 import { markReplySteered } from "../ui/replyCutoff";
 import { stampReplyEnd } from "../ui/replyDuration";
@@ -95,7 +98,6 @@ import { getT, resolveLanguage, type Language, type LanguageHost, type Translato
 import type { SendShortcut } from "../ui/keyboard";
 import { VaultExecutionEnv } from "../vault/VaultExecutionEnv";
 import { BUILTIN_PROMPT_TEMPLATES } from "./builtinTemplates";
-import { createBuiltinSkills } from "./builtinSkills";
 import {
 	expandPromptTemplate,
 	findPromptTemplate,
@@ -564,6 +566,8 @@ export interface ObsidianAgentServiceOptions {
 	 * {@link SkillLoadReport}.
 	 */
 	loadUserSkills?: (customDir?: string) => Promise<UserSkillsLoad>;
+	/** Lifecycle-owned installer status; reading it never starts network work. */
+	builtinSkills?: { names: readonly string[]; report(): BuiltinSkillReport };
 	/**
 	 * Root logger; the service logs under its `agent` child.
 	 *
@@ -635,6 +639,8 @@ export class ObsidianAgentService {
 	private readonly sessionManager: ObsidianSessionManager;
 	private readonly streamFn: StreamFn | undefined;
 	private readonly loadUserSkillsFn: (customDir?: string) => Promise<UserSkillsLoad>;
+	private readonly builtinSkills: ObsidianAgentServiceOptions["builtinSkills"];
+	private skillReload?: Promise<void>;
 	/** See {@link ObsidianAgentServiceOptions.persistSettings}. */
 	private readonly persistSettings: (options?: { reconfigure?: boolean }) => Promise<void>;
 	/** See {@link ObsidianAgentServiceOptions.getExternalTools}. */
@@ -800,6 +806,7 @@ export class ObsidianAgentService {
 		this.streamFn = options.streamFn;
 		this.askUserBroker = options.askUserBroker;
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
+		this.builtinSkills = options.builtinSkills;
 		this.persistSettings = options.persistSettings ?? ((options?: { reconfigure?: boolean }) => (options?.reconfigure === false ? Promise.resolve() : this.refreshConfiguration()));
 		this.getExternalToolsFn = options.getExternalTools ?? (async () => []);
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
@@ -807,9 +814,9 @@ export class ObsidianAgentService {
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
-			createVaultTools: () =>
+			createVaultTools: (getSkills) =>
 				createObsidianTools(this.app, this.env, this.getSettings(), {
-					getSkills: () => this.skills,
+					getSkills: getSkills ?? (() => this.toolRuntime?.skills ?? this.skills),
 					// A subagent gets the same question surface as its parent: the user
 					// has one attention, and the broker queues so two agents asking at
 					// once produce two cards in turn rather than two dialogs stacked.
@@ -840,7 +847,7 @@ export class ObsidianAgentService {
 			getModels: () => this.modelsWithRequestDefaults(),
 			getCompactionSettings: (contextWindow) => this.resolveCompaction(contextWindow),
 			getApiKey: (provider) => this.getApiKey(provider),
-			getSkills: () => this.skills,
+			getSkills: () => this.toolRuntime?.skills ?? this.skills,
 			// Which chat a delegation belongs to, resolved the same way — and for the
 			// same reason — as the thinking level above: the runtime whose tool is
 			// executing, never the one on screen. A background chat that delegates
@@ -1185,7 +1192,7 @@ export class ObsidianAgentService {
 		if (command) {
 			const explicitSkillName = command.name.startsWith("skill:") ? command.name.slice("skill:".length) : undefined;
 			if (explicitSkillName !== undefined) {
-				const skill = findSkill(this.skills, explicitSkillName);
+				const skill = findSkill(rt.skills, explicitSkillName);
 				if (!skill) {
 					this.setNotice(rt, this.describeUnknownCommand(command.name));
 					return false;
@@ -1193,7 +1200,7 @@ export class ObsidianAgentService {
 				modelPrompt = expandSkill(skill, command.additionalInstructions);
 			} else {
 				const template = findPromptTemplate(this.promptTemplates, command.name);
-				const skill = findSkill(this.skills, command.name);
+				const skill = findSkill(rt.skills, command.name);
 				if (template) {
 					modelPrompt = expandPromptTemplate(template, command.args);
 					if (skill) {
@@ -3315,7 +3322,7 @@ export class ObsidianAgentService {
 					kind: "template" as const,
 					invocation: template.name,
 				})),
-				...this.skills.map((skill) => ({
+				...(rt && this.isBusy(rt) ? rt.skills : this.skills).map((skill) => ({
 					name: skill.name,
 					description: skill.description,
 					kind: "skill" as const,
@@ -3642,7 +3649,7 @@ export class ObsidianAgentService {
 		// at spawn-execute time and must read the spawning session's state — a
 		// focused panel on session B must not leak B's thinking level or skills
 		// into a spawn started by session A.
-		return this.subagentExtension.createTools().map((tool) => {
+		return this.subagentExtension.createTools(() => rt.skills).map((tool) => {
 			if (!tool.execute) {
 				return tool;
 			}
@@ -3687,6 +3694,7 @@ export class ObsidianAgentService {
 	 * work on the way here, so the extra hop costs nothing.
 	 */
 	private async replaceAgent(rt: SessionRuntime, messages: AgentMessage[], thinkingLevel: ThinkingLevel): Promise<void> {
+		rt.skills = this.skills;
 		rt.unsubscribeAgent?.();
 		// A fresh agent's queues are empty by construction, so the mirror has to
 		// say so too. Every caller of this method is a conversation switch
@@ -3763,7 +3771,7 @@ export class ObsidianAgentService {
 				// (`initializeAgent` / `openSession` / `newSession` all await
 				// `reloadSkills` first), so the composed prompt is current; a live
 				// agent gets its prompt refreshed by `reloadSkills` itself.
-				systemPrompt: composeSystemPrompt(this.promptWithEnvironment(), this.skills),
+				systemPrompt: composeSystemPrompt(this.promptWithEnvironment(), rt.skills),
 				model,
 				// The caller resolves this: the loaded session's own level, or the
 				// seed a new session was created with. Global settings have no say.
@@ -3846,27 +3854,52 @@ export class ObsidianAgentService {
 	 * {@link lastSkillLoad}.
 	 */
 	private async reloadSkills(): Promise<void> {
-		const { skills: vaultSkills, diagnostics } = await loadVaultSkills(this.env);
-		// User-level skills ride between builtins and vault unconditionally:
-		// pi itself reads those directories, so a vault that already uses pi
-		// picks up the skills it wrote there, and a vault skill of the same
-		// name still wins.
-		const userLoad = await this.loadUserSkillsFn(this.getSettings().userSkillsDir);
-		const catalog = mergeSkillsWithSource(createBuiltinSkills(this.t()), userLoad.skills, vaultSkills);
+		// Serialize refreshes: settings and a send may both reread the same files.
+		const task = (this.skillReload ?? Promise.resolve()).catch(() => undefined).then(() => this.loadSkillFiles());
+		this.skillReload = task;
+		try {
+			await task;
+		} finally {
+			if (this.skillReload === task) this.skillReload = undefined;
+		}
+	}
+
+	private async loadSkillFiles(): Promise<void> {
+		const [builtin, vault, user] = await Promise.allSettled([
+			loadBuiltinSkills(this.env),
+			loadVaultSkills(this.env),
+			Promise.resolve().then(() => this.loadUserSkillsFn(this.getSettings().userSkillsDir)),
+		]);
+		const failure = (error: unknown, path: string): SkillDiagnostic => ({
+			type: "warning", code: "read_failed", path, message: String(error),
+		});
+		// Each source fails on its own. A missing/deleted file is absent, never
+		// recreated by the loader or replaced by a hidden in-memory default.
+		const builtinLoad = builtin.status === "fulfilled" ? builtin.value
+			: { skills: [], diagnostics: [failure(builtin.reason, BUILTIN_SKILLS_DIR)] };
+		const vaultLoad = vault.status === "fulfilled" ? vault.value
+			: { skills: [], diagnostics: [failure(vault.reason, "Piem/skills")] };
+		const userLoad: UserSkillsLoad = user.status === "fulfilled" ? user.value
+			: { skills: [], diagnostics: [failure(user.reason, this.getSettings().userSkillsDir || "~")], searched: [] };
+		const catalog = mergeSkillsWithSource(builtinLoad.skills, userLoad.skills, vaultLoad.skills);
 		this.skillCatalog = catalog;
 		// One filter point for every consumer — prompt, read_skill, slash
-		// commands, subagents all read `this.skills`. Filtering by name on the
+		// commands and new subagent runs share this set. Filtering by name on the
 		// merged output (not per layer) is what makes a disabled "summarize"
 		// stay disabled even when a vault file of that name shadows the builtin.
 		const disabled = new Set(this.getSettings().disabledSkills);
 		const skills = catalog.map((entry) => entry.skill).filter((skill) => !disabled.has(skill.name));
 		this.skills = skills;
-		this.lastSkillLoad = { ...this.lastSkillLoad, vault: diagnostics, user: userLoad };
+		this.lastSkillLoad = {
+			...this.lastSkillLoad, vault: vaultLoad.diagnostics, user: userLoad,
+			builtin: { diagnostics: builtinLoad.diagnostics, install: this.builtinSkills?.report() ?? emptyBuiltinSkillReport() },
+		};
 		this.logCommandDiagnostics();
-		// Every live runtime is told: skills are an app-wide asset, and a
-		// background session mid-conversation deserves the refreshed prompt too.
+		// Idle runtimes adopt the fresh set together. An active run keeps the
+		// prompt and tool snapshot it began with until its next send.
 		for (const rt of this.runtimes.values()) {
-			if (rt.agent) {
+			if (rt.agent && !this.isBusy(rt)) {
+				rt.skills = skills;
 				rt.agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), skills);
 			}
 		}
@@ -3895,8 +3928,13 @@ export class ObsidianAgentService {
 	private describeUnknownCommand(name: string): string {
 		const t = this.t();
 		const unknown = t.t("chat.unknownCommand", { name });
-		const { vault, user } = this.lastSkillLoad;
-		const problems = vault.length + user.diagnostics.length;
+		const { vault, user, builtin } = this.lastSkillLoad;
+		const builtinName = name.replace(/^skill:/, "");
+		if (this.builtinSkills?.names.includes(builtinName) && !this.getSettings().disabledSkills.includes(builtinName)
+			&& !this.skills.some((skill) => skill.name === builtinName)) {
+			return t.t("chat.builtinSkillUnavailable", { name });
+		}
+		const problems = vault.length + user.diagnostics.length + builtin.diagnostics.length;
 		return problems === 0 ? unknown : `${unknown}\n${t.t("chat.unknownCommandSkillProblems")}`;
 	}
 
@@ -3921,11 +3959,7 @@ export class ObsidianAgentService {
 		try {
 			await this.reloadSkills();
 		} catch (error) {
-			this.log.error("Skill load failed; continuing without skills", () => ({ error: String(error) }));
-			const builtins = mergeSkillsWithSource(createBuiltinSkills(this.t()));
-			this.skillCatalog = builtins;
-			this.skills = builtins.map((entry) => entry.skill).filter((skill) => !new Set(this.getSettings().disabledSkills).has(skill.name));
-			this.lastSkillLoad = emptySkillLoadReport();
+			this.log.error("Skill refresh failed; keeping the previous file snapshot", () => ({ error: String(error) }));
 		}
 	}
 
@@ -3966,8 +4000,9 @@ export class ObsidianAgentService {
 	 * message into a ring buffer that holds 2000 of them.
 	 */
 	private logCommandDiagnostics(): void {
-		const { vault, user, templates } = this.lastSkillLoad;
+		const { vault, user, templates, builtin } = this.lastSkillLoad;
 		const all = [
+			...builtin.diagnostics.map((diagnostic) => ({ layer: "builtin-skills", diagnostic })),
 			...vault.map((diagnostic) => ({ layer: "vault-skills", diagnostic })),
 			...user.diagnostics.map((diagnostic) => ({ layer: "user-skills", diagnostic })),
 			...templates.map((diagnostic) => ({ layer: "prompt-templates", diagnostic })),

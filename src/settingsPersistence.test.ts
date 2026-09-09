@@ -18,6 +18,7 @@ import type { LoggerLike } from "./logging/Logger";
 import type PiemPluginType from "./main";
 import type { Keychain } from "./keychain";
 import type { SecretEnvironment } from "./keychainEnv";
+import type { BuiltinSkillState } from "./skills/builtinSkillState";
 
 // `main.ts` pulls in obsidian at runtime; the shared stub must exist first.
 installObsidianStub();
@@ -186,6 +187,42 @@ describe("saveSettings", () => {
 });
 
 describe("the round trip", () => {
+	it("preserves official file ownership and disabled skills through load and save", async () => {
+		const state: BuiltinSkillState = { schema: 1, version: "2.0.0", digest: "a".repeat(64), complete: true, files: { "summarize/SKILL.md": "b".repeat(64) }, removed: ["summarize"] };
+		const { plugin, saved } = pluginWithData({ builtinSkillState: state, disabledSkills: ["summarize"] });
+		await plugin.loadSettings();
+		await plugin.saveSettings({ reconfigure: false });
+		const second = pluginWithData(saved().value);
+		await second.plugin.loadSettings();
+		expect(second.plugin.settings.builtinSkillState).toEqual(state);
+		expect(second.plugin.settings.disabledSkills).toEqual(["summarize"]);
+	});
+
+	it("serializes install-state and user-settings writes without losing either", async () => {
+		const { plugin } = pluginWithData(null);
+		await plugin.loadSettings();
+		let release!: () => void;
+		let started!: () => void;
+		const writing = new Promise<void>((done) => { started = done; });
+		const gate = new Promise<void>((done) => { release = done; });
+		const saved: unknown[] = [];
+		plugin.saveData = async (value: unknown) => {
+			const first = saved.length === 0;
+			saved.push(structuredClone(value));
+			if (first) { started(); await gate; }
+		};
+		plugin.settings.builtinSkillState = { schema: 1, version: "2.0.0", digest: "a".repeat(64), complete: false, files: {}, removed: [] };
+		const installation = plugin.saveSettings({ reconfigure: false });
+		await writing;
+		plugin.settings.language = "zh-cn";
+		const user = plugin.saveSettings({ reconfigure: false });
+		await Promise.resolve();
+		expect(saved).toHaveLength(1);
+		release();
+		await Promise.all([installation, user]);
+		expect(saved.at(-1)).toMatchObject({ language: "zh-cn", builtinSkillState: { digest: "a".repeat(64) } });
+	});
+
 	it("reloads a saved blob back into the same plaintext, through the keychain", async () => {
 		const { plugin, saved } = pluginWithData(
 			{ providers: [{ id: "p1", name: "A", baseUrl: "https://x/v1", apiKey: "", secretRef: "gateway-key", source: "user" }] },

@@ -107,8 +107,11 @@ tidy as a seam you can open to read the summary it wrote.
 
 ## Extensions
 
-MCP servers and skill imports. Both are covered in
-[Extending Piem](extending.md).
+MCP servers, skill imports, and built-in skill files. **Built-in skill files**
+shows preparation status and any files kept because of local changes. **Retry
+preparation** retries a failed download; **Restore missing files** restores deleted
+built-in entries without overwriting edits. **Reload** rereads local skills.
+See [Extending Piem](extending.md) for paths, priority, and update rules.
 
 ## General
 
