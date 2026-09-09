@@ -1,15 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import { createBuiltinSkills } from "./builtinSkills";
-import { getT } from "../i18n";
-import { installObsidianStub } from "../testUtils/obsidianStub";
+import { resolve } from "node:path";
+import { loadSkills } from "@earendil-works/pi-agent-core";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 
-installObsidianStub();
-
-const t = getT("en");
-const skills = createBuiltinSkills(t);
+const root = resolve(import.meta.dir, "../../skills");
+const env = new NodeExecutionEnv({ cwd: root });
+const { skills, diagnostics } = await loadSkills(env, root);
+await env.cleanup();
+expect(diagnostics).toEqual([]);
 
 describe("builtinSkills", () => {
-	it("ships the seven bundled skills", () => {
+	it("loads all seven standard skill directories", () => {
 		expect(skills.map((skill) => skill.name).sort()).toEqual([
 			"distill-skill",
 			"efficient-web-research",
@@ -22,8 +23,7 @@ describe("builtinSkills", () => {
 	});
 
 	it("carries the file body verbatim, not rendered HTML", () => {
-		// Bun's markdown loader would transpile `#` to `<h1>`; the bundler's text
-		// loader must win so tests exercise what ships.
+		// Files are raw Markdown; no bundler-specific text loader is involved.
 		const research = skills.find((skill) => skill.name === "efficient-web-research");
 		expect(research?.content).toContain("## Search Protocol");
 		expect(research?.content).not.toContain("<h2>");
@@ -53,23 +53,14 @@ describe("builtinSkills", () => {
 		expect(skills.find((skill) => skill.name === "vault-memory")?.content).toContain("distill-skill");
 	});
 
-	it("sources each body from its SKILL.md import, keeping frontmatter out", () => {
+	it("uses real source paths and parses frontmatter separately", () => {
 		for (const skill of skills) {
 			expect(skill.content.length).toBeGreaterThan(50);
 			expect(skill.content).not.toMatch(/^---\s*\n/);
-			// Provenance points at the virtual root, never at the bundler's file map.
-			expect(skill.filePath).toBe(`/__piem_builtin_skills__/${skill.name}/SKILL.md`);
+			// The canonical parser supplies the actual path.
+			expect(skill.filePath).toBe(`${root}/${skill.name}/SKILL.md`);
+			expect(skill.description).toBeTruthy();
 		}
 	});
 
-	it("keeps descriptions translated through the copy tables", () => {
-		const zh = createBuiltinSkills(getT("zh-cn"));
-		const enDescription = skills.find((skill) => skill.name === "summarize")?.description;
-		const zhDescription = zh.find((skill) => skill.name === "summarize")?.description;
-		expect(enDescription).toBeTruthy();
-		expect(zhDescription).not.toBe(enDescription);
-		// No body text leaks into the description slot: that was the i18n-table
-		// layout this file layer replaces.
-		expect(zhDescription).not.toContain("\n");
-	});
 });

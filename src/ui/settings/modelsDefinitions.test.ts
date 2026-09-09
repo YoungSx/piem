@@ -1,3 +1,4 @@
+import { emptySkillLoadReport } from "../../agent/skillLoader";
 import { describe, expect, it } from "bun:test";
 import { installDom } from "../../testUtils/dom";
 import { installObsidianDomHelpers } from "../../testUtils/obsidianDom";
@@ -37,7 +38,8 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			fetchSource: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["fetchSource"]>>,
 			install: async () => {}, update: async () => ({}) as Awaited<ReturnType<SettingsPanelHost["skills"]["update"]>>,
 			remove: async () => {}, refreshAgent: async () => {},
-			lastSkillLoad: () => ({ vault: [], user: { skills: [], searched: [], diagnostics: [] } }) as unknown as ReturnType<SettingsPanelHost["skills"]["lastSkillLoad"]>,
+			prepareBuiltins: async () => {},
+			lastSkillLoad: () => emptySkillLoadReport() as unknown as ReturnType<SettingsPanelHost["skills"]["lastSkillLoad"]>,
 			userSkillsAvailable: false,
 		},
 		mcp: { states: () => [], test: async () => 0, reconnect: async () => undefined },

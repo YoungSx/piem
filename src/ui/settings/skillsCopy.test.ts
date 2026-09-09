@@ -8,7 +8,7 @@ import {
 	userSkillProblemsCopy,
 	vaultSkillProblemsCopy,
 } from "./skillsCopy";
-import type { SkillLoadReport } from "../../agent/skillLoader";
+import { emptySkillLoadReport, type SkillLoadReport } from "../../agent/skillLoader";
 
 /**
  * These strings are what stands between a raw errno and a reader who concludes
@@ -43,6 +43,7 @@ function report(vault: number, user: number, templates = 0): SkillLoadReport {
 		path: `/path/${index}`,
 	});
 	return {
+		...emptySkillLoadReport(),
 		vault: Array.from({ length: vault }, (_, index) => diagnostic(index)),
 		user: {
 			skills: [],

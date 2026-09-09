@@ -73,7 +73,7 @@ export interface SubagentToolsContext {
 	 * long after the host stopped being able to say which conversation is acting,
 	 * so the id is captured here and travels down in a closure.
 	 */
-	createChildTools: (depth: number, ownerId: string) => AgentTool[];
+	createChildTools: (depth: number, ownerId: string, skills: readonly Skill[]) => AgentTool[];
 	/**
 	 * The conversation a top-level spawn belongs to, per the host. Absent when the
 	 * host does not distinguish conversations; see {@link OWNER_UNKNOWN}.
@@ -129,12 +129,13 @@ export interface ChildRunSpec {
  * spawned and kept because a transcript belongs to the model that wrote it.
  */
 export function startChildRun(context: SubagentToolsContext, spec: ChildRunSpec): Promise<SubagentRunResult> {
+	const skills = [...context.getSkills()];
 	return runSubagent({
 		task: spec.task,
 		role: spec.role,
 		instructions: spec.instructions,
-		tools: context.createChildTools(spec.depth, spec.ownerId),
-		skills: context.getSkills(),
+		tools: context.createChildTools(spec.depth, spec.ownerId, skills),
+		skills,
 		model: spec.model,
 		streamFn: context.getStreamFn(),
 		thinkingLevel: spec.thinkingLevel,

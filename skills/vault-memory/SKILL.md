@@ -1,3 +1,9 @@
+---
+name: vault-memory
+description: "Remember lessons across chats: log corrections and failures to Piem/memory/, recall them at task start or when asked about a past lesson, and curate what earns long-term storage."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 # Vault Memory
 
 Maintain a two-file memory under `Piem/memory/` so that lessons learned in one

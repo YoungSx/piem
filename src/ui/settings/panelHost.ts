@@ -201,6 +201,8 @@ export interface SkillsHost {
 	 * empty report the service starts with.
 	 */
 	refreshAgent(): Promise<void>;
+	/** Retry the official package; restoration only recreates missing entries. */
+	prepareBuiltins(restore?: boolean): Promise<void>;
 	/**
 	 * Warnings from the agent's most recent skill load, split by layer.
 	 *

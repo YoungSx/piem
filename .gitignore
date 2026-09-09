@@ -14,6 +14,8 @@ main.js
 
 # esbuild's module breakdown of the production build, read by check:bundle.
 main.js.meta.json
+dist/
+builtin-skills.json
 
 # Exclude sourcemaps
 *.map

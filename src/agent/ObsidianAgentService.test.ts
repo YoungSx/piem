@@ -1,3 +1,5 @@
+import { officialSkillFiles } from "../testUtils/skillFiles";
+import { emptySkillLoadReport } from "./skillLoader";
 import { afterAll, describe, expect, it } from "bun:test";
 import { installObsidianStub, requestUrlMock, resetNotices, shownNotices } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat, TFile, TFolder } from "obsidian";
@@ -3692,7 +3694,7 @@ describe("prompt commands", () => {
 
 	it("offers builtins and vault templates together for autocomplete", async () => {
 		const service = createService(new MemoryAdapter(), {
-			vaultFiles: { "Piem/prompts/echo.md": "---\ndescription: Echo it back\n---\nRepeat: $ARGUMENTS" },
+			vaultFiles: { ...officialSkillFiles(), "Piem/prompts/echo.md": "---\ndescription: Echo it back\n---\nRepeat: $ARGUMENTS" },
 		});
 		await service.initialize();
 
@@ -3766,7 +3768,7 @@ describe("vault skills", () => {
 		// what it would otherwise render.
 		const service = createSkillsService(createVaultAppWithSkills({}), []);
 
-		expect(service.getSkillLoad()).toEqual({ vault: [], user: { skills: [], diagnostics: [], searched: [] }, templates: [] });
+		expect(service.getSkillLoad()).toEqual(emptySkillLoadReport());
 	});
 
 	it("makes the load current for a caller that awaits refreshSkills", async () => {
@@ -3847,9 +3849,9 @@ describe("vault skills", () => {
 		expect(prompt).toContain("Piem/skills/summarize/SKILL.md");
 	});
 
-	it("includes bundled skills when the vault has no skill files", async () => {
+	it("loads the installed official skill files", async () => {
 		const prompts: string[] = [];
-		const service = createSkillsService(createFakeApp(asDataAdapter(new MemoryAdapter())), prompts);
+		const service = createSkillsService(createVaultAppWithSkills(officialSkillFiles()), prompts);
 
 		await service.sendPrompt("Hello");
 
@@ -3861,10 +3863,10 @@ describe("vault skills", () => {
 		}
 	});
 
-	it("injects a bundled skill's complete instructions and additional request", async () => {
+	it("injects an installed official skill's complete instructions and additional request", async () => {
 		const contexts: Context[] = [];
 		const service = new ObsidianAgentService(
-			createFakeApp(asDataAdapter(new MemoryAdapter())),
+			createVaultAppWithSkills(officialSkillFiles()),
 			() => defaultTestSettings(),
 			new ObsidianSessionManager(asDataAdapter(new MemoryAdapter()), SESSION_DIR, "obsidian-vault:Test"),
 			{ streamFn: createCapturingStreamFn(contexts), loadUserSkills: NO_USER_SKILLS },
@@ -3881,6 +3883,7 @@ describe("vault skills", () => {
 	it("lets a vault skill override bundled content and provenance", async () => {
 		const contexts: Context[] = [];
 		const app = createVaultAppWithSkills({
+			...officialSkillFiles(),
 			"Piem/skills/summarize/SKILL.md": "---\nname: summarize\ndescription: My summary\n---\nMY VAULT INSTRUCTIONS",
 		});
 		const service = new ObsidianAgentService(

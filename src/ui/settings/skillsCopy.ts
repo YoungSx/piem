@@ -87,7 +87,8 @@ export function describeSkillReload(report: SkillLoadReport, t: Translator): str
  * needs the split reads {@link SkillLoadReport} directly.
  */
 export function countSkillProblems(report: SkillLoadReport): number {
-	return report.vault.length + report.user.diagnostics.length;
+	return report.vault.length + report.user.diagnostics.length + report.builtin.diagnostics.length
+		+ report.builtin.install.problems.length + Number(report.builtin.install.status === "failed");
 }
 
 /**

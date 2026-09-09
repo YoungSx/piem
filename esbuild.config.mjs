@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "process";
 import { builtinModules } from 'node:module';
+import { builtinSkillsPlugin } from "./scripts/builtin-skills.mjs";
 
 /**
  * pi-ai imports the full `openai` and `@anthropic-ai/sdk` packages, but only
@@ -41,13 +42,13 @@ const context = await esbuild.context({
 	},
 	entryPoints: ["src/main.ts"],
 	alias: SDK_SHIM_ALIASES,
+	plugins: [builtinSkillsPlugin(process.cwd(), !prod)],
 	// Assets referenced from source are inlined as data URIs rather than emitted
 	// as sibling files: the release ships exactly main.js/manifest.json/styles.css,
 	// so a separate icon file would silently 404 for anyone installing from a
 	// release archive. See src/brandIcon.ts.
 	loader: {
 		".png": "dataurl",
-		".md": "text",
 	},
 	bundle: true,
 	external: [
@@ -85,7 +86,7 @@ const context = await esbuild.context({
 if (prod) {
 	const result = await context.rebuild();
 	writeFileSync(METAFILE, JSON.stringify(result.metafile));
-	process.exit(0);
+	await context.dispose();
 } else {
 	await context.watch();
 }

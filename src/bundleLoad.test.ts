@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { installDom } from "./testUtils/dom";
 import { createObsidianHostModule, createStubApp, loadPluginBundle, type PluginHostRecord } from "./testUtils/pluginLoader";
+import { createSkillVault } from "./testUtils/skillVault";
 
 /**
  * End-to-end load gate over the built artifact.
@@ -34,14 +35,16 @@ interface LoadedPlugin {
 	onunload?(): void;
 	settings: { userSkillsDir?: string };
 	refreshAgentSkills(): Promise<void>;
+	prepareBuiltinSkills(restore?: boolean): Promise<void>;
 	agentSkillLoad(): {
+		builtin: { install: { status: string }; diagnostics: unknown[] };
 		user: {
 			skills: Array<{ name: string; content: string; filePath: string; sourceDir: string }>;
 			diagnostics: Array<{ code: string; message: string }>;
 			searched: Array<{ dir: string; found: boolean | undefined; loaded: number }>;
 		};
 	};
-	agentSkillCatalog(): Array<{ skill: { name: string }; source: string }>;
+	agentSkillCatalog(): Array<{ skill: { name: string; content: string; filePath: string }; source: string }>;
 }
 
 const loadedPlugins: LoadedPlugin[] = [];
@@ -244,7 +247,7 @@ describe("built bundle loads user skills through Pi's lazy Node environment", ()
 			expect(user.skills).toEqual([]);
 			expect(user.diagnostics).toEqual([]);
 			expect(user.searched).toEqual(["~/.pi/agent/skills", "~/.agents/skills"].map((dir) => ({ dir, found: undefined, loaded: 0 })));
-			expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(true);
+			expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(false);
 			expect(requests).not.toContain("node:child_process");
 			expect(requests).not.toContain("node:readline");
 			expect(dynamicImports).toEqual([]);
@@ -303,7 +306,7 @@ describe("built bundle loads user skills through Pi's lazy Node environment", ()
 		expect(forbidden).toEqual([]);
 	});
 
-	it("contains bridge initialization failure without discarding the builtin catalog", async () => {
+	it("contains bridge initialization failure without inventing builtin files", async () => {
 		const { plugin } = instantiate({
 			platform: DESKTOP,
 			allowNodeBuiltins: false,
@@ -319,6 +322,48 @@ describe("built bundle loads user skills through Pi's lazy Node environment", ()
 		expect(user.skills).toEqual([]);
 		expect(user.diagnostics).toEqual([expect.objectContaining({ code: "read_failed" })]);
 		expect(user.searched.every((entry) => entry.found === undefined)).toBe(true);
-		expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(true);
+		expect(plugin.agentSkillCatalog().some((entry) => entry.source === "builtin")).toBe(false);
 	});
+});
+
+describe("built bundle installs the separate official skill resource", () => {
+	for (const platform of [DESKTOP, MOBILE]) {
+		it(`installs from an empty vault on ${platform.isMobile ? "mobile without Node" : "desktop"}`, async () => {
+			const record = emptyRecord();
+			const host = createObsidianHostModule(record, platform) as Parameters<typeof createSkillVault>[0] & { requestUrl: (params: { url: string; headers?: Record<string, string> }) => Promise<unknown> };
+			const { vault, contents } = createSkillVault(host);
+			const payload = readFileSync("dist/builtin-skills.json", "utf8");
+			const { version } = JSON.parse(readFileSync("manifest.json", "utf8")) as { version: string };
+			let requests = 0;
+			host.requestUrl = async (params) => {
+				requests++;
+				expect(params.url).toBe(`https://github.com/YoungSx/piem/releases/download/${version}/builtin-skills.json`);
+				expect(params.headers?.authorization).toBeUndefined();
+				return { status: 200, headers: {}, arrayBuffer: new TextEncoder().encode(payload).buffer };
+			};
+			const required: string[] = [];
+			const result = loadPluginBundle({ modules: { obsidian: host }, allowNodeBuiltins: false, exposeGlobalRequire: false, onRequire: (id) => required.push(id) }) as { default: new (app: unknown, manifest: unknown) => LoadedPlugin };
+			const app = createStubApp() as { vault: Record<string, unknown> };
+			Object.assign(app.vault, vault);
+			const plugin = new result.default(app, { id: "piem", version });
+			loadedPlugins.push(plugin);
+			await plugin.onload();
+			await plugin.prepareBuiltinSkills();
+			expect(plugin.agentSkillLoad().builtin.install.status).toBe("ready");
+			expect(plugin.agentSkillLoad().builtin.diagnostics).toEqual([]);
+			expect(requests).toBe(1);
+			const catalog = plugin.agentSkillCatalog();
+			expect(catalog.filter((entry) => entry.source === "builtin")).toHaveLength(7);
+			const summary = catalog.find((entry) => entry.skill.name === "summarize")!;
+			expect(summary.skill.filePath).toBe("/Piem/builtin-skills/summarize/SKILL.md");
+			expect(contents.get(summary.skill.filePath.slice(1))).toContain("name: summarize");
+			expect(summary.skill.content).toContain("Call get_active_note");
+			// The separate user-level loader probes Node and is refused by this
+			// host. Official files still load, with no Node environment started.
+			expect(required.filter((id) => id.startsWith("node:")).every((id) => id === "node:fs/promises")).toBe(true);
+			expect(plugin.agentSkillLoad().user.skills).toEqual([]);
+			await plugin.refreshAgentSkills();
+			expect(requests).toBe(1);
+		});
+	}
 });

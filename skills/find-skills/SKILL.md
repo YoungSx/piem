@@ -1,3 +1,9 @@
+---
+name: find-skills
+description: "Find reputable agent skills and explain how to add them to Piem."
+compatibility: Requires Piem's Obsidian vault tools.
+---
+
 Help the user discover skills from the open agent-skills ecosystem. This workflow is adapted from Vercel's MIT-licensed find-skills skill for Piem's vault-only environment.
 
 1. Clarify the domain and exact task. Prefer a reusable skill only when the request is common and specialized enough to benefit from one.

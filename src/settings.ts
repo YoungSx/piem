@@ -37,6 +37,7 @@ import {
 import { SkillManager } from "./skills/skillManager";
 import { userSkillsSupported } from "./skills/userSkills";
 import { normalizeUserSkillsDir } from "./skills/userSkillsDir";
+import { normalizeBuiltinSkillState, type BuiltinSkillState } from "./skills/builtinSkillState";
 import { VaultExecutionEnv } from "./vault/VaultExecutionEnv";
 import { createObsidianRequestUrlFetch } from "./net/obsidianFetch";
 
@@ -179,6 +180,8 @@ export interface PiemSettings {
 	 * nothing and is rewritten away only if the row is toggled again.
 	 */
 	disabledSkills: string[];
+	/** Internal installation ownership; not a capability switch. */
+	builtinSkillState?: BuiltinSkillState;
 	/**
 	 * Threshold below which log records are discarded.
 	 *
@@ -324,6 +327,8 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	if (retry) {
 		settings.retry = retry;
 	}
+	const builtinSkillState = normalizeBuiltinSkillState(data?.builtinSkillState);
+	if (builtinSkillState) settings.builtinSkillState = builtinSkillState;
 	return settings;
 }
 
@@ -752,6 +757,7 @@ export class PiemSettingTab extends PluginSettingTab {
 					update: (dirName) => manager().update(dirName),
 					remove: (dirName) => manager().remove(dirName),
 					refreshAgent: () => this.plugin.refreshAgentSkills(),
+					prepareBuiltins: (restore) => this.plugin.prepareBuiltinSkills(restore),
 					// The agent's own load, not one this panel performs. The panel used
 					// to walk the folders itself, so the tab presented as the place
 					// skill problems are reported could describe a read the agent never

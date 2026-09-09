@@ -2,6 +2,7 @@ import { Notice, TFile, type App, type ButtonComponent, type ExtraButtonComponen
 import type { SkillDiagnostic } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../../i18n";
 import type { SkillCatalogEntry } from "../../agent/skillLoader";
+import { builtinSkillsDefinitions } from "./builtinSkillsDefinitions";
 import type { SkillRow } from "../../skills/skillManager";
 import { type SettingsPanelState, type SkillsSnapshot } from "./panelState";
 import { createMcpServerConfig, type McpServerConfig } from "../../mcp/mcpConfig";
@@ -136,6 +137,7 @@ function digest(snapshot: SkillsSnapshot | undefined): string {
 	const rows = snapshot.inventory.rows.map((row) => `${row.name}|${row.path}|${row.dirName}|${row.provenance?.url ?? ""}`);
 	const user = snapshot.load.user;
 	return JSON.stringify([
+		snapshot.load.builtin,
 		rows,
 		snapshot.load.vault.map(problemKey),
 		user.skills.map((skill) => `${skill.name}|${skill.description}`),
@@ -155,6 +157,8 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 	const snapshot = state.skillsSnapshot;
 	return [
 		unifiedSkillsList(host, state, snapshot),
+		...builtinSkillsDefinitions(host, snapshot?.load),
+		...problemRows(snapshot?.load.builtin.diagnostics ?? [], vaultSkillProblemsCopy(host.t)),
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
 		mcpList(host),
@@ -257,7 +261,8 @@ function unifiedSkillsList(host: SettingsPanelHost, state: SettingsPanelState, s
 			sectionNoteWithHeadingBadge(t.t("skills.heading"), problemCountBadge(snapshot?.load.vault.length ?? 0, t), [
 				t.t("skills.desc"), snapshot && rows.length === 0 ? t.t("skills.empty") : undefined,
 			]),
-			...host.skills.catalog().map((entry) => unifiedSkillRow(host, state, entry, rows.find((row) => row.name === entry.skill.name))),
+			...host.skills.catalog().map((entry) => unifiedSkillRow(host, state, entry,
+				entry.source === "vault" ? rows.find((row) => row.path.replace(/^\//, "") === entry.skill.filePath.replace(/^\//, "")) : undefined)),
 		],
 	};
 }
@@ -331,15 +336,14 @@ function unifiedSkillRow(host: SettingsPanelHost, state: SettingsPanelState, ent
 			// The switch rides ahead of the file actions: on/off is the question a
 			// reader answers most often, and Open/Update/Delete are the rarer errands.
 			configureSkillToggle(setting, host, entry.skill.name);
-			if (!vaultRow) {
-				return;
-			}
+			if (entry.source === "user" || (entry.source === "vault" && !vaultRow)) return;
 			// The path always names a real file: pi only reports skills it actually
 			// loaded, so opening it needs no existence check beyond TFile's own.
 			setting.addButton((button) => {
 				button.setButtonText(t.t("skills.open"));
-				button.onClick(() => void openVaultPath(host.app, vaultRow.path));
+				button.onClick(() => void openVaultPath(host.app, entry.skill.filePath));
 			});
+			if (!vaultRow) return;
 			if (vaultRow.provenance) {
 				setting.addButton((button) => {
 					button.setButtonText(t.t("skills.update"));
@@ -750,7 +754,7 @@ function setMcpVerdict(badgeEl: HTMLElement, el: HTMLElement, state: McpServerSt
  * switch into.
  */
 async function openVaultPath(app: App, path: string): Promise<void> {
-	const file = app.vault.getAbstractFileByPath(path);
+	const file = app.vault.getAbstractFileByPath(path.replace(/^\//, ""));
 	if (file instanceof TFile) {
 		await app.workspace.getLeaf("tab").openFile(file);
 	}

@@ -371,6 +371,13 @@ if (!/module\.exports\b/.test(source)) {
 // import checks above still apply; a production build always writes one.
 const bundleInputs = readBundleInputs();
 if (bundleInputs) {
+	for (const input of Object.keys(bundleInputs)) {
+		if (/\.md$/.test(input) && /(?:^|\/)skills\//.test(input)) failures.push({
+			name: `bundled skill Markdown: ${input}`,
+			why: "Skill bodies belong in the separate release resource.",
+			at: "-",
+		});
+	}
 	for (const [segment, why] of BANNED_MODULES) {
 		const offenders = Object.entries(bundleInputs).filter(([input, contribution]) =>
 			input.includes(segment) && !(input.endsWith(EMPTY_FAUX_INITIALIZER) && contribution.bytesInOutput === EMPTY_FAUX_INITIALIZER_BYTES),

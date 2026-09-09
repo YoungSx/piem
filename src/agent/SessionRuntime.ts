@@ -1,4 +1,4 @@
-import { type Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { type Agent, type Skill, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Usage } from "@earendil-works/pi-ai";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactResult } from "./compaction";
@@ -69,6 +69,8 @@ export class SessionRuntime {
 
 	/** The live pi agent for this session. THE central per-session field. */
 	agent: Agent | null = null;
+	/** The skill snapshot this runtime's prompt and tools share until its next send. */
+	skills: readonly Skill[] = [];
 	/** Event-subscription teardown for `agent.subscribe(...)`. Must travel with `agent`. */
 	unsubscribeAgent: (() => void) | null = null;
 

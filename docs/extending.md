@@ -8,18 +8,44 @@ follow, and **MCP servers**, which are tools it can call.
 ## Skills
 
 A skill is a reusable instruction the agent can follow, and that you can invoke
-directly by typing `/` in the composer. Piem folds them from three sources, with
-later tiers shadowing earlier ones:
+by typing `/` in the composer. Piem combines three sources in this order, with
+later sources overriding earlier skills of the same name:
 
-1. **Bundled** — `summarize`, `link-graph`, `tag-organize`, and `find-skills`.
-   Localized, and available before you create a single file. They have no vault
-   file at all; `read_skill` serves their content from memory.
-2. **Vault** — `Piem/skills/<name>/SKILL.md` inside your vault. The folder is
-   visible in Obsidian's file explorer, so you can open, search, link, and sync
-   your skills like any other note.
-3. **User-level** — `~/.pi/agent/skills` and `~/.agents/skills`, the same
-   directories pi itself reads. Skills you already wrote for pi work here
-   unchanged.
+1. **Built-in** — standard files under `Piem/builtin-skills/<name>/SKILL.md`.
+   Includes `summarize`, `link-graph`, `tag-organize`, `find-skills`,
+   `efficient-web-research`, `vault-memory`, and `distill-skill`.
+2. **User-level** — on desktop, `~/.pi/agent/skills` and `~/.agents/skills`, plus
+   the optional extra directory in settings. These keep their existing priority
+   within the user-level source.
+3. **Vault** — your own or imported files under `Piem/skills/<name>/SKILL.md`.
+   A vault skill overrides both other sources.
+
+### Built-in files and updates
+
+Piem downloads the built-in Markdown resource from the GitHub release matching
+its installed version, verifies the checksum pinned in the plugin, and creates
+real files in your vault. The folder is visible in Obsidian: open, search and sync
+it like your other notes. Descriptions come from each file, so the shipped English
+descriptions do not change with the interface language.
+
+**First installation needs a connection to GitHub.** Preparation runs after the
+workspace is ready and does not block chat. A failed download leaves existing
+skills usable offline. **Settings → Piem → Extensions → Built-in skill files**
+shows the outcome and offers **Retry preparation**. It makes no background retry
+loop, and ordinary messages never trigger downloads.
+
+An update replaces only files that still match their recorded installed content.
+Your edits and pre-existing files are kept, with any conflicts listed in settings.
+Deleting a built-in skill keeps it removed; **Restore missing files** recreates
+missing files without overwriting edited ones or re-enabling disabled skills.
+Files retired by a release are kept for you to review. Sync and update operations
+are not a cross-device transaction; inconsistent ownership evidence preserves
+files instead of overwriting them.
+
+To customize a default while continuing to receive official updates, copy its
+folder into `Piem/skills/` and keep the same skill name. Your copy takes priority.
+The built-in skill resource contains Markdown only; it does not install or execute
+scripts. See [Security and privacy](security.md) for download disclosure.
 
 ### Writing one
 
@@ -46,12 +72,12 @@ the model knows they exist without you naming them. Skills are read fresh from
 disk on every turn: editing or adding one takes effect on your **next message**,
 with no plugin reload.
 
-In **Extensions**, badges beside skill names show **Imported**, **Handwritten**,
-**Single note**, or **External file**. Imported skills keep their source URL below
-the name. Problems appear below the affected section, with a count beside its
-heading; **Reload** in the Skills heading rereads the files and updates the report.
-The folder search report distinguishes an empty folder, a missing folder, and one
-that could not be checked.
+In **Extensions**, badges show **Built-in**, **Global**, or **Vault**. Built-in
+and vault files have an **Open** button; imported vault skills also keep their
+source URL and update/delete controls. Problems appear beside the relevant
+source. **Reload** rereads local files; it does not download or restore them.
+The folder search report distinguishes empty, missing, and unreadable folders.
+A running conversation keeps its current skill snapshot until the next message.
 
 ### Importing from GitHub
 
@@ -64,7 +90,7 @@ Imports are markdown-only. Nothing executable comes down the wire.
 
 ## Prompt templates
 
-Prompt templates live in `.piem/prompts` inside your vault and appear in the
+Prompt templates live in `Piem/prompts` inside your vault and appear in the
 same `/` autocomplete, labelled with their source.
 
 If a template and a skill share a name, the template keeps priority and the
@@ -106,3 +132,20 @@ desktop-only surprise.
 There is no OAuth flow either. A static bearer token covers the servers a
 personal vault realistically talks to, and the flow it replaces would be a
 browser round-trip Obsidian is not well placed to host.
+
+## Developing built-in skills
+
+The repository's `skills/<name>/SKILL.md` is the source of truth. Add a valid
+folder with `name` and `description` frontmatter; the build discovers it without
+a TypeScript registration. Markdown references and templates travel with their
+skill, keeping relative paths. Build validation rejects missing metadata, unsafe
+paths, scripts, symlinks, and missing linked resources.
+
+`npm run build` writes `dist/builtin-skills.json` and pins its digest in `main.js`;
+`npm run check:skills` verifies both against the source. The release workflow
+publishes and attests the resource alongside the standard plugin files.
+
+`npm run dev` watches additions, edits and removals, and writes the same JSON
+beside `main.js`. Copy both files to the development plugin folder and reload
+Piem; the development bundle reads the local JSON instead of an unpublished
+release. Production bundles always use the release matching the installed version.

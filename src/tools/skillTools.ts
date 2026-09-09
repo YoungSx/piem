@@ -10,7 +10,7 @@ const ReadSkillParameters = Type.Object({
 	name: Type.String(),
 });
 
-/** Reads a loaded skill from memory, including bundled skills with no vault file. */
+/** Reads the same file snapshot the current prompt lists, across every source. */
 export function createReadSkillTool(getSkills: () => readonly Skill[]): AgentTool<typeof ReadSkillParameters> {
 	return {
 		name: "read_skill",

@@ -35,6 +35,9 @@ jobs:
             - name: Check bundle for loader-incompatible constructs
               run: npm run check:bundle
 
+            - name: Verify standard skill resource and bundle digest
+              run: npm run check:skills
+
             # The copy tables are the single source for every user-visible
             # string; this catches the ones that never got there. Two branches
             # have shipped hardcoded English past review, and the ContextRow
