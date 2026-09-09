@@ -34,8 +34,8 @@ import type { PiemSettings } from "../settings";
 	 * The remaining tools (ls, find, grep, tasks, notes, frontmatter, skills,
 	 * move, trash, and the screen tools — open/panel/cursor/notify/ask) are
 	 * application-specific
-	 * and stay hand-written. `read_skill` serves the loaded in-memory set,
-	 * including bundled skills that intentionally have no vault file. move/trash
+	 * and stay hand-written. `read_skill` serves the loaded in-memory snapshot
+	 * across built-in, user-level, and vault skill files. move/trash
 	 * stay out of the native set because pi's `FileSystem` rename replaces its
 	 * destination, while a user-facing move must refuse an occupied one.
  *
