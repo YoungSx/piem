@@ -1,10 +1,12 @@
 # 直接引用 Pi 官方库：选定扩展的内置可行性与开发方案
 
-2026-09-08 初查，2026-09-09 完成原版宿主与现有会话的运行探针。产品扩展接入尚未实现。
+2026-09-08 初查，2026-09-09 完成原版宿主与现有会话的运行探针，并补查 Node 兼容桥路线。产品扩展接入尚未实现。
 
 ## 结论
 
 **工具、会话和技能已经接入官方 core，不需要重做。原版 `ExtensionRunner` 可以通过小型数据桥使用这套现有会话；本次已执行验证。** 剩下的主要障碍是官方构造类型过宽，以及静态加载器/运行器仍带入 Node、终端和动态加载依赖，尚不能直接交付为 Obsidian 跨平台包。[核心入口][core-index] [扩展入口][coding-index]
+
+**Node 依赖可以按选定扩展的实际调用面桥接；上游拆包不是唯一前置。** 已完成的打包探针没有安装 Node 兼容桥，其失败只证明当前环境缺少相应接口。提供具有真实语义的兼容模块，仍然是直接使用 Pi 原版实现。桥的完整性、体积和手机行为尚待验证，不能把这条可研究路线写成已通过。
 
 具体运行证据和接口映射在第 5 节；可重跑脚本在第 8 节。Chord 使用新的 Facet 协议，列作背景，不是本方案前置。[Chord][chord-readme]
 
@@ -15,7 +17,7 @@ Piem 应继续由官方库负责工具执行、会话和扩展生命周期，只
 - **可以立即继续复用：** 已在用的官方 `Agent`、原生文件工具、技能加载和会话 API；需要时单独评估新的公开子入口。
 - **可以直接引用，但解决另一层问题：** Chord 的静态加载、服务依赖装配、启动/卸载。它适合本身采用 Facet 协议的插件。
 - **已运行验证的接法：** 原版 `loadExtensionFromFactory` → `ExtensionRunner` → `wrapRegisteredTools`，通过同步读取快照/异步写入桥接 Piem 的现有 Session；没有换用 CLI `AgentSession`。
-- **建议下一步：** 给官方静态入口拆除动态加载和终端依赖，并缩小宿主类型；Piem 固定现用 core，在已有会话上完成桥接，以原版书签作为首项。直接升级 core 或全面迁移 Chord 都不解决此处的包边界。
+- **建议下一步：** 固定现用 core，先验证选定静态扩展所需的有限 Node 兼容桥，同时处理宿主类型边界，以原版书签作为首项；根据桥的实际成本决定是否推动上游拆分。直接升级 core 或全面迁移 Chord 都不是前置。
 
 ## 核对范围与证据等级
 
@@ -85,7 +87,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 
 普通 Node 进程可以用官方 SDK + factories；Piem 则由 Obsidian 读取 `main.js` 并加载，release 不附带 `node_modules` 或 npm 包目录。把 coding-agent 标为 external 会把依赖留给一个并不保证存在的运行时包；原样打进 CJS 还要解决 `import.meta`、包资源读取和启动副作用。[Piem 构建](../esbuild.config.mjs) [产物门禁](../scripts/check-bundle.mjs)
 
-官方 `SettingsManager.fromStorage/inMemory`、新版本 `SessionManager.inMemory(..., entries)` 提供了一些可用接缝；它们没有令整个扩展宿主变成浏览器库，也没有解决与 Piem 现有 JSONL 的一致性。桌面优先可作为独立方案验证，不能用零散 polyfill、空 UI 或绕过 Vault 来掩盖接口缺口。[settings][settings-manager] [会话 API][cli-session] [发布说明][changelog]
+官方 `SettingsManager.fromStorage/inMemory`、新版本 `SessionManager.inMemory(..., entries)` 提供了一些可用接缝；它们没有令整个扩展宿主变成浏览器库，也没有解决与 Piem 现有 JSONL 的一致性。桌面优先与跨平台兼容桥都可验证；兼容模块须提供候选真实需要的语义，不能用空 UI、假成功或绕过 Vault 来掩盖接口缺口。[settings][settings-manager] [会话 API][cli-session] [发布说明][changelog]
 
 ## 3. Chord 是真正拆出来的原版库，但协议不同
 
@@ -198,9 +200,33 @@ TypeScript 确有阻碍：给构造器传一个完整 `Pick<SessionManager, …1
 
 metafile 中较大的贡献为 jiti 1,680,802 字节、pi-ai 691,953 字节、undici 560,994 字节；仍含 pi-tui、provider catalog、Google/OpenAI/Anthropic SDK。**这是扩展宿主独立产物，不是加到 Piem 的增量。** 尚未套 Piem 既有 SDK alias，也没有做真实 Obsidian/Electron 加载；但其 Node 与终端初始化已是可重现阻碍。CJS 构建成功也不能算运行成功。
 
-这一结果把 B 的范围收紧为：静态加载路径与 Node 动态路径分离、Runner 的默认 TUI 去依赖、构造参数收窄。不是再做一遍工具或会话，也不是仅增加 exports 就完成。
+这一结果定位了需要处理的环境接口，却没有测试任何 Node 兼容桥。可以先通过下述 B1 评估有限桥接；B2 是降低后续依赖和维护成本的上游方案。两条路径均保留官方 loader/Runner，现有工具与会话继续使用。
 
-### B. 补齐官方边界，合入官方后直接依赖
+### B1. 先验证有限 Node 兼容桥
+
+这里的桥负责原库所调用的平台接口，不重写扩展注册器或运行器。构建时解析、alias 和浏览器 polyfill 都可以使用；判断标准是候选功能是否正确运行，而不是依赖名称里是否还有 Node。Piem 已有在构建时给 Pi 依赖提供 SDK 兼容实现的先例，见 [esbuild 配置](../esbuild.config.mjs) 和 [HTTP 兼容层](../src/net/shims/apiHttp.ts)。
+
+| 所需接口 | 可验证的桥接方式 | 不能省略的边界 |
+| --- | --- | --- |
+| `path`、`url`、事件、字节数组 | 采用浏览器兼容实现，定义虚拟包路径和 Vault 路径 | 覆盖 Pi 实际使用的成员及路径语义；不是简单删掉 import。 |
+| `process`、`os` 的环境查询 | 提供明确的宿主环境数据和可用功能查询 | 不伪造真实终端、系统目录或可运行程序；未支持的调用明确失败。 |
+| `module.createRequire`、`import.meta.url` | 构建时保留模块身份，运行时只解析已随插件打包的白名单模块/资源 | `require.resolve`、相对路径和资源身份须一致；不给所有模块填同一个假 URL，更不能下载代码后执行。 |
+| 包元数据、原版主题的 `readFileSync` | 构建时从依赖包收集固定原版资源，放入只读内存表，同步读取 | 元数据和路径须对应锁定版本；未知路径不能返回空文本冒充成功。 |
+| 用户笔记及会话文件 | 继续经 Vault 和现有异步 Session；需要的同步查询从显式刷新快照读取 | 快照不是任意时刻磁盘最新值；排队写入不等于同步落盘。不得为了兼容而全库预读。 |
+| 系统命令、原生 `.node`、真实 TTY | 首批选择不调用这些功能的扩展；调用时明确报告不支持 | 手机薄 JS 桥不能同语义提供任意本机进程/原生模块；不将命令模拟成成功。 |
+
+限定源码事实（Pi 0.84.3）：
+
+- `loadExtensionFromFactory` 直接进入原版初始化/注册，不执行 `createJiti`、目录发现或 `exec`。bookmark/model-status 只有类型导入，功能依赖集中在会话、命令、通知和状态。[静态入口][loader-old] [bookmark][bookmark] [model-status][model-status]
+- loader 在导入时仍创建 require、读取 process 特征并计算路径；config 在导入时读取包元数据。路径规范化还会使用 `cwd`/`homedir`。这些必须由真实兼容接口承接。[config][config] [paths][paths-old]
+- Runner 引用的 theme 在导入时创建 Proxy/校验器；`dark.json`、`light.json` 到 `getBuiltinThemes`/`initTheme` 才读取。两项首选示例不读取 theme。不能把“导入 theme”说成“立即读取全部主题文件”。[theme 原码][theme-old]
+- jiti/static 和 pi-tui 的顶层依赖仍可能进入产物。静态工厂不调用 jiti，不代表 jiti 的导入成本消失；需检查最终依赖图及实际初始化调用。TUI 也在模块顶层创建 require，真正原生模块加载则在后续函数内。[TUI 模块路径][tui-module-path] [原生按键模块][tui-native-modifiers]
+
+成熟兼容包也要逐函数核验。例如本次读取的 `unenv@1.10.0` 发布源码里，`module.createRequire` 和 `fs.readFileSync` 仍是 `notImplemented`，`existsSync` 固定返回 false；给模块挂一个“polyfilled”标签不等于具备此任务需要的文件/解析语义。它可作候选工具，不能代替项目特定的资源桥。[发布物][unenv-package]
+
+验证顺序：**原版静态工厂 + Node 兼容桥 → 无 Node 环境启动 → 真实书签保存/恢复与通知 → 未支持调用明确失败 → 卸载 → 实际 bundle 体积 → Obsidian/手机验收**。逐步记录调用过的兼容 API，不靠全局空对象掩盖遗漏。B1 尚未实施完整原型；已有会话桥探针不等于 Node 兼容桥通过。
+
+### B2. 上游拆分作为另一条优化路线
 
 建议的上游拆分是**移动既有实现并开放接口**，不新造一套扩展机制。以下入口名均为提案，不是现有可 import 路径：
 
@@ -213,11 +239,11 @@ metafile 中较大的贡献为 jiti 1,680,802 字节、pi-ai 691,953 字节、un
 
 仅加一个 `./sdk` export 能避开部分根入口副作用，**不能单独消除 Runner 的 theme、loader 的 Node 及两套 Session 契约**。上游 [#9286][sdk-issue] 也提出 SDK 入口问题；它被机器人关闭，不代表已修复。当前 main 的配置仍缺这些边界。
 
-上游拆分可预估 **3–5 个工程日做验证和 PR**，维护者评审及发布等待无法估期。这是后续开发建议；本轮没有向上游发 issue、评论或 PR。官方发布前，受阻扩展保持待接入；已有官方小模块照常复用。
+上游拆分可预估 **3–5 个工程日做验证和 PR**，维护者评审及发布等待无法估期。这是后续开发建议；本轮没有向上游发 issue、评论或 PR。若 B1 已满足接口、体积与平台验收，可以继续接入，不必等待此拆分；若桥接成本过大，再据实际调用面推动官方边界调整。
 
 ### C. Piem 只做宿主接线，首项约 3–5 个工程日
 
-在 B 的接口可用、且版本兼容后，以原版 bookmark 做首项。未来文件名可调整，边界先明确：
+在 B1 兼容桥或 B2 官方入口通过平台验收、并解决宿主类型契约后，以原版 bookmark 做首项。Node 兼容桥不会自动修复 A1 的构造类型问题，两者分别验证。未来文件名可调整，边界先明确：
 
 | Piem 落点 | 本地负责的差异 | 继续交给官方 |
 | --- | --- | --- |
@@ -240,7 +266,7 @@ metafile 中较大的贡献为 jiti 1,680,802 字节、pi-ai 691,953 字节、un
 
 来源：[旧 Session header][old-header] [新 Session][new-session] [新 header][new-header] [新 parser][new-codec] [harness 工具/环境契约][new-harness-types]。本地 [sessionMutationLine](../src/session/sessionMutationLine.ts) / [sessionMerge](../src/session/sessionMerge.ts) 直接处理旧格式，升级必须连同恢复、分叉、压缩、断电恢复和多设备合并一起验收。迁移约 **另加 4–7 个工程日**，这是未实施的工程估算，不包含手机设备等待。
 
-A 的源码与原版运行探针已完成；下一步为 **B → C**，仅在选定官方版本要求时插入 D。B/C 的日数是带不确定性的实现估算；本次更可核对的拆分是 B 的三个包/类型缺口和 A4 的七处接线。Chord 不作为强制前置。跨平台交付依赖官方接受并发布相关边界。
+A 的源码与原版运行探针已完成；建议先做 **B1 → C**，桥接成本不合适时转 B2，仅在选定官方版本要求时插入 D。B2/C 的日数是带不确定性的实现估算；B1 的完整依赖调用面尚未实测，不套用上游拆分的工期。Chord 和上游新发布都不作为兼容桥的强制前置。
 
 ## 6. 验收与维护
 
@@ -264,7 +290,7 @@ A 的源码与原版运行探针已完成；下一步为 **B → C**，仅在选
 | 新旧会话头 | 实际调用 0.85.1 官方 parser，旧头拒绝、新头接受。未迁移用户日志。 |
 | Piem 本地验证 | 默认分支基线 `31a5e92` 的 `npm run verify` 通过：build、bundle/skills/copy/CSS/version gates、**3223 tests / 197 files / 0 fail**、lint；Bun 1.4.2。产物 1,720,434 字节，门限 1.66 MiB。两份新增探针的语法检查通过，宿主探针在此基线上重跑通过；PR 当前 SHA 的 CI 另行核验。 |
 
-重现入口检查：取下方固定 registry metadata 的 `dist.tarball`，核对 `dist.shasum`，将原包放在一个临时 `node_modules/@earendil-works/` 下；用本仓库 esbuild 构建 `import { ExtensionRunner } from "@earendil-works/pi-coding-agent"; globalThis.probe = ExtensionRunner;`。诊断时明确区分 external 第三方包与 Node builtin；内部文件探针改为依赖包实际文件路径。保持 tree shaking 开启，不加 polyfill、源码 alias 或自定义 `sideEffects: false`，不以 external 标记消除失败后再称为可运行。
+重现第一轮无桥入口检查：取下方固定 registry metadata 的 `dist.tarball`，核对 `dist.shasum`，将原包放在一个临时 `node_modules/@earendil-works/` 下；用本仓库 esbuild 构建 `import { ExtensionRunner } from "@earendil-works/pi-coding-agent"; globalThis.probe = ExtensionRunner;`。诊断时明确区分 external 第三方包与 Node builtin；内部文件探针改为依赖包实际文件路径。保持 tree shaking 开启，不加 polyfill、源码 alias 或自定义 `sideEffects: false`，不以 external 标记消除失败后再称为可运行。
 
 Chord 重现使用上文四项公开 import，`createStaticFacetLoader([consumer, provider]).load()` 后 `createFacetHost({ facets })`，最后分别 dispose host/loaded。两个本地 facet 仅声明一个服务及读取它，用来检查库本身；它们不是产品扩展。旧版示例的删改/TUI stub 探针不作为本文原版可行性的证据。
 
@@ -357,3 +383,8 @@ node scripts/probe-pi-extension-bundle.mjs /path/to/isolated-project
 [runner-old]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/extensions/runner.ts
 [loader-old]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/extensions/loader.ts
 [cli-session-old]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/session-manager.ts
+[paths-old]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/utils/paths.ts
+[theme-old]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/modes/interactive/theme/theme.ts
+[tui-module-path]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/tui/src/native-module-path.ts
+[tui-native-modifiers]: https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/tui/src/native-modifiers.ts
+[unenv-package]: https://registry.npmjs.org/unenv/1.10.0
