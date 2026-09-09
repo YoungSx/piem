@@ -126,6 +126,9 @@ export const TOOL_CATALOG: Readonly<Record<string, ToolFacts>> = {
 
 	// Reading a skill, which is not a note — hence `other`, not `read`.
 	read_skill: { copyKey: "traceTool.readSkill", category: "other", icon: "book-open" },
+	read_memory: { copyKey: "traceTool.readMemory", category: "other", icon: "brain" },
+	update_memory: { copyKey: "traceTool.updateMemory", category: "write", icon: "brain" },
+	session_search: { copyKey: "traceTool.sessionSearch", category: "search", icon: "history" },
 
 	// Tasks, which are a query over the vault's checkboxes rather than a read of
 	// any one note.

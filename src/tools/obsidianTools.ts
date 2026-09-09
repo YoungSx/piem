@@ -14,6 +14,9 @@ import { createFindTool, createGrepTool, createLsTool } from "./searchTools";
 import { createListTasksTool, createSummarizeTasksTool } from "./taskTools";
 import { createWebFetchTool } from "./webFetchTools";
 import { createReadSkillTool } from "./skillTools";
+import { VaultMemory } from "../memory/VaultMemory";
+import { createReadMemoryTool, createUpdateMemoryTool } from "./memoryTools";
+import { createSessionSearchTool, type SearchStoredSessions } from "./sessionSearchTool";
 import type { PiemSettings } from "../settings";
 
 /**
@@ -63,6 +66,8 @@ import type { PiemSettings } from "../settings";
  * argument after an optional fourth is a call site nobody can read.
  */
 export interface ObsidianToolDeps {
+	/** Searches the manager's configured chat folder, including after a setting change. */
+	searchSessions?: SearchStoredSessions;
 	/** The loaded skill set, for `read_skill`. Omitted leaves the tool out. */
 	getSkills?: () => readonly Skill[];
 	/**
@@ -79,6 +84,7 @@ export function createObsidianTools(
 	settings: PiemSettings,
 	deps: ObsidianToolDeps = {},
 ): AgentTool[] {
+	const memory = new VaultMemory(app);
 	const tools: AgentTool[] = [
 		// pi's native harness tools ship without an `executionMode`, so the pin
 		// happens here, at the one place they are adapted into the agent's list.
@@ -88,6 +94,9 @@ export function createObsidianTools(
 		createLsTool(app),
 		createFindTool(app),
 		createGrepTool(app),
+		createReadMemoryTool(memory),
+		createUpdateMemoryTool(memory),
+		...(deps.searchSessions ? [createSessionSearchTool(deps.searchSessions)] : []),
 		createListTasksTool(app),
 		createSummarizeTasksTool(app),
 		createNoteLinksTool(app),

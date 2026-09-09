@@ -18,7 +18,7 @@ import type { PiemSettings } from "../settings";
 import type { ObsidianAgentService as ObsidianAgentServiceType, ObsidianAgentServiceOptions, PendingToolCall } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { spyLogger } from "../testUtils/logSpy";
-import { stubWindowTimers } from "../testUtils/windowStub";
+import { stubWindowMembers, stubWindowTimers } from "../testUtils/windowStub";
 import { getT } from "../i18n";
 import type { LoggerLike } from "../logging/Logger";
 
@@ -172,6 +172,74 @@ class UntrashableAdapter extends MemoryAdapter {
 }
 
 describe("ObsidianAgentService", () => {
+	it("persists a first memory, corrects it, and recalls only the current value in new chats", async () => {
+		const restoreCrypto = stubWindowMembers({ crypto: globalThis.crypto });
+		const vaultFiles: Record<string, string> = {};
+		const memoryPath = "Piem/memory/MEMORY.md";
+		const oldFact = "- 2026-09-09 | vault-wide | User: reply in English";
+		const currentFact = "- 2026-09-09 | vault-wide | User: reply in Chinese";
+		let step = 0;
+		const observations: Context[] = [];
+		const scripted: StreamFn = (model, context) => {
+			observations.push(context);
+			switch (++step) {
+				case 1: return scriptedToolCallStream(model, "save-memory", "update_memory", { edits: [{ type: "append", text: oldFact }] });
+				case 3: return scriptedToolCallStream(model, "correct-memory", "update_memory", { edits: [{ type: "replace", oldText: oldFact, newText: currentFact }] });
+				case 5: return scriptedToolCallStream(model, "recall-memory", "read_memory", {});
+				default: return scriptedTextStream(model, "Done.");
+			}
+		};
+		const service = createService(new MemoryAdapter(), { vaultFiles, streamFn: scripted });
+		try {
+			await service.sendPrompt("Remember: reply in English.");
+			expect(service.getSnapshot().errorMessage).toBeUndefined();
+			expect(service.getSnapshot().messages.filter((message) => message.role === "toolResult").map((message) => message.isError)).toEqual([false]);
+			expect(vaultFiles[memoryPath]).toContain(oldFact);
+			await service.newSession();
+			await service.sendPrompt("Correction: reply in Chinese from now on.");
+			expect(vaultFiles[memoryPath]).toContain(currentFact);
+			expect(vaultFiles[memoryPath]).not.toContain(oldFact);
+			await service.newSession();
+			await service.sendPrompt("Recall my reply preference.");
+			const snapshot = service.getSnapshot();
+			const results = snapshot.messages.filter((message) => message.role === "toolResult");
+			expect(JSON.stringify(results)).toContain(currentFact);
+			expect(JSON.stringify(results)).not.toContain(oldFact);
+			expect(snapshot.errorMessage).toBeUndefined();
+			// The provider is scripted: this proves real wiring and persistence,
+			// not that an arbitrary model chooses the right action from prose.
+			expect(observations[0]?.systemPrompt).toContain("read_memory");
+			expect(observations[0]?.systemPrompt).not.toContain(oldFact);
+			expect(observations[0]?.tools?.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read_memory", "update_memory", "session_search"]));
+			expect(JSON.stringify(snapshot.messages)).not.toContain('"name":"ask_user"');
+		} finally {
+			service.dispose();
+			restoreCrypto();
+		}
+	});
+
+	it("lets the model search a previous chat through the session manager", async () => {
+		let calls = 0;
+		const scripted: StreamFn = (model) => {
+			calls += 1;
+			if (calls === 2) return scriptedToolCallStream(model, "find-history", "session_search", { query: "violet-cedar" });
+			return scriptedTextStream(model, "Done.");
+		};
+		const service = createService(new MemoryAdapter(), { streamFn: scripted });
+		try {
+			await service.sendPrompt("The project nickname is violet-cedar.");
+			const original = service.getSnapshot().session!.path;
+			await service.newSession();
+			await service.sendPrompt("Find the earlier project nickname.");
+			const results = service.getSnapshot().messages.filter((message) => message.role === "toolResult");
+			expect(JSON.stringify(results)).toContain(original);
+			expect(JSON.stringify(results)).toContain("violet-cedar");
+			expect(service.getSnapshot().errorMessage).toBeUndefined();
+		} finally {
+			service.dispose();
+		}
+	});
+
 	it("notifies listeners after a prompt settles", async () => {
 		const service = createService();
 		const snapshots = [service.getSnapshot()];
@@ -234,6 +302,7 @@ describe("ObsidianAgentService", () => {
 		expect(childToolNames[0]).toContain("read_skill");
 		expect(childToolNames[0]).toContain("write");
 		expect(childToolNames[0]).toContain("grep");
+		expect(childToolNames[0]).toEqual(expect.arrayContaining(["read_memory", "update_memory", "session_search"]));
 	});
 
 	it("lets a child spawn once more and caps the tree below that", async () => {
@@ -4565,6 +4634,7 @@ function createFakeApp(
 			adapter,
 			getName: () => "Test",
 			getFiles: () => Array.from(files.values()),
+			getMarkdownFiles: () => Array.from(files.values()).filter((file) => file.extension === "md"),
 			getRoot: () => folderAt(""),
 			getFileByPath: (path: string) => files.get(path) ?? null,
 			getFolderByPath: (path: string) => folders.get(path) ?? null,
@@ -4580,6 +4650,12 @@ function createFakeApp(
 				return files.get(path)!;
 			},
 			createFolder: async (path: string) => folderAt(path),
+			process: async (file: TFile, transform: (text: string) => string) => {
+				const next = transform(vaultFiles[file.path] ?? "");
+				vaultFiles[file.path] = next;
+				file.stat.size = next.length;
+				return next;
+			},
 		},
 		metadataCache: {
 			getFirstLinkpathDest: (linkpath: string, sourcePath: string) => linkIndex?.(linkpath, sourcePath) ?? null,

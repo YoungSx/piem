@@ -7,6 +7,18 @@ export interface StoredSessionSearchHit extends ScanningSessionSearchHit {
 	readonly entryType: Entry["type"];
 }
 
+export interface StoredSessionSearchPageOptions {
+	offset?: number;
+	signal?: AbortSignal;
+}
+
+export interface StoredSessionSearchPage {
+	hits: StoredSessionSearchHit[];
+	nextOffset: number | null;
+	scanned: number;
+	skipped: string[];
+}
+
 /** One picker row, folded from all matching entries in a session. */
 export interface SessionSearchResult {
 	readonly sessionId: string;
@@ -31,7 +43,10 @@ function textParts(message: AgentMessage): string[] {
 /** Projects searchable, human-readable content without indexing tool payloads or images. */
 export function projectSessionEntryText(_metadata: JsonlSessionMetadata, entry: Entry, label?: string): string {
 	let text = "";
-	if (entry.type === "message") text = textParts(entry.message).join("\n");
+	if (entry.type === "message") {
+		if (entry.message.role !== "user" && entry.message.role !== "assistant") return "";
+		text = textParts(entry.message).join("\n");
+	}
 	else if (entry.type === "compaction" || entry.type === "branch_summary") text = entry.summary;
 	else if (entry.type === "custom" && typeof entry.data === "string") text = entry.data;
 	return [text.trim(), label?.trim()].filter(Boolean).join(" ");

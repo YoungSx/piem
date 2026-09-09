@@ -25,7 +25,8 @@ import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { selectSessionsToEvict, UNLIMITED_SESSION_RETENTION } from "./retention";
 import { mergeSessions, serializeLogLines } from "./sessionMerge";
 import { collapseSkillInvocation, parseSkillInvocation } from "../agent/skillInvocation";
-import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
+import { projectSessionEntryText, type StoredSessionSearchHit, type StoredSessionSearchPage, type StoredSessionSearchPageOptions } from "./sessionSearch";
+import { searchStoredSessions } from "./searchStoredSessions";
 
 export interface SessionDefaults {
 	provider: string;
@@ -344,6 +345,11 @@ export class ObsidianSessionManager {
 				entryType: candidate.type, timestamp: candidate.timestamp, snippet: candidate.text,
 			}),
 		});
+	}
+
+	/** Tool-facing search bounds file reads before parsing any session headers. */
+	searchStoredSessionsPage(text: string, options: StoredSessionSearchPageOptions = {}): Promise<StoredSessionSearchPage> {
+		return searchStoredSessions(this.fs, this.resolveSessionDir(), this.cwd, text, options);
 	}
 
 	getSessionDir(): string {
