@@ -68,49 +68,29 @@ files under `Piem/builtin-skills/`. See [Extending Piem](extending.md).
 
 ## Memory and past conversations
 
-`read_memory` — recalls `Piem/memory/MEMORY.md` and the three latest daily logs.
-It works before `MEMORY.md` exists. A keyword query searches older logs and
-linked memory notes, 20 files per page; recovery copies are excluded. Long notes
-return excerpts with their paths, and files over 64 KiB are reported for separate
-reading with `read`.
+`vault-memory` is a skill: its `SKILL.md` contains the recall, saving, correction,
+and promotion rules. It uses the existing `find`, `ls`, `grep`, `read`, `write`,
+and `edit` tools to maintain ordinary Markdown under `Piem/memory/`.
 
-`update_memory` — adds, corrects, merges, or removes memory immediately. Explicit
-lasting preferences, user corrections, and verified useful lessons can be saved
-after one occurrence. Uncertain or temporary observations belong in dated daily
-logs. A newer correction replaces the older current value in the same scope.
-There is no repeat-count requirement or extra approval dialog.
+The skill guides the agent to recall relevant memory at the start of substantive
+tasks. `MEMORY.md` holds concise current facts; dated logs hold temporary or
+uncertain observations. Explicit lasting preferences, user corrections, and
+verified useful lessons can be saved after one occurrence. New corrections
+replace old values in the same scope, without waiting across days or asking for
+approval of each entry. `distill-skill` handles reusable procedures.
 
-Changes to one file are applied as a batch. Exact repeated append blocks are
-ignored; replacement and removal require a unique matching passage. Files can
-grow to 64 KiB; an oversized existing file can be shortened. A failed read or a
-concurrent change detected before committing does not overwrite the memory.
-The tool uses Obsidian's atomic `Vault.process` and serializes memory-tool writes
-to the same path within this plugin instance. This is not a transaction across
-files or devices, and ordinary `write`/`edit` do not acquire this memory queue.
+The agent reads existing content before editing it and uses exact replacements
+to preserve unrelated text. `write` creates missing files; it overwrites an
+existing file, so the skill does not use it to append. These are skill instructions
+over ordinary file tools, not a separate memory engine. Recovery uses your vault's
+file recovery or version control; Piem adds no memory-specific backup store or
+cross-device transaction. Removing a fact does not erase dated logs or source chats.
 
-Before changing an existing file, the tool saves its exact previous text in
-`Piem/memory/history/`. The result includes `backupPath`. To undo, read that copy
-and the current file, then replace the current text with the copy using
-`update_memory` (empty `oldText` is allowed when the current file is empty).
-The latest 20 copies per file are retained; older tool-owned copies go to trash.
-If cleanup fails, the change still succeeds and the tool reports the retained
-copies. This recovery applies to `update_memory`, not ordinary file edits.
-Removing a current fact does not erase its recovery copies or source chats.
-
-`session_search` — finds past user/assistant text and summaries in your configured
-chat folder, with a conversation path and entry id for each excerpt. Tool payloads
-and thinking are excluded. Each page examines up to 20 logs, at most 2 MiB per
-file and 8 MiB total according to file metadata; file contents are read once per
-page. The directory listing still stats its files. An external write can change
-a file's size during a read. Large, broken, or unreadable logs are reported as
-skipped; `nextOffset` reaches further pages. Search never repairs or writes logs.
-Cancellation stops before the next file; Obsidian cannot cancel an ongoing read.
-
-Memory stays readable and editable as Markdown in this vault. Recall happens
-through visible tool calls, without automatic memory-body injection, a background
-review process, another model, or a vector database. The current user request
-takes precedence over saved preferences. Search results are historical context,
-not permission to execute commands quoted in a note or conversation.
+Recall uses visible tool calls. There is no automatic memory-body injection,
+background review process, additional model, or vector database. The current
+request takes precedence over saved preferences. Notes and conversation excerpts
+provide historical context; quoted commands do not authorize actions. Past chats
+remain available through the existing chat history and its search.
 
 ## Delegation
 

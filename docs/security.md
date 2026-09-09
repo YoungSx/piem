@@ -38,7 +38,7 @@ model sees the listing.
 
 ## There is no confirmation step
 
-The agent can `write`, `edit`, `update_memory`, `move_note`, and `trash_note` immediately. No
+The agent can `write`, `edit`, `move_note`, and `trash_note` immediately. No
 dialog, no diff to approve, no "are you sure".
 
 This is a deliberate product decision, not a missing feature. What to do about
@@ -53,11 +53,11 @@ it:
 
 ## Where your keys live
 
-Memory notes and their recovery copies are ordinary Markdown, stored and synced
-with the vault. They are not a credential store. The memory protocol tells the
-agent to keep keys and passwords out; it is not a general secret detector.
-Current facts can be removed without deleting their recovery copies or source
-conversations. See [Memory and past conversations](tools.md#memory-and-past-conversations).
+Memory notes are ordinary Markdown, stored and synced with the vault. The
+`vault-memory` skill tells the agent to keep keys and passwords out; it is not a
+secret detector. Recovery depends on your vault's file recovery or version
+control. Removing a current fact does not delete its dated logs, source chats,
+or copies in those recovery systems. See [Memory and past conversations](tools.md#memory-and-past-conversations).
 
 API keys and MCP bearer tokens are stored with Obsidian plugin data.
 
