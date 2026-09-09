@@ -732,6 +732,24 @@ describe("ObsidianSessionManager retention", () => {
 		expect([...adapter.trashed].sort()).toEqual([background, focused].sort());
 	});
 
+	it("reference-counts short operations independently of runtime claims", async () => {
+		const adapter = new MemoryAdapter();
+		const manager = new ObsidianSessionManager(adapter as unknown as DataAdapter, mutablePolicy(VAULT_SESSION_DIR, 1), "obsidian-vault:Test");
+		const background = await createStampedSession(manager, FUTURE_MS);
+		const releaseFirst = manager.claimOperation(background);
+		const releaseSecond = manager.claimOperation(background);
+		manager.retainSession(background);
+		releaseFirst();
+		releaseFirst();
+		manager.releaseSession(background);
+		await createStampedSession(manager, FUTURE_MS + 1_000);
+		expect(await adapter.exists(background)).toBe(true);
+		await expect(manager.deleteSession(background)).rejects.toThrow("active operation");
+		releaseSecond();
+		await manager.deleteSession(background);
+		expect(await adapter.exists(background)).toBe(false);
+	});
+
 	it("keeps every chat when the cap is unlimited", async () => {
 		const adapter = new MemoryAdapter();
 		const manager = new ObsidianSessionManager(

@@ -3,6 +3,7 @@ import { type Usage } from "@earendil-works/pi-ai";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
+import type { BookmarkHost } from "../extensions/bookmarkHost";
 import { PromptQueue, type QueueEntry } from "./promptQueue";
 
 /**
@@ -73,6 +74,15 @@ export class SessionRuntime {
 	skills: readonly Skill[] = [];
 	/** Event-subscription teardown for `agent.subscribe(...)`. Must travel with `agent`. */
 	unsubscribeAgent: (() => void) | null = null;
+
+	/** Per-chat original Pi extension, created only when a bookmark command is used. */
+	bookmarkHost?: BookmarkHost;
+	bookmarkWork = 0;
+	bookmarkClosing = false;
+	sessionRefreshing = false;
+	promptPreparations = 0;
+	/** Short session changes that must not overlap an extension snapshot. */
+	sessionOperations = 0;
 
 	// --- transcript / persistence ---
 
@@ -347,6 +357,8 @@ export class SessionRuntime {
 	 * lifecycle and the rest of teardown.
 	 */
 	dispose(): void {
+		this.bookmarkClosing = true;
+		this.bookmarkHost?.dispose();
 		this.unsubscribeAgent?.();
 		this.unsubscribeAgent = null;
 		this.compactionController?.abort();

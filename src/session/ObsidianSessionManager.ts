@@ -136,6 +136,7 @@ export class ObsidianSessionManager {
 	 * today's retention contract has always promised.
 	 */
 	private readonly claimed = new Set<string>();
+	private readonly transientClaims = new Map<string, number>();
 	/** Which hydrated session the legacy single-session API surface reads. */
 	private activePath: string | null = null;
 	/**
@@ -298,8 +299,23 @@ export class ObsidianSessionManager {
 		return this.summarize(metadata, forked);
 	}
 
+	/** A short operation claim. Independent of the active run's set-based ownership. */
+	claimOperation(path: string): () => void {
+		this.getSessionFor(path);
+		this.transientClaims.set(path, (this.transientClaims.get(path) ?? 0) + 1);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			const count = (this.transientClaims.get(path) ?? 1) - 1;
+			if (count > 0) this.transientClaims.set(path, count);
+			else this.transientClaims.delete(path);
+		};
+	}
+
 	async deleteSession(path: string): Promise<void> {
 		const target = normalizeFolderPath(path, { allowPluginInternals: true });
+		if (this.transientClaims.has(target)) throw new Error("The conversation still has an active operation.");
 		const result = await this.fs.remove(target, { force: true });
 		if (!result.ok) {
 			throw result.error;
@@ -311,6 +327,7 @@ export class ObsidianSessionManager {
 		// claim goes with the file: nothing survives to claim a trashed log.
 		this.hydrated.delete(target);
 		this.claimed.delete(target);
+		this.transientClaims.delete(target);
 		if (this.activePath === target) {
 			this.activePath = null;
 		}
@@ -680,7 +697,8 @@ export class ObsidianSessionManager {
 
 	/** What retention must spare: the focused session plus every claimed one. */
 	private protectedPaths(): string[] {
-		return this.activePath ? [...this.claimed, this.activePath] : [...this.claimed];
+		const paths = [...this.claimed, ...this.transientClaims.keys()];
+		return this.activePath ? [...paths, this.activePath] : paths;
 	}
 
 	async getLastCompaction(lane = "main"): Promise<CompactResult | undefined> {
@@ -785,7 +803,7 @@ export class ObsidianSessionManager {
 		if (!foreign.ok) {
 			return { action: "skipped" };
 		}
-		const localLines = serializeLogLines(await live.session.getLog());
+		const localLines = serializeLogLines(await live.session.getLog(), await live.session.getLanes());
 		const result = mergeSessions(localLines, foreign.value.split("\n"), live.metadata.id);
 
 		if (result.merged === null) {
@@ -798,10 +816,10 @@ export class ObsidianSessionManager {
 			await this.writeFileStrict(backupPath, foreign.value);
 			return { action: "conflict", backupPath };
 		}
-		if (result.localTail > 0) {
+		if (result.localTail > 0 || result.localFactsChanged) {
 			const staged = `${target}.tmp`;
 			await this.writeFileStrict(staged, result.merged.join(""), target);
-		} else if (result.foreignTail === 0) {
+		} else if (result.foreignTail === 0 && !result.factsChanged) {
 			// Both sides already hold the full union: writing anything would only
 			// churn mtime and invite the sync plugin to arbitrate a file that did
 			// not change. The live instance is also still current, so no rebuild.

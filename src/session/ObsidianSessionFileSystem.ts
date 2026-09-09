@@ -1,7 +1,7 @@
 import type { DataAdapter } from "obsidian";
 import { err, FileError, ok, type FileInfo, type Result } from "@earendil-works/pi-agent-core";
 import { normalizeVaultPath } from "../vault/path";
-import { SessionLogRepairNet, type SessionDriftEvent } from "./sessionMutationLine";
+import { parseMutationLine, SessionLogRepairNet, type SessionDriftEvent } from "./sessionMutationLine";
 
 /**
  * The slice of pi's `FileSystem` that `JsonlSessionRepo` actually calls.
@@ -155,6 +155,12 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 				stat: () => this.statRaw(target),
 				read: () => this.adapter.read(target),
 			});
+			if (decision.line === null) {
+				const mutation = parseMutationLine(text);
+				if (mutation?.kind === "fact" && mutation.fact === "label") {
+					return err(new FileError("invalid", "The bookmarked reply is no longer on disk. Refresh the conversation and try again.", target));
+				}
+			}
 			if (decision.line !== null) {
 				await this.ensureParentDirectory(target);
 				await this.adapter.append(target, decision.line);

@@ -6,6 +6,7 @@ import { join } from "node:path";
 const script = join(import.meta.dir, "check-bundle.mjs");
 const providers = "node_modules/@earendil-works/pi-ai/dist/providers/";
 const agent = "node_modules/@earendil-works/pi-agent-core/dist/";
+const codingAgent = "node_modules/@earendil-works/pi-coding-agent/";
 
 async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 	const dir = mkdtempSync(join(tmpdir(), "piem-bundle-gate-"));
@@ -18,6 +19,10 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 			[`${agent}harness/env/nodejs.js`]: { bytesInOutput: 100 },
 			[`${agent}harness/tools/edit-diff.js`]: { bytesInOutput: 100 },
 			[`${agent}harness/session/jsonl/codec.js`]: { bytesInOutput: 100 },
+			[`${codingAgent}dist/core/extensions/loader.js`]: { bytesInOutput: 100 },
+			[`${codingAgent}dist/core/extensions/runner.js`]: { bytesInOutput: 100 },
+			[`${codingAgent}dist/core/event-bus.js`]: { bytesInOutput: 100 },
+			[`${codingAgent}examples/extensions/bookmark.ts`]: { bytesInOutput: 100 },
 			...inputs,
 		} } } }));
 		const child = Bun.spawn(["node", script, bundle], { stdout: "pipe", stderr: "pipe" });
@@ -57,5 +62,11 @@ describe("bundle composition after adding the public Node environment", () => {
 		const result = await gate({ [`${agent}harness/env/nodejs.js`]: { bytesInOutput: 0 } });
 		expect(result.exitCode).toBe(1);
 		expect(result.output).toContain("required module missing from bundle");
+	});
+	it("requires the original bookmark and keeps the terminal and dynamic loader out", async () => {
+		expect((await gate({ [`${codingAgent}examples/extensions/bookmark.ts`]: { bytesInOutput: 0 } })).output).toContain("required module missing");
+		for (const module of ["jiti/lib/jiti.mjs", "@earendil-works/pi-tui/dist/index.js", "highlight.js/lib/index.js", "cross-spawn/index.js"]) {
+			expect((await gate({ [`node_modules/${module}`]: { bytesInOutput: 1 } })).output).toContain("banned module in bundle");
+		}
 	});
 });

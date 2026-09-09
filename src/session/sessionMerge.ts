@@ -46,6 +46,10 @@ export interface MergeResult {
 	 */
 	localTail: number;
 	foreignTail: number;
+	/** Facts differ even when no conversation entry was appended. */
+	factsChanged?: boolean;
+	/** The disk lacks local facts, so even a transcript superset needs a write. */
+	localFactsChanged?: boolean;
 }
 
 interface Side {
@@ -72,6 +76,7 @@ interface Side {
  * for a linear file that is the same transcript.
  */
 function parseSide(lines: string[]): Side {
+	let hasMainPointer = false;
 	const side: Side = {
 		headerLine: null,
 		headerId: undefined,
@@ -110,10 +115,13 @@ function parseSide(lines: string[]): Side {
 					side.labels.set(mutation.targetId, mutation.label);
 				}
 				break;
+			case "lane":
+				if (mutation.lane === "main") hasMainPointer = true;
+				break;
 		}
 	}
 	const disk = scanDiskLines(lines);
-	const leaf = disk.laneLeaves.get("main") ?? disk.lastEntryId;
+	const leaf = hasMainPointer ? disk.laneLeaves.get("main") : disk.laneLeaves.get("main") ?? disk.lastEntryId;
 	const walked: string[] = [];
 	const visited = new Set<string>();
 	for (let id = leaf; id !== null && id !== undefined && !visited.has(id) && side.entriesById.has(id); id = side.entriesById.get(id)!.parentId) {
@@ -249,19 +257,41 @@ export function mergeSessions(localLines: string[], foreignLines: string[], sess
 		lines.push(encodeMutation({ kind: "fact", seq, fact: "label", targetId, label }));
 	}
 
-	return { merged: lines, conflicts: [], localTail: localOnly.length, foreignTail: foreignTail.length };
+	const factsChanged = JSON.stringify(nameFact) !== JSON.stringify(local.nameFact)
+		|| [...labels].some(([id, label]) => local.labels.get(id) !== label || !local.labels.has(id));
+	if (localOnly.length === 0) {
+		// Disk already contains the transcript. Keep its branches and operation records
+		// byte-for-byte; adding a label must not linearize an unchanged conversation.
+		const preserved = foreignLines.filter(line => line.trim()).map(line => line.endsWith("\n") ? line : `${line}\n`);
+		let nextSeq = scanDiskLines(foreignLines).maxSeq;
+		let localFactsChanged = false;
+		if (foreign.nameFact === null && local.nameFact !== null) {
+			preserved.push(encodeMutation({ kind: "fact", seq: ++nextSeq, fact: "name", name: local.nameFact.name }));
+			localFactsChanged = true;
+		}
+		for (const [targetId, label] of local.labels) {
+			if (!foreign.labels.has(targetId) && foreign.entriesById.has(targetId)) {
+				preserved.push(encodeMutation({ kind: "fact", seq: ++nextSeq, fact: "label", targetId, label }));
+				localFactsChanged = true;
+			}
+		}
+		return { merged: preserved, conflicts: [], localTail: 0, foreignTail: foreignTail.length, factsChanged, localFactsChanged };
+	}
+	return { merged: lines, conflicts: [], localTail: localOnly.length, foreignTail: foreignTail.length, factsChanged };
 }
 
 /**
  * Flattens pi's in-memory log back into the JSONL wire shape the merge — and
  * the file on disk — speak. `getLog` returns entries nested under `entry`, the
  * opposite of what the wire carries, so this re-flattens through pi's own
- * encoder (records and lane items skipped outright: the merge drops both).
+ * encoder. Final lane pointers restore the branch heads: getLog's entry items
+ * omit their original lane, so treating every append as main alone would undo a
+ * rewind when the reconciler next reads an otherwise unchanged file.
  *
  * No header line: `getLog` never returns one, and {@link mergeSessions} only
  * reads the foreign side's header — the local side is tolerated headerless.
  */
-export function serializeLogLines(items: LogItem[]): string[] {
+export function serializeLogLines(items: LogItem[], lanes: ReadonlyArray<{ lane: string; leafId: string | null }> = []): string[] {
 	const lines: string[] = [];
 	for (const item of items) {
 		if (item.kind === "entry") {
@@ -269,6 +299,10 @@ export function serializeLogLines(items: LogItem[]): string[] {
 		} else if (item.kind === "fact") {
 			lines.push(encodeMutation(item));
 		}
+	}
+	let seq = items.at(-1)?.seq ?? 0;
+	for (const pointer of lanes) {
+		lines.push(encodeMutation({ kind: "lane", seq: ++seq, ...pointer }));
 	}
 	return lines;
 }

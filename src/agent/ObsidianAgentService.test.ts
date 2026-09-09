@@ -5421,3 +5421,71 @@ describe("ObsidianAgentService sync drift reconciliation", () => {
 		expect(await managerOf(service).getSession().findOpenOperations("main")).toEqual([]);
 	});
 });
+
+describe("original bookmark extension integration", () => {
+	it("keeps bookmark ownership when the panel switches conversations", async () => {
+		const service = createService();
+		try {
+			await service.sendPrompt("First conversation");
+			const first = service.getActiveSessionPath()!;
+			await service.newSession();
+			const second = service.getActiveSessionPath()!;
+			expect(first).not.toBe(second);
+			expect((await service.runBookmark(first, "bookmark", "First answer")).kind).toBe("saved");
+			expect(await service.listBookmarks(second)).toEqual([]);
+			expect(await service.listBookmarks(first)).toMatchObject([{ label: "First answer" }]);
+			await service.runBookmark(first, "unbookmark");
+			expect(await service.listBookmarks(first)).toEqual([]);
+		} finally { service.dispose(); }
+	});
+	it("blocks a competing send and applies a pending model setting after the save", async () => {
+		const adapter = new MemoryAdapter();
+		const { service } = createServiceWithSettings(adapter);
+		try {
+			await service.sendPrompt("Answer before saving");
+			const path = service.getActiveSessionPath()!;
+			let release!: () => void;
+			let started!: () => void;
+			const gate = new Promise<void>(resolve => { release = resolve; });
+			const entered = new Promise<void>(resolve => { started = resolve; });
+			const append = adapter.append.bind(adapter);
+			adapter.append = async (target, data) => {
+				if (data.includes('"fact":"label"')) { started(); await gate; }
+				await append(target, data);
+			};
+			const saving = service.runBookmark(path, "bookmark", "Wait for disk");
+			await entered;
+			expect(await service.sendPrompt("Must not race the snapshot")).toBe(false);
+			await service.refreshConfiguration();
+			release();
+			expect((await saving).kind).toBe("saved");
+			expect(await service.sendPrompt("After save")).toBe(true);
+		} finally { service.dispose(); }
+	});
+	it("awaits an in-flight label write before deleting its session", async () => {
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter);
+		try {
+			await service.sendPrompt("Delete after save");
+			const path = service.getActiveSessionPath()!;
+			let release!: () => void;
+			let started!: () => void;
+			const gate = new Promise<void>(resolve => { release = resolve; });
+			const entered = new Promise<void>(resolve => { started = resolve; });
+			const append = adapter.append.bind(adapter);
+			adapter.append = async (target, data) => {
+				if (data.includes('"fact":"label"')) { started(); await gate; }
+				await append(target, data);
+			};
+			const saving = service.runBookmark(path, "bookmark", "To delete");
+			const rejection = saving.catch(() => undefined);
+			await entered;
+			const deleting = service.deleteSession(path);
+			release();
+			await rejection;
+			await deleting;
+			expect(await adapter.exists(path)).toBe(false);
+			await expect(service.runBookmark(path, "bookmark", "Cannot resurrect")).rejects.toThrow();
+		} finally { service.dispose(); }
+	});
+});

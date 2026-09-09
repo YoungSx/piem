@@ -5939,3 +5939,9 @@ input.piem-ask-other::placeholder {
 	cursor: not-allowed;
 	opacity: 0.4;
 }
+
+/* Bookmarked replies use Obsidian’s native modal, with long tokens kept inside it. */
+.piem-bookmark-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
