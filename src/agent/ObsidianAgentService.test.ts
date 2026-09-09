@@ -4033,6 +4033,32 @@ describe("memory through ordinary skills and file tools", () => {
 		};
 	}
 
+	it("retains a loaded skill through service compaction, reopening and the next model request", async () => {
+		const contexts: Context[] = [];
+		const body = `SERVICE_SKILL_START\n${"Keep this rule\n".repeat(200)}SERVICE_SKILL_END`;
+		const adapter = new MemoryAdapter();
+		const { service, settings } = createServiceWithSettings(adapter, {
+			vaultFiles: { "Piem/skills/example/SKILL.md": `---\nname: example\ndescription: Service skill\n---\n${body}` },
+			streamFn: workflow([["read_skill", { name: "example" }], null, null, null], contexts),
+		});
+		settings.compaction = { reserveTokens: 1024, keepRecentTokens: 1024 };
+		try {
+			expect(await service.sendPrompt("Use the skill")).toBe(true);
+			expect(await service.sendPrompt("Recent task\n".repeat(1000))).toBe(true);
+			requestUrlMock.mockImplementation(async () => sseResponse([summaryChunk("Earlier work summarized"), usageChunk()]));
+			await service.compactNow();
+			expect(service.getSnapshot().messages.some((message) => message.role === "custom" && message.customType === "piem-skill-context")).toBe(true);
+			const sessionPath = service.getSnapshot().session!.path;
+			await service.newSession();
+			await service.openSession(sessionPath);
+			expect(await service.sendPrompt("Continue after reopening")).toBe(true);
+			expect(JSON.stringify(contexts.at(-1)?.messages).includes("SERVICE_SKILL_END")).toBe(true);
+			expect(contexts.at(-1)?.systemPrompt?.includes("SERVICE_SKILL_END")).toBe(false);
+		} finally {
+			service.dispose();
+		}
+	});
+
 	it("saves, corrects, and recalls a preference across three chats with ordinary file tools", async () => {
 		const vaultFiles = officialSkillFiles();
 		const path = "Piem/memory/MEMORY.md";

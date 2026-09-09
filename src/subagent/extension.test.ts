@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
 	Agent,
 	convertToLlm,
+	formatSkillInvocation,
 	type AgentMessage,
 	type AgentTool,
 	type Skill,
@@ -625,6 +626,31 @@ describe("runSubagent", () => {
 		});
 		expect(result.text).toBe("Report.");
 		expect(summaries).toBe(1);
+	});
+
+	it("keeps activated skill instructions when a child compacts and resumes", async () => {
+		let summaries = 0;
+		const childSkill = { ...SKILL, content: `CHILD_SKILL_START\n${"Keep the rule\n".repeat(200)}CHILD_SKILL_END` };
+		const seen: string[] = [];
+		const stream = fullContextStreamFn(2);
+		const result = await runSubagent({
+			task: "Continue this work",
+			role,
+			tools: [noopTool()],
+			model: SMALL_WINDOW_MODEL,
+			initialMessages: [
+				{ role: "user", content: formatSkillInvocation(childSkill), timestamp: 1 },
+				{ role: "user", content: "Recent task\n".repeat(1000), timestamp: 2 },
+			],
+			streamFn: (model, context, options) => { seen.push(JSON.stringify(context.messages)); return stream(model, context, options); },
+			thinkingLevel: "off",
+			compactionSettings: { enabled: true, reserveTokens: 1024, keepRecentTokens: 1024 },
+			models: summarizingModels(() => { summaries++; }),
+		});
+		expect(summaries).toBeGreaterThan(0);
+		expect(result.messages.some((message) => message.role === "compactionSummary")).toBe(true);
+		expect(JSON.stringify(result.messages).includes("CHILD_SKILL_END")).toBe(true);
+		expect(seen.at(-1)?.includes("CHILD_SKILL_END")).toBe(true);
 	});
 
 	it("finishes the run when compaction itself fails", async () => {

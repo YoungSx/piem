@@ -2,6 +2,7 @@ import type { ExecutionEnv, Skill, SkillDiagnostic } from "@earendil-works/pi-ag
 import { loadSourcedSkills } from "@earendil-works/pi-agent-core";
 import { createUserSkillsEnv, nodeSkillsHome } from "./nodeSkillsHost";
 import { normalizeUserSkillsDir } from "./userSkillsDir";
+import { bindSkillResources } from "./skillResources";
 
 /**
  * The user-level skill directories pi itself reads, in pi's precedence order.
@@ -91,6 +92,20 @@ export async function loadUserSkills(
 	try {
 		env = options.env ?? await (options.createEnv ?? createUserSkillsEnv)();
 		if (env) result = await loadUserSkillsFromEnv(env, customDir);
+		if (env) {
+			for (const skill of result.skills) {
+				try {
+					await bindSkillResources(skill, env, async (read) => {
+						if (options.env) return read(options.env);
+						const current = await (options.createEnv ?? createUserSkillsEnv)();
+						if (!current) throw new Error("User skill resources are unavailable on this device.");
+						try { return await read(current); } finally { await current.cleanup(); }
+					});
+				} catch (error) {
+					result.diagnostics.push(loadDiagnostic("read resources for", error, skill.filePath));
+				}
+			}
+		}
 	} catch (error) {
 		const dirs = userSkillsDirs(customDir);
 		result = {

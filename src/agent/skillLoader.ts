@@ -7,6 +7,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { BUILTIN_SKILLS_DIR } from "../skills/builtinSkillPackage";
 import { emptyBuiltinSkillReport, type BuiltinSkillReport } from "../skills/builtinSkillState";
+import { bindSkillResources } from "../skills/skillResources";
 
 /**
  * Folder user-authored skills live in, relative to the vault root.
@@ -39,12 +40,26 @@ export async function loadVaultSkills(
 	env: ExecutionEnv,
 	skillsDir: string = DEFAULT_SKILLS_DIR,
 ): Promise<{ skills: Skill[]; diagnostics: SkillDiagnostic[] }> {
-	return loadSkills(env, `/${skillsDir}`);
+	return loadSkillsWithResources(env, `/${skillsDir}`);
 }
 
 /** Official defaults use the same parser and real Vault paths as authored skills. */
 export async function loadBuiltinSkills(env: ExecutionEnv): Promise<{ skills: Skill[]; diagnostics: SkillDiagnostic[] }> {
-	return loadSkills(env, `/${BUILTIN_SKILLS_DIR}`);
+	return loadSkillsWithResources(env, `/${BUILTIN_SKILLS_DIR}`);
+}
+
+async function loadSkillsWithResources(env: ExecutionEnv, directory: string): Promise<{ skills: Skill[]; diagnostics: SkillDiagnostic[] }> {
+	const result = await loadSkills(env, directory);
+	for (const skill of result.skills) {
+		try {
+			// Vault paths have no filesystem symlinks; avoid a second disk probe
+			// for a directory Pi has just enumerated through the Vault API.
+			await bindSkillResources(skill, env, undefined, skill.filePath.slice(0, skill.filePath.lastIndexOf("/")));
+		} catch (error) {
+			result.diagnostics.push({ type: "warning", code: "read_failed", path: skill.filePath, message: `Skill resources unavailable: ${String(error)}` });
+		}
+	}
+	return result;
 }
 
 /**
@@ -204,5 +219,5 @@ export function composeSystemPrompt(basePrompt: string, skills: readonly Skill[]
 	if (!formatted) {
 		return basePrompt;
 	}
-	return `${basePrompt}\n\n${formatted}\n\nIn Piem, use the read_skill tool with the listed name to read a skill's complete instructions. For referenced resources inside the vault, use the vault read tool with the vault-relative path. User-level skill locations outside the vault are not accessible to the vault read tool.`;
+	return `${basePrompt}\n\n${formatted}\n\nIn Piem, use the read_skill tool with the listed name to read a skill's instructions. Follow its continuation offsets until complete. Read referenced text resources with read_skill using the same name and a path relative to that skill's directory. This also works for user-level skills outside the vault; ordinary vault file tools stay inside the vault. Skills do not grant shell execution.`;
 }

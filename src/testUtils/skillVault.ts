@@ -23,6 +23,7 @@ export function createSkillVault(host: { TFile: new () => HostFile; TFolder: new
 	};
 	const vault = {
 		configDir: ".obsidian",
+		adapter: { exists: async (path: string) => entries.has(path) },
 		getName: () => "Test",
 		getAbstractFileByPath: (path: string) => entries.get(path) ?? null,
 		getFileByPath: (path: string) => { const file = entries.get(path); return file instanceof host.TFile ? file : null; },
@@ -35,6 +36,7 @@ export function createSkillVault(host: { TFile: new () => HostFile; TFolder: new
 			if (content === undefined) throw new Error(`Missing file: ${file.path}`);
 			return content;
 		},
+		readBinary: async (file: HostFile) => new TextEncoder().encode(await vault.read(file)).buffer,
 		createFolder: async (path: string) => folder(path),
 		create: async (path: string, content: string) => {
 			if (entries.has(path)) throw new Error(`File already exists: ${path}`);

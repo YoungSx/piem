@@ -81,12 +81,16 @@ vocabulary. None is a defect or a workaround — each is load-bearing for a
 feature, and none sends anything anywhere beyond what is described above.
 
 **Direct filesystem access.** On desktop the plugin reaches Node `fs` through
-Electron's `require`, bypassing the vault API. This is how user-level skill
-folders are read and written (`~/.pi/agent/skills`, `~/.agents/skills`): the
-vault API cannot see outside the vault. There is no shell execution and no
-probing of arbitrary paths — the paths touched are your home directory and the
-skill folders beneath it. On mobile, where the host exposes no `require`, this
-degrades to "unavailable" rather than failing the plugin.
+Electron's `require` to read user-level skill folders (`~/.pi/agent/skills`,
+`~/.agents/skills`, and the extra directory you configure). The vault API cannot
+see these files. `read_skill` can read a selected skill's UTF-8 text resources on
+demand: each file is capped at 1 MiB, and canonical-path checks keep it within
+that skill's directory. Absolute paths, hidden paths, parent traversal and
+escaping symlinks are rejected. Loaded text is sent to the active model like
+other tool results; resources already loaded are retained through compaction.
+This is read-only access and provides no shell execution. Ordinary vault tools
+remain vault-scoped. On mobile, where the host exposes no `require`, user-level
+skills are unavailable rather than failing the plugin.
 
 **Vault enumeration.** Search and task tools call `vault.getFiles` /
 `vault.getMarkdownFiles`, which list every file in the vault with its full path.

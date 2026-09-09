@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { convertToLlm, type AgentMessage, type CompactResult } from "@earendil-works/pi-agent-core";
+import { convertToLlm, formatSkillInvocation, type AgentMessage, type CompactResult } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Model, Models, Usage } from "@earendil-works/pi-ai";
 import { compactIfNeeded, toCompactedMessages } from "./compaction";
+import { createReadSkillTool } from "../tools/skillTools";
+import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
+import { MemoryAdapter } from "../testUtils/memoryAdapter";
+import { stubWindowTimers } from "../testUtils/windowStub";
+import type { DataAdapter } from "obsidian";
 
 const EMPTY_USAGE: Usage = {
 	input: 0,
@@ -182,6 +187,70 @@ describe("toCompactedMessages", () => {
 		const messages = toCompactedMessages(createCompactResult("EARLIER HISTORY", []));
 
 		expect(JSON.stringify(convertToLlm(messages))).toContain("EARLIER HISTORY");
+	});
+});
+
+describe("skill instructions across compaction", () => {
+	const skill = { name: "example", description: "Test", filePath: "/Piem/skills/example/SKILL.md", content: `START_SKILL\n${"Keep this rule.\n".repeat(200)}END_SKILL` };
+	const settings = { enabled: true, reserveTokens: 1024, keepRecentTokens: 1024 };
+	const recent = () => [userMessage(`Continue\n${"recent work\n".repeat(800)}`), assistantMessage("Recent answer", EMPTY_USAGE)];
+	const run = (messages: AgentMessage[], previous?: CompactResult) => compactIfNeeded({
+		messages, previous, model: createModel({ contextWindow: 32_768 }), models: createModels("Earlier work summarized"), thinkingLevel: "off", settings, force: true,
+	});
+
+	it("keeps the exact loaded body after repeated compaction and serialization", async () => {
+		const toolResult = await createReadSkillTool(() => [skill]).execute("skill-call", { name: skill.name });
+		const call: AgentMessage = { ...assistantMessage("", EMPTY_USAGE), stopReason: "toolUse", content: [{ type: "toolCall", id: "skill-call", name: "read_skill", arguments: { name: skill.name } }] };
+		const history: AgentMessage[] = [userMessage("Use the skill"), call, { ...toolResult, role: "toolResult", toolName: "read_skill", toolCallId: "skill-call", isError: false, timestamp: 1 }, ...recent()];
+		const first = await run(history);
+		expect(first.status).toBe("compacted");
+		if (first.status !== "compacted") throw new Error("Expected compaction");
+		expect(JSON.stringify(convertToLlm(first.messages))).toContain("END_SKILL");
+		const stored = JSON.parse(JSON.stringify(first.result)) as CompactResult;
+		const second = await run([...toCompactedMessages(stored), ...recent()], stored);
+		expect(second.status).toBe("compacted");
+		if (second.status !== "compacted") throw new Error("Expected compaction");
+		const texts = convertToLlm(second.messages).flatMap((message) => typeof message.content === "string" ? [message.content] : message.content.filter((part) => part.type === "text").map((part) => part.text));
+		expect(texts.filter((text) => text.includes("END_SKILL"))).toHaveLength(1);
+		expect(texts.some((text) => text.includes(skill.content))).toBe(true);
+	});
+
+	it("preserves explicit slash instructions while summarizing the surrounding request", async () => {
+		const outcome = await run([userMessage(formatSkillInvocation(skill, "Focus on yesterday")), assistantMessage("Done", EMPTY_USAGE), ...recent()]);
+		expect(outcome.status).toBe("compacted");
+		if (outcome.status !== "compacted") throw new Error("Expected compaction");
+		expect(JSON.stringify(convertToLlm(outcome.messages))).toContain("END_SKILL");
+	});
+
+	it("does not preserve failed skill calls as standing instructions", async () => {
+		const result = await createReadSkillTool(() => [skill]).execute("skill-call", { name: skill.name });
+		const outcome = await run([userMessage("Use a skill"), { ...result, role: "toolResult", toolName: "read_skill", toolCallId: "skill-call", isError: true, timestamp: 1 }, ...recent()]);
+		expect(outcome.status).toBe("compacted");
+		if (outcome.status !== "compacted") throw new Error("Expected compaction");
+		expect(JSON.stringify(outcome.messages)).not.toContain("END_SKILL");
+	});
+
+	it("persists retained instructions through the real session codec and reload", async () => {
+		const restore = stubWindowTimers();
+		try {
+			const outcome = await run([userMessage(formatSkillInvocation(skill)), assistantMessage("Done", EMPTY_USAGE), ...recent()]);
+			if (outcome.status !== "compacted") throw new Error("Expected compaction");
+			const adapter = new MemoryAdapter() as unknown as DataAdapter;
+			const manager = new ObsidianSessionManager(adapter, "Piem/chats", "skill-test");
+			const session = await manager.createSession({ provider: "test", modelId: "test", thinkingLevel: "off" });
+			await manager.appendMessage(userMessage("Initial request"));
+			await manager.appendCompactionFor(session.path, outcome.result);
+			const reopened = new ObsidianSessionManager(adapter, "Piem/chats", "skill-test");
+			await reopened.loadSession(session.path);
+			const context = await reopened.buildSessionContextFor(session.path, "main");
+			expect(JSON.stringify(convertToLlm(context.messages)).includes("END_SKILL")).toBe(true);
+			const previous = await reopened.getLastCompactionFor(session.path);
+			const again = await run([...context.messages, ...recent()], previous);
+			if (again.status !== "compacted") throw new Error("Expected compaction");
+			expect(again.messages.filter((message) => message.role === "custom" && message.customType === "piem-skill-context")).toHaveLength(1);
+		} finally {
+			restore();
+		}
 	});
 });
 
