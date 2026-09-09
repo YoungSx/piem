@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models, RetryPolicy } from "@earendil-works/pi-ai";
 import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from "./compactionSettings";
+import { retainSkillContext } from "./skillContext";
 
 export { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings, type CompactResult };
 
@@ -109,8 +110,8 @@ export function needsCompaction(
  *
  * pi owns every decision here — when to compact ({@link shouldCompact}), where
  * to cut ({@link prepareCompaction}), and how to summarize ({@link compact}).
- * This wrapper only projects the plugin's message list into the harness `Entry`
- * shape those functions expect and reports the outcome.
+ * This wrapper projects messages into the harness `Entry` shape and restores
+ * already-loaded skill instructions in the retained tail before persistence.
  */
 export async function compactIfNeeded(request: CompactionRequest): Promise<CompactionOutcome> {
 	const settings = request.settings ?? DEFAULT_COMPACTION_SETTINGS;
@@ -147,10 +148,11 @@ export async function compactIfNeeded(request: CompactionRequest): Promise<Compa
 		return { status: "failed", message: compacted.error.message };
 	}
 
+	const result = { ...compacted.value, retainedTail: retainSkillContext(request.messages, compacted.value.retainedTail) };
 	return {
 		status: "compacted",
-		messages: toCompactedMessages(compacted.value),
-		result: compacted.value,
+		messages: toCompactedMessages(result),
+		result,
 	};
 }
 

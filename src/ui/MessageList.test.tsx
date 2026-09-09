@@ -307,6 +307,13 @@ describe("MessageList message chrome", () => {
 		expect(trace?.querySelector(".piem-chat__trace-name")?.textContent).toBe("System");
 		expect(trace?.textContent).not.toContain("Piem");
 	});
+
+	it("keeps hidden skill context out of the visible transcript", async () => {
+		const host = renderMessages([{ role: "custom", customType: "piem-skill-context", display: false, content: "PRESERVED_SKILL", timestamp: 1 }]);
+		await flushRender();
+		expect(host.textContent).not.toContain("PRESERVED_SKILL");
+		expect(host.querySelector("details.piem-chat__trace--harness")).toBeNull();
+	});
 });
 
 /**

@@ -81,7 +81,7 @@ Piem uses Pi's skill loader and prompt formatter for the
 [Agent Skills format](https://agentskills.io/specification). The model first sees
 a catalog of skill names, descriptions and locations. When one applies, it calls
 `read_skill` for the instructions; typing `/name` provides them directly.
-Referenced files inside the vault are read separately when needed. This is
+Referenced files are read separately when needed. This is
 **progressive disclosure**: caching the skill bodies in memory does not add them
 all to the model's context.
 
@@ -90,13 +90,20 @@ takes effect on your **next message**, with no plugin reload. Disabled skills ar
 excluded; `disable-model-invocation: true` hides a skill from the model's catalog
 while keeping explicit invocation available.
 
-Some skills need capabilities beyond these instructions. User-level skills outside
-the vault can supply their main instructions, but Piem's built-in file tools cannot
-read their companion resources. Piem provides no shell for bundled scripts.
-`read_skill` also caps output at 50 KiB or 2,000 lines and has no continuation
-parameter; split long instructions into references inside the vault. Earlier skill
-instructions can be summarized during conversation compaction rather than kept
-verbatim; invoke the skill again when its exact steps are needed.
+`read_skill` returns up to 50 KiB per page and tells the model how to continue
+without splitting a character. Continuations carry a content fingerprint: if the
+file changed, the model starts again instead of mixing two versions. The same tool
+reads a referenced UTF-8 text file by skill name and relative path, including
+desktop user-level skills. Resources must stay inside that skill's directory,
+contain no hidden path segments, and be at most 1 MiB; symlinks cannot escape the
+directory. Vault images remain available through `read`. Piem provides no shell
+for bundled scripts.
+
+Instructions already loaded through `read_skill` or `/name` survive conversation
+compaction verbatim, including loaded reference pages. Repeated pages are kept
+once, and a newly loaded version replaces the older retained copy. This works for
+subagents and reopened chats too; preserved copies do not add duplicate chat rows.
+Unactivated skills still contribute only their catalog entries.
 
 In **Extensions**, badges show **Built-in**, **Global**, or **Vault**. Built-in
 and vault files have an **Open** button; imported vault skills also keep their
@@ -112,13 +119,16 @@ pick a repo or a subfolder, review the plan, and Piem writes the `SKILL.md`
 files into `Piem/skills/` along with a provenance sidecar. That sidecar is what
 lets the **Update** button refetch later.
 
-The general GitHub importer currently filters known binary formats, but can also
-download text files such as scripts. Piem does not execute those scripts. This
-differs from the built-in release resource, which enforces Markdown-only files.
-For a skill with references, select its parent collection folder: importing a URL
-that points directly at the skill folder currently copies only `SKILL.md` and
-omits its companion files. Single-file URLs also import only that file. Check the
-plan for the references your skill needs.
+Folder URLs import `SKILL.md` together with its Markdown references, whether the
+URL points at one skill or a collection. Single-file URLs import only that file.
+Scripts and other non-Markdown files are skipped before downloading. Imports are
+limited to 10 skills, 40 Markdown files and 256 KiB per file; an oversized package
+fails rather than silently losing Markdown resources. Failed writes are reported
+without claiming a successful installation.
+
+For an older single-folder import that is missing references, select **Update**.
+Piem checks the file set even when the upstream tree has not changed and keeps
+the existing installation directory. Local modifications still cause a conflict.
 
 ## Prompt templates
 

@@ -1,4 +1,4 @@
-import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-agent-core";
 import { parse } from "yaml";
 import type { FetchFn } from "../net/obsidianFetch";
 import { DEFAULT_SKILLS_DIR } from "../agent/skillLoader";
@@ -20,8 +20,8 @@ export interface SkillProvenance {
 	/** GitHub ref the import was resolved against (branch or tag name). */
 	ref?: string;
 	/**
-	 * Git tree sha at import time. Equal on refetch means upstream is unchanged
-	 * and nothing needs downloading at all; it is a pin, not a version number.
+	 * Git tree sha at import time, for provenance. File hashes still decide an
+	 * update because a newer importer can discover previously omitted resources.
 	 */
 	treeSha?: string;
 	importedAt: string;
@@ -65,7 +65,7 @@ export interface FetchedSource {
 	ref?: string;
 	treeSha?: string;
 	skills: FetchedSkill[];
-	/** Non-fatal problems: a skipped oversized file, a name collision. */
+	/** Non-fatal problems, such as a skipped non-Markdown file. */
 	notes: string[];
 }
 
@@ -95,10 +95,6 @@ const MAX_SKILLS = 10;
 const MAX_FILE_BYTES = 256 * 1024;
 /** Maximum directory depth of a SKILL.md below the pasted subpath. */
 const MAX_SKILL_DEPTH = 3;
-/** Extensions never fetched — the import is markdown-only by design. */
-const BINARY_EXTENSIONS = new Set([
-	"png", "jpg", "jpeg", "gif", "webp", "ico", "pdf", "zip", "gz", "tgz", "tar", "mp3", "mp4", "wav", "woff", "woff2", "ttf", "otf", "eot", "exe", "dll", "so", "dylib", "wasm",
-]);
 
 export const SIDECAR_FILENAME = "piem-source.json";
 
@@ -230,13 +226,12 @@ export async function planUpdate(
 	remote: { treeSha?: string; files: { path: string; content: string }[] },
 	localHashes: Record<string, string | undefined>,
 ): Promise<UpdatePlan> {
-	if (provenance.treeSha && remote.treeSha && provenance.treeSha === remote.treeSha) {
-		return { status: "up-to-date" };
-	}
 	const remoteHashes = new Map<string, string>();
 	for (const file of remote.files) {
 		remoteHashes.set(file.path, await sha256Hex(file.content));
 	}
+	if (remoteHashes.size === Object.keys(provenance.files).length
+		&& [...remoteHashes].every(([path, hash]) => provenance.files[path] === hash)) return { status: "up-to-date" };
 	const entries: UpdatePlanEntry[] = [];
 	let hasConflicts = false;
 	for (const file of remote.files) {
@@ -369,7 +364,7 @@ export class SkillImporter {
 	async installSkill(source: FetchedSource, skill: FetchedSkill): Promise<void> {
 		const files: Record<string, string> = {};
 		for (const file of skill.files) {
-			await this.env.writeFile(this.installPath(skill.dirName, file.path), file.content);
+			getOrThrow(await this.env.writeFile(this.installPath(skill.dirName, file.path), file.content));
 			files[file.path] = await sha256Hex(file.content);
 		}
 		const provenance: SkillProvenance = {
@@ -380,7 +375,7 @@ export class SkillImporter {
 			importedAt: new Date().toISOString(),
 			files,
 		};
-		await this.env.writeFile(this.installPath(skill.dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`);
+		getOrThrow(await this.env.writeFile(this.installPath(skill.dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`));
 	}
 
 	async readProvenance(dirName: string): Promise<SkillProvenance | undefined> {
@@ -410,7 +405,15 @@ export class SkillImporter {
 	 */
 	async planUpdateFor(dirName: string, provenance: SkillProvenance): Promise<{ source: FetchedSource; skill: FetchedSkill; plan: UpdatePlan }> {
 		const source = await this.fetchSource(provenance.url);
-		const skill = source.skills.find((candidate) => candidate.dirName === dirName);
+		let skill = source.skills.find((candidate) => candidate.dirName === dirName);
+		if (!skill) {
+			// Older single-folder imports used the fallback directory "skill".
+			// Match an unambiguous recorded name, then keep the existing directory.
+			const installed = await this.env.readTextFile(this.installPath(dirName, "SKILL.md"));
+			const name = installed.ok ? parseSkillFrontmatter(installed.value).name : undefined;
+			const matches = name ? source.skills.filter((candidate) => candidate.name === name) : [];
+			if (matches.length === 1 && matches[0]) skill = { ...matches[0], dirName };
+		}
 		if (!skill) {
 			throw new Error(`Source no longer contains skill "${dirName}": ${provenance.url}`);
 		}
@@ -437,14 +440,14 @@ export class SkillImporter {
 				continue;
 			}
 			if (entry.action === "remove") {
-				await this.env.remove(this.installPath(dirName, entry.path));
+				getOrThrow(await this.env.remove(this.installPath(dirName, entry.path)));
 				continue;
 			}
 			const file = skill.files.find((candidate) => candidate.path === entry.path);
 			if (!file) {
 				throw new Error(`Plan references missing file "${entry.path}"`);
 			}
-			await this.env.writeFile(this.installPath(dirName, file.path), file.content);
+			getOrThrow(await this.env.writeFile(this.installPath(dirName, file.path), file.content));
 		}
 		const files: Record<string, string> = {};
 		for (const file of skill.files) {
@@ -458,7 +461,7 @@ export class SkillImporter {
 			importedAt: new Date().toISOString(),
 			files,
 		};
-		await this.env.writeFile(this.installPath(dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`);
+		getOrThrow(await this.env.writeFile(this.installPath(dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`));
 	}
 
 	private async fetchGithubTree(parsed: Extract<ParsedSkillSource, { kind: "github-tree" }>, originalUrl: string): Promise<FetchedSource> {
@@ -481,7 +484,7 @@ export class SkillImporter {
 		const scope = parsed.subpath ? `${parsed.subpath.replace(/\/+$/, "")}/` : "";
 		const inScope = blobs.filter((blob) => blob.path.startsWith(scope));
 
-		const markers = inScope.filter((blob) => {
+		const candidates = inScope.filter((blob) => {
 			const relative = blob.path.slice(scope.length);
 			if (relative === "SKILL.md") {
 				return true;
@@ -493,6 +496,11 @@ export class SkillImporter {
 			// stray deep-nested SKILL.md in a dependency folder is not pulled in.
 			return relative.split("/").length - 2 <= MAX_SKILL_DEPTH;
 		});
+		// Like Pi's loader, a directory with SKILL.md is one package. Do not
+		// install nested reference examples as extra skills or duplicate resources.
+		const markers = candidates.filter((candidate) => !candidates.some((parent) =>
+			parent !== candidate && candidate.path.startsWith(parent.path.slice(0, -"SKILL.md".length)),
+		));
 		if (markers.length === 0) {
 			throw new Error(`No SKILL.md files found under "${parsed.subpath || "/"}" in ${parsed.owner}/${parsed.repo}`);
 		}
@@ -504,9 +512,10 @@ export class SkillImporter {
 		const dirNames = new Map<string, string>();
 		for (const marker of markers) {
 			const dir = marker.path.slice(scope.length, marker.path.length - "SKILL.md".length).replace(/\/+$/, "");
-			let name = sanitizeDirName(dir);
+			const base = sanitizeDirName(dir || basename(parsed.subpath) || parsed.repo);
+			let name = base;
 			for (let suffix = 2; [...dirNames.values()].includes(name); suffix++) {
-				name = `${sanitizeDirName(dir)}-${suffix}`;
+				name = `${base}-${suffix}`;
 			}
 			dirNames.set(dir, name);
 		}
@@ -517,7 +526,7 @@ export class SkillImporter {
 		for (const [dir] of dirNames) {
 			for (const blob of inScope) {
 				// `dir` is scope-relative; repo paths need the scope prefixed back on.
-				const included = dir === "" ? blob.path === `${scope}SKILL.md` : blob.path.startsWith(`${scope}${dir}/`);
+				const included = blob.path.startsWith(dir === "" ? scope : `${scope}${dir}/`);
 				if (included) {
 					wanted.set(blob.path, blob.size);
 				}
@@ -525,25 +534,25 @@ export class SkillImporter {
 		}
 
 		const downloads: string[] = [];
-		for (const [path, size] of wanted) {
-			if (downloads.length >= MAX_FILES) {
-				notes.push(`Import limited to the first ${MAX_FILES} files`);
-				break;
-			}
-			if (isBinaryPath(path)) {
-				notes.push(`Skipped binary file: ${path}`);
+		// Entry points come first; a resource-heavy skill must not displace a
+		// later skill's SKILL.md and leave an unusable package in the plan.
+		const entryPaths = new Set(markers.map((marker) => marker.path));
+		const ordered = [...wanted].sort(([a], [b]) => Number(entryPaths.has(b)) - Number(entryPaths.has(a)));
+		for (const [path, size] of ordered) {
+			if (!isMarkdownResource(path)) {
+				notes.push(`Skipped non-Markdown file: ${path}`);
 				continue;
 			}
+			if (downloads.length >= MAX_FILES) throw new Error(`Import contains too many files; at most ${MAX_FILES} Markdown files are allowed. Select fewer skills.`);
 			if (size > MAX_FILE_BYTES) {
-				notes.push(`Skipped oversized file: ${path}`);
-				continue;
+				throw new Error(`Skill file too large: ${path}`);
 			}
 			downloads.push(path);
 		}
 
 		const byDir = new Map<string, FetchedFile[]>();
 		for (const path of downloads) {
-			const dir = [...dirNames.keys()].find((candidate) => (candidate === "" ? path === `${scope}SKILL.md` : path.startsWith(`${scope}${candidate}/`)));
+			const dir = [...dirNames.keys()].find((candidate) => path.startsWith(candidate === "" ? scope : `${scope}${candidate}/`));
 			if (dir === undefined) {
 				continue;
 			}
@@ -557,8 +566,11 @@ export class SkillImporter {
 		const skills: FetchedSkill[] = [];
 		for (const [dirName, files] of byDir) {
 			const skillFile = files.find((file) => file.path === "SKILL.md");
-			const frontmatter = skillFile ? parseSkillFrontmatter(skillFile.content) : {};
-			skills.push({ dirName, name: frontmatter.name ?? dirName, description: frontmatter.description ?? "", files });
+			if (!skillFile) throw new Error(`Import is missing SKILL.md: ${dirName}`);
+			const frontmatter = parseSkillFrontmatter(skillFile.content);
+			const installedDir = markers.length === 1 && markers[0]?.path === `${scope}SKILL.md`
+				? sanitizeDirName(frontmatter.name ?? dirName) : dirName;
+			skills.push({ dirName: installedDir, name: frontmatter.name ?? installedDir, description: frontmatter.description ?? "", files });
 		}
 		return { kind: "github-tree", url: originalUrl, ref: parsed.ref, treeSha: data.sha, skills, notes };
 	}
@@ -581,7 +593,9 @@ export class SkillImporter {
 		if (!response.ok) {
 			throw new Error(`Download failed (${response.status}): ${url}`);
 		}
-		return response.text();
+		const text = await response.text();
+		if (new TextEncoder().encode(text).byteLength > MAX_FILE_BYTES) throw new Error(`Skill file too large: ${url}`);
+		return text;
 	}
 }
 
@@ -594,9 +608,9 @@ function encodePath(path: string): string {
 	return path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
 }
 
-function isBinaryPath(path: string): boolean {
-	const dot = path.lastIndexOf(".");
-	return dot > path.lastIndexOf("/") && BINARY_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
+function isMarkdownResource(path: string): boolean {
+	return path.toLowerCase().endsWith(".md") && !/[\\\0]/.test(path)
+		&& path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 }
 
 function basename(path: string): string {

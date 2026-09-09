@@ -154,11 +154,19 @@ async function provenanceWith(files: Record<string, string>): Promise<SkillProve
 }
 
 describe("planUpdate", () => {
-	test("equal tree sha short-circuits to up-to-date", async () => {
+	test("unchanged file hashes report up-to-date", async () => {
 		const provenance = await provenanceWith({ "SKILL.md": "a" });
-		expect(await planUpdate(provenance, { treeSha: "tree-1", files: [{ path: "SKILL.md", content: "changed" }] }, {})).toEqual({
+		expect(await planUpdate(provenance, { treeSha: "tree-1", files: [{ path: "SKILL.md", content: "a" }] }, {})).toEqual({
 			status: "up-to-date",
 		});
+	});
+
+	test("adds previously omitted resources even when the source tree has not changed", async () => {
+		const provenance = await provenanceWith({ "SKILL.md": "a" });
+		const plan = await planUpdate(provenance, {
+			treeSha: "tree-1", files: [{ path: "SKILL.md", content: "a" }, { path: "references/detail.md", content: "reference" }],
+		}, { "SKILL.md": await sha256Hex("a") });
+		expect(plan).toEqual({ status: "changed", hasConflicts: false, entries: [{ path: "references/detail.md", action: "add" }] });
 	});
 
 	test("clean local copies update, untouched files are skipped, new files add", async () => {
@@ -391,6 +399,64 @@ describe("SkillImporter.fetchSource", () => {
 		expect(source.skills[0]?.files).toEqual([{ path: "SKILL.md", content: "---\nname: Summarize\n---\nbody" }]);
 	});
 
+	test("imports a skill folder with its Markdown resources but never downloads scripts", async () => {
+		const fetched: string[] = [];
+		const routes = stubFetch({
+			[TREE_API]: { body: treeResponse([
+				{ path: "skills/example/SKILL.md", type: "blob", size: 80 },
+				{ path: "skills/example/references/detail.md", type: "blob", size: 8 },
+				{ path: "skills/example/scripts/run.py", type: "blob", size: 8 },
+				{ path: "skills/example/assets/image.png", type: "blob", size: 8 },
+				{ path: "skills/example-neighbor/private.md", type: "blob", size: 8 },
+			]) },
+			"https://raw.githubusercontent.com/acme/skills/main/skills/example/SKILL.md": { body: "---\nname: example\ndescription: Reads a reference\n---\n[Details](references/detail.md)" },
+			"https://raw.githubusercontent.com/acme/skills/main/skills/example/references/detail.md": { body: "Resource" },
+		});
+		const importer = new SkillImporter(async (input, init) => {
+			fetched.push(String(input));
+			return routes(input, init);
+		}, new MemoryEnv());
+
+		for (const scope of ["skills", "skills/example"]) {
+			const source = await importer.fetchSource(`https://github.com/acme/skills/tree/main/${scope}`);
+			expect(source.skills).toHaveLength(1);
+			expect(source.skills[0]?.dirName).toBe("example");
+			expect(source.skills[0]?.files.map((file) => file.path).sort()).toEqual(["SKILL.md", "references/detail.md"]);
+			expect(source.notes.some((note) => note.includes("run.py"))).toBe(true);
+		}
+		expect(fetched.some((url) => url.endsWith("run.py") || url.endsWith("image.png") || url.endsWith("private.md"))).toBe(false);
+	});
+
+	test("treats a repository-root skill as one package and keeps its resources", async () => {
+		const importer = new SkillImporter(stubFetch({
+			[TREE_API]: { body: treeResponse([
+				{ path: "SKILL.md", type: "blob", size: 80 },
+				{ path: "references/detail.md", type: "blob", size: 8 },
+			]) },
+			"https://raw.githubusercontent.com/acme/skills/main/SKILL.md": { body: "---\nname: example\ndescription: Root skill\n---\nBody" },
+			"https://raw.githubusercontent.com/acme/skills/main/references/detail.md": { body: "Resource" },
+		}), new MemoryEnv());
+		const source = await importer.fetchSource("https://github.com/acme/skills/tree/main");
+		expect(source.skills[0]?.dirName).toBe("example");
+		expect(source.skills[0]?.files.map((file) => file.path)).toEqual(["SKILL.md", "references/detail.md"]);
+	});
+
+	test("checks the downloaded size even when GitHub reports a smaller file", async () => {
+		const importer = new SkillImporter(stubFetch({
+			"https://raw.githubusercontent.com/acme/skills/main/example.md": { body: "大".repeat(100_000) },
+		}), new MemoryEnv());
+		await expect(importer.fetchSource("https://github.com/acme/skills/blob/main/example.md")).rejects.toThrow("too large");
+	});
+
+	test("rejects an incomplete package instead of dropping resources at the file limit", async () => {
+		const entries = ["example/SKILL.md", ...Array.from({ length: 40 }, (_, i) => `example/references/${i}.md`)];
+		const importer = new SkillImporter(stubFetch({
+			[TREE_API]: { body: treeResponse(entries.map((path) => ({ path, type: "blob", size: 10 }))) },
+			...Object.fromEntries(entries.map((path) => [`https://raw.githubusercontent.com/acme/skills/main/${path}`, { body: path.endsWith("SKILL.md") ? "---\nname: example\ndescription: Test\n---\nBody" : "Resource" }])),
+		}), new MemoryEnv());
+		await expect(importer.fetchSource("https://github.com/acme/skills/tree/main")).rejects.toThrow("at most 40");
+	});
+
 	test("surfaces HTTP failures as errors", async () => {
 		const importer = new SkillImporter(stubFetch({ [TREE_API]: { status: 404, body: "nope" } }), new MemoryEnv());
 		expect(importer.fetchSource("https://github.com/acme/skills/tree/main")).rejects.toThrow("404");
@@ -468,7 +534,7 @@ describe("SkillImporter install/update round-trip", () => {
 		expect(env.read("/Piem/skills/summarize/SKILL.md")).toBe("user edit");
 	});
 
-	test("an unchanged tree reports up-to-date without downloading files", async () => {
+	test("unchanged downloaded files report up-to-date", async () => {
 		const { importer } = await installedEnv();
 		const provenance = await importer.readProvenance("summarize");
 		if (!provenance) {
@@ -476,5 +542,48 @@ describe("SkillImporter install/update round-trip", () => {
 		}
 		const { plan } = await importer.planUpdateFor("summarize", provenance);
 		expect(plan).toEqual({ status: "up-to-date" });
+	});
+
+	test("updates an existing single-folder import using its skill name and keeps its directory", async () => {
+		const env = new MemoryEnv();
+		const body = "---\nname: example\ndescription: Test\n---\nBody";
+		const url = "https://github.com/acme/skills/tree/main/skills/example";
+		const routes = stubFetch({
+			[TREE_API]: { body: treeResponse([{ path: "skills/example/SKILL.md", type: "blob", size: 80 }, { path: "skills/example/references/detail.md", type: "blob", size: 10 }]) },
+			"https://raw.githubusercontent.com/acme/skills/main/skills/example/SKILL.md": { body },
+			"https://raw.githubusercontent.com/acme/skills/main/skills/example/references/detail.md": { body: "reference" },
+		});
+		const importer = new SkillImporter(routes, env);
+		const oldSkill = { name: "example", dirName: "skill", description: "Test", files: [{ path: "SKILL.md", content: body }] };
+		await importer.installSkill({ kind: "github-tree", url, treeSha: "tree-1", skills: [oldSkill], notes: [] }, oldSkill);
+		const provenance = await importer.readProvenance("skill");
+		if (!provenance) throw new Error("Missing provenance");
+		const { source, skill, plan } = await importer.planUpdateFor("skill", provenance);
+		await importer.applyUpdate("skill", source, skill, plan);
+		expect(env.read("/Piem/skills/skill/references/detail.md")).toBe("reference");
+		expect(env.read("/Piem/skills/example/SKILL.md")).toBeUndefined();
+	});
+
+	test("propagates failed writes instead of recording a successful import", async () => {
+		const env = new MemoryEnv();
+		env.writeFile = async (path) => err(new FileError("permission_denied", "Read-only vault", path));
+		const importer = new SkillImporter(stubFetch({}), env);
+		const skill = { dirName: "example", name: "example", description: "Test", files: [{ path: "SKILL.md", content: "body" }] };
+		await expect(importer.installSkill({ kind: "raw", url: "https://example.com/skill.md", skills: [skill], notes: [] }, skill)).rejects.toThrow("Read-only vault");
+		expect(env.read(`/Piem/skills/example/${SIDECAR_FILENAME}`)).toBeUndefined();
+	});
+
+	test("keeps the prior provenance when an update write fails", async () => {
+		const { env, importer, routes } = await installedEnv();
+		const sidecarPath = `/Piem/skills/summarize/${SIDECAR_FILENAME}`;
+		const before = env.read(sidecarPath);
+		const provenance = await importer.readProvenance("summarize");
+		if (!provenance) throw new Error("Missing provenance");
+		routes[TREE_API] = { body: treeResponse([{ path: "skills/summarize/SKILL.md", type: "blob", size: 20 }], "tree-2") };
+		routes["https://raw.githubusercontent.com/acme/skills/main/skills/summarize/SKILL.md"] = { body: "new body" };
+		const { source, skill, plan } = await importer.planUpdateFor("summarize", provenance);
+		env.writeFile = async (path) => err(new FileError("permission_denied", "Read-only vault", path));
+		await expect(importer.applyUpdate("summarize", source, skill, plan)).rejects.toThrow("Read-only vault");
+		expect(env.read(sidecarPath)).toBe(before);
 	});
 });

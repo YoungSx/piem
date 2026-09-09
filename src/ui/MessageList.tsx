@@ -1913,6 +1913,7 @@ function extractDiff(details: unknown): string | null {
  * "Piem" would attribute machine text to the model.
  */
 function HarnessTrace({ message, context }: { message: AgentMessage; context: MessageContext }): React.JSX.Element | null {
+	if (message.role === "custom" && message.display === false) return null;
 	const rendered = renderHarnessBody(message, context);
 	if (!rendered) {
 		return null;
