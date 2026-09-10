@@ -24,6 +24,12 @@ export interface SubagentEntryIconProps {
 	snapshots: readonly SubagentSnapshot[];
 	/** Opens the monitor panel; with an id, already showing that run. */
 	onOpen: (subagentId?: string) => void;
+	/**
+	 * Puts every finished run away, the panel's own archive action by reference —
+	 * the same registry call, so the two controls cannot disagree about what
+	 * "finished" covers.
+	 */
+	onArchiveFinished: () => void;
 }
 
 /**
@@ -48,7 +54,7 @@ export interface SubagentEntryIconProps {
  * the popover entirely and opens the panel, because a tap has no hover to end
  * and React reports `pointerover` for it (see {@link openOnHover}).
  */
-export function SubagentEntryIcon({ snapshots, onOpen }: SubagentEntryIconProps): React.JSX.Element | null {
+export function SubagentEntryIcon({ snapshots, onOpen, onArchiveFinished }: SubagentEntryIconProps): React.JSX.Element | null {
 	const t = useT();
 	const [openedBy, setOpenedBy] = useState<OpenReason>(null);
 	const isOpen = openedBy !== null;
@@ -120,6 +126,12 @@ export function SubagentEntryIcon({ snapshots, onOpen }: SubagentEntryIconProps)
 
 	const runningCount = snapshots.filter((snapshot) => snapshot.status === "running").length;
 	const isRunning = anyRunning(snapshots);
+	/*
+	 * The archive control shows itself only while something could actually move —
+	 * the panel's rule, mirrored here: a press over an empty set would be a button
+	 * that lies, and archiving never touches a running child.
+	 */
+	const anyArchivable = snapshots.some((snapshot) => !snapshot.archived && snapshot.status !== "running");
 	const label = isRunning
 		? t.t("subagents.entryRunning", { count: runningCount })
 		: t.t("subagents.entrySettled", { count: snapshots.length });
@@ -194,6 +206,40 @@ export function SubagentEntryIcon({ snapshots, onOpen }: SubagentEntryIconProps)
 					aria-label={t.t("subagents.popoverAria")}
 					onMouseOver={suppressOwnTooltip}
 				>
+					{/*
+					 * The popover's two chat-level controls, above the per-run rows. The
+					 * rows stay navigation-only — one control per run — so tidying and
+					 * "show me everything" live here and nowhere per child.
+					 */}
+					<div className="piem-chat__subagents-actions">
+						{/*
+						 * Archives in place rather than closing: the registry event re-renders
+						 * this popover, so the button going grey right under the pointer is
+						 * the receipt. Archived runs stay listed — the panel's closed section
+						 * is where they live, and this is a shortcut, not the feature.
+						 */}
+						<button
+							type="button"
+							className="piem-chat__subagents-action"
+							disabled={!anyArchivable}
+							aria-label={t.t("subagents.archiveFinishedAria")}
+							onClick={onArchiveFinished}
+						>
+							{t.t("subagents.archiveFinished")}
+						</button>
+						<button
+							type="button"
+							className="piem-chat__subagents-action"
+							aria-label={t.t("subagents.openPanelAria")}
+							onClick={() => {
+								// Same rule as the icon itself: close before navigating.
+								closeNow();
+								onOpen();
+							}}
+						>
+							{t.t("subagents.openPanel")}
+						</button>
+					</div>
 					{snapshots.map((snapshot) => (
 						<button
 							key={snapshot.id}
