@@ -26,6 +26,7 @@ import { selectSessionsToEvict, UNLIMITED_SESSION_RETENTION } from "./retention"
 import { mergeSessions, serializeLogLines } from "./sessionMerge";
 import { collapseSkillInvocation, parseSkillInvocation } from "../agent/skillInvocation";
 import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
+import { readSessionMetadata } from "./sessionMetadata";
 
 export interface SessionDefaults {
 	provider: string;
@@ -127,6 +128,8 @@ export class ObsidianSessionManager {
 	 * goes through {@link deleteSession}, which drops the entry with the file.
 	 */
 	private readonly hydrated = new Map<string, HydratedSession>();
+	/** Only in-flight opens: simultaneous callers must share one Pi mutation queue. */
+	private readonly loading = new Map<string, Promise<HydratedSession>>();
 	/**
 	 * Paths a long-lived consumer (a session runtime) has claimed with
 	 * {@link retainSession}. Claims are the multi-session half of "live": the
@@ -233,23 +236,52 @@ export class ObsidianSessionManager {
 	 * active session stays hydrated for whichever background runtime holds it.
 	 */
 	async loadSession(path: string): Promise<ActiveSessionInfo> {
+		const info = await this.prepareSession(path);
+		this.focusSession(info.path);
+		return info;
+	}
+
+	/** Commits a prepared conversation's focus without another asynchronous read. */
+	focusSession(path: string): void {
 		const target = normalizeFolderPath(path, { allowPluginInternals: true });
-		const alreadyLive = this.hydrated.get(target);
-		if (alreadyLive) {
-			this.activePath = target;
-			this.lastOpened?.write(target);
-			return this.summarize(alreadyLive.metadata, alreadyLive.session);
+		if (!this.hydrated.has(target)) throw new Error(`No session loaded: ${target}`);
+		this.activePath = target;
+		this.lastOpened?.write(target);
+	}
+
+	/**
+	 * Prepares a stored conversation while the previous one remains focused.
+	 * The service can build its runtime before committing the visible switch
+	 * through `focusSession`; overlapping prepares share the same native Session.
+	 */
+	async prepareSession(path: string): Promise<ActiveSessionInfo> {
+		const target = normalizeFolderPath(path, { allowPluginInternals: true });
+		let live = this.hydrated.get(target);
+		if (!live) {
+			let pending = this.loading.get(target);
+			if (!pending) {
+				pending = this.hydrateSession(target);
+				this.loading.set(target, pending);
+			}
+			try {
+				live = await pending;
+			} finally {
+				if (this.loading.get(target) === pending) this.loading.delete(target);
+			}
 		}
-		const metadata = await this.findMetadata(target);
+		return this.summarize(live.metadata, live.session);
+	}
+
+	private async hydrateSession(path: string): Promise<HydratedSession> {
+		const metadata = await this.findMetadata(path);
 		if (!metadata) {
-			throw new Error(`Session not found: ${target}`);
+			throw new Error(`Session not found: ${path}`);
 		}
 		const session = await this.repo(this.resolveSessionDir()).open(metadata);
 		const liveMetadata = await session.getMetadata();
-		this.hydrated.set(liveMetadata.path, { session, metadata: liveMetadata });
-		this.activePath = liveMetadata.path;
-		this.lastOpened?.write(liveMetadata.path);
-		return this.summarize(liveMetadata, session);
+		const live = { session, metadata: liveMetadata };
+		this.hydrated.set(liveMetadata.path, live);
+		return live;
 	}
 
 	/**
@@ -899,8 +931,7 @@ export class ObsidianSessionManager {
 	}
 
 	private async findMetadata(path: string): Promise<JsonlSessionMetadata | undefined> {
-		const metadata = await this.repo(this.resolveSessionDir()).list();
-		return metadata.find((item) => item.path === path);
+		return readSessionMetadata(this.fs, this.resolveSessionDir(), path);
 	}
 
 	private async countJsonlFiles(path: string): Promise<number> {

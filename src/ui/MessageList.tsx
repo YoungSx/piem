@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { AssistantMessage, ImageContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
@@ -460,28 +460,13 @@ export function MessageList({
 	onDismissQuestion,
 }: MessageListProps): React.JSX.Element {
 	const t = useT();
-	const activeIndex = streamingIndex(isStreaming, messages);
-	/*
-	 * Both of these are derived once per render rather than memoized, matching
-	 * the index walks above and below: the transcript array is a new identity on
-	 * every streamed token, so a memo keyed on it would recompute anyway.
-	 */
-	const liveRow = liveRowRef(messages, activeIndex);
-	/*
-	 * The calls still out, as a set the rows can query. Derived here rather than
-	 * per row so a transcript of two hundred rows does not scan the pending list
-	 * two hundred times, and derived from ids rather than names because two
-	 * concurrent `read` calls are two rows with one name between them.
-	 */
-	const runningToolCalls = new Set(pendingToolCalls.map((pending) => pending.id));
-	// Pairs first: the fold planner reads them, because a call whose result failed
-	// has to break a run the same way the failure itself always has.
-	const pairPlan = planToolPairs(messages);
-	const foldPlan = planTraceFolds(messages, { mode: traceExpand, showAgentDetails, pairs: pairPlan });
-	const compactionPlan = planCompactionRows({ messages, event: compactionEvent, retained: compactionRetained });
-	const context: MessageContext = { app, component, sourcePath, showAgentDetails, traceExpand, foldPlan, pairPlan, liveRow, runningToolCalls, streamingMessageIndex: activeIndex, contextWindow, t };
+	// Neither changing notes nor replacing a callback changes historical prose.
+	// A real history update reads the latest base, and a click the latest action.
+	const sourcePathRef = useRef(sourcePath);
+	const actionsRef = useRef({ onRetry, onEditMessage, onFork });
+	sourcePathRef.current = sourcePath;
+	actionsRef.current = { onRetry, onEditMessage, onFork };
 	const regenerateIndex = regenerableIndex(messages);
-	const editIndex = editableQuestionIndex(messages);
 	/*
 	 * Empty-screen suggestions exist for the configured, ready state only — the
 	 * connect-model branch has its one call to action, and the skeleton has
@@ -626,50 +611,27 @@ export function MessageList({
 						quickActions={emptyActions}
 						onQuickAction={onQuickAction}
 					/>
-				) : (
-					messages.map((message, index) => (
-						<React.Fragment key={index}>
-							{/*
-							 * The tidying row, drawn at the position the tidy happened rather
-							 * than where pi files its summary. See `compactionRow.ts`; the
-							 * message it was projected from draws nothing of its own.
-							 */}
-							{seamRows(compactionPlan, index, context)}
-							{compactionDrawsMessage(compactionPlan, index) ? null : (
-								<MessageRow
-									index={index}
-									message={message}
-									isStreaming={index === activeIndex}
-									renderContext={context}
-									replyTiming={replyTimingFor(messages, index) ?? undefined}
-									onRetry={onRetry && index === regenerateIndex ? () => onRetry(index) : undefined}
-									turnCloses={message.role === "assistant" ? closesTurn(messages, index) : undefined}
-									settled={runSettled}
-									/*
-									 * The edit and fork hide themselves on an unsettled run — the
-									 * resend truncates the transcript, and a turn still streaming,
-									 * being compacted, or holding a tool call in the air is not a
-									 * tail worth standing on. `onRetry` leans on its caller for
-									 * this; the edit owns it, because the control sits on an
-									 * *earlier* message than the streaming one and would otherwise
-									 * stay live through it.
-									 */
-									onEdit={
-										onEditMessage && index === editIndex && runSettled ? () => onEditMessage(index) : undefined
-									}
-									onFork={onFork && index === regenerateIndex && runSettled ? () => onFork(index) : undefined}
-									notPersisted={unpersistedMessages?.includes(message)}
-								/>
-							)}
-						</React.Fragment>
-					))
-				)}
-				{/*
-				 * A tidy in flight draws at the tail, because that is where "now" is —
-				 * and, once it lands, where its own summary row will be. The reader
-				 * watching the panel work sees one row change state in place.
-				 */}
-				{seamRows(compactionPlan, messages.length, context)}
+				) : null}
+				<MessageHistory
+					messages={messages}
+					messageCount={messages.length}
+					isStreaming={isStreaming}
+					pendingToolCalls={pendingToolCalls}
+					unpersistedMessages={unpersistedMessages}
+					app={app}
+					component={component}
+					sourcePathRef={sourcePathRef}
+					actionsRef={actionsRef}
+					canRetry={Boolean(onRetry)}
+					canEdit={Boolean(onEditMessage)}
+					canFork={Boolean(onFork)}
+					runSettled={runSettled}
+					showAgentDetails={showAgentDetails}
+					traceExpand={traceExpand}
+					compactionEvent={compactionEvent}
+					compactionRetained={compactionRetained}
+					contextWindow={contextWindow}
+				/>
 				{/*
 				 * The question sits at the tail, below the last thing said and above the
 				 * running-tools line — which is where the turn actually is: the tool that
@@ -790,6 +752,82 @@ function focusAnchor(event: React.MouseEvent<HTMLAnchorElement>, anchorId: strin
 	event.preventDefault();
 	target.focus();
 }
+
+interface MessageHistoryProps extends Pick<MessageListProps,
+	"messages" | "isStreaming" | "pendingToolCalls" | "unpersistedMessages" | "app" | "component" |
+	"compactionEvent" | "compactionRetained" | "contextWindow"> {
+	/** Pi appends in place; capture the length before that same array grows again. */
+	messageCount: number;
+	showAgentDetails: boolean;
+	traceExpand: TraceExpandSetting;
+	sourcePathRef: React.MutableRefObject<string>;
+	actionsRef: React.MutableRefObject<Pick<MessageListProps, "onRetry" | "onEditMessage" | "onFork">>;
+	canRetry: boolean;
+	canEdit: boolean;
+	canFork: boolean;
+	runSettled: boolean;
+}
+
+/**
+ * Historical rows have no dependency on the current note or the composer.
+ * Keep their plans, icons and action subtrees together behind one React memo
+ * boundary; live questions and status stay outside it. Streaming bypasses the
+ * boundary because Pi may grow a message in place between two snapshots.
+ */
+const MessageHistory = memo(function MessageHistory({
+	messages, isStreaming, pendingToolCalls, unpersistedMessages, app, component,
+	sourcePathRef, actionsRef, canRetry, canEdit, canFork, runSettled,
+	showAgentDetails, traceExpand, compactionEvent, compactionRetained, contextWindow,
+}: MessageHistoryProps): React.JSX.Element {
+	const t = useT();
+	const activeIndex = streamingIndex(isStreaming, messages);
+	const liveRow = liveRowRef(messages, activeIndex);
+	const runningToolCalls = new Set(pendingToolCalls.map((pending) => pending.id));
+	const pairPlan = planToolPairs(messages);
+	const foldPlan = planTraceFolds(messages, { mode: traceExpand, showAgentDetails, pairs: pairPlan });
+	const compactionPlan = planCompactionRows({ messages, event: compactionEvent, retained: compactionRetained });
+	const context: MessageContext = {
+		app, component, sourcePath: sourcePathRef.current, showAgentDetails, traceExpand,
+		foldPlan, pairPlan, liveRow, runningToolCalls, streamingMessageIndex: activeIndex, contextWindow, t,
+	};
+	const regenerateIndex = regenerableIndex(messages);
+	const editIndex = editableQuestionIndex(messages);
+	return (
+		<>
+			{messages.map((message, index) => (
+				<React.Fragment key={index}>
+					{/* The tidy appears where it happened, rather than at Pi's summary index. */}
+					{seamRows(compactionPlan, index, context)}
+					{compactionDrawsMessage(compactionPlan, index) ? null : (
+						<MessageRow
+							index={index}
+							message={message}
+							isStreaming={index === activeIndex}
+							renderContext={context}
+							replyTiming={replyTimingFor(messages, index) ?? undefined}
+							onRetry={canRetry && index === regenerateIndex ? () => actionsRef.current.onRetry?.(index) : undefined}
+							turnCloses={message.role === "assistant" ? closesTurn(messages, index) : undefined}
+							settled={runSettled}
+							// Editing or forking an unsettled tail must remain unavailable.
+							onEdit={canEdit && index === editIndex && runSettled ? () => actionsRef.current.onEditMessage?.(index) : undefined}
+							onFork={canFork && index === regenerateIndex && runSettled ? () => actionsRef.current.onFork?.(index) : undefined}
+							notPersisted={unpersistedMessages?.includes(message)}
+						/>
+					)}
+				</React.Fragment>
+			))}
+			{/* A tidy in flight has no summary message yet, so it occupies the tail. */}
+			{seamRows(compactionPlan, messages.length, context)}
+		</>
+	);
+}, (previous, next) => {
+	if (previous.isStreaming || next.isStreaming) return false;
+	const { pendingToolCalls: previousCalls, unpersistedMessages: previousUnsaved = [], ...previousRest } = previous;
+	const { pendingToolCalls: nextCalls, unpersistedMessages: nextUnsaved = [], ...nextRest } = next;
+	if (previousCalls.length !== nextCalls.length || previousCalls.some((call, index) => call.id !== nextCalls[index]?.id)) return false;
+	if (previousUnsaved.length !== nextUnsaved.length || previousUnsaved.some((message, index) => message !== nextUnsaved[index])) return false;
+	return (Object.keys(nextRest) as (keyof typeof nextRest)[]).every((key) => Object.is(previousRest[key], nextRest[key]));
+});
 
 /**
  * Announces a settled assistant turn once.

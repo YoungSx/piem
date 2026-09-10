@@ -79,6 +79,9 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 10. Native extension dialogs, composer completion and lifecycle/model adapters
  *     measured 1,853,307 B. The ceiling follows to 1.77 MiB. The metafile still
  *     contains no terminal runtime; the added bytes implement native host UI.
+ * 11. Direct session opening, pending-selection cleanup and the memoized
+ *     transcript measured 1,857,788 B (+4,265 B over the release baseline).
+ *     The ceiling follows to 1.78 MiB; no new dependency was introduced.
  *
  * 11. Generic component factories, scoped shortcuts and public completion
  *     compatibility measured 1,879,729 B; the ceiling followed to 1.80 MiB.

@@ -625,7 +625,7 @@ export function ChatComposer({
 							 * queueing, and it names itself, because an icon here would
 							 * just be the next thing a reader has to guess.
 							 */
-							<button type="button" className="piem-chat__queue-button" onClick={onSend}>
+							<button type="button" className="piem-chat__queue-button" onClick={onSend} disabled={isInitializing}>
 								{t.t("chat.queueDraft")}
 							</button>
 						) : null}

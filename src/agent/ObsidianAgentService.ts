@@ -279,6 +279,8 @@ export interface ChatSnapshot {
 	/** Which choice requests go out on, absent while the builtin pair serves. */
 	activeModelId?: string;
 	session?: ActiveSessionInfo;
+	/** A selected conversation is still being read or prepared; the visible chat stays put. */
+	isOpeningSession?: boolean;
 	/**
 	 * Bumped whenever the set of stored sessions or their labels changes. The
 	 * active session's id cannot detect that: deleting a different session or
@@ -694,6 +696,10 @@ export class ObsidianAgentService {
 	private readonly runtimes = new Map<string, SessionRuntime>();
 	/** The session file the panel is showing; `null` before the first adopt. */
 	private currentPath: string | null = null;
+	private disposed = false;
+	private sessionOpenSequence = 0;
+	private sessionOpenQueue: Promise<void> = Promise.resolve();
+	private pendingSessionOpen: { path: string; promise: Promise<void> } | null = null;
 	/**
 	 * The snapshot is the ACTIVE session's view, so these two mirror the active
 	 * runtime's `sessionInfo` / `sessionRevision` for `getSnapshot` — and stand
@@ -1009,7 +1015,7 @@ export class ObsidianAgentService {
 	 * A caller that needs the agent checks `this.agent` after awaiting.
 	 */
 	async initialize(): Promise<void> {
-		if (this.current()?.agent) {
+		if (this.disposed || this.current()?.agent) {
 			return;
 		}
 		if (this.initialization) {
@@ -1025,6 +1031,7 @@ export class ObsidianAgentService {
 				this.initializationError = undefined;
 			},
 			(error: unknown) => {
+				if (this.disposed) return;
 				this.initializationError = causeMessage(error);
 				this.notify();
 			},
@@ -1038,7 +1045,7 @@ export class ObsidianAgentService {
 
 	async sendPrompt(prompt: string, images: ImageContent[] = []): Promise<boolean> {
 		const trimmedPrompt = prompt.trim();
-		if (!trimmedPrompt) {
+		if (!trimmedPrompt || this.pendingSessionOpen || this.disposed) {
 			return false;
 		}
 
@@ -1046,6 +1053,7 @@ export class ObsidianAgentService {
 		// before the command lookup below — otherwise the very first message of a
 		// session would report every `/name` as unknown.
 		await this.initialize();
+		if (this.pendingSessionOpen || this.disposed) return false;
 
 		// A failed start leaves no agent, and the banner already carries why —
 		// the snapshot falls back to `initializationError`. A second message
@@ -1995,7 +2003,9 @@ export class ObsidianAgentService {
 	 * rather than appended to.
 	 */
 	async retryFrom(index: number): Promise<boolean> {
+		if (this.pendingSessionOpen || this.disposed) return false;
 		await this.initialize();
+		if (this.pendingSessionOpen || this.disposed) return false;
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
 		if (!agent) {
@@ -2034,10 +2044,11 @@ export class ObsidianAgentService {
 	 */
 	async editAndResend(index: number, prompt: string, images: ImageContent[] = []): Promise<boolean> {
 		const trimmed = prompt.trim();
-		if (!trimmed) {
+		if (!trimmed || this.pendingSessionOpen || this.disposed) {
 			return false;
 		}
 		await this.initialize();
+		if (this.pendingSessionOpen || this.disposed) return false;
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
 		if (!agent) {
@@ -2313,6 +2324,7 @@ export class ObsidianAgentService {
 	 * cannot spend the user's money invisibly.
 	 */
 	async suggestQuickActions(scope: SuggestionScope): Promise<QuickAction[] | null> {
+		if (this.pendingSessionOpen || this.disposed) return null;
 		const settings = this.getSettings();
 		// No focused runtime is one more "nothing to show", not an error: the
 		// catch below promises the UI that this method never throws, and a throw
@@ -2511,9 +2523,10 @@ export class ObsidianAgentService {
 	}
 
 	async newSession(options?: { force?: boolean }): Promise<void> {
-		if (this.newSessionInFlight) {
+		if (this.newSessionInFlight || this.disposed) {
 			return;
 		}
+		this.cancelSessionOpen();
 		// A session with no turns and nothing running is already the blank sheet
 		// a click is asking for: swapping in another one would mint a duplicate
 		// empty session on disk and spend retention budget on it. Double-clicks
@@ -2592,7 +2605,9 @@ export class ObsidianAgentService {
 	 * the same refusals {@link retryFrom} makes, for the same reasons.
 	 */
 	async forkSessionAt(index: number): Promise<boolean> {
+		if (this.pendingSessionOpen || this.disposed) return false;
 		await this.initialize();
+		if (this.pendingSessionOpen || this.disposed) return false;
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
 		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing) {
@@ -2802,76 +2817,95 @@ export class ObsidianAgentService {
 	 * log holds. That distinction is what makes a background run survive being
 	 * switched away from and back to (issue #235).
 	 */
-	async openSession(path: string): Promise<void> {
-		await this.initialize();
-		if (this.sessionManager.getActiveSessionPath() === path) {
-			return;
+	openSession(path: string): Promise<void> {
+		if (this.disposed) return Promise.resolve();
+		if (this.pendingSessionOpen?.path === path) return this.pendingSessionOpen.promise;
+		if (this.currentPath === path && this.current()?.agent) {
+			this.cancelSessionOpen();
+			return Promise.resolve();
 		}
-		const abandonedPath = this.currentPath;
+		const sequence = ++this.sessionOpenSequence;
+		// Serialize preparation as well as the disk read: the same session must
+		// never acquire two live agents when A → B → A overtakes a cold open.
+		// Superseded requests are skipped before work and cannot move focus after it.
+		const opening = this.sessionOpenQueue.then(() => this.openSessionRequest(path, sequence));
+		// A cleanup/listener failure must not poison later navigation requests.
+		this.sessionOpenQueue = opening.catch(() => undefined);
+		const hadPendingSelection = this.pendingSessionOpen !== null;
+		this.pendingSessionOpen = { path, promise: opening };
+		// Before the first await: the panel can announce the wait and stop sends
+		// while the current conversation and its draft are still on screen.
+		// A live runtime only needs its existing summary refreshed. Publishing a
+		// loading frame on that short path needlessly redraws the departed history
+		// before the requested chat. Keep the send guard synchronous either way.
+		if (hadPendingSelection || !this.runtimes.get(path)?.agent || !this.sessionManager.isLoaded(path)) this.notify();
+		return opening;
+	}
 
-		let info: ActiveSessionInfo;
-		try {
-			info = await this.sessionManager.loadSession(path);
-		} catch (error) {
-			// A toast, not the banner: the transcript on screen is still the one it
-			// was a moment ago, and a red bar over a healthy conversation says the
-			// damage is there rather than in the chat that would not open.
-			this.toast("chat.sessionOpenFailed", error);
-			return;
-		}
-
-		// Deliberately no abort of the session being left. Its runtime keeps
-		// running in the background; `abortSession(path)` is the opt-in kill.
-		// The untouched blank sheet is the one exception — nothing is running
-		// there to keep, and the sweep below is its retirement.
-		this.currentPath = path;
-		const rt = this.runtimeFor(path);
-		rt.sessionInfo = info;
-		this.sessionInfo = info;
-		// Sweep only after the target loaded: a failed load must leave the blank
-		// sheet exactly as it was, still holding the panel.
-		await this.sweepAbandonedBlankSheet(abandonedPath);
-		// A runtime that already holds an agent is re-focused, not re-opened, and
-		// everything below this line would undo it. `agent.state.messages` is the
-		// live transcript — a run still in flight has written nothing to the log
-		// yet — so `adoptSessionContext` would swap the working agent for one
-		// rebuilt from the log's stale tail, dropping the reply being streamed and
-		// orphaning the request that is streaming it. `settleInterruptedRuns` would
-		// then read that run's own open ledger entry as a crash left by a previous
-		// process, close it as aborted, and offer to resume it. Both are correct for
-		// a first touch and wrong for a return.
-		if (rt.agent) {
-			this.notify();
-			return;
-		}
-		// The lane belongs to the session being left; the incoming one opens on its
-		// own main line.
-		rt.activeLane = "main";
-		const context = await this.sessionManager.buildSessionContextFor(path, rt.activeLane);
-		rt.lastCompaction = await this.sessionManager.getLastCompactionFor(path, rt.activeLane);
-		// The claim belongs to the transcript that raised it; the one now on
-		// screen gets its own from its own runs.
-		rt.compactionPending = false;
-		rt.compactionGate = null;
-		// Usage is per-transcript, and a reloaded session's compaction cost was
-		// already paid in an earlier run, so the running total starts from history.
-		rt.overheadUsage = [];
-		// Follow state and pins are per-runtime and adopted below; nothing to clear.
-		await this.adoptSessionContext(rt, context);
-		// Same placement as `initializeAgent`: the offer describes the transcript
-		// now on screen, so it is settled only after adoption. The runtime's own
-		// sweep already ran once at creation; this one covers a re-focus of an
-		// existing runtime whose log may have moved since.
-		await this.settleInterruptedRuns(rt, context);
-		rt.panelError = undefined;
-		// Deliberately no `ensureConfigurationFor` here either. Opening is a pure
-		// read under whole-file last-writer-wins sync: an append fired at open
-		// time makes the stale local copy the newest writer on disk, and the sync
-		// plugin could then bury the other device's newer chat with it. The model
-		// assertion happens at run start instead — see `beginRunOperation`.
-		this.sessionInfo = info;
-		rt.sessionInfo = info;
+	private cancelSessionOpen(): void {
+		this.sessionOpenSequence += 1;
+		if (!this.pendingSessionOpen) return;
+		this.pendingSessionOpen = null;
 		this.notify();
+	}
+
+	private async openSessionRequest(path: string, sequence: number): Promise<void> {
+		const isCurrentRequest = () => !this.disposed && sequence === this.sessionOpenSequence;
+		let release: (() => void) | undefined;
+		let preparing: SessionRuntime | undefined;
+		try {
+			if (!isCurrentRequest()) return;
+			await this.initialize();
+			if (!isCurrentRequest()) return;
+			const info = await this.sessionManager.prepareSession(path);
+			if (!isCurrentRequest()) return;
+			// Hydration is not focus. Protect the incoming file from retention while
+			// extensions and tools are being prepared, then release on every exit.
+			release = this.sessionManager.claimOperation(info.path);
+			const rt = this.runtimeFor(info.path);
+			rt.sessionInfo = info;
+			if (!rt.agent) {
+				preparing = rt;
+				rt.activeLane = "main";
+				const context = await this.sessionManager.buildSessionContextFor(info.path, rt.activeLane);
+				rt.lastCompaction = await this.sessionManager.getLastCompactionFor(info.path, rt.activeLane);
+				if (!isCurrentRequest()) return;
+				rt.compactionPending = false;
+				rt.compactionGate = null;
+				rt.overheadUsage = [];
+				await this.adoptSessionContext(rt, context);
+				if (this.disposed) return;
+				await this.settleInterruptedRuns(rt, context);
+				rt.panelError = undefined;
+			}
+			if (!isCurrentRequest()) return;
+			const abandonedPath = this.currentPath;
+			// One synchronous commit, after all fallible preparation. A failed or
+			// superseded open leaves the old title, transcript and draft together.
+			// Existing agents are simply refocused; their background runs stay live.
+			this.sessionManager.focusSession(info.path);
+			this.currentPath = info.path;
+			this.sessionInfo = info;
+			this.pendingSessionOpen = null;
+			this.notify();
+			await this.sweepAbandonedBlankSheet(abandonedPath);
+		} catch (error) {
+			// The failure belongs to the requested chat, not the healthy one still
+			// visible. An obsolete selection or disposed plugin reports nothing.
+			if (isCurrentRequest()) this.toast("chat.sessionOpenFailed", error);
+		} finally {
+			try {
+				if (preparing && !preparing.agent && this.runtimes.get(preparing.sessionPath) === preparing) this.removeRuntime(preparing);
+			} finally {
+				try { release?.(); }
+				finally {
+					if (isCurrentRequest() && this.pendingSessionOpen) {
+						this.pendingSessionOpen = null;
+						this.notify();
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -3484,6 +3518,9 @@ export class ObsidianAgentService {
 	}
 
 	dispose(): void {
+		this.disposed = true;
+		this.sessionOpenSequence += 1;
+		this.pendingSessionOpen = null;
 		for (const rt of [...this.runtimes.values()]) {
 			rt.agent?.abort();
 			this.removeRuntime(rt);
@@ -3591,6 +3628,7 @@ export class ObsidianAgentService {
 			modelChoices: listModelChoices(settings),
 			activeModelId: settings.activeModelId,
 			session: this.sessionInfo ?? undefined,
+			isOpeningSession: this.pendingSessionOpen !== null,
 			sessionRevision: rt?.sessionRevision ?? this.sessionRevision,
 			sessionRunStates: this.getSessionRunStates(),
 			usage: sumUsage(messages, rt?.overheadUsage ?? []),
@@ -3766,8 +3804,10 @@ export class ObsidianAgentService {
 
 	private async initializeAgent(): Promise<void> {
 		await this.reloadCommandsSafely();
+		if (this.disposed) return;
 		const defaults = this.getSessionDefaults();
 		const info = await this.sessionManager.continueRecentSession(defaults);
+		if (this.disposed) return;
 		const rt = this.runtimeForFocused();
 		rt.sessionInfo = info;
 		this.sessionInfo = info;
@@ -3790,10 +3830,13 @@ export class ObsidianAgentService {
 		rt.activeLane = "main";
 		const context = await this.sessionManager.buildSessionContext(rt.activeLane);
 		rt.lastCompaction = await this.sessionManager.getLastCompaction(rt.activeLane);
+		if (this.disposed) return;
 		await this.adoptSessionContext(rt, context);
+		if (this.disposed) return;
 		// After the context is adopted — the offer is about the transcript this
 		// panel now shows, so it must not stand before the messages are in.
 		await this.settleInterruptedRuns(rt, context);
+		if (this.disposed) return;
 		this.notify();
 	}
 
@@ -4795,7 +4838,9 @@ export class ObsidianAgentService {
 	 * "nothing".
 	 */
 	async compactNow(): Promise<void> {
+		if (this.pendingSessionOpen || this.disposed) return;
 		await this.initialize();
+		if (this.pendingSessionOpen || this.disposed) return;
 		const rt = this.runtimeForFocused();
 		// A failed start leaves no agent, and the banner already carries why —
 		// same reasoning as the matching guard in `sendPrompt`.
