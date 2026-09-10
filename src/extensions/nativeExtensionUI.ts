@@ -9,7 +9,7 @@ import { theme } from "./compat/theme";
 export function createNativeExtensionUI(
 	lifetime: ExtensionLifetime,
 	getAdapter: () => ExtensionUIAdapter | undefined,
-	notify: (message: string) => void,
+	notify: ExtensionUIContext["notify"],
 ) {
 	const statuses = new Map<string, string>();
 	const widgets = new Map<string, { content: string[]; options?: ExtensionWidgetOptions }>();
@@ -29,7 +29,7 @@ export function createNativeExtensionUI(
 	});
 	const deny = (): never => unavailable("terminal-only extension UI");
 	const ui: ExtensionUIContext = {
-		notify: message => { lifetime.assertActive(); notify(message); },
+		notify: (message, type) => { lifetime.assertActive(); notify(message, type); },
 		select: (title, options, opts) => dialog((ui, signal) => ui.select(title, options, { ...opts, signal }), opts?.signal),
 		confirm: (title, message, opts) => dialog((ui, signal) => ui.confirm(title, message, { ...opts, signal }), opts?.signal),
 		input: (title, placeholder, opts) => dialog((ui, signal) => ui.input(title, placeholder, { ...opts, signal }), opts?.signal),

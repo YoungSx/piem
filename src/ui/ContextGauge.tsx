@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { formatCost, formatTokens } from "../agent/usage";
 import type { ContextFill, UsageTotals } from "../agent/usage";
 import { IconButton } from "./ObsidianIcon";
@@ -43,6 +43,8 @@ export interface ContextGaugeProps {
 	isCompacting: boolean;
 	/** Runs the same on-demand compaction as the command palette entry. */
 	onTidy: () => void;
+	/** A changed request opens the same details used by the ring. */
+	openRequest?: number;
 }
 
 /**
@@ -70,8 +72,9 @@ export interface ContextGaugeProps {
  * numbers only exist inside the popover, so the button's accessible name carries
  * the full readout instead — the value survives without the role.
  *
- * A press opens it, and nothing else does: a click, a tap, or Enter/Space on the
- * focused ring. Hover used to open it as well, and focus used to pin it, and the
+ * A press toggles it: a click, a tap, or Enter/Space on the focused ring. The
+ * explicit context command opens the same readout without moving focus.
+ * Hover used to open it as well, and focus used to pin it, and the
  * three could not be reconciled — the pointer and the press fire into one state
  * in an order neither of them chooses. A tap arrives as `pointerover` *then*
  * `click`, so hover opened the popover and the tap's own click shut it again; a
@@ -98,10 +101,11 @@ export function ContextGauge({
 	isStreaming,
 	isCompacting,
 	onTidy,
+	openRequest,
 }: ContextGaugeProps): React.JSX.Element | null {
 	const t = useT();
 	/*
-	 * A plain boolean, now that a press is the only way in.
+	 * A plain boolean shared by the ring and the context command.
 	 *
 	 * This used to record *how* it opened, because a hover-opened popover had to
 	 * close when the pointer left while a pressed one had to survive that — the
@@ -110,6 +114,13 @@ export function ContextGauge({
 	 * to disambiguate.
 	 */
 	const [isOpen, setIsOpen] = useState(false);
+	const previousRequest = useRef(openRequest);
+	useEffect(() => {
+		if (openRequest !== previousRequest.current) {
+			previousRequest.current = openRequest;
+			if (openRequest !== undefined) setIsOpen(true);
+		}
+	}, [openRequest]);
 	const wrapperRef = useRef<HTMLSpanElement | null>(null);
 	// Wires the ring to the popover it opens, for assistive tech that announces
 	// what a toggle controls. `useId` because nothing else guarantees a single

@@ -18,7 +18,8 @@
       "dist/utils/fs-watch.js": "63dd709b28ea300f7200d236154f21ccc31a174a6052ca46a9be8064e2bd44e3",
       "dist/utils/paths.js": "09046a2443dfb6434e4c5c62656fb73edc33e776dc6cc35b785ef1dbf8483c93",
       "dist/utils/text.js": "e5520be5740ddb7d67ebd09ef33ea2aee2e360925593ad3a7842b6534304a0f3",
-      "examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79"
+      "examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79",
+      "dist/core/tools/truncate.js": "3a627a6407f3726aa56a9580548db230c20e4fee59b212ea3d12e2c45073f75d"
     }
   },
   "pi-assistant-provenance": {
@@ -42,5 +43,33 @@
       "src/index.ts": "6cf6ce6812b020efd1e156eaf9515b762d7f8f98da8ea8e49309ee64fcfbfd4d"
     },
     "virtualRoot": "/extensions/pi-invisible-continue"
+  },
+  "pi-web-search": {
+    "version": "1.5.0",
+    "virtualRoot": "/extensions/pi-web-search",
+    "files": {
+      "src/api.ts": "df6a50a240ebe0260b67d94a2b2f8e8a5954993d066e7e772ea1f222582eae73",
+      "src/index.ts": "6379abbbb445d6a5cbaf29ea716904af2b4fbdca413affaa40ff64db19af08f1",
+      "src/url_context.ts": "efb9bd8d1ac10609e549fb066e6fb0e23cbb57abf140f0897cc5a36ad5ba3ae7",
+      "src/utils.ts": "aaf5bd302ddd68d6278f39488a9861aebc7d50bead507efe2efc7e174504e628",
+      "src/web_search.ts": "9ee3384bc7bfaa8a08bebbdb9adeadd0a7b3e75f52fbd3ebb79caa6d261aebae"
+    }
+  },
+  "pi-clarify": {
+    "version": "1.0.1",
+    "virtualRoot": "/extensions/pi-clarify",
+    "files": {
+      "extensions/clarify.ts": "b39c999ab1dabc329b8264917b5b432fe2362aa7cc0b2625ed17cb050cd45489",
+      "src/marker.ts": "be2c077b17f3b355446e824ebeb98eaed29f433d47b6f210593e95a3967d6915"
+    }
+  },
+  "pi-context": {
+    "version": "2.2.0",
+    "virtualRoot": "/extensions/pi-context",
+    "files": {
+      "src/context.ts": "febf78f928205b4b5743fd20322b25304967a93624d35250907c56f75aedbb0f",
+      "src/index.ts": "624dc3410e8d1150595d71f18f0f2a43271fa819462e9c93be0e0501db65b1fb",
+      "src/utils.ts": "ae77807811b58ca88d4dae9080e6f1ab5ddce536fa273b43149c4cffde1f4b75"
+    }
   }
 }

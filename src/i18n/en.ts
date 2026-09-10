@@ -46,11 +46,16 @@ export const en = {
 
 	/** Chat panel — header, banner, composer, message list, and trace rows. */
 	extensions: {
-		noImages: "The continue command does not send images. Remove the attachments first.",
-		busy: "The conversation is preparing. Try continuing again in a moment.",
+		clarifyCurrentModel: "Draft rewriting follows the current conversation model.",
+		clarifyModelMissing: "Choose a configured model: /clarify model <provider> <model>, or /clarify model reset.",
+		clarifyModelSaved: "Draft rewrite model saved.",
+		clarifyCommand: "Rewrite a draft before sending",
+		contextCommand: "Show conversation context usage",
+		noImages: "This extension command uses text only. Remove the attachments first.",
+		busy: "The conversation is busy. Try this command again when it finishes.",
 		noConversation: "Start a conversation before continuing it.",
 		included: "Built-in Pi extensions",
-		description: "Bookmarks, model handoff notes, model switching and invisible continuation are active. The agent can switch to models with configured keys; continuing starts a model request.",
+		description: "Bookmarks, model handoff notes, model switching, continuation, web search, draft rewriting and context checkpoints are active. Search sends queries and supplied URLs to the current provider; rewriting sends the draft to its chosen model. Search needs a supported endpoint and may cost extra. Saved summaries preserve old history and start a new model request.",
 	},
 	bookmarks: {
 		excerpt: "Showing the first 4,000 characters. The full reply remains in the conversation.",

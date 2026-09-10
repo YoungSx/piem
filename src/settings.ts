@@ -55,6 +55,8 @@ export interface PiemSettings {
 	 * picked rather than maintaining a second choice.
 	 */
 	suggestionModelId?: string;
+	/** Optional model pinned by /clarify model; absence follows the conversation. */
+	clarifyModelId?: string;
 	/** User-configured endpoints. Connection and credential only, no models. */
 	providers: ProviderConfig[];
 	/** Configured models, each bound to one entry in {@link providers}. */
@@ -312,6 +314,9 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	}
 	if (activeModelId) {
 		settings.activeModelId = activeModelId;
+	}
+	if (typeof data?.clarifyModelId === "string" && models.some(model => model.id === data.clarifyModelId)) {
+		settings.clarifyModelId = data.clarifyModelId;
 	}
 	// Same omitted-not-empty rule as `activeModelId`: "absent" is what the
 	// follow-the-active-model default reads as, and an empty string stored

@@ -76,14 +76,16 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 9. The shared host and three original community factories measured 1,822,186 B
  *    with all notices. The ceiling follows to 1.74 MiB; no filesystem image,
  *    terminal, provider catalog or dynamic installer was added.
- *
  * 10. Native extension dialogs, composer completion and lifecycle/model adapters
  *     measured 1,853,307 B. The ceiling follows to 1.77 MiB. The metafile still
  *     contains no terminal runtime; the added bytes implement native host UI.
  *
  * 11. Generic component factories, scoped shortcuts and public completion
- *     compatibility measured 1,879,729 B. The ceiling follows to 1.80 MiB.
+ *     compatibility measured 1,879,729 B; the ceiling followed to 1.80 MiB.
  *     No new community extension, terminal runtime or test fixture is shipped.
+ * 12. Search, clarify and context, integrated with the native UI/lifecycle
+ *     bridge and the generic compat layer, raise the measured size again; the
+ *     ceiling follows to 1.88 MiB.
  *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
@@ -94,7 +96,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.80 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.88 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -134,6 +136,9 @@ const KNOWN_OPAQUE_DYNAMIC_IMPORTS = 1;
  */
 const BANNED_MODULES = new Map([
 	["scripts/fixtures/", "Contract fixtures are opt-in test inputs and must never enter a release."],
+	["src/testUtils/", "Source-test and preview loaders must never enter the shipped plugin."],
+	["scripts/pi-scoped-factories.mjs", "Scoped extensions compile at build time. The source compiler must not ship."],
+	["node_modules/typescript/", "The extension source compiler is build tooling, not a mobile runtime dependency."],
 	["node_modules/jiti/", "Built-in Pi extensions are statically bundled. The dynamic JS/TS loader must stay unreachable."],
 	["node_modules/@earendil-works/pi-tui/", "The bookmark uses Obsidian dialogs. Pi's terminal runtime must not enter the mobile bundle."],
 	["node_modules/highlight.js/", "Terminal syntax highlighting is unused by the built-in bookmark."],
@@ -179,6 +184,10 @@ const EMPTY_FAUX_INITIALIZER_BYTES = 17;
  * {@link BANNED_MODULES}, so a nested or pnpm-style layout is caught too.
  */
 const REQUIRED_MODULES = new Map([
+	["pi-scoped-extension:pi-web-search", "The audited original web-search graph must ship in a per-host factory."],
+	["pi-scoped-extension:pi-clarify", "The audited original clarify graph must ship in a per-host factory."],
+	["pi-scoped-extension:pi-context", "The audited original context graph must ship in a per-host factory."],
+	["node_modules/@earendil-works/pi-coding-agent/dist/core/tools/truncate.js", "Search output must use Pi's original bounded truncation helper."],
 	["node_modules/pi-assistant-provenance/extensions/assistant-provenance/index.ts", "The original provenance extension must ship."],
 	["node_modules/pi-model-switch/index.ts", "The original model-switch extension must ship."],
 	["node_modules/pi-invisible-continue/continue.ts", "The original invisible-continue extension must ship."],

@@ -3,6 +3,7 @@ import { builtinModules } from "node:module";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import esbuild from "esbuild";
+import { buildScopedFactory, SCOPED_FACTORIES, SCOPED_FACTORY_PREFIX } from "./pi-scoped-factories.mjs";
 
 /** Audited, unmodified upstream modules. A changed pin requires a fresh dependency review. */
 const AUDIT = JSON.parse(await readFile(new URL("./pi-extension-packages.json", import.meta.url), "utf8"));
@@ -21,7 +22,8 @@ export function extensionCompatEntry(specifier, root = process.cwd()) {
 /**
  * Restricts the audited static extension graphs. Core's desktop skill environment keeps real Node.
  * Unused dynamic-loader edges may be shaken out; onEnd refuses any of them that survived.
- * No source functions are copied or rewritten. import.meta receives each original module's identity.
+ * Upstream function bodies remain unchanged. New network/timer factories get a
+ * per-host static closure; import.meta receives each original module's identity.
  */
 export function piExtensionsPlugin(root = process.cwd()) {
 	const pkg = path.join(root, "node_modules/@earendil-works/pi-coding-agent");
@@ -31,6 +33,7 @@ export function piExtensionsPlugin(root = process.cwd()) {
 	const loader = path.join(pkg, "dist/core/extensions/loader.js");
 	const theme = path.join(pkg, "dist/modes/interactive/theme/theme.js");
 	const children = path.join(pkg, "dist/utils/child-process.js");
+	const truncate = path.join(pkg, "dist/core/tools/truncate.js");
 	const pruned = new Set();
 	let resources;
 	const platformModules = new Map([
@@ -53,6 +56,14 @@ export function piExtensionsPlugin(root = process.cwd()) {
 					resources[`${audit.virtualRoot}/package.json`] = metadata;
 				}
 			});
+			build.onResolve({ filter: /^pi-scoped-factory:/ }, args => {
+				const name = args.path.slice(SCOPED_FACTORY_PREFIX.length);
+				if (!Object.hasOwn(SCOPED_FACTORIES, name)) throw new Error(`Unknown scoped extension: ${name}`);
+				return { path: name, namespace: "pi-scoped-extension" };
+			});
+			build.onLoad({ filter: /.*/, namespace: "pi-scoped-extension" }, async args => ({
+				...await buildScopedFactory(root, args.path, AUDIT[args.path]), loader: "js", resolveDir: root,
+			}));
 			build.onResolve({ filter: /.*/ }, args => {
 				const owner = ownerOf(args.importer);
 				if (!owner) return;
@@ -72,6 +83,7 @@ export function piExtensionsPlugin(root = process.cwd()) {
 					return { path: args.path, external: true, sideEffects: false };
 				}
 				if (args.path === path.join(bridge, "process.ts")) return { path: args.path };
+				if (args.importer === truncate && args.path === path.join(bridge, "utf8.ts")) return { path: args.path };
 				const name = args.path.replace(/^node:/, "");
 				if (name === "events") return { path: path.join(root, "node_modules/events/events.js") };
 				const mapped = platformModules.get(name);
@@ -102,7 +114,7 @@ export function piExtensionsPlugin(root = process.cwd()) {
 					define: { "import.meta.url": JSON.stringify(`file://${virtualPath}`) },
 				});
 				return {
-					contents: `import process from ${JSON.stringify(path.join(bridge, "process.ts"))};\n${result.code}`,
+					contents: `import process from ${JSON.stringify(path.join(bridge, "process.ts"))};\n${args.path === truncate ? `import { Buffer } from ${JSON.stringify(path.join(bridge, "utf8.ts"))};\n` : ""}${result.code}`,
 					loader: "js", resolveDir: path.dirname(args.path), watchFiles: [args.path],
 				};
 			});

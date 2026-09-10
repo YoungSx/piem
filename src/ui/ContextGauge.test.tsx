@@ -26,9 +26,9 @@ const noop = (): void => undefined;
  * new is the shape it is carried in — a focusable button plus a popover — and the
  * tier change: the ring is unconditional, while spend stays behind agent details.
  */
-async function renderGauge(overrides: Partial<Props> = {}, language: Language = "en"): Promise<HTMLElement> {
-	const host = document.createElement("div");
-	document.body.appendChild(host);
+async function renderGauge(overrides: Partial<Props> = {}, language: Language = "en", existingHost?: HTMLElement): Promise<HTMLElement> {
+	const host = existingHost ?? document.createElement("div");
+	if (!existingHost) document.body.appendChild(host);
 	const root = roots.get(host) ?? createRoot(host);
 	roots.set(host, root);
 	root.render(
@@ -102,6 +102,20 @@ describe("ContextGauge ring", () => {
 		const host = await renderGauge({ fill: null });
 
 		expect(host.querySelector(".piem-chat__context")).toBeNull();
+	});
+
+	it("opens once for each context request, without reopening on ordinary updates", async () => {
+		const host = await renderGauge({ openRequest: 0 });
+		expect(popover(host)).toBeNull();
+		await renderGauge({ openRequest: 1 }, "en", host);
+		expect(popover(host)).not.toBeNull();
+		host.querySelector<HTMLButtonElement>(".piem-chat__context-gauge")?.click();
+		await flushRender();
+		expect(popover(host)).toBeNull();
+		await renderGauge({ openRequest: 1, showAgentDetails: true }, "en", host);
+		expect(popover(host)).toBeNull();
+		await renderGauge({ openRequest: 2 }, "en", host);
+		expect(popover(host)).not.toBeNull();
 	});
 
 	it("turns warn in the last quarter of the runway and near once the threshold is crossed", async () => {

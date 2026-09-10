@@ -88,6 +88,11 @@ export class SessionRuntime {
 	extensionSettledRevision = 0;
 	/** A before_agent_start hook can await native input before Pi starts streaming. */
 	extensionPreparing = false;
+	extensionCommand = false;
+	extensionBusy = false;
+	extensionContextRequest = 0;
+	extensionStopAfterTurn = false;
+	extensionEditor?: { read(): string; replace(text: string): void };
 	bookmarkWork = 0;
 	bookmarkClosing = false;
 	sessionRefreshing = false;

@@ -200,13 +200,16 @@ entries backwards; it does not use the time at which a label was assigned.
 Synchronizing simultaneous edits to the same label follows the existing session
 merge rule: the arriving file wins. Sync is not a cross-device transaction.
 
-Bookmarks work offline. Three community extensions are also included and enabled:
+Bookmarks work offline. Six community extensions are also included and enabled:
 
 | Extension | What it does | How to use it |
 | --- | --- | --- |
 | `pi-assistant-provenance` | Tells a model when earlier replies came from a different model | Automatic, in request context only |
 | `pi-model-switch` | Lists, searches and switches configured models | Ask the agent to use `switch_model` |
 | `pi-invisible-continue` | Continues the current task without adding prompt text for the model | `/continue`, or **Piem: Continue current task** |
+| `pi-web-search` | Searches with the current provider and returns source links | Ask the agent to use `web_search` |
+| `pi-clarify` | Rewrites a rough request into an editable draft | `/clarify <idea>`, or **Piem: Rewrite a draft before sending** |
+| `pi-context` | Saves checkpoints, inspects the timeline and continues from a summary branch | Ask the agent to use `context_checkpoint`, `context_timeline` or `context_compact` |
 
 Switching is limited to unambiguous configured models with API keys. It changes the
 next model request in that conversation and saves the default choice. The newly
@@ -220,6 +223,39 @@ queue; Stop removes it. Its empty marker is saved with the chat but filtered fro
 provider requests, including after reopening. `/continue status` and
 `/continue help` show the upstream diagnostics. If a template or skill shares its
 name, that existing command keeps the short name; use `/extension:continue` or select the extension from the slash menu.
+
+`web_search` reuses the current model's credential. Its endpoint must support native
+search through OpenAI Responses or Anthropic Messages; an ordinary Chat Completions
+endpoint cannot search just because it can chat. Search can cost extra. The query
+and any supplied URLs go to that provider, without an extra copy of the chat history.
+Unsupported providers fail explicitly. Piem does not pick a different provider.
+The upstream Gemini-only `url_context` tool is absent with Piem's configured protocols;
+use `web_fetch` to read a known URL.
+
+`/clarify <idea>` rewrites the supplied words; the command-palette action rewrites
+the current composer draft. Adding `-clarify` to a request also returns a draft.
+You can edit it and choose when to send. Stop, closing the panel or switching chats
+prevents a late result from replacing another draft. If you edit while waiting, your
+new words stay and the unused rewrite appears in the error message. Rewriting uses
+only that draft and the upstream rewrite instructions, not your chat history or
+active note. The original instructions preserve language and intent but emphasize
+technical terminology, so review the result for ordinary note-writing requests.
+
+By default, rewriting uses the conversation model. `/clarify model <provider> <model>`
+pins an already configured, credentialed model; `/clarify model reset` restores the
+default. The choice is saved in plugin settings and survives reload. A pinned
+provider receives the draft even when the chat uses another provider.
+
+`context_checkpoint` saves a label before reporting success. `context_compact` saves
+a summary branch, selects it, and makes a new model request to continue the task.
+The old branch stays in the conversation file; vault notes and external changes
+are never rolled back. Stop cancels pending continuation. A Vault write already in
+progress can finish; the displayed history then follows the saved result. `/context`
+or **Piem: Show conversation context usage** opens Piem's existing context readout,
+replacing the upstream terminal-only screen.
+
+If a skill or template shares an extension command's name, it keeps the short name;
+use `/extension:clarify` or `/extension:context` to select the extension explicitly.
 
 These extensions ship in `main.js` and change only with a normal plugin release.
 Piem does not download or execute JS/TS extensions from the vault or a URL. Upstream
