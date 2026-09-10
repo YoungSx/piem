@@ -4,6 +4,7 @@ import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
 import type { CommunityHost } from "../extensions/communityHost";
+import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 import type { BookmarkHost } from "../extensions/bookmarkHost";
 import { PromptQueue, type QueueEntry } from "./promptQueue";
 
@@ -80,6 +81,13 @@ export class SessionRuntime {
 	bookmarkHost?: BookmarkHost;
 	/** One static community host for this agent lifetime, never for the focused panel. */
 	communityHost?: CommunityHost;
+	/** The panel attachment survives an agent rebuild within this conversation. */
+	extensionUI?: ExtensionUIAdapter;
+	/** Only the newest completed run may publish agent_settled. */
+	extensionRunRevision = 0;
+	extensionSettledRevision = 0;
+	/** A before_agent_start hook can await native input before Pi starts streaming. */
+	extensionPreparing = false;
 	bookmarkWork = 0;
 	bookmarkClosing = false;
 	sessionRefreshing = false;

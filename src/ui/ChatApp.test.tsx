@@ -10,6 +10,7 @@ import type { DraftStore } from "../session/DraftStore";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { SubagentRegistry } from "../subagent/registry";
 import { findSubagentRole } from "../subagent/roles";
+import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 
 installObsidianStub();
 const document = installDom();
@@ -108,6 +109,12 @@ class FakeAgentService {
 
 	getApp(): App {
 		return this.app;
+	}
+
+	extensionUI: ExtensionUIAdapter | undefined;
+	attachExtensionUI(_path: string, adapter: ExtensionUIAdapter): () => void {
+		this.extensionUI = adapter;
+		return () => { if (this.extensionUI === adapter) this.extensionUI = undefined; adapter.reset(); };
 	}
 
 	async sendPrompt(prompt: string): Promise<boolean> {
@@ -477,6 +484,47 @@ describe("ChatApp composer fold", () => {
 
 		expect(host.querySelector("textarea")).not.toBeNull();
 		expect(host.querySelector(".piem-chat__composer-toggle")).toBeNull();
+	});
+});
+
+describe("ChatApp external prefill", () => {
+	let mounted: Mounted | undefined;
+
+	beforeEach(() => {
+		document.body.replaceChildren();
+	});
+
+	afterEach(async () => {
+		await mounted?.unmount();
+		mounted = undefined;
+		document.body.replaceChildren();
+	});
+
+	it("uses the initialized conversation's draft after mounting without a session", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { session: undefined } });
+		await mounted.draftStore.set(SESSION_ID, "Saved thought");
+		mounted.service.emit({ session: sessionInfo(), sessionRevision: 1 });
+		await flushRender();
+
+		mounted.inputController.prefill("Added by command");
+		await flushRender();
+		expect(composer(mounted.host).value).toBe("Saved thought\n\nAdded by command");
+		expect(await mounted.draftStore.get(SESSION_ID)).toBe("Saved thought\n\nAdded by command");
+	});
+
+	it("appends external text to the current conversation after switching chats", async () => {
+		mounted = await mountChat({ withDraftStore: true });
+		await typeDraft(composer(mounted.host), "A's unfinished thought");
+		const next = { ...sessionInfo(), id: "session-b", path: "chats/session-b.jsonl" };
+		await mounted.draftStore.set(next.id, "B's unfinished thought");
+		mounted.service.emit({ session: next, sessionRevision: 1 });
+		await flushRender();
+
+		mounted.inputController.prefill("Added by command");
+		await flushRender();
+		expect(composer(mounted.host).value).toBe("B's unfinished thought\n\nAdded by command");
+		expect(await mounted.draftStore.get(next.id)).toBe("B's unfinished thought\n\nAdded by command");
+		expect(await mounted.draftStore.get(SESSION_ID)).toBe("A's unfinished thought");
 	});
 });
 

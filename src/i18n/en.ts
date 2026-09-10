@@ -782,6 +782,18 @@ export const en = {
 		remaining: "{count} still to answer",
 	},
 
+	extensionUI: {
+		cancel: "Cancel",
+		confirm: "Confirm",
+		save: "Save",
+		contentLabel: "Extension content",
+		completionsLabel: "Input suggestions",
+		showSuggestions: "Show suggestions",
+		loadingSuggestions: "Loading suggestions…",
+		noSuggestions: "No suggestions available",
+		expiresIn: "Closes in {seconds} seconds",
+	},
+
 	/** Session dialogs: titles, search, and chat actions. */
 	session: {
 		newChat: "New chat",

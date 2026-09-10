@@ -2945,6 +2945,51 @@ button.piem-chat__latest--asking {
 	outline: none;
 }
 
+/* Native extension text surfaces, bounded to the conversation leaf. */
+.piem-chat__extension-surfaces {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	max-height: 25vh;
+	min-width: 0;
+	overflow-y: auto;
+	overflow-wrap: anywhere;
+	padding: var(--size-4-2) 0;
+	white-space: pre-wrap;
+}
+
+.piem-chat__extension-widget + .piem-chat__extension-widget,
+.piem-chat__extension-status {
+	margin-top: var(--size-4-1);
+}
+
+.piem-chat__extension-status {
+	color: var(--text-muted);
+}
+
+.piem-extension-dialog__field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	margin-block: var(--size-4-3);
+}
+
+.piem-extension-dialog__field :is(input, textarea, select) {
+	box-sizing: border-box;
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.piem-extension-dialog__field textarea {
+	font-family: var(--font-text);
+	resize: vertical;
+}
+
+.piem-extension-dialog__timeout {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
 /*
  * `/name` command autocomplete, floated above the textarea.
  *

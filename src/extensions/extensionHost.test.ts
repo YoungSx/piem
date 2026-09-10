@@ -6,7 +6,7 @@ const callbacks = { getEntries: () => [], notify: () => {} };
 
 describe("static extension host contract", () => {
 	it("rejects unsupported registrations and duplicate command names at load", async () => {
-		await expect(createExtensionHost([{ id: "unsupported", factory: pi => { pi.on("session_start", () => {}); } }], callbacks)).rejects.toThrow("extension event session_start");
+		await expect(createExtensionHost([{ id: "unsupported", factory: pi => { pi.on("input", () => {}); } }], callbacks)).rejects.toThrow("extension event input");
 		const factory = (pi: ExtensionAPI) => pi.registerCommand("duplicate", { handler: async () => {} });
 		await expect(createExtensionHost([{ id: "one", factory }, { id: "two", factory }], callbacks)).rejects.toThrow("Duplicate extension command");
 	});

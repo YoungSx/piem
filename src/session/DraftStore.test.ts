@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import type { DataAdapter } from "obsidian";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 
@@ -11,6 +11,8 @@ installObsidianStub();
 const { DraftStore } = await import("./DraftStore");
 /** Instance shape of the dynamically imported class, for the signatures below. */
 type DraftStoreInstance = InstanceType<typeof DraftStore>;
+const stores: DraftStoreInstance[] = [];
+afterEach(() => { for (const store of stores.splice(0)) store.dispose(); });
 
 /**
  * The folder drafts live under — the constructor takes the session *directory*
@@ -99,7 +101,9 @@ function createStore(
 	adapter = new MemoryAdapter(),
 	logger?: ReturnType<typeof spyLogger>["logger"],
 ): { store: DraftStoreInstance; adapter: MemoryAdapter } {
-	return { store: new DraftStore(adapter as unknown as DataAdapter, SESSION_DIR, logger), adapter };
+	const store = new DraftStore(adapter as unknown as DataAdapter, SESSION_DIR, logger);
+	stores.push(store);
+	return { store, adapter };
 }
 
 /**
@@ -411,6 +415,37 @@ describe("DraftStore deletion hook", () => {
 });
 
 describe("DraftStore write chains", () => {
+	for (const action of ["type", "empty", "clear"] as const) {
+		it(`ignores an old disk read after ${action}, including after a flush`, async () => {
+			const replacement = action === "type" ? "Newly typed" : "";
+			const adapter = new MemoryAdapter();
+			adapter.seed(draftFile("session-a"), JSON.stringify({ text: "Old on disk", updatedAt: 1 }));
+			const originalRead = adapter.read.bind(adapter);
+			let arrived!: () => void;
+			let release!: () => void;
+			const reading = new Promise<void>((resolve) => { arrived = resolve; });
+			const gate = new Promise<void>((resolve) => { release = resolve; });
+			adapter.read = async (path) => {
+				const old = await originalRead(path);
+				if (path === draftFile("session-a")) { arrived(); await gate; }
+				return old;
+			};
+			const { store } = createStore(adapter);
+			const pending = store.get("session-a");
+			try {
+				await reading;
+				if (action === "clear") await store.clear("session-a");
+				else await store.set("session-a", replacement);
+				await store.flush();
+			} finally { release(); }
+			expect(await pending).toBe(replacement);
+			expect(await store.get("session-a")).toBe(replacement);
+			adapter.read = originalRead;
+			const reopened = createStore(adapter).store;
+			expect(await reopened.get("session-a")).toBe(replacement);
+		});
+	}
+
 	it("never lets a flush racing new typing overwrite a newer draft with an older one", async () => {
 		// A slow write in flight when `flush` starts, and a `set` landing mid-write:
 		// the chain must serialize them so the file ends holding the newer text.

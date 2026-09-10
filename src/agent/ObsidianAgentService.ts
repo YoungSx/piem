@@ -30,6 +30,7 @@ import {
 import { PromptQueue, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
 import { createObsidianModels, requestDefaults, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
+import { createObsidianRequestUrlFetch } from "../net/obsidianFetch";
 import { resolveRetrySettings } from "../net/retrySettings";
 import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "../net/streamRetry";
 import { matchVendorForModel } from "../net/vendorMatch";
@@ -38,6 +39,9 @@ import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type Compac
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
+import type { StaticExtension } from "../extensions/extensionHost";
+import type { ExtensionUIAdapter } from "../extensions/extensionUI";
+import { extensionSessionView } from "./extensionSessionView";
 import { configuredModels } from "../extensions/configuredModels";
 import { ExtensionModelSwitch } from "../extensions/modelSwitch";
 import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
@@ -630,6 +634,8 @@ export interface ObsidianAgentServiceOptions {
 	 * subscription row can be signed in and every one reports itself unconfigured.
 	 */
 	credentials?: CredentialStore;
+	/** Statically supplied factories; production defaults to the bundled extensions. */
+	extensionFactories?: readonly StaticExtension[];
 }
 
 interface CompactionRunOptions {
@@ -653,6 +659,7 @@ export class ObsidianAgentService {
 	private readonly getMountedExternalToolsFn: (() => readonly AgentTool[]) | undefined;
 	/** See {@link ObsidianAgentServiceOptions.credentials}. */
 	private readonly credentials: CredentialStore | undefined;
+	private readonly extensionFactories: readonly StaticExtension[] | undefined;
 	private readonly listeners = new Set<SnapshotListener>();
 	/**
 	 * Single vault execution env shared by the file tools and the prompt-template
@@ -821,6 +828,7 @@ export class ObsidianAgentService {
 		this.getExternalToolsFn = options.getExternalTools ?? (async () => []);
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
 		this.credentials = options.credentials;
+		this.extensionFactories = options.extensionFactories;
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
@@ -1311,7 +1319,7 @@ export class ObsidianAgentService {
 			// deliberately does not re-send into — must not wait behind this
 			// one: the user typed the correction first. Order of arrival is the
 			// order of dispatch.
-			await agent.prompt(dispatch);
+			await this.promptWithExtensions(rt, agent, dispatch);
 			sent = true;
 			// A fresh send supersedes the continue offer: the user has moved on
 			// and the crashed run's words are no longer this lane's transcript
@@ -1490,11 +1498,23 @@ export class ObsidianAgentService {
 	 * tail work land on its own runtime.
 	 */
 	private async afterRunIdle(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
+		const agent = rt.agent;
+		const revision = rt.extensionRunRevision;
+		const epoch = rt.stopEpoch;
 		await this.dispatchQueuedPrompts(rt, messages);
 		await this.resumeCompactedRun(rt);
 		// The run-end checkpoint: arrivals the other device landed mid-run are
 		// only unioned here, once nothing streams and the queue has drained.
 		await this.reconcileActiveSessionDrift();
+		if (this.runtimes.get(rt.sessionPath) !== rt || rt.agent !== agent || agent?.state.isStreaming
+			|| rt.extensionRunRevision !== revision || rt.extensionSettledRevision === revision
+			|| rt.isCompacting || rt.compactionPending || rt.promptQueue.size || rt.steeredPrompts.length) return;
+		rt.extensionSettledRevision = revision;
+		try { await rt.communityHost?.settled(); }
+		catch (error) {
+			if (rt.stopEpoch === epoch && !(error instanceof DOMException && error.name === "AbortError")) this.setError(rt, causeMessage(error));
+			this.log.debug("Extension settled handler failed", () => ({ error: causeMessage(error) }));
+		}
 	}
 
 	/**
@@ -1552,6 +1572,7 @@ export class ObsidianAgentService {
 			}
 			const last = agent.state.messages.at(-1);
 			if (!await this.beginRunOperation(rt, last ? [last] : [])) return;
+			await rt.communityHost?.start();
 			await agent.continue();
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
@@ -1650,7 +1671,7 @@ export class ObsidianAgentService {
 			await this.compactContextIfNeeded(rt, agent);
 			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.bookmarkClosing) return;
 			if (!await this.beginRunOperation(rt, entries.map((entry) => entry.message))) return;
-			await agent.prompt(entries.map((entry) => entry.message));
+			await this.promptWithExtensions(rt, agent, entries.map((entry) => entry.message));
 		} catch (error) {
 			if (rt.stopEpoch === epoch && rt.agent === agent && !rt.bookmarkClosing) rt.promptQueue.restore(entries);
 			this.reportDispatchFailure(rt, error, tailBefore);
@@ -1697,6 +1718,7 @@ export class ObsidianAgentService {
 			}
 			const last = agent.state.messages.at(-1);
 			if (!await this.beginRunOperation(rt, last ? [last] : [])) return;
+			await rt.communityHost?.start();
 			await agent.continue();
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
@@ -1714,6 +1736,44 @@ export class ObsidianAgentService {
 			return;
 		}
 		this.notify();
+	}
+
+	/** Pi's before_agent_start result belongs to this prompt and this run only. */
+	private async promptWithExtensions(rt: SessionRuntime, agent: Agent, messages: AgentMessage[]): Promise<void> {
+		const host = rt.communityHost;
+		const epoch = rt.stopEpoch;
+		host?.cancel();
+		const ledger = rt.activeRunLedger;
+		let departed = false;
+		const base = composeSystemPrompt(this.promptWithEnvironment(), rt.skills);
+		const user = [...messages].reverse().find(message => message.role === "user");
+		const images = user?.role === "user" && Array.isArray(user.content)
+			? user.content.filter((part): part is ImageContent => part.type === "image") : undefined;
+		try {
+			rt.extensionPreparing = host?.hasBeforeAgentStart ?? false;
+			if (rt.extensionPreparing) this.notify();
+			const result = await host?.beforeAgentStart(extractUserText(user), images, base);
+			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.communityHost !== host || rt.bookmarkClosing) {
+				throw new DOMException("Extension prompt was cancelled.", "AbortError");
+			}
+			agent.state.systemPrompt = result?.systemPrompt ?? base;
+			const extra: AgentMessage[] = (result?.messages ?? []).map(message => ({
+				...message, role: "custom", content: message.content ?? [], timestamp: Date.now(),
+			}));
+			departed = true;
+			rt.extensionPreparing = false;
+			await agent.prompt([...messages, ...extra]);
+		} catch (error) {
+			if (!departed && rt.activeRunLedger === ledger) {
+				await this.endRunOperation(rt, error instanceof Error && error.name === "AbortError" ? "aborted" : "failed", {
+					code: "extension_preflight", message: causeMessage(error),
+				});
+			}
+			throw error;
+		} finally {
+			rt.extensionPreparing = false;
+			if (rt.agent === agent) agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), rt.skills);
+		}
 	}
 
 	/**
@@ -2356,6 +2416,7 @@ export class ObsidianAgentService {
 		rt.compactionController?.abort();
 		rt.branchSummaryController?.abort();
 		rt.suggestionController?.abort();
+		rt.communityHost?.cancel();
 		// Stopping the run is also retracting what was queued for it. Cleared
 		// before `agent.abort()` so the `agent_end` that follows sees an empty
 		// queue and does not dispatch the words the user just took back — and
@@ -3392,6 +3453,23 @@ export class ObsidianAgentService {
 		return this.app;
 	}
 
+	/** Connects one native panel; a departed panel can never detach its successor. */
+	attachExtensionUI(path: string, adapter: ExtensionUIAdapter): () => void {
+		const rt = this.runtimes.get(path);
+		if (!rt || rt.bookmarkClosing) throw new Error("Extension conversation is unavailable.");
+		rt.extensionUI = adapter;
+		const host = rt.communityHost;
+		host?.attachUI(adapter);
+		void host?.start().catch(error => {
+			if (rt.communityHost === host && rt.extensionUI === adapter) this.setError(rt, causeMessage(error));
+		});
+		return () => {
+			if (rt.extensionUI !== adapter) return;
+			rt.extensionUI = undefined;
+			if (this.runtimes.get(path) === rt && !rt.bookmarkClosing) rt.communityHost?.attachUI(undefined);
+		};
+	}
+
 	/**
 	 * Copy in the language the panel is currently rendering in.
 	 *
@@ -3423,7 +3501,7 @@ export class ObsidianAgentService {
 			// and its replacement's departure the agent is genuinely idle, but a
 			// run is on its way and the turn slot must stay Stop rather than blink
 			// back to Send (issue #289).
-			isStreaming: (agent?.state.isStreaming ?? false) || (rt?.queueInterrupt ?? false),
+			isStreaming: (agent?.state.isStreaming ?? false) || (rt?.queueInterrupt ?? false) || (rt?.extensionPreparing ?? false),
 			// Both halves: the id pi tracks, and the tool name a reader needs. The
 			// id is for matching, never for display — an id with no captured name
 			// is dropped rather than shown raw, so a missed event cannot leak
@@ -3907,14 +3985,42 @@ export class ObsidianAgentService {
 				throw new Error("Extension session is no longer available.");
 			}
 		};
+		const view = extensionSessionView({
+			sessions: this.sessionManager, path: rt.sessionPath, lane: () => rt.activeLane, assertOwner,
+		});
 		const community = await CommunityHost.create({
-			getEntries: () => {
-				assertOwner();
-				return (rt.agent?.state.messages ?? messages).map((message, index) => ({ id: rt.messageEntryIds.get(message) ?? `pending-${index}`, type: "message", message }));
-			},
+			getEntries: () => { assertOwner(); return view.getEntries(); },
+			getBranch: () => { assertOwner(); return view.getBranch(); },
+			getLabel: id => { assertOwner(); return view.getLabel(id); },
+			getSessionId: () => { assertOwner(); return rt.sessionInfo?.id ?? rt.sessionPath; },
+			getSessionFile: () => { assertOwner(); return rt.sessionPath; },
+			getSessionName: () => { assertOwner(); return rt.sessionInfo?.name; },
+			refreshSession: () => view.refresh(),
 			notify: message => { assertOwner(); this.setNotice(rt, message); },
 			getModel: () => { assertOwner(); return rt.agent?.state.model; },
 			getModels: () => { assertOwner(); return configuredModels(this.getSettings()).map(choice => choice.model); },
+			complete: async (selected, context, options) => {
+				assertOwner();
+				const bundle = this.requireModelsBundle();
+				const underlying: Promise<void>[] = [];
+				const fetch = this.getSettings().networkTransport === "requestUrl"
+					? createObsidianRequestUrlFetch({ onRequest: settled => { underlying.push(settled); } }) : bundle.fetch;
+				try {
+					const result = await bundle.models.complete(selected, context, {
+						...options,
+						apiKey: this.getApiKey(selected.provider),
+						...requestDefaults(fetch, options.cacheRetention ?? this.getSettings().cacheRetention, this.resolveRetryMaxRetries()),
+					});
+					// Count returned usage on its owner even when Stop discarded the
+					// result. Providers can omit usage for an interrupted request.
+					this.recordOverheadUsage(rt, result.usage);
+					return result;
+				} finally {
+					// requestUrl's network cannot be cancelled. The host has already
+					// released the user; retain its concurrency slot until IO finishes.
+					await Promise.all(underlying);
+				}
+			},
 			setModel: model => this.extensionModelSwitch.switch({
 				runtime: rt, agent,
 				isCurrent: () => this.runtimes.get(rt.sessionPath) === rt,
@@ -3922,8 +4028,13 @@ export class ObsidianAgentService {
 			}, model),
 			getThinkingLevel: () => { assertOwner(); return rt.agent?.state.thinkingLevel ?? thinkingLevel; },
 			isIdle: () => { assertOwner(); return !rt.agent?.state.isStreaming; },
+			getSignal: () => { assertOwner(); return rt.agent?.signal; },
+			abort: () => { assertOwner(); void this.abortSession(rt.sessionPath); },
+			hasPendingMessages: () => { assertOwner(); return rt.promptQueue.size > 0 || rt.steeredPrompts.length > 0; },
+			getSystemPrompt: () => { assertOwner(); return rt.agent?.state.systemPrompt ?? ""; },
+			waitForIdle: async () => { assertOwner(); await rt.agent?.waitForIdle(); assertOwner(); },
 			getActiveTools: () => { assertOwner(); return rt.agent?.state.tools.map(tool => tool.name) ?? []; },
-		});
+		}, this.extensionFactories);
 		if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || rt.stopEpoch !== generation) {
 			community.dispose();
 			throw new Error("Extension session is no longer available.");
@@ -4046,6 +4157,10 @@ export class ObsidianAgentService {
 		});
 		rt.agent = agent;
 		rt.unsubscribeAgent = agent.subscribe((event) => this.handleAgentEvent(rt, event));
+		if (rt.extensionUI) {
+			community.attachUI(rt.extensionUI);
+			await community.start("reload");
+		}
 	}
 
 	/**
@@ -4243,7 +4358,17 @@ export class ObsidianAgentService {
 	}
 
 	private async handleAgentEvent(rt: SessionRuntime, event: AgentEvent): Promise<void> {
+		try { await rt.communityHost?.emitAgentEvent(event); }
+		catch (error) {
+			// Observer errors must not skip persistence or leave the run ledger
+			// open. Context and before_agent_start keep their fail-closed paths.
+			if (!(error instanceof Error && error.name === "AbortError")) {
+				this.setError(rt, causeMessage(error));
+				this.log.error("Extension lifecycle handler failed", () => ({ event: event.type, error: causeMessage(error) }));
+			}
+		}
 		if (event.type === "agent_start") {
+			rt.extensionRunRevision += 1;
 			// pi has already claimed the streaming state. The replacement is now
 			// running, so its rewind notice and exclusive send guard must end here,
 			// not when the awaited prompt resolves after the entire reply.

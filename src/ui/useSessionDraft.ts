@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DraftStore } from "../session/DraftStore";
 
 export interface SessionDraft {
 	/** Current composer text. */
 	draft: string;
+	/** False while adopting this conversation's persisted draft. */
+	ready: boolean;
 	/** Records a keystroke; persistence is debounced inside the store. */
 	setDraft: (text: string) => void;
 	/** Clears the draft after a successful send, without waiting for a write. */
@@ -30,19 +32,40 @@ export function useSessionDraft(store: DraftStore | undefined, scope: string | u
 	const [draft, setDraftState] = useState("");
 	const scopeRef = useRef<string | undefined>(scope);
 	const draftRef = useRef("");
+	const writeRevision = useRef(0);
+	// Identity belongs to this adoption, not merely the path: A → B → A must
+	// finish the new A read before extensions can inspect or fill its draft.
+	const adoption = useMemo(() => ({ store, scope }), [store, scope]);
+	const activeAdoption = useRef<typeof adoption>();
+	const [loadedScope, setLoadedScope] = useState<{ store: DraftStore | undefined; scope: string | undefined }>();
+	const loadedRef = useRef(loadedScope);
+	const markLoaded = useCallback((loaded: typeof adoption): void => {
+		loadedRef.current = loaded;
+		setLoadedScope(loaded);
+	}, []);
 
 	draftRef.current = draft;
 
+	// A send can settle after switching conversations or closing the panel.
+	// Its captured setter still owns the old store key, but no longer the UI.
+	// Layout cleanup retires that ownership as soon as the switch commits.
+	useLayoutEffect(() => {
+		activeAdoption.current = adoption;
+		return () => { activeAdoption.current = undefined; };
+	}, [adoption]);
+
 	useEffect(() => {
-		if (!store) {
-			return undefined;
-		}
 		const previousScope = scopeRef.current;
 		scopeRef.current = scope;
+		if (!store) {
+			if (previousScope !== scope) setDraftState("");
+			markLoaded(adoption);
+			return undefined;
+		}
 
 		// Hand the outgoing branch's text back to the store before adopting the new
 		// one, or switching away mid-sentence would drop it.
-		if (previousScope && previousScope !== scope) {
+		if (previousScope && previousScope !== scope && loadedRef.current?.store === store && loadedRef.current.scope === previousScope) {
 			void store.set(previousScope, draftRef.current);
 		}
 
@@ -52,15 +75,21 @@ export function useSessionDraft(store: DraftStore | undefined, scope: string | u
 		}
 
 		let cancelled = false;
+		const revision = writeRevision.current;
 		void store.get(scope).then((stored) => {
 			if (!cancelled) {
-				setDraftState(stored);
+				// An extension or a keystroke may already have supplied newer text.
+				if (revision === writeRevision.current) {
+					draftRef.current = stored;
+					setDraftState(stored);
+				}
+				markLoaded(adoption);
 			}
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [store, scope]);
+	}, [store, scope, adoption, markLoaded]);
 
 	// Flush on unmount: `DraftStore.flush` cancels the debounce and writes, so
 	// closing the panel keeps the last keystrokes instead of discarding them.
@@ -70,7 +99,7 @@ export function useSessionDraft(store: DraftStore | undefined, scope: string | u
 		}
 		return () => {
 			const current = scopeRef.current;
-			if (current) {
+			if (current && loadedRef.current?.store === store && loadedRef.current.scope === current) {
 				void store.set(current, draftRef.current).then(() => store.flush());
 				return;
 			}
@@ -80,22 +109,33 @@ export function useSessionDraft(store: DraftStore | undefined, scope: string | u
 
 	const setDraft = useCallback(
 		(text: string) => {
-			setDraftState(text);
-			const current = scopeRef.current;
+			if (activeAdoption.current === adoption) {
+				writeRevision.current++;
+				draftRef.current = text;
+				setDraftState(text);
+				markLoaded(adoption);
+			}
+			const current = adoption.scope;
 			if (store && current) {
 				void store.set(current, text);
 			}
 		},
-		[store],
+		[store, adoption, markLoaded],
 	);
 
 	const clearDraft = useCallback(() => {
-		setDraftState("");
-		const current = scopeRef.current;
+		if (activeAdoption.current === adoption) {
+			writeRevision.current++;
+			draftRef.current = "";
+			setDraftState("");
+			markLoaded(adoption);
+		}
+		const current = adoption.scope;
 		if (store && current) {
 			void store.clear(current);
 		}
-	}, [store]);
+	}, [store, adoption, markLoaded]);
 
-	return { draft, setDraft, clearDraft };
+	const ready = !scope || loadedScope === adoption;
+	return { draft: scope && ready ? draft : "", ready, setDraft, clearDraft };
 }

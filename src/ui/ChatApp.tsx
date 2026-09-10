@@ -31,6 +31,8 @@ import { TranslatorProvider } from "./TranslatorContext";
 import { useSessionDraft } from "./useSessionDraft";
 import { fileToPendingImage, newPendingImageId, toImageContents, type PendingImage } from "./pendingImages";
 import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
+import { useExtensionUI } from "./useExtensionUI";
+import { ExtensionSurfaces } from "./ExtensionSurfaces";
 
 interface ChatAppProps {
 	service: ObsidianAgentService;
@@ -67,7 +69,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// Keyed by session: a half-written question belongs to the chat it was typed
 	// in, not to whatever is on screen when the reader comes back.
 	const draftScope = snapshot.session?.id;
-	const { draft: input, setDraft: setInput, clearDraft } = useSessionDraft(draftStore, draftScope);
+	const { draft: input, ready: draftReady, setDraft: setInput, clearDraft } = useSessionDraft(draftStore, draftScope);
 	const [sessions, setSessions] = useState<ActiveSessionInfo[]>([]);
 	const [isInitializing, setIsInitializing] = useState(true);
 	// Reported upward by the composer, then handed to the transcript so its skip
@@ -128,11 +130,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// opening an old session — already settled — never fires a speculative request.
 	const prevStreamingRef = useRef(snapshot.isStreaming);
 	const sendPromptRef = useRef<() => void>(() => undefined);
-	// Read inside the prefill handler, which is registered once and must not
-	// re-register on every keystroke just to see the current draft.
+	// Read inside the prefill handler, which is rebound per conversation rather
+	// than on every keystroke just to see the current draft.
 	const inputRef = useRef(input);
 
 	inputRef.current = input;
+	const extensionUI = useExtensionUI(service, snapshot.session?.path, snapshot.language, snapshot.availableCommands, inputRef, setInput, draftReady);
 
 	// Read inside the staging handler, which must not depend on the snapshot.
 	const supportsImagesRef = useRef(snapshot.supportsImages !== false);
@@ -659,7 +662,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		return () => {
 			inputController.setPrefillHandler(null);
 		};
-	}, [inputController]);
+	}, [inputController, setInput]);
 
 	return (
 		<TranslatorProvider language={snapshot.language}>
@@ -779,6 +782,10 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					collapsed={snapshot.mobileComposerCollapsed}
 					onToggleCollapsed={() => void service.setComposerCollapsed(!snapshot.mobileComposerCollapsed)}
 					commands={snapshot.availableCommands}
+					onEditorElement={extensionUI.bindEditor}
+					extensionAutocomplete={extensionUI.snapshot.autocomplete}
+					aboveEditor={<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" />}
+					belowEditor={<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="belowEditor" />}
 					modelSwitcher={
 						<ModelSwitcher
 							// The snapshot already carries every field a `ModelTarget` names,

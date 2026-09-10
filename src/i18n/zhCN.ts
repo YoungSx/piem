@@ -402,6 +402,18 @@ export const zhCN: DeepPartial<EnCopy> = {
 		remaining: "还有 {count} 题没答",
 	},
 
+	extensionUI: {
+		cancel: "取消",
+		confirm: "确认",
+		save: "保存",
+		contentLabel: "扩展内容",
+		completionsLabel: "输入建议",
+		showSuggestions: "显示建议",
+		loadingSuggestions: "正在加载建议…",
+		noSuggestions: "暂无建议",
+		expiresIn: "将在 {seconds} 秒后关闭",
+	},
+
 	session: {
 		newChat: "新建对话",
 		untitled: "未命名对话",

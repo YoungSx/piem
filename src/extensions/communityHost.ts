@@ -1,5 +1,8 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { createExtensionHost, type ExtensionHost, type ExtensionHostCallbacks } from "./extensionHost";
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ImageContent } from "@earendil-works/pi-ai";
+import type { SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { createExtensionHost, type ExtensionHost, type ExtensionHostCallbacks, type StaticExtension } from "./extensionHost";
+import type { ExtensionUIAdapter } from "./extensionUI";
 import { invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 /** Stable shipped identities; installing code remains a build/release operation. */
@@ -15,9 +18,9 @@ export class CommunityHost {
 	private pending: AgentMessage[] | undefined;
 	private disposed = false;
 
-	static async create(callbacks: Omit<ExtensionHostCallbacks, "sendMessage">): Promise<CommunityHost> {
+	static async create(callbacks: Omit<ExtensionHostCallbacks, "sendMessage">, extensions: readonly StaticExtension[] = factories): Promise<CommunityHost> {
 		const owner = new CommunityHost();
-		owner.host = await createExtensionHost(factories, {
+		owner.host = await createExtensionHost(extensions, {
 			...callbacks,
 			sendMessage: (message, options) => {
 				if (owner.disposed || !owner.pending) throw new Error("Extension message escaped its command.");
@@ -34,6 +37,7 @@ export class CommunityHost {
 
 	get tools() { return this.host.tools; }
 	get commands() { return this.host.commands; }
+	get hasBeforeAgentStart() { return this.host.hasBeforeAgentStart; }
 
 	async run(name: string, args = ""): Promise<AgentMessage[]> {
 		if (this.pending) throw new Error("Another extension command is already running.");
@@ -49,9 +53,19 @@ export class CommunityHost {
 		return this.host.transformContext(messages);
 	}
 
-	dispose(): void {
+	attachUI(adapter: ExtensionUIAdapter | undefined): void { this.host.attachUI(adapter); }
+	start(reason?: SessionStartEvent["reason"]): Promise<void> { return this.host.start(reason); }
+	beforeAgentStart(prompt: string, images: ImageContent[] | undefined, systemPrompt: string) {
+		return this.host.beforeAgentStart(prompt, images, systemPrompt);
+	}
+	emitAgentEvent(event: AgentEvent): Promise<void> { return this.host.emitAgentEvent(event); }
+	settled(): Promise<void> { return this.host.settled(); }
+	cancel(): void { this.host.cancel(); }
+	closed(): Promise<void> { return this.host.closed(); }
+
+	dispose(reason?: SessionShutdownEvent["reason"]): void {
 		this.disposed = true;
-		this.host.dispose();
+		this.host.dispose(reason);
 		this.pending = undefined;
 	}
 }
