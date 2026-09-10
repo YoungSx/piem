@@ -71,7 +71,11 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	const draftScope = snapshot.session?.id;
 	const { draft: input, ready: draftReady, setDraft: setInput, clearDraft } = useSessionDraft(draftStore, draftScope);
 	const [sessions, setSessions] = useState<ActiveSessionInfo[]>([]);
-	const [isInitializing, setIsInitializing] = useState(true);
+	const [isStarting, setIsStarting] = useState(true);
+	// Initial startup and a later cold session open share the existing opening
+	// line, skeleton and send guard. The service keeps the old chat visible until
+	// its replacement is ready, so the draft never changes owner during the wait.
+	const isInitializing = isStarting || snapshot.isOpeningSession === true;
 	// Reported upward by the composer, then handed to the transcript so its skip
 	// link has something to point at. It travels through state rather than a ref
 	// because the link only renders once the id exists.
@@ -173,12 +177,13 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 	useEffect(() => {
 		const unsubscribe = service.subscribe(setSnapshot);
+		let mounted = true;
 		// A failed start reports itself through the snapshot now — the service
 		// records the reason on the banner instead of rejecting, so there is no
 		// local error state to mirror here. This effect only closes the busy
 		// window.
-		void service.initialize().finally(() => setIsInitializing(false));
-		return unsubscribe;
+		void service.initialize().finally(() => { if (mounted) setIsStarting(false); });
+		return () => { mounted = false; unsubscribe(); };
 	}, [service]);
 
 	/*
@@ -400,6 +405,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 */
 	const handleFork = useCallback(
 		(index: number): void => {
+			if (service.getSnapshot().isOpeningSession) return;
 			openForkConfirm(app, {
 				t: getT(snapshot.language),
 				onConfirm: () => {
@@ -439,6 +445,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 */
 	const handleEditMessage = useCallback(
 		(index: number): void => {
+			if (service.getSnapshot().isOpeningSession) return;
 			const original = userText(snapshot.messages[index]);
 			if (!original) {
 				return;
@@ -465,7 +472,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			setInput(original);
 			setPendingImages(priorImages);
 		},
-		[snapshot.messages, snapshot.session?.id, setInput, pendingImages],
+		[service, snapshot.messages, snapshot.session?.id, setInput, pendingImages],
 	);
 
 	const handleCancelEdit = useCallback((): void => {
@@ -513,6 +520,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	}, [snapshot.messages, snapshot.streamingMessage]);
 
 	const sendPrompt = async (): Promise<void> => {
+		if (service.getSnapshot().isOpeningSession) return;
 		const prompt = input.trim();
 		// A send while the agent answers is allowed: it queues (see the service).
 		// The states that still refuse are a compaction with no run behind it —
@@ -762,7 +770,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 				 * controls below it, and pinning it to the top pushed the first message
 				 * down behind numbers the reader had not asked to read first.
 				 */}
-				<ChatStatusBar isInitializing={isInitializing} isRewinding={snapshot.isRewinding} run={run} retry={snapshot.retryNotice} />
+				<ChatStatusBar isInitializing={isInitializing} isRewinding={snapshot.isRewinding} run={isInitializing ? null : run} retry={snapshot.retryNotice} />
 
 				<ChatComposer
 					input={input}
