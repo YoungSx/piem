@@ -16,6 +16,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 	},
 
 	commands: {
+		continueTask: "继续当前任务",
 		addBookmark: "为最近回复添加书签",
 		removeBookmark: "移除最近书签",
 		listBookmarks: "查看对话书签",
@@ -38,6 +39,13 @@ export const zhCN: DeepPartial<EnCopy> = {
 		couldNotOpenSubagents: "无法打开子代理面板。",
 	},
 
+	extensions: {
+		noImages: "继续命令不发送图片，请先移除附件。",
+		busy: "对话正在准备，请稍后再继续。",
+		noConversation: "先开始一段对话，再继续任务。",
+		included: "内置 Pi 扩展",
+		description: "已启用书签、模型交接标注、模型切换和无提示继续。代理可切换到已配置密钥的模型；继续任务会发出模型请求。",
+	},
 	bookmarks: {
 		excerpt: "这里显示前 4000 个字符，完整回复仍保留在对话中。",
 		addTitle: "为最近回复添加书签",
@@ -239,7 +247,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		/** Popover footnote for thinking models: reasoning tokens already inside the reply count. */
 		longCacheNote: "含 {tokens} 保留一小时，写入价 2 倍",
 		reasoningNote: "含推理 {tokens}",
-		commandMenuAria: "提示命令和技能",
+		commandMenuAria: "提示命令、技能和扩展",
+		commandKindExtension: "扩展",
 		commandKindTemplate: "提示",
 		commandKindSkill: "技能",
 		skillPillLabel: "技能 · {name}",

@@ -3,6 +3,7 @@ import { type Usage } from "@earendil-works/pi-ai";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
+import type { CommunityHost } from "../extensions/communityHost";
 import type { BookmarkHost } from "../extensions/bookmarkHost";
 import { PromptQueue, type QueueEntry } from "./promptQueue";
 
@@ -77,6 +78,8 @@ export class SessionRuntime {
 
 	/** Per-chat original Pi extension, created only when a bookmark command is used. */
 	bookmarkHost?: BookmarkHost;
+	/** One static community host for this agent lifetime, never for the focused panel. */
+	communityHost?: CommunityHost;
 	bookmarkWork = 0;
 	bookmarkClosing = false;
 	sessionRefreshing = false;
@@ -359,6 +362,7 @@ export class SessionRuntime {
 	dispose(): void {
 		this.bookmarkClosing = true;
 		this.bookmarkHost?.dispose();
+		this.communityHost?.dispose();
 		this.unsubscribeAgent?.();
 		this.unsubscribeAgent = null;
 		this.compactionController?.abort();

@@ -11,6 +11,13 @@ escapes are rejected, and the plugin's own folder
 (`.obsidian/plugins/piem`) is blocked by default — the agent cannot rewrite
 itself mid-turn.
 
+## Model selection
+
+`switch_model` lists, searches and switches models with configured API keys. A
+switch applies to the next request in the calling conversation and saves the
+default choice. The new provider receives that conversation; the upstream zero
+price means unknown. See [built-in Pi extensions](extending.md#built-in-pi-extensions).
+
 ## Files
 
 `read` · `write` · `edit` · `ls` · `find` · `grep` · `move_note` · `trash_note`

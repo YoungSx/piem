@@ -29,7 +29,8 @@ export default tseslint.config(
 						'eslint.config.mts',
 						'manifest.json',
 						'scripts/*.mjs',
-						'src/extensions/bookmarkFactory.mjs'
+						'src/extensions/bookmarkFactory.mjs',
+						'src/extensions/communityFactories.mjs'
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,

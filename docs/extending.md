@@ -200,19 +200,37 @@ entries backwards; it does not use the time at which a label was assigned.
 Synchronizing simultaneous edits to the same label follows the existing session
 merge rule: the arriving file wins. Sync is not a cross-device transaction.
 
-This built-in extension works offline and adds no network requests. It ships in
-`main.js` and changes only with a normal plugin release. Piem does not download or
-execute JS/TS extensions from the vault or a URL.
+Bookmarks work offline. Three community extensions are also included and enabled:
 
-For maintainers: `@earendil-works/pi-coding-agent` is pinned to **0.84.3**. The
-official factory loader, runner, event bus and `examples/extensions/bookmark.ts`
-are imported directly. The build verifies the audited files' hashes, supplies
-virtual paths and a read-only package resource, and removes unused terminal and
-dynamic-loader dependencies. Unsupported filesystem access, process execution
-and runtime module loading throw explicit errors. This bridge supports the
-bundled bookmark's required interfaces; other Pi extensions need their own
-compatibility review. It does not replace the existing Pi agent, tools or session
-store. See [third-party notices](../THIRD_PARTY_NOTICES.md) for attribution.
+| Extension | What it does | How to use it |
+| --- | --- | --- |
+| `pi-assistant-provenance` | Tells a model when earlier replies came from a different model | Automatic, in request context only |
+| `pi-model-switch` | Lists, searches and switches configured models | Ask the agent to use `switch_model` |
+| `pi-invisible-continue` | Continues the current task without adding prompt text for the model | `/continue`, or **Piem: Continue current task** |
+
+Switching is limited to unambiguous configured models with API keys. It changes the
+next model request in that conversation and saves the default choice. The newly
+selected provider receives the conversation through Piem's existing transport;
+pricing shown as zero by upstream means unknown, not free. A failed save is reported
+as a failed tool call. Requests already in progress in other chats keep their model.
+
+`/continue` sends an ordinary model request with the existing conversation and
+Piem's normal note context. While a reply is running, it waits in the conversation's
+queue; Stop removes it. Its empty marker is saved with the chat but filtered from
+provider requests, including after reopening. `/continue status` and
+`/continue help` show the upstream diagnostics. If a template or skill shares its
+name, that existing command keeps the short name; use `/extension:continue` or select the extension from the slash menu.
+
+These extensions ship in `main.js` and change only with a normal plugin release.
+Piem does not download or execute JS/TS extensions from the vault or a URL. Upstream
+configuration files such as `aliases.json` and provenance `config.json` are not
+mounted; these extensions use their default behavior.
+
+For maintainers, [the bridge guide](pi-extension-bridge.md) describes its supported
+contracts, source audit and validation. Pi's original factory loader, runner, event
+bus and tool wrapper are reused. Both the bookmark adapter and community adapter
+use this host; the existing Pi agent and session store remain authoritative.
+See [third-party notices](../THIRD_PARTY_NOTICES.md) for attribution.
 
 ## Developing built-in skills
 

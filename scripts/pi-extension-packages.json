@@ -1,0 +1,46 @@
+{
+  "@earendil-works/pi-coding-agent": {
+    "version": "0.84.3",
+    "virtualRoot": "/pi",
+    "files": {
+      "dist/config.js": "9fcb50fd3192dd8550be77bd178c754a80512f20dc0058335b21b42954812a7f",
+      "dist/core/event-bus.js": "f96a9a13071b2832955608387bf2482bcaf5310ce667f32f85a0d5bca44f08e3",
+      "dist/core/exec.js": "6aed92abe5273445a9bddcd92d4178264d0a23890b54b175a0efc73b20cdf53f",
+      "dist/core/extensions/loader.js": "2da25d0ad695f3c209dac9245d6044292edf89f10059e108f9d90183256d5189",
+      "dist/core/extensions/runner.js": "b39d59b8f86693b9aca15f13e14f367fce9a0ad8ed7ce9ad17950906f226951d",
+      "dist/core/extensions/wrapper.js": "0eedc30f82c57ba06a01c9ec192608867b09a37488e1fc1a09877988b8d08683",
+      "dist/core/pi-manifest.js": "2ae94bb81155fc66766a5643f21ec38e808177ec5f2271e77c82013971ae5c03",
+      "dist/core/source-info.js": "420727b2dc8e2f57c13cabaa7718fbc6e82dff4d8c90c647d40db6a71763e0b4",
+      "dist/core/timings.js": "9bec37f6fcacd80ca07ad7bafdc6aec91821f691698aa9d81dcdd2d7d5b08531",
+      "dist/core/tools/tool-definition-wrapper.js": "b08ccb77cf3664c3b42e5cee858e150925c0eedbaca397474c3af3de22030abd",
+      "dist/modes/interactive/theme/theme.js": "1cb3ed3fc577f1aaa285a219175eb10cf34000ab3531730b185e8e4b03486ff6",
+      "dist/utils/child-process.js": "cfc7b3361e42b61ee75aecc2b436ff7462f7e4431b4b646da7166f3c5706c9b8",
+      "dist/utils/fs-watch.js": "63dd709b28ea300f7200d236154f21ccc31a174a6052ca46a9be8064e2bd44e3",
+      "dist/utils/paths.js": "09046a2443dfb6434e4c5c62656fb73edc33e776dc6cc35b785ef1dbf8483c93",
+      "dist/utils/text.js": "e5520be5740ddb7d67ebd09ef33ea2aee2e360925593ad3a7842b6534304a0f3",
+      "examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79"
+    }
+  },
+  "pi-assistant-provenance": {
+    "version": "0.1.0",
+    "files": {
+      "extensions/assistant-provenance/index.ts": "1d83ee0d686cbefded5b8a21f4cc5e374eef07bf9907cff5da458d17301fa40d"
+    },
+    "virtualRoot": "/extensions/pi-assistant-provenance"
+  },
+  "pi-model-switch": {
+    "version": "0.2.0",
+    "files": {
+      "index.ts": "88c5ca0434d369dc172e415510715845bcccff7eeb6e1747603d42a52b1c7674"
+    },
+    "virtualRoot": "/extensions/pi-model-switch"
+  },
+  "pi-invisible-continue": {
+    "version": "0.3.11",
+    "files": {
+      "continue.ts": "840726e68cfb992152ec83a828b86aa1bd35ab24b094a542b5281d4b85a5a0f1",
+      "src/index.ts": "6cf6ce6812b020efd1e156eaf9515b762d7f8f98da8ea8e49309ee64fcfbfd4d"
+    },
+    "virtualRoot": "/extensions/pi-invisible-continue"
+  }
+}

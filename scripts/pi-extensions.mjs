@@ -1,24 +1,24 @@
 import { createHash } from "node:crypto";
+import { builtinModules } from "node:module";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import esbuild from "esbuild";
 
 /** Audited, unmodified upstream modules. A changed pin requires a fresh dependency review. */
-const PI_VERSION = "0.84.3";
-const HASHES = {
-	"dist/core/extensions/loader.js": "2da25d0ad695f3c209dac9245d6044292edf89f10059e108f9d90183256d5189",
-	"dist/core/extensions/runner.js": "b39d59b8f86693b9aca15f13e14f367fce9a0ad8ed7ce9ad17950906f226951d",
-	"examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79",
-};
+const AUDIT = JSON.parse(await readFile(new URL("./pi-extension-packages.json", import.meta.url), "utf8"));
+const PURE_DEPENDENCIES = new Set(["typebox", "typebox/compile", "typebox/value", "chalk"]);
+const BUILTINS = new Set(builtinModules.map(name => name.replace(/^node:/, "")));
 
 /**
- * Restricts only the official extension graph. Core's desktop skill environment keeps real Node.
+ * Restricts the audited static extension graphs. Core's desktop skill environment keeps real Node.
  * Unused dynamic-loader edges may be shaken out; onEnd refuses any of them that survived.
  * No source functions are copied or rewritten. import.meta receives each original module's identity.
  */
 export function piExtensionsPlugin(root = process.cwd()) {
 	const pkg = path.join(root, "node_modules/@earendil-works/pi-coding-agent");
 	const bridge = path.join(root, "src/extensions/node");
+	const packages = Object.entries(AUDIT).map(([name, audit]) => ({ name, audit, directory: path.join(root, "node_modules", name) }));
+	const ownerOf = file => packages.find(item => file.startsWith(`${item.directory}${path.sep}`));
 	const loader = path.join(pkg, "dist/core/extensions/loader.js");
 	const theme = path.join(pkg, "dist/modes/interactive/theme/theme.js");
 	const children = path.join(pkg, "dist/utils/child-process.js");
@@ -33,16 +33,22 @@ export function piExtensionsPlugin(root = process.cwd()) {
 		setup(build) {
 			build.onStart(async () => {
 				pruned.clear();
-				const text = await readFile(path.join(pkg, "package.json"), "utf8");
-				if (JSON.parse(text).version !== PI_VERSION) throw new Error("Re-audit the Pi extension bridge before upgrading Pi.");
-				for (const [relative, hash] of Object.entries(HASHES)) {
-					const actual = createHash("sha256").update(await readFile(path.join(pkg, relative))).digest("hex");
-					if (actual !== hash) throw new Error(`Official Pi file changed: ${relative}`);
+				resources = {};
+				for (const { name, audit, directory } of packages) {
+					const metadata = await readFile(path.join(directory, "package.json"), "utf8");
+					if (JSON.parse(metadata).version !== audit.version) throw new Error(`Re-audit ${name} before upgrading.`);
+					for (const [relative, hash] of Object.entries(audit.files)) {
+						const actual = createHash("sha256").update(await readFile(path.join(directory, relative))).digest("hex");
+						if (actual !== hash) throw new Error(`Audited extension file changed: ${name}/${relative}`);
+					}
+					resources[`${audit.virtualRoot}/package.json`] = metadata;
 				}
-				resources = { "/pi/package.json": text };
 			});
 			build.onResolve({ filter: /.*/ }, args => {
-				if (!args.importer.startsWith(`${pkg}${path.sep}`)) return;
+				const owner = ownerOf(args.importer);
+				if (!owner) return;
+				const community = owner.name !== "@earendil-works/pi-coding-agent" ? owner : undefined;
+				if (community && args.kind === "dynamic-import") throw new Error(`Dynamic extension loading is unavailable: ${args.path}`);
 				const dynamicOnly = args.importer === loader && (
 					args.path === "../../index.js" || args.path.startsWith("@earendil-works/") || args.path === "jiti/static"
 				);
@@ -54,20 +60,32 @@ export function piExtensionsPlugin(root = process.cwd()) {
 					pruned.add(args.path);
 					return { path: args.path, external: true, sideEffects: false };
 				}
+				if (args.path === path.join(bridge, "process.ts")) return { path: args.path };
 				const name = args.path.replace(/^node:/, "");
 				if (name === "events") return { path: path.join(root, "node_modules/events/events.js") };
 				const mapped = platformModules.get(name);
 				if (mapped) return { path: path.join(bridge, `${mapped}.ts`) };
+				if (BUILTINS.has(name) || args.path.startsWith("node:")) throw new Error(`Unsupported extension builtin: ${args.path}`);
+				if (PURE_DEPENDENCIES.has(args.path)) return;
+				if (args.path.startsWith(".")) {
+					const resolved = path.resolve(path.dirname(args.importer), args.path);
+					if (resolved.startsWith(`${owner.directory}${path.sep}`)) return;
+				}
+				throw new Error(`Unaudited extension dependency: ${args.path}`);
 			});
 			build.onLoad({ filter: /[/\\]extensions[/\\]node[/\\]resources\.ts$/ }, () => ({
 				contents: `export const extensionResources = ${JSON.stringify(resources)};`, loader: "js",
 				watchFiles: [path.join(pkg, "package.json")],
 			}));
-			build.onLoad({ filter: /[/\\]pi-coding-agent[/\\].*\.js$/ }, async args => {
+			build.onLoad({ filter: /\.[cm]?[jt]s$/ }, async args => {
+				const owner = ownerOf(args.path);
+				if (!owner) return;
+				const relative = path.relative(owner.directory, args.path).split(path.sep).join("/");
+				if (!Object.hasOwn(owner.audit.files, relative)) throw new Error(`Unaudited extension source: ${owner.name}/${relative}`);
 				const original = await readFile(args.path, "utf8");
-				const virtualPath = `/pi/${path.relative(pkg, args.path).split(path.sep).join("/")}`;
+				const virtualPath = `${owner.audit.virtualRoot}/${relative}`;
 				const result = await esbuild.transform(original, {
-					format: "esm", target: "es2022", sourcemap: false,
+					format: "esm", target: "es2022", sourcemap: false, loader: args.path.endsWith(".ts") ? "ts" : "js",
 					// Theme schema construction only feeds theme loaders, which this host does not use.
 					pure: args.path === theme ? ["Compile", "Type.Object", "Type.Optional", "Type.Union", "Type.String", "Type.Number", "Type.Intersect", "Type.Record"] : [],
 					define: { "import.meta.url": JSON.stringify(`file://${virtualPath}`) },
@@ -78,6 +96,7 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				};
 			});
 			build.onEnd(result => {
+				if (result.errors.length) return;
 				if (!result.metafile) return { errors: [{ text: "Pi bridge builds require a metafile to validate pruned imports." }] };
 				const remaining = Object.values(result.metafile.outputs).flatMap(output => output.imports)
 					.filter(item => item.external && pruned.has(item.path));

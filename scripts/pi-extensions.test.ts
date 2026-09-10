@@ -18,7 +18,7 @@ describe("static official extension bundle", () => {
 		expect(output.imports).toEqual([]);
 		expect(Object.keys(output.inputs).some(file => file.includes("/core/extensions/runner.js"))).toBe(true);
 		expect(Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).some(([file]) => /jiti|highlight\.js|pi-tui|providers\//.test(file))).toBe(false);
-		const sandbox = { module: { exports: {} }, URL, TextEncoder, TextDecoder, AbortController, console };
+		const sandbox = { module: { exports: {} }, URL, TextEncoder, TextDecoder, AbortController, console, structuredClone };
 		vm.runInNewContext(built.outputFiles[0]!.text, sandbox, { timeout: 1000 });
 		const api = sandbox.module.exports as { createOfficialBookmark(callbacks: unknown): Promise<{ run(name: string, args: string): Promise<void>; dispose(): void }> };
 		const labels = new Map<string, string | undefined>();
@@ -53,5 +53,34 @@ describe("static official extension bundle", () => {
 		const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies: Record<string, string> };
 		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("0.84.3");
 		expect(readFileSync("src/extensions/bookmarkFactory.mjs", "utf8")).toContain("examples/extensions/bookmark.ts");
+	});
+});
+
+describe("audited community graph", () => {
+	it("loads all three upstream factories, tools and context hooks without a Node host", async () => {
+		const built = await build({
+			stdin: { contents: 'export { CommunityHost } from "./src/extensions/communityHost";', resolveDir: root, loader: "ts" },
+			bundle: true, write: false, metafile: true, minify: true, format: "cjs", target: "es2018", plugins: [piExtensionsPlugin(root)], logLevel: "silent",
+		});
+		expect(Object.values(built.metafile!.outputs).flatMap(output => output.imports)).toEqual([]);
+		const sandbox = { module: { exports: {} }, URL, TextEncoder, TextDecoder, AbortController, structuredClone, console };
+		vm.runInNewContext(built.outputFiles[0]!.text, sandbox, { timeout: 1000 });
+		const api = sandbox.module.exports as { CommunityHost: { create(callbacks: unknown): Promise<{ tools: Array<{ execute: (...args: unknown[]) => Promise<unknown> }>; run(name: string): Promise<unknown[]>; transformContext(messages: unknown[]): Promise<unknown[]>; dispose(): void }> } };
+		const model = { provider: "test", id: "alpha", name: "Alpha" };
+		const host = await api.CommunityHost.create({ getEntries: () => [], getModel: () => model, getModels: () => [model], isIdle: () => true, notify: () => {} });
+		const markers = await host.run("continue");
+		expect(markers).toHaveLength(1);
+		expect(await host.transformContext(markers)).toEqual([]);
+		expect(JSON.stringify(await host.tools[0]!.execute("tool", { action: "current" }))).toContain("test/alpha");
+		host.dispose();
+		await expect(host.run("continue")).rejects.toThrow();
+		await expect(host.tools[0]!.execute("tool", { action: "current" })).rejects.toThrow();
+	});
+
+	it("refuses unreviewed upstream source before it enters the bundle", async () => {
+		await expect(build({
+			stdin: { contents: `export * from ${JSON.stringify(path.join(pkg, "dist/core/session-manager.js"))};`, resolveDir: root, loader: "ts" },
+			bundle: true, write: false, metafile: true, plugins: [piExtensionsPlugin(root)], logLevel: "silent",
+		})).rejects.toThrow("Unaudited extension source");
 	});
 });

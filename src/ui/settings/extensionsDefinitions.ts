@@ -161,6 +161,7 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		...problemRows(snapshot?.load.builtin.diagnostics ?? [], vaultSkillProblemsCopy(host.t)),
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
+		{ name: host.t.t("extensions.included"), desc: host.t.t("extensions.description"), render: () => undefined },
 		mcpList(host),
 	];
 }
