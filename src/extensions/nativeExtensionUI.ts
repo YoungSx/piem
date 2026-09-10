@@ -3,6 +3,8 @@ import type { ExtensionLifetime, ExtensionScope } from "./extensionLifetime";
 import { abortable, linkedAbortSignal } from "./extensionLifetime";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { unavailable } from "./node/unavailable";
+import { createNativeComponentUI } from "./nativeComponentUI";
+import { theme } from "./compat/theme";
 
 export function createNativeExtensionUI(
 	lifetime: ExtensionLifetime,
@@ -11,6 +13,7 @@ export function createNativeExtensionUI(
 ) {
 	const statuses = new Map<string, string>();
 	const widgets = new Map<string, { content: string[]; options?: ExtensionWidgetOptions }>();
+	const components = createNativeComponentUI(lifetime, getAdapter, notify);
 	let autocomplete: Array<{ factory: AutocompleteProviderFactory; scope: ExtensionScope }> = [];
 	const adapter = (): ExtensionUIAdapter => {
 		lifetime.assertActive();
@@ -36,7 +39,13 @@ export function createNativeExtensionUI(
 			if (text === undefined) statuses.delete(key); else statuses.set(key, text);
 		},
 		setWidget: (key, content, options) => {
-			if (typeof content === "function") return unavailable("terminal widget factory; use text lines in native UI");
+			if (typeof content === "function") {
+				adapter();
+				components.setWidget(key, content, options);
+				widgets.delete(key);
+				return;
+			}
+			components.remove(key);
 			adapter().setWidget(key, content ? [...content] : undefined, options);
 			if (content) widgets.set(key, { content: [...content], options }); else widgets.delete(key);
 		},
@@ -68,18 +77,21 @@ export function createNativeExtensionUI(
 		},
 		onTerminalInput: deny, setWorkingMessage: deny, setWorkingVisible: deny,
 		setWorkingIndicator: deny, setHiddenThinkingLabel: deny, setFooter: deny,
-		setHeader: deny, setTitle: deny, custom: deny, setEditorComponent: deny,
-		getEditorComponent: deny, get theme(): never { return unavailable("terminal theme"); },
+		setHeader: deny, setTitle: deny, custom: components.custom, setEditorComponent: deny,
+		getEditorComponent: deny, get theme() { lifetime.assertActive(); return theme as ExtensionUIContext["theme"]; },
 		getAllThemes: deny, getTheme: deny, setTheme: deny, getToolsExpanded: deny, setToolsExpanded: deny,
 	};
 	return {
 		ui,
+		retire: components.retire,
+		detach: components.detach,
 		restore: (target: ExtensionUIAdapter): void => {
 			for (const [key, text] of statuses) target.setStatus(key, text);
 			for (const [key, value] of widgets) target.setWidget(key, [...value.content], value.options);
 			autocomplete = autocomplete.filter(({ scope }) => !scope.signal.aborted);
 			for (const { factory } of autocomplete) target.addAutocompleteProvider(factory);
+			components.restore(target);
 		},
-		clear: (): void => { statuses.clear(); widgets.clear(); autocomplete.length = 0; },
+		clear: (): void => { components.clear(); statuses.clear(); widgets.clear(); autocomplete.length = 0; },
 	};
 }

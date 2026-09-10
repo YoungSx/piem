@@ -8,6 +8,15 @@ import esbuild from "esbuild";
 const AUDIT = JSON.parse(await readFile(new URL("./pi-extension-packages.json", import.meta.url), "utf8"));
 const PURE_DEPENDENCIES = new Set(["typebox", "typebox/compile", "typebox/value", "chalk"]);
 const BUILTINS = new Set(builtinModules.map(name => name.replace(/^node:/, "")));
+const COMPAT_ENTRIES = new Map([
+	["pi-ai", "piAI.ts"], ["pi-tui", "piTui.ts"], ["pi-coding-agent", "piCodingAgent.ts"],
+].flatMap(([name, file]) => ["@earendil-works", "@mariozechner"].map(scope => [`${scope}/${name}`, file])));
+
+/** Resolution is shared by audited production graphs and opt-in local fixtures. */
+export function extensionCompatEntry(specifier, root = process.cwd()) {
+	const file = COMPAT_ENTRIES.get(specifier);
+	return file ? path.join(root, "src/extensions/compat", file) : undefined;
+}
 
 /**
  * Restricts the audited static extension graphs. Core's desktop skill environment keeps real Node.
@@ -49,6 +58,8 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				if (!owner) return;
 				const community = owner.name !== "@earendil-works/pi-coding-agent" ? owner : undefined;
 				if (community && args.kind === "dynamic-import") throw new Error(`Dynamic extension loading is unavailable: ${args.path}`);
+				const compatibility = community && extensionCompatEntry(args.path, root);
+				if (compatibility) return { path: compatibility };
 				const dynamicOnly = args.importer === loader && (
 					args.path === "../../index.js" || args.path.startsWith("@earendil-works/") || args.path === "jiti/static"
 				);

@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved ten
+ * The number is anchored to measurement, not taste, and it has moved eleven
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -81,6 +81,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     measured 1,853,307 B. The ceiling follows to 1.77 MiB. The metafile still
  *     contains no terminal runtime; the added bytes implement native host UI.
  *
+ * 11. Generic component factories, scoped shortcuts and public completion
+ *     compatibility measured 1,879,729 B. The ceiling follows to 1.80 MiB.
+ *     No new community extension, terminal runtime or test fixture is shipped.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -90,7 +94,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.77 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.80 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -129,6 +133,7 @@ const KNOWN_OPAQUE_DYNAMIC_IMPORTS = 1;
  * as a substring so a nested or pnpm-style layout is caught too.
  */
 const BANNED_MODULES = new Map([
+	["scripts/fixtures/", "Contract fixtures are opt-in test inputs and must never enter a release."],
 	["node_modules/jiti/", "Built-in Pi extensions are statically bundled. The dynamic JS/TS loader must stay unreachable."],
 	["node_modules/@earendil-works/pi-tui/", "The bookmark uses Obsidian dialogs. Pi's terminal runtime must not enter the mobile bundle."],
 	["node_modules/highlight.js/", "Terminal syntax highlighting is unused by the built-in bookmark."],

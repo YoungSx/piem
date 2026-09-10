@@ -127,4 +127,38 @@ describe("native extension UI attachment", () => {
 		expect(() => third.getEditorText()).toThrow("inactive conversation");
 		expect(() => first.setEditorText("A is still gone")).toThrow("inactive conversation");
 	});
+
+	it("runs shortcuts only within the current textarea and preserves composition and native editing", async () => {
+		const panel = await mount({ strict: true });
+		let calls = 0;
+		panel.latest().setShortcuts?.([
+			{ key: "ctrl+shift+r", description: "Review", run: async () => { calls++; } },
+			{ key: "ctrl+c", description: "Reserved", run: async () => { calls += 10; } },
+		]);
+		await flushRender();
+		const editor = panel.host.querySelector("textarea")!;
+		const dispatch = (target: EventTarget, options: KeyboardEventInit = {}) => {
+			const event = new KeyboardEvent("keydown", { key: "R", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...options });
+			target.dispatchEvent(event);
+			return event;
+		};
+		expect(dispatch(document.body).defaultPrevented).toBe(false);
+		expect(calls).toBe(0);
+		expect(dispatch(editor).defaultPrevented).toBe(true);
+		await flushRender();
+		expect(calls).toBe(1);
+		expect(dispatch(editor, { isComposing: true }).defaultPrevented).toBe(false);
+		expect(dispatch(editor, { key: "c", shiftKey: false }).defaultPrevented).toBe(false);
+		expect(calls).toBe(1);
+		await panel.render(true, "session-b");
+		expect(dispatch(editor).defaultPrevented).toBe(false);
+		expect(calls).toBe(1);
+		panel.latest().setShortcuts?.([{ key: "ctrl+shift+r", description: "Current", run: async () => { calls += 2; } }]);
+		expect(dispatch(editor).defaultPrevented).toBe(true);
+		await flushRender();
+		expect(calls).toBe(3);
+		panel.unmount();
+		expect(dispatch(editor).defaultPrevented).toBe(false);
+		expect(calls).toBe(3);
+	});
 });

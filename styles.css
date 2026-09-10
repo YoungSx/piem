@@ -6080,3 +6080,169 @@ input.piem-ask-other::placeholder {
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
+
+/* Standard Pi components use the host's controls and flow, with no terminal grid. */
+.piem-native-extension {
+	box-sizing: border-box;
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+	max-width: 100%;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	position: relative;
+	white-space: normal;
+}
+
+.piem-native-extension__measure {
+	pointer-events: none;
+	position: absolute;
+	visibility: hidden;
+	white-space: pre;
+}
+
+.piem-native-extension__container {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+	min-width: 0;
+}
+
+.piem-native-extension__text {
+	box-sizing: border-box;
+	max-width: 100%;
+	padding-block: var(--piem-extension-padding-y, 0);
+	padding-inline: min(var(--piem-extension-padding-x, 0), 10%);
+	white-space: pre-wrap;
+}
+
+.piem-native-extension__border {
+	border: none;
+	border-top: 1px solid var(--background-modifier-border);
+	margin: var(--size-4-2) 0;
+	width: 100%;
+}
+
+.piem-native-extension__select {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	max-height: min(calc(var(--piem-extension-visible-count, 8) * 3.5rem), 50vh);
+	min-width: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: var(--size-2-1);
+}
+
+.piem-native-extension button.piem-native-extension__option,
+.piem-chat__extension-actions button {
+	align-items: flex-start;
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	color: var(--text-normal);
+	display: flex;
+	font: inherit;
+	gap: var(--size-2-1);
+	height: auto;
+	min-height: 36px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	padding: var(--size-4-2);
+	text-align: start;
+	white-space: normal;
+	width: 100%;
+}
+
+.piem-native-extension button.piem-native-extension__option {
+	flex-direction: column;
+	flex-shrink: 0;
+}
+
+.piem-native-extension button.piem-native-extension__option[aria-selected="true"] {
+	background: var(--background-modifier-hover);
+}
+
+.piem-native-extension__description {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.piem-native-extension__loader > [role="status"] {
+	align-items: center;
+	display: flex;
+	gap: var(--size-4-2);
+	margin-block-end: var(--size-4-2);
+}
+
+.piem-native-extension__loader progress {
+	accent-color: var(--interactive-accent);
+	flex-shrink: 0;
+	width: 3em;
+}
+
+.piem-native-extension__error {
+	color: var(--text-error);
+	margin: var(--size-4-2) 0 0;
+}
+
+.piem-native-extension-dialog {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.piem-chat__extension-actions {
+	white-space: normal;
+}
+
+.piem-chat__extension-actions summary {
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: var(--size-4-2) var(--size-4-1);
+}
+
+.piem-chat__extension-actions ul {
+	list-style: none;
+	margin: var(--size-4-1) 0 0;
+	padding: 0;
+}
+
+.piem-chat__extension-actions button {
+	align-items: center;
+	flex-wrap: wrap;
+	justify-content: space-between;
+}
+
+.piem-chat__extension-actions kbd {
+	font-size: var(--font-ui-smaller);
+	margin-inline-start: auto;
+}
+
+.piem-chat__extension-actions button:disabled {
+	cursor: wait;
+	opacity: 0.6;
+}
+
+.piem-native-extension button:focus-visible,
+.piem-chat__extension-actions :is(summary, button):focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: 2px;
+}
+
+@media (hover: hover) {
+	.piem-native-extension button.piem-native-extension__option:hover,
+	.piem-chat__extension-actions button:not(:disabled):hover {
+		background: var(--background-modifier-hover);
+	}
+	.piem-chat__extension-actions summary:hover {
+		color: var(--text-normal);
+	}
+}
+
+@media (any-pointer: coarse) {
+	.piem-native-extension button.piem-native-extension__option,
+	.piem-chat__extension-actions :is(summary, button) {
+		min-height: 44px;
+	}
+}

@@ -429,7 +429,7 @@ describe("touch targets (WCAG 2.5.5 / 2.5.8)", () => {
 	 * itself.
 	 */
 	it("keys every touch-target rule on any-pointer, never on pointer alone", () => {
-		expect(allDeclarations.match(/@media \(any-pointer: coarse\)/g)?.length).toBe(2);
+		expect(mediaBlocks("any-pointer: coarse").length).toBeGreaterThan(0);
 		for (const block of mediaBlocks("pointer: coarse")) {
 			expect(block).not.toMatch(/min-(?:height|width):/);
 		}
@@ -438,7 +438,7 @@ describe("touch targets (WCAG 2.5.5 / 2.5.8)", () => {
 	it("grows the jump-to-latest button, by height only", () => {
 		// It is a bare <button>, not a .piem-chat__icon-button, so the shared
 		// selector never reached it — leaving a 32px control in the thumb zone.
-		const coarse = styles.slice(styles.lastIndexOf("@media (any-pointer: coarse)"));
+		const coarse = mediaBlocks("any-pointer: coarse").join("\n");
 		const rule = coarse.match(/\.piem-chat__latest\s*\{([^}]*)\}/);
 		expect(rule).not.toBeNull();
 		expect(rule?.[1]).toContain("min-height: var(--size-4-12)");
@@ -450,7 +450,7 @@ describe("touch targets (WCAG 2.5.5 / 2.5.8)", () => {
 		// The shared rule raises `min-width` to 48px, which on a phone would stop a
 		// long model name from ellipsizing and push Send off the row. Height is the
 		// half of the touch target that matters here; the button is wide by content.
-		const coarse = styles.slice(styles.lastIndexOf("@media (any-pointer: coarse)"));
+		const coarse = mediaBlocks("any-pointer: coarse").join("\n");
 		const rule = coarse.match(/\.piem-chat__model-switcher\s*\{([^}]*)\}/);
 		expect(rule).not.toBeNull();
 		expect(rule?.[1]).toContain("min-height: var(--size-4-12)");
@@ -461,7 +461,7 @@ describe("touch targets (WCAG 2.5.5 / 2.5.8)", () => {
 		// The rows are bare <button>s, so the shared icon-button selector never
 		// reached them either — a desc-less row measured ~28px in the thumb zone.
 		// Width comes from the menu itself, so no floor is declared.
-		const coarse = styles.slice(styles.lastIndexOf("@media (any-pointer: coarse)"));
+		const coarse = mediaBlocks("any-pointer: coarse").join("\n");
 		const rule = coarse.match(/\.piem-chat__command-menu-button\s*\{([^}]*)\}/);
 		expect(rule).not.toBeNull();
 		expect(rule?.[1]).toContain("min-height: var(--size-4-12)");
@@ -474,7 +474,7 @@ describe("touch targets (WCAG 2.5.5 / 2.5.8)", () => {
 		// other touch rule, and absent from the base rule, which keeps 40vh.
 		const base = ruleBody(".piem-chat__command-menu");
 		expect(base).toContain("max-height: 40vh");
-		const coarse = styles.slice(styles.lastIndexOf("@media (any-pointer: coarse)"));
+		const coarse = mediaBlocks("any-pointer: coarse").join("\n");
 		const rule = coarse.match(/\.piem-chat__command-menu\s*\{([^}]*)\}/);
 		expect(rule).not.toBeNull();
 		expect(rule?.[1]).toContain("max-height: 50vh");

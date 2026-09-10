@@ -412,6 +412,14 @@ export const zhCN: DeepPartial<EnCopy> = {
 		loadingSuggestions: "正在加载建议…",
 		noSuggestions: "暂无建议",
 		expiresIn: "将在 {seconds} 秒后关闭",
+		dialogTitle: "扩展",
+		optionsLabel: "扩展选项",
+		noOptions: "暂无选项",
+		loading: "正在加载",
+		cancelled: "已取消",
+		actionsLabel: "扩展操作",
+		runningAction: "正在执行…",
+		actionFailed: "操作失败，请重试。",
 	},
 
 	session: {

@@ -9,10 +9,11 @@ import { unavailable } from "./node/unavailable";
 import { ExtensionLifetime, abortable, type ExtensionScope } from "./extensionLifetime";
 import { bindScopedContexts } from "./extensionContext";
 import { ExtensionAgentEvents, SUPPORTED_EXTENSION_EVENTS } from "./extensionEvents";
-import { createExtensionModels, extensionModelSnapshot, type ExtensionComplete } from "./extensionModels";
+import { createExtensionModels, type ExtensionComplete } from "./extensionModels";
 import { createExtensionSession } from "./extensionSession";
 import { createNativeExtensionUI } from "./nativeExtensionUI";
 import type { ExtensionUIAdapter } from "./extensionUI";
+import { parseKey } from "./compat/keys";
 
 export interface ExtensionEntry {
 	id: string;
@@ -63,8 +64,8 @@ function validateRegistration(extension: Extension): void {
 	for (const event of extension.handlers.keys()) {
 		if (!SUPPORTED_EXTENSION_EVENTS.has(event)) unavailable(`extension event ${event}`);
 	}
-	if (extension.shortcuts.size || extension.flags.size || extension.messageRenderers.size || extension.entryRenderers?.size || extension.markdownTransformer) {
-		unavailable("terminal shortcuts, flags or renderers");
+	if (extension.flags.size || extension.messageRenderers.size || extension.entryRenderers?.size || extension.markdownTransformer) {
+		unavailable("extension flags or terminal renderers");
 	}
 }
 
@@ -95,11 +96,18 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const ids = new Set<string>();
 		const commands = new Set<string>();
 		const tools = new Set<string>();
+		const shortcutKeys = new Set<string>();
 		for (const { id, factory } of factories) {
 			if (ids.has(id)) throw new Error(`Duplicate extension: ${id}`);
 			ids.add(id);
 			const extension = await loadExtensionFromFactory(factory, "/vault", events, runtime, `<builtin:${id}>`);
 			validateRegistration(extension);
+			for (const shortcut of extension.shortcuts.values()) {
+				const key = parseKey(shortcut.shortcut);
+				if (!key) unavailable(`extension shortcut ${shortcut.shortcut}`);
+				if (shortcutKeys.has(key)) throw new Error(`Duplicate extension shortcut: ${key}`);
+				shortcutKeys.add(key);
+			}
 			for (const [names, registered, kind] of [[commands, extension.commands, "command"], [tools, extension.tools, "tool"]] as const) {
 				for (const name of registered.keys()) {
 					if (names.has(name)) throw new Error(`Duplicate extension ${kind}: ${name}`);
@@ -115,9 +123,11 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			getModels: () => readCallback("getModels")(),
 			complete: (...args) => requireCallback("complete")(...args),
 			assertAvailable: lifetime.assertActive.bind(lifetime),
+			assertCanComplete: assertActive,
 		});
+		const { snapshot: snapshotModel, revokeAuth, ...publicModelMembers } = modelMembers;
 		const models = limited({
-			...modelMembers,
+			...publicModelMembers,
 			complete: async (...args: Parameters<typeof modelMembers.complete>) => {
 				assertActive();
 				return modelMembers.complete(...args);
@@ -141,7 +151,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const context: ExtensionContextActions = {
 			getModel: () => {
 				const model = readCallback("getModel")();
-				return model && extensionModelSnapshot(model);
+				return model && snapshotModel(model);
 			}, getScopedModels: deny,
 			isIdle: () => readCallback("isIdle")(), isProjectTrusted: () => true,
 			getSignal: () => (disposed ? undefined : callbacks.getSignal?.()) ?? lifetime.capture().signal,
@@ -192,6 +202,28 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				return invoke(() => execute(...args));
 			} };
 		});
+		const shortcuts = extensions.flatMap(extension => [...extension.shortcuts.values()]);
+		let shortcutRunning = false;
+		let attachmentRevision = 0;
+		const attachShortcuts = (adapter: ExtensionUIAdapter): void => {
+			if (!shortcuts.length) return;
+			if (!adapter.setShortcuts) unavailable("native extension shortcut actions in this UI adapter");
+			const revision = attachmentRevision;
+			adapter.setShortcuts(shortcuts.map(shortcut => ({
+				key: parseKey(shortcut.shortcut)!, description: shortcut.description ?? shortcut.shortcut,
+				run: async (): Promise<void> => {
+					assertActive();
+					if (uiAdapter !== adapter || revision !== attachmentRevision) throw new Error("Extension shortcut belongs to an inactive panel.");
+					if (shortcutRunning) throw new Error("An extension shortcut is already running.");
+					shortcutRunning = true;
+					try {
+						await start();
+						if (uiAdapter !== adapter || revision !== attachmentRevision) throw new Error("Extension shortcut belongs to an inactive panel.");
+						await invoke(async () => { await shortcut.handler(runner.createContext()); });
+					} finally { shortcutRunning = false; }
+				},
+			})));
+		};
 		return {
 			hasBeforeAgentStart: runner.hasHandlers("before_agent_start"),
 			commands: runner.getRegisteredCommands().map(command => ({ name: command.invocationName, description: command.description })),
@@ -211,11 +243,14 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			attachUI: (adapter: ExtensionUIAdapter | undefined): void => {
 				assertActive();
 				if (uiAdapter === adapter) return;
+				attachmentRevision++;
+				nativeUI.detach();
+				revokeAuth();
 				lifetime.cancel();
 				uiAdapter?.reset();
 				uiAdapter = adapter;
 				runner.setUIContext(nativeUI.ui, adapter ? "rpc" : "print");
-				if (adapter) nativeUI.restore(adapter);
+				if (adapter) { nativeUI.restore(adapter); attachShortcuts(adapter); }
 			},
 			beforeAgentStart: async (prompt: string, images: ImageContent[] | undefined, systemPrompt: string) => {
 				await start();
@@ -234,11 +269,14 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				if (!runner.hasHandlers("agent_settled")) return;
 				await invoke(async () => { await runner.emit({ type: "agent_settled" }); });
 			},
-			cancel: (): void => lifetime.cancel(),
+			cancel: (): void => { revokeAuth(); lifetime.cancel(); },
 			closed: (): Promise<void> => closing,
 			dispose: (reason: SessionShutdownEvent["reason"] = "quit"): void => {
 				if (disposed) return;
 				disposed = true;
+				nativeUI.retire();
+				nativeUI.detach();
+				revokeAuth();
 				lifetime.revoke();
 				uiAdapter?.reset();
 				uiAdapter = undefined;

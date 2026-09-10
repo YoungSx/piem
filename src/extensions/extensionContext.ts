@@ -80,6 +80,10 @@ export function bindScopedContexts(runner: ExtensionRunner, lifetime: ExtensionL
 			const handler = command.handler;
 			command.handler = (args, ctx) => invoke(ctx, scoped => handler(args, scoped));
 		}
+		for (const shortcut of extension.shortcuts.values()) {
+			const handler = shortcut.handler;
+			shortcut.handler = ctx => invoke(ctx, async scoped => { await handler(scoped); });
+		}
 		for (const { definition } of extension.tools.values()) {
 			const execute = definition.execute.bind(definition);
 			definition.execute = (id, params, signal, onUpdate, ctx) => invoke(ctx, scoped => execute(id, params, signal, onUpdate, scoped));
