@@ -62,11 +62,25 @@ do in June" becomes answerable.
 
 ## Web
 
-`web_fetch` — the only outbound tool, always present. It always rides the
+`web_search` searches through the current model provider using its configured
+credential. It needs native search support on an OpenAI Responses or Anthropic
+Messages endpoint. Queries and supplied URLs go to that provider; unsupported
+endpoints fail without switching providers. Search may cost extra. Sources are
+retained in the tool result and made available to the next model turn.
+
+`web_fetch` reads a known URL and is always present. It always rides the
 `requestUrl` transport, the same one-layer egress every other network call in
 Piem uses, so egress stays inspectable in one place — and it reaches ordinary
 web pages, which the `fetch` transport's CORS rules would block. The
 `requestUrl`-vs-`fetch` setting affects token streaming only.
+
+## Conversation checkpoints
+
+`context_checkpoint` saves a named history anchor; `context_timeline` shows the
+current path, checkpoints and summaries. `context_compact` saves a summary branch
+from an earlier anchor and starts a model request to continue from it. Old history
+stays in the conversation file; no vault files or external changes are rolled back.
+See [Built-in Pi extensions](extending.md#built-in-pi-extensions).
 
 ## Skills
 

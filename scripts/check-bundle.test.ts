@@ -22,6 +22,10 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 			[`${codingAgent}dist/core/extensions/loader.js`]: { bytesInOutput: 100 },
 			[`${codingAgent}dist/core/extensions/runner.js`]: { bytesInOutput: 100 },
 			[`${codingAgent}dist/core/extensions/wrapper.js`]: { bytesInOutput: 100 },
+			[`${codingAgent}dist/core/tools/truncate.js`]: { bytesInOutput: 100 },
+			["pi-scoped-extension:pi-web-search"]: { bytesInOutput: 100 },
+			["pi-scoped-extension:pi-clarify"]: { bytesInOutput: 100 },
+			["pi-scoped-extension:pi-context"]: { bytesInOutput: 100 },
 			["node_modules/pi-assistant-provenance/extensions/assistant-provenance/index.ts"]: { bytesInOutput: 100 },
 			["node_modules/pi-model-switch/index.ts"]: { bytesInOutput: 100 },
 			["node_modules/pi-invisible-continue/continue.ts"]: { bytesInOutput: 100 },
@@ -71,6 +75,16 @@ describe("bundle composition after adding the public Node environment", () => {
 		expect((await gate({ [`${codingAgent}examples/extensions/bookmark.ts`]: { bytesInOutput: 0 } })).output).toContain("required module missing");
 		for (const module of ["jiti/lib/jiti.mjs", "@earendil-works/pi-tui/dist/index.js", "highlight.js/lib/index.js", "cross-spawn/index.js"]) {
 			expect((await gate({ [`node_modules/${module}`]: { bytesInOutput: 1 } })).output).toContain("banned module in bundle");
+		}
+	});
+	it("requires all scoped extension graphs and the original truncation helper", async () => {
+		for (const module of ["pi-scoped-extension:pi-web-search", "pi-scoped-extension:pi-clarify", "pi-scoped-extension:pi-context", `${codingAgent}dist/core/tools/truncate.js`]) {
+			expect((await gate({ [module]: { bytesInOutput: 0 } })).output).toContain(`required module missing from bundle: ${module}`);
+		}
+	});
+	it("keeps source-test loaders and build-time compilers out of the mobile bundle", async () => {
+		for (const module of ["src/testUtils/extensionBuildPreload.ts", "scripts/pi-scoped-factories.mjs", "node_modules/typescript/lib/typescript.js"]) {
+			expect((await gate({ [module]: { bytesInOutput: 1 } })).output).toContain("banned module in bundle");
 		}
 	});
 });

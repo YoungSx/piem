@@ -17,6 +17,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 
+// The preview imports source modules, so compile scoped factories with the
+// same audited build path as standalone Bun tests before importing the service.
+await import("../src/testUtils/extensionBuildPreload.ts");
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = process.env.PREVIEW_DIR ? resolve(process.env.PREVIEW_DIR) : resolve(HERE, "..", ".preview");
 const REPO = resolve(HERE, "..");

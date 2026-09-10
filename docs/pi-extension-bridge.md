@@ -17,20 +17,33 @@ Existing Quick actions keep their generation and click-to-send behavior.
 | --- | --- |
 | Loading | Original `loadExtensionFromFactory`, static sources only |
 | Execution | Original `ExtensionRunner` and tool wrapper; tools run sequentially |
-| Registration | Commands, tools, shortcuts, lifecycle and context handlers, private event bus; unsupported registrations and duplicate names fail |
+| Registration | Commands, tools, shortcuts, input/context and lifecycle handlers, private event bus; unsupported registrations and duplicate names fail |
 | Context | Original `context` pipeline, in order; a failed handler aborts the request |
-| Session | Read views refreshed from the owning Vault session and lane; labels use the existing log |
-| Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks |
-| Messages | Command-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 per command |
+| Session | Read views refreshed from the owning Vault session and lane; labels flush before success and summary branches publish through an awaited Vault adapter |
+| Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth |
+| Messages | Operation-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 pending messages; private `/acm` stays inside the host |
 | UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete and shortcut actions; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
 | Node | Virtual path/URL/environment, EventEmitter, immutable UTF-8 package resources |
-| Lifetime | One host per agent lifetime; disposal invalidates captured APIs and clears event subscriptions |
+| Lifetime | One host per conversation; stop invalidates pending work, reload invalidates old APIs, and owned timers and requests are tracked to completion |
 
-`fs` does not access the Vault. Unknown paths return `ENOENT` (or false for
-`existsSync`); writes, watches and processes fail explicitly. Upstream optional
-configuration is absent by design. A future writable resource needs an awaited
-Vault adapter with ownership and cancellation, not global state or a synchronous
-shadow of the vault. Desktop user skills keep their separate existing Node path.
+`fs` does not access the Vault. Scoped factories can read only JSON configuration
+snapshots under `/extensions/config`; the host supplies `clarify.json` from plugin
+settings. The `/clarify model` command saves through the normal settings writer.
+All filesystem writes, watches and processes fail explicitly. Other optional
+upstream files remain absent. Desktop user skills keep their separate Node path.
+
+`pi-scoped-factories.mjs` compiles each reviewed graph at build time and closes its
+platform imports over a per-host object. Shared pure imports stay static. There is
+no runtime evaluation, global `fetch`/timer swap or downloaded extension code. The
+Bun test preload uses the same compiler for source tests run individually.
+
+Search uses Obsidian `requestUrl`; rewrite uses Piem's configured model transport.
+The platform races cancellation for callers and tracks owned asynchronous work.
+A native `requestUrl` already sent cannot be aborted; its late result cannot write
+to the composer or start a continuation. Summary navigation reserves an entry ID,
+stages the entry on one reusable lane and publishes the selected pointer last.
+An already-started Vault write may commit after Stop; no stale rollback runs, and
+the runtime adopts the saved result. Failed staging leaves the old branch selected.
 
 The adapters deliberately supply different session read views: bookmark scans the
 whole authoritative log, matching upstream; community extensions can read stored
@@ -106,7 +119,7 @@ panel and concurrent shortcut invocations are rejected.
 Supported events are `session_start`, `session_shutdown`, `before_agent_start`,
 `agent_start`, `agent_end`, `agent_settled`, `turn_start`, `turn_end`,
 `message_start`, `message_update`, `message_end`, and the three
-`tool_execution_*` events, plus `context`. Startup happens once on first panel
+`tool_execution_*` events, plus `context`, `input`, `model_select` and `session_tree`. Startup happens once on first panel
 attachment or execution. The original Runner orders handlers and combines
 their results. A `before_agent_start` system prompt applies to that run; custom
 messages and `message_end` replacements follow the existing persistence path.
@@ -118,6 +131,10 @@ from a cancelled handler remain invalid; completed startup callbacks can keep
 serving later turns in the same conversation. Shared `pi.sendMessage`,
 `pi.setLabel` and `pi.setModel` mutations must begin before the handler's first
 `await`; asynchronous native UI/model work uses captured `ctx` capabilities.
+The statically audited research factories use an exclusive per-conversation
+operation that also owns their deferred timers, allowing their upstream asynchronous
+`pi.*` actions while retaining the same cancellation boundary. Other factories
+keep the stricter captured-context contract.
 Disposal immediately retires old capabilities and subscriptions, allowing at
 most one second for `session_shutdown` cleanup.
 
@@ -183,8 +200,9 @@ settles. No polling or permanent timers are added.
    user documentation and a statement in settings for user-visible effects.
 5. Verify original execution, failure/cancellation, two-session ownership, reload,
    and no Node access. Build, lint, individual tests and the full suite must pass.
-   Run `scripts/smoke-community-obsidian.mjs` against a disposable real Obsidian
-   vault, on desktop and with official mobile emulation.
+   Run `scripts/smoke-community-obsidian.mjs` and
+   `scripts/smoke-research-extensions-obsidian.mjs` against a disposable real
+   Obsidian vault, on desktop and with official mobile emulation.
 
 `scripts/smoke-extension-ui-obsidian.mjs` exercises native dialogs, composer
 completions, lifecycle and model requests with a local test factory in the

@@ -80,6 +80,13 @@ class FakeAgentService {
 	readonly sentPrompts: string[] = [];
 	private snapshot: ChatSnapshot;
 	private readonly listeners = new Set<(snapshot: ChatSnapshot) => void>();
+	extensionSend?: () => Promise<boolean>;
+	abortCalls = 0;
+
+
+	isExtensionInput(prompt: string): boolean {
+		return /^\/(clarify|context)(?:\s|$)/.test(prompt);
+	}
 
 	constructor(
 		private readonly app: App,
@@ -119,6 +126,7 @@ class FakeAgentService {
 
 	async sendPrompt(prompt: string): Promise<boolean> {
 		this.sentPrompts.push(prompt);
+		if (this.isExtensionInput(prompt) && this.extensionSend) return this.extensionSend();
 		if (this.failSends) {
 			return false;
 		}
@@ -133,7 +141,7 @@ class FakeAgentService {
 	// Everything below exists because `ChatApp` wires a handler to it. None of it
 	// is reached by these tests, and a body that did something would only invite
 	// a reader to trust it.
-	abort(): void {}
+	abort(): void { this.abortCalls++; }
 	dismissMessages(): void {}
 	notifyImagesBlocked(): void {}
 	/** Logged, so a wall offer's button that reached the service shows up as a count. */
@@ -1018,6 +1026,13 @@ describe("ChatApp session fork", () => {
 
 		expect(mounted.host.querySelector('[aria-label="Fork a new chat from here"]')).toBeNull();
 	});
+
+	it("hides retry, edit and fork actions while an extension is running", async () => {
+		mounted = await mountChat({ snapshot: { ...answered, isExtensionBusy: true } });
+		expect(mounted.host.querySelector('[aria-label="Fork a new chat from here"]')).toBeNull();
+		expect(mounted.host.querySelector('[aria-label="Edit and resend"]')).toBeNull();
+		expect(mounted.host.querySelector('[aria-label="Regenerate reply"]')).toBeNull();
+	});
 });
 
 describe("ChatApp interrupted reply", () => {
@@ -1483,6 +1498,142 @@ describe("ChatStatusBar run readout", () => {
 
 	afterEach(() => {
 		setSystemTime();
+	});
+});
+
+describe("ChatApp extension commands", () => {
+	let mounted: Mounted | undefined;
+	beforeEach(() => { document.body.replaceChildren(); });
+	afterEach(async () => {
+		await mounted?.unmount();
+		mounted = undefined;
+		platformMock.isMobile = false;
+		document.body.replaceChildren();
+	});
+
+	it("lets a rewrite read the original draft and preserves the result without moving mobile focus", async () => {
+		platformMock.isMobile = true;
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const { host, service, draftStore } = mounted;
+		await typeDraft(composer(host), "  /clarify 整理今天的笔记  ");
+		const other = document.createElement("button");
+		document.body.appendChild(other);
+		other.focus();
+		service.extensionSend = async () => {
+			const editor = service.extensionUI!;
+			expect(editor.getEditorText()).toBe("  /clarify 整理今天的笔记  ");
+			editor.setEditorText("整理今天的笔记，并列出待办事项。");
+			return true;
+		};
+		mounted.inputController.submit();
+		await flushRender();
+		expect(composer(host).value).toBe("整理今天的笔记，并列出待办事项。");
+		expect(draftStore.clearedSessions).toEqual([]);
+		expect(document.activeElement).toBe(other);
+	});
+
+	it("clears an accepted unchanged command only after it settles, preserving unconsumed images", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const { host, service, draftStore } = mounted;
+		await typeDraft(composer(host), "/context");
+		const paste = new domWindow.Event("paste", { bubbles: true, cancelable: true });
+		Object.defineProperty(paste, "clipboardData", {
+			value: { files: [new File([new Uint8Array([0x89, 0x50])], "note.png", { type: "image/png" })] },
+		});
+		composer(host).dispatchEvent(paste);
+		await flushRender();
+		let settle!: (sent: boolean) => void;
+		service.extensionSend = () => new Promise((resolve) => { settle = resolve; });
+		mounted.inputController.submit();
+		await flushRender();
+		expect(composer(host).value).toBe("/context");
+		expect(draftStore.clearedSessions).toEqual([]);
+		settle(true);
+		await flushRender();
+		expect(composer(host).value).toBe("");
+		expect(draftStore.clearedSessions).toEqual([SESSION_ID]);
+		expect(host.querySelectorAll(".piem-chat__pending-image")).toHaveLength(1);
+	});
+
+	it.each([true, false])("keeps text typed during a command when it settles with %s", async (sent) => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const { host, service, draftStore } = mounted;
+		await typeDraft(composer(host), "/clarify old draft");
+		let settle!: (result: boolean) => void;
+		service.extensionSend = () => new Promise((resolve) => { settle = resolve; });
+		mounted.inputController.submit();
+		await flushRender();
+		await typeDraft(composer(host), "My newer draft");
+		settle(sent);
+		await flushRender();
+		expect(composer(host).value).toBe("My newer draft");
+		expect(draftStore.clearedSessions).toEqual([]);
+	});
+
+	it("unbinds the old session and never clears the next chat's matching draft", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const { host, service, draftStore } = mounted;
+		await typeDraft(composer(host), "/context");
+		let settle!: (sent: boolean) => void;
+		service.extensionSend = () => new Promise((resolve) => { settle = resolve; });
+		mounted.inputController.submit();
+		await flushRender();
+		const next = { ...sessionInfo(), id: "next", path: "chats/next.jsonl" };
+		await draftStore.set(next.id, "/context");
+		service.emit({ session: next, sessionRevision: 1 });
+		await flushRender();
+		expect(service.extensionUI?.getEditorText()).toBe("/context");
+		settle(true);
+		await flushRender();
+		expect(composer(host).value).toBe("/context");
+		expect(draftStore.clearedSessions).toEqual([]);
+		await mounted.unmount();
+		mounted = undefined;
+		expect(service.extensionUI).toBeUndefined();
+	});
+
+	it("offers Stop and hides quick actions while an extension owns the composer", async () => {
+		mounted = await mountChat({ snapshot: { isConfigured: true, isExtensionBusy: true } });
+		const { host, service } = mounted;
+		expect(host.querySelector(".piem-chat")?.getAttribute("aria-busy")).toBe("true");
+		expect(host.querySelectorAll(".piem-chat__quick-action")).toHaveLength(0);
+		expect(service.suggestionRequests).toEqual([]);
+		const stop = host.querySelector<HTMLButtonElement>(".piem-chat__stop-button");
+		expect(stop).not.toBeNull();
+		stop?.click();
+		expect(service.abortCalls).toBe(1);
+		await typeDraft(composer(host), "Wait until settled");
+		mounted.inputController.submit();
+		await flushRender();
+		expect(service.sentPrompts).toEqual([]);
+	});
+
+	it("does not clear the saved draft when a command finishes after its composer closes", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const { host, service, draftStore } = mounted;
+		await typeDraft(composer(host), "/context");
+		let settle!: (sent: boolean) => void;
+		service.extensionSend = () => new Promise((resolve) => { settle = resolve; });
+		mounted.inputController.submit();
+		await flushRender();
+		await mounted.unmount();
+		mounted = undefined;
+		settle(true);
+		await flushRender();
+		expect(await draftStore.get(SESSION_ID)).toBe("/context");
+		expect(draftStore.clearedSessions).toEqual([]);
+	});
+
+	it("opens the context popover from a command and resets it on a session switch", async () => {
+		mounted = await mountChat({ snapshot: { contextFill: nearFill(), extensionContextRequest: 0 } });
+		const { host, service } = mounted;
+		expect(host.querySelector(".piem-chat__context-popover")).toBeNull();
+		service.emit({ extensionContextRequest: 1 });
+		await flushRender();
+		expect(host.querySelector(".piem-chat__context-popover")).not.toBeNull();
+		service.emit({ session: { ...sessionInfo(), id: "next", path: "chats/next.jsonl" }, sessionRevision: 1 });
+		await flushRender();
+		expect(host.querySelector(".piem-chat__context-popover")).toBeNull();
 	});
 });
 

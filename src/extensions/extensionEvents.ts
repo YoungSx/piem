@@ -5,6 +5,7 @@ export const SUPPORTED_EXTENSION_EVENTS = new Set([
 	"context", "session_start", "session_shutdown", "before_agent_start", "agent_start", "agent_end", "agent_settled",
 	"turn_start", "turn_end", "message_start", "message_update", "message_end",
 	"tool_execution_start", "tool_execution_update", "tool_execution_end",
+	"input", "model_select", "session_tree",
 ]);
 
 /** The native agent emits fewer fields than Pi's extension-facing event types. */

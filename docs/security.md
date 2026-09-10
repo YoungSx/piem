@@ -37,6 +37,20 @@ normal billable model request. Provenance notes name earlier models in request
 context; they do not send anything to a separate service. These extensions run
 only the code shipped in the plugin, and cannot load local or remote scripts.
 
+`web_search` sends its query and supplied URLs to the current model provider's
+native search endpoint, without adding the whole conversation to that search
+request. The provider handles search and source retrieval; its own terms and
+search fees apply. Piem never silently chooses a different provider. `/clarify`
+sends only the supplied draft and rewrite instructions to the current or explicitly
+pinned model; it does not add the active note or conversation. The result remains
+an editable draft until you send it. `context_compact` retains the old history and
+saves a summary branch locally, then sends a normal model request to continue.
+
+Stop cancels pending extension actions and ignores late results. Obsidian's
+`requestUrl` cannot stop a native network request already in flight, so that request
+may finish or remain billable. Pending transport work stays accounted for until it
+settles; it cannot write a late draft, switch another chat or resume a stopped task.
+
 There is no telemetry, analytics, crash reporter or Piem-operated backend.
 
 The practical consequence: **point Piem at a vault you are willing to send to

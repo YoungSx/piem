@@ -15,19 +15,29 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 | --- | --- |
 | 加载 | 原版 `loadExtensionFromFactory`，只加载静态源码 |
 | 执行 | 原版 `ExtensionRunner` 和工具包装器，工具串行执行 |
-| 注册 | 命令、工具、快捷键、生命周期及上下文处理器、内部事件总线；不支持的注册及重复名称直接失败 |
+| 注册 | 命令、工具、快捷键、输入/上下文及生命周期处理器、内部事件总线；不支持的注册及重复名称直接失败 |
 | 上下文 | 按顺序运行原版 `context` 管线；处理器失败则终止请求 |
-| 会话 | 从所属 Vault 会话及分支刷新只读视图；书签标签写入现有日志 |
-| 模型 | 已配密钥且标识唯一的模型；目录及导入的 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调 |
-| 消息 | 命令内的 `sendMessage`，要求 `triggerTurn` 和 `followUp`，每条命令最多 16 条 |
+| 会话 | 从所属 Vault 会话及分支刷新读视图；标签保存后返回成功，摘要分支通过可等待的 Vault 适配发布 |
+| 模型 | 已配凭据且标识唯一的模型；目录及 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调；已审核搜索/改写工厂另外可解析当前服务商凭据 |
+| 消息 | 操作内的 `sendMessage`，要求 `triggerTurn` 和 `followUp`，最多 16 条待发消息；内部 `/acm` 不发给模型 |
 | 界面 | Obsidian 原生弹窗、支持的组件工厂、草稿、组件及状态、补全和快捷操作；面板连接时为 `rpc`/`hasUI:true`，未连接时为 `print`/`false` |
 | Node | 虚拟路径、URL、环境、EventEmitter、不可变 UTF-8 包资源 |
-| 生命周期 | 每个代理持有一个宿主；释放时令旧接口失效并清理事件订阅 |
+| 生命周期 | 每段聊天拥有独立宿主；停止使待执行工作失效，重载使旧接口失效，自有定时器和请求跟踪到结束 |
 
-`fs` 不访问 Vault。未知路径返回 `ENOENT`，`existsSync` 返回 false；写入、监听和
-进程执行会明确失败。上游可选配置文件有意不挂载。以后要支持可写资源，应提供
-可等待完成、能检查所属会话及取消状态的 Vault 适配，不能用全局状态或同步内存
-副本冒充真实笔记库。桌面用户技能仍走原有的独立 Node 路径。
+`fs` 不访问 Vault。独立工厂只可读取 `/extensions/config` 下的 JSON 配置快照；
+宿主把插件设置映射为 `clarify.json`。`/clarify model` 经正常设置保存流程写入，
+文件系统写入、监听和进程执行一律明确失败。其他上游可选文件仍不挂载。
+桌面用户技能仍走原有的独立 Node 路径。
+
+`pi-scoped-factories.mjs` 在构建时编译已审核的源码图，把平台导入绑定到各自
+宿主，纯函数依赖仍用静态导入共享。不在运行时求值代码，不替换全局网络或
+定时器，也不下载扩展代码。Bun 测试预载使用同一编译器，单文件测试无需前次产物。
+
+搜索使用 Obsidian `requestUrl`，改写使用 Piem 已配置的模型传输。平台让调用者
+及时收到取消，同时跟踪自己发起的异步工作。已经发出的原生 `requestUrl` 无法
+中止，但迟到结果不能覆盖草稿或继续任务。摘要跳转先保留条目编号，再在唯一
+复用的暂存通道保存，最后切换选中位置。停止时已开始的 Vault 写入可能完成；
+旧宿主不发起回滚，运行状态以保存结果为准。暂存失败时仍选中旧分支。
 
 两种适配提供不同的会话读视图：书签扫描整份权威日志，保持上游规则；社区扩展
 可读取已存日志及所属会话当前分支。Pi 的同步动作先由适配层收集，服务等待真实操作完成后才
@@ -88,7 +98,8 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 
 支持事件：`session_start`、`session_shutdown`、`before_agent_start`、`agent_start`、
 `agent_end`、`agent_settled`、`turn_start`、`turn_end`、`message_start`、
-`message_update`、`message_end`、三种 `tool_execution_*`，以及 `context`。
+`message_update`、`message_end`、三种 `tool_execution_*`，以及 `context`、`input`、
+`model_select`、`session_tree`。
 首次连接面板或执行时启动一次。原版 Runner 负责处理器顺序和结果合并。
 `before_agent_start` 的系统提示只用于该轮；自定义消息和 `message_end` 改写
 走现有持久化流程。`agent_settled` 等排队续跑和自动整理完成后触发。流式增量
@@ -97,7 +108,9 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 停止和新提问会取消未完成的扩展工作。被取消处理器已捕获的接口始终失效，
 完成启动的回调可继续服务该会话后续回合。共享的 `pi.sendMessage`、`pi.setLabel`、
 `pi.setModel` 写操作必须在处理器第一次 `await` 前启动；异步界面和模型调用使用
-带所属关系的 `ctx` 能力。释放宿主立即撤销旧接口和订阅，最多给
+带所属关系的 `ctx` 能力。已静态审核的研究扩展另有每会话独占操作，统一拥有
+延迟定时器，因此可保留上游异步 `pi.*` 动作，同时检查取消状态。其他工厂继续
+遵循较严格的上下文契约。释放宿主立即撤销旧接口和订阅，最多给
 `session_shutdown` 一秒时间清理。
 
 取消范围包括宿主管理并等待的处理器、工厂、弹窗和模型请求。标准组件的选择和
@@ -150,7 +163,8 @@ Piem 内部。凭据绑定所属聊天、模型及捕获的回调作用域，经
    并在设置里说明对用户有影响的行为。
 5. 验证原版执行、失败与取消、两段聊天隔离、重载和 Node 隔离；通过构建、lint、
    单文件测试和全量测试。用临时真实 Obsidian 笔记库跑
-   `scripts/smoke-community-obsidian.mjs`，覆盖桌面及官方手机模拟。
+   `scripts/smoke-community-obsidian.mjs` 和
+   `scripts/smoke-research-extensions-obsidian.mjs`，覆盖桌面及官方手机模拟。
 
 `scripts/smoke-extension-ui-obsidian.mjs` 在成品服务中用本地测试工厂验证原生弹窗、
 输入补全、生命周期和模型请求。使用 `scripts/smoke-generic-bridge-obsidian.mjs`

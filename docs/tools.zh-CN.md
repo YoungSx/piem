@@ -54,10 +54,21 @@ Piem 对你仓库做的每一件事，都经由下面某个工具。没有暗管
 
 ## 网络
 
-`web_fetch` —— 唯一的对外工具，始终可用。它固定走 `requestUrl` 传输，和 Piem
+`web_search` —— 复用当前模型服务商的凭据搜索资料。接口需支持 OpenAI Responses
+或 Anthropic Messages 原生搜索。查询和指定网址发给该服务商；不支持时明确
+报错，不会静默切换服务商。搜索可能额外计费，来源保存在工具结果中，并交给
+下一轮模型请求。
+
+`web_fetch` —— 读取已知网址，始终可用。它固定走 `requestUrl` 传输，和 Piem
 里其他网络调用同属一层出口，出网行为集中在一处可查——而且普通网页也抓得到，
 换 `fetch` 传输会被 CORS 拦下。`requestUrl` 与 `fetch` 的设置只影响 token 是否
 流式。
+
+## 会话检查点
+
+`context_checkpoint` 保存命名的历史位置，`context_timeline` 展示当前路径、检查点
+与摘要。`context_compact` 从较早位置保存摘要分支，再请求模型继续。旧历史仍在
+聊天文件中，不回滚笔记或外部操作。详见[内置 Pi 扩展](extending.zh-CN.md#内置-pi-扩展)。
 
 ## 技能
 

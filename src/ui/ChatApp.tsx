@@ -133,9 +133,16 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// Read inside the prefill handler, which is rebound per conversation rather
 	// than on every keystroke just to see the current draft.
 	const inputRef = useRef(input);
+	const composerScope = useRef<object | null>(null);
+	useEffect(() => {
+		composerScope.current = {};
+		return () => { composerScope.current = null; };
+	}, [service, snapshot.session?.path, draftReady]);
 
 	inputRef.current = input;
 	const extensionUI = useExtensionUI(service, snapshot.session?.path, snapshot.language, snapshot.availableCommands, inputRef, setInput, draftReady);
+	const isExtensionBusy = snapshot.isExtensionBusy ?? false;
+	const isRewinding = snapshot.isRewinding || isExtensionBusy;
 
 	// Read inside the staging handler, which must not depend on the snapshot.
 	const supportsImagesRef = useRef(snapshot.supportsImages !== false);
@@ -246,7 +253,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 * circuiting: the chips shown are always at most one request old.
 	 */
 	useEffect(() => {
-		if (!(snapshot.isConfigured ?? false) || isInitializing || snapshot.isStreaming || snapshot.messages.length > 0) {
+		if (!(snapshot.isConfigured ?? false) || isInitializing || snapshot.isStreaming || isExtensionBusy || snapshot.messages.length > 0) {
 			return;
 		}
 		const request = ++suggestionRequestRef.current;
@@ -269,7 +276,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// Re-runs per session and per active-note change — the *path*, not just a
 		// presence flip, so A→B recomputes what the chips are about (issue #168
 		// follow-up). The guard above keeps it off a live turn.
-	}, [service, snapshot.isConfigured, snapshot.isStreaming, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, isInitializing]);
+	}, [service, snapshot.isConfigured, snapshot.isStreaming, isExtensionBusy, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, isInitializing]);
 
 	/*
 	 * Settled reply: clear whatever the previous reply suggested and fetch the
@@ -280,7 +287,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	useEffect(() => {
 		const wasStreaming = prevStreamingRef.current;
 		prevStreamingRef.current = snapshot.isStreaming;
-		if (!wasStreaming || snapshot.isStreaming || snapshot.isCompacting || snapshot.pendingToolCalls.length > 0 || snapshot.messages.length === 0) {
+		if (!wasStreaming || snapshot.isStreaming || snapshot.isCompacting || isExtensionBusy || snapshot.pendingToolCalls.length > 0 || snapshot.messages.length === 0) {
 			return;
 		}
 		const request = ++suggestionRequestRef.current;
@@ -291,7 +298,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			}
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: actions ?? [] });
 		});
-	}, [service, snapshot.isStreaming, snapshot.isCompacting, snapshot.pendingToolCalls.length, snapshot.messages.length, snapshot.sessionRevision]);
+	}, [service, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, snapshot.pendingToolCalls.length, snapshot.messages.length, snapshot.sessionRevision]);
 
 	/*
 	 * The live placement's chips only: the same `actions` would leak a previous
@@ -365,11 +372,11 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// during a stream, and a second press during an in-flight compaction
 		// reads as "nothing to compact" — a wrong report about a request that is
 		// actually running. The offer returns when the panel is idle again.
-		if (snapshot.isStreaming || snapshot.isCompacting) {
+		if (snapshot.isStreaming || snapshot.isCompacting || isExtensionBusy) {
 			return undefined;
 		}
 		return { onTidy: () => void service.compactNow(), onDismiss: () => setWallDismissed(true) };
-	}, [snapshot.contextFill, snapshot.isStreaming, snapshot.isCompacting, wallDismissed, service]);
+	}, [snapshot.contextFill, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, wallDismissed, service]);
 
 	/*
 	 * The crash-recovery offer, derived from the snapshot the service computes
@@ -385,11 +392,11 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// `isRewinding` joins the two busy states for the same reason they are
 		// here: the service declines `continue()` during a retry's rewind as well,
 		// so an offer standing through it invites a press that cannot land.
-		if (!snapshot.canResumeInterrupted || snapshot.isStreaming || snapshot.isCompacting || snapshot.isRewinding) {
+		if (!snapshot.canResumeInterrupted || snapshot.isStreaming || snapshot.isCompacting || isRewinding) {
 			return undefined;
 		}
 		return { onResume: () => void service.resumeInterruptedRun(), onDismiss: () => service.dismissInterruptedRun() };
-	}, [snapshot.canResumeInterrupted, snapshot.isStreaming, snapshot.isCompacting, snapshot.isRewinding, service]);
+	}, [snapshot.canResumeInterrupted, snapshot.isStreaming, snapshot.isCompacting, isRewinding, service]);
 
 	/*
 	 * Forking a session hands the index the reply row pinned, and the confirm
@@ -518,10 +525,25 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// The states that still refuse are a compaction with no run behind it —
 		// nothing to steer, and a send racing the compactor — a rewind, which
 		// holds the turn exclusively, and a panel that has not finished coming up.
-		if (!prompt || isInitializing || (snapshot.isCompacting && !snapshot.isStreaming) || snapshot.isRewinding) {
+		if (!prompt || isInitializing || (snapshot.isCompacting && !snapshot.isStreaming) || isRewinding) {
 			return;
 		}
 		const images = toImageContents(pendingImages);
+		if (service.isExtensionInput?.(prompt)) {
+			const original = inputRef.current;
+			const path = snapshot.session?.path;
+			const scope = composerScope.current;
+			// Commands such as /clarify read and replace the live editor. Leave it
+			// intact through cancellation, refusal and failure; only consume an
+			// accepted command still sitting unchanged in its original composer.
+			const sent = await service.sendPrompt(prompt, images);
+			if (sent && scope === composerScope.current && service.getSnapshot().session?.path === path && inputRef.current === original) {
+				inputRef.current = "";
+				clearDraft();
+			}
+			// Extension commands do not consume the staged image attachments.
+			return;
+		}
 		// The service resolves `false` and banners its own failures, so these
 		// awaits "cannot" reject — but each one is also the moment the draft has
 		// already been spent. A residual rejection would strand the send silently
@@ -613,7 +635,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 */
 	const handleQuickAction = useCallback(
 		(prompt: string): void => {
-			if (snapshot.isStreaming || snapshot.isCompacting || isInitializing) {
+			if (snapshot.isStreaming || snapshot.isCompacting || isRewinding || isInitializing) {
 				return;
 			}
 			// A suggestion the user taps while an edit is armed is a different intent
@@ -627,7 +649,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 				}
 			});
 		},
-		[service, setInput, snapshot.isStreaming, snapshot.isCompacting, isInitializing],
+		[service, setInput, snapshot.isStreaming, snapshot.isCompacting, isRewinding, isInitializing],
 	);
 
 	const handleFocusRequested = useCallback(
@@ -668,7 +690,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		<TranslatorProvider language={snapshot.language}>
 			<div
 			className="piem-chat"
-			aria-busy={snapshot.isStreaming || snapshot.isCompacting || snapshot.isRewinding || isInitializing}
+			aria-busy={snapshot.isStreaming || snapshot.isCompacting || isRewinding || isInitializing}
 		>
 				<ChatHeader
 					app={service.getApp()}
@@ -731,14 +753,14 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					traceExpand={snapshot.traceExpand}
 					onOpenSettings={canOpenSettings ? () => openPluginSettings(app) : undefined}
 					onRetry={
-						snapshot.isStreaming || snapshot.isCompacting || snapshot.isRewinding
+						snapshot.isStreaming || snapshot.isCompacting || isRewinding
 							? undefined
 							: (index) => void service.retryFrom(index)
 					}
 					onEditMessage={
-						snapshot.isStreaming || snapshot.isCompacting || snapshot.isRewinding ? undefined : handleEditMessage
+						snapshot.isStreaming || snapshot.isCompacting || isRewinding ? undefined : handleEditMessage
 					}
-					onFork={snapshot.isStreaming || snapshot.isCompacting || snapshot.isRewinding ? undefined : handleFork}
+					onFork={snapshot.isStreaming || snapshot.isCompacting || isRewinding ? undefined : handleFork}
 					app={app}
 					component={component}
 					sourcePath={sourcePath}
@@ -748,7 +770,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					compactionEvent={snapshot.compactionEvent}
 					compactionRetained={snapshot.compactionRetained}
 					contextWindow={snapshot.contextFill?.contextWindow}
-					onQuickAction={handleQuickAction}
+					onQuickAction={isExtensionBusy ? undefined : handleQuickAction}
 					suggestedActions={suggestedActions}
 					pendingQuestion={ask.request}
 					queuedQuestions={ask.queued}
@@ -770,7 +792,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					onCancelEdit={handleCancelEdit}
 					isStreaming={snapshot.isStreaming}
 					isCompacting={snapshot.isCompacting}
-					isRewinding={snapshot.isRewinding}
+					isRewinding={isRewinding}
 					isInitializing={isInitializing}
 					isConfigured={snapshot.isConfigured ?? false}
 					sendShortcut={snapshot.sendShortcut}
@@ -819,10 +841,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					onDiscardQueuedPrompt={(id) => void service.removeQueuedPrompt(id)}
 					contextGauge={
 						<ContextGauge
+							key={snapshot.session?.path}
+							openRequest={snapshot.extensionContextRequest}
 							fill={snapshot.contextFill}
 							usage={snapshot.usage}
 							showAgentDetails={snapshot.showAgentDetails}
-							isStreaming={snapshot.isStreaming}
+							isStreaming={snapshot.isStreaming || isExtensionBusy}
 							isCompacting={snapshot.isCompacting}
 							onTidy={() => void service.compactNow()}
 						/>

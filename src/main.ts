@@ -429,6 +429,8 @@ export default class PiemPlugin extends Plugin {
 			},
 		});
 		this.addCommand({ id: "continue-task", name: t.t("commands.continueTask"), callback: () => { void this.agentService?.runExtensionCommand("continue"); } });
+		this.addCommand({ id: "clarify-draft", name: t.t("extensions.clarifyCommand"), callback: () => { void this.agentService?.runExtensionCommand("clarify"); } });
+		this.addCommand({ id: "show-context", name: t.t("extensions.contextCommand"), callback: () => { void this.agentService?.runExtensionCommand("context"); } });
 		this.addCommand({ id: "bookmark-reply", name: t.t("commands.addBookmark"), callback: () => this.bookmarkDialogs?.add() });
 		this.addCommand({ id: "unbookmark-reply", name: t.t("commands.removeBookmark"), callback: () => { void this.bookmarkDialogs?.remove(); } });
 		this.addCommand({ id: "view-bookmarks", name: t.t("commands.listBookmarks"), callback: () => { void this.bookmarkDialogs?.list(); } });
@@ -439,7 +441,7 @@ export default class PiemPlugin extends Plugin {
 			// must stay behind the `!checking` guard or merely opening the palette fires it.
 			checkCallback: (checking) => {
 				const service = this.agentService;
-				if (!service || (service.getSnapshot().isStreaming === false && !service.getSnapshot().isCompacting)) {
+				if (!service || (service.getSnapshot().isStreaming === false && !service.getSnapshot().isCompacting && !service.getSnapshot().isExtensionBusy)) {
 					return false;
 				}
 				if (!checking) {

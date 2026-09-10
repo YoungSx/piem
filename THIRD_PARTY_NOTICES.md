@@ -89,6 +89,15 @@ The original npm sources are compiled into `main.js`, with exact versions in
 - [pi-invisible-continue](https://github.com/monotykamary/pi-invisible-continue):
   MIT declared by its published package, author Tom X Nguyen. The package has no
   separate license file.
+- [pi-clarify](https://github.com/dodo-reach/pi-clarify): MIT,
+  Copyright (c) 2026 dodo-reach. Its published license is preserved verbatim.
+- [pi-web-search](https://github.com/ttttmr/pi-web-search) and
+  [pi-context](https://github.com/ttttmr/pi-context): author ttttmr; their
+  published packages declare MIT. Neither tarball nor the corresponding source
+  snapshot includes a separate license or copyright file. The release preserves
+  that declaration and attribution without inventing an upstream copyright notice.
+  Reviewed snapshots: [web-search](https://github.com/ttttmr/pi-web-search/tree/d6eb1d76ad51797a15a483dea169f24b7b46d8ff),
+  [context](https://github.com/ttttmr/pi-context/tree/0235d4e762bb253fb1c4f781def0bc9eecbc4c45).
 
 The available upstream notices, attribution and declared MIT terms are preserved
 in `licenses/pi-extension-bridge.txt`, which is included in the release bundle.

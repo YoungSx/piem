@@ -40,11 +40,16 @@ export const zhCN: DeepPartial<EnCopy> = {
 	},
 
 	extensions: {
-		noImages: "继续命令不发送图片，请先移除附件。",
-		busy: "对话正在准备，请稍后再继续。",
+		clarifyCurrentModel: "草稿改写使用当前对话的模型。",
+		clarifyModelMissing: "请选择已配置模型：/clarify model <服务商> <模型>，或 /clarify model reset。",
+		clarifyModelSaved: "已保存草稿改写模型。",
+		clarifyCommand: "发送前整理草稿",
+		contextCommand: "查看对话上下文用量",
+		noImages: "这个扩展命令只处理文字，请先移除附件。",
+		busy: "对话正在忙，请等当前操作结束后再试。",
 		noConversation: "先开始一段对话，再继续任务。",
 		included: "内置 Pi 扩展",
-		description: "已启用书签、模型交接标注、模型切换和无提示继续。代理可切换到已配置密钥的模型；继续任务会发出模型请求。",
+		description: "书签、模型交接标注、模型切换、继续任务、联网搜索、草稿改写和会话检查点均可用。搜索把查询和指定网址发给当前服务商；改写把草稿发给选定模型。搜索需接口支持，可能额外计费。保存摘要会保留旧历史，并发起新一轮模型请求。",
 	},
 	bookmarks: {
 		excerpt: "这里显示前 4000 个字符，完整回复仍保留在对话中。",

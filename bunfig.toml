@@ -1,0 +1,4 @@
+[test]
+# Compile scoped extension imports from the audited sources, even when a test
+# runs by itself before a production bundle has been built.
+preload = ["./src/testUtils/extensionBuildPreload.ts"]

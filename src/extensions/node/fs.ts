@@ -35,4 +35,5 @@ export const watch = (): never => unavailable("fs.watch");
 export const readFile = (): never => unavailable("fs.readFile");
 export const writeFileSync = (): never => unavailable("fs.writeFileSync");
 export const mkdirSync = (): never => unavailable("fs.mkdirSync");
-export default { constants, existsSync, readFileSync, accessSync, realpathSync, statSync, readdirSync, watch, readFile, writeFileSync, mkdirSync };
+export const unlinkSync = (): never => unavailable("fs.unlinkSync");
+export default { constants, existsSync, readFileSync, accessSync, realpathSync, statSync, readdirSync, watch, readFile, writeFileSync, mkdirSync, unlinkSync };

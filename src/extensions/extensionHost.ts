@@ -1,6 +1,7 @@
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
-import type { Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
 import { createEventBus } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js";
@@ -32,7 +33,7 @@ export interface ExtensionHostCallbacks {
 	getSessionName?(): string | undefined;
 	/** Refresh the synchronous branch read view from the owning Vault session. */
 	refreshSession?(): Promise<void>;
-	notify(message: string): void;
+	notify: ExtensionUIContext["notify"];
 	getLabel?(id: string): string | undefined;
 	setLabel?(id: string, label: string | undefined): void;
 	getModel?(): Model<string> | undefined;
@@ -48,6 +49,15 @@ export interface ExtensionHostCallbacks {
 	waitForIdle?(): Promise<void>;
 	getActiveTools?(): string[];
 	sendMessage?: ExtensionActions["sendMessage"];
+	sendUserMessage?: ExtensionActions["sendUserMessage"];
+	/** Audited scoped factories own one asynchronous operation, including its timers. */
+	assertOperation?(): void;
+	getAuth?(model: Model<string>): Promise<{ ok: true; apiKey?: string; headers?: Record<string, string>; baseUrl?: string } | { ok: false; error: string }>;
+	setActiveTools?(names: string[]): void;
+	getContextUsage?(): ContextUsage | undefined;
+	getEditorText?(): string;
+	setEditorText?(text: string): void;
+	session?: ContextSession;
 }
 
 /** No silent no-ops: even reading an unsupported member identifies the missing capability. */
@@ -117,7 +127,18 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			extensions.push(extension);
 		}
 		if (runtime.pendingProviderRegistrations.length || runtime.pendingNativeProviderRegistrations.length) unavailable("extension provider registration");
-		const session = limited(createExtensionSession(callbacks, lifetime.assertActive.bind(lifetime)), "session");
+		const session = limited({
+			...createExtensionSession(callbacks, lifetime.assertActive.bind(lifetime)),
+			...(callbacks.session ? {
+				getBranch: (id?: string) => callbacks.session!.getBranch(id),
+				getTree: () => callbacks.session!.getTree(),
+				getChildren: (id: string) => callbacks.session!.getChildren(id),
+				getLeafId: () => callbacks.session!.getLeafId(),
+				getEntry: (id: string) => callbacks.session!.getEntry(id),
+				branchWithSummary: (id: string, summary: string) => callbacks.session!.branchWithSummary(id, summary),
+				branch: (id: string) => callbacks.session!.branch(id),
+			} : {}),
+		}, "session");
 		const modelMembers = createExtensionModels({
 			lifetime,
 			getModels: () => readCallback("getModels")(),
@@ -128,6 +149,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const { snapshot: snapshotModel, revokeAuth, ...publicModelMembers } = modelMembers;
 		const models = limited({
 			...publicModelMembers,
+			...(callbacks.getAuth ? { getApiKeyAndHeaders: (model: Model<string>) => requireCallback("getAuth")(model) } : {}),
 			complete: async (...args: Parameters<typeof modelMembers.complete>) => {
 				assertActive();
 				return modelMembers.complete(...args);
@@ -139,13 +161,14 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		if (!(candidate instanceof ExtensionRunner)) throw new Error("Pi did not construct an extension runner.");
 		const runner = candidate;
 		const deny = (): never => unavailable("this extension action");
+		const assertAction = () => callbacks.assertOperation ? callbacks.assertOperation() : lifetime.assertInvocation();
 		const actions: ExtensionActions = {
-			sendMessage: (message, options) => { lifetime.assertInvocation(); requireCallback("sendMessage")(message, options); },
-			sendUserMessage: deny, appendEntry: deny, setSessionName: deny, getSessionName: () => requireCallback("getSessionName")(),
-			setLabel: (id, label) => { lifetime.assertInvocation(); requireCallback("setLabel")(id, label); },
+			sendMessage: (message, options) => { assertAction(); requireCallback("sendMessage")(message, options); },
+			sendUserMessage: (message, options) => { assertAction(); requireCallback("sendUserMessage")(message, options); }, appendEntry: deny, setSessionName: deny, getSessionName: () => requireCallback("getSessionName")(),
+			setLabel: (id, label) => { assertAction(); requireCallback("setLabel")(id, label); },
 			getActiveTools: () => callbacks.getActiveTools?.() ?? [...tools],
-			getAllTools: deny, setActiveTools: deny, refreshTools: deny, getCommands: deny,
-			setModel: model => { lifetime.assertInvocation(); return requireCallback("setModel")({ provider: model.provider, id: model.id }); },
+			getAllTools: deny, setActiveTools: names => { assertAction(); requireCallback("setActiveTools")(names); }, refreshTools: deny, getCommands: deny,
+			setModel: model => { assertAction(); return requireCallback("setModel")({ provider: model.provider, id: model.id }); },
 			getThinkingLevel: () => requireCallback("getThinkingLevel")(), setThinkingLevel: deny,
 		};
 		const context: ExtensionContextActions = {
@@ -156,11 +179,14 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			isIdle: () => readCallback("isIdle")(), isProjectTrusted: () => true,
 			getSignal: () => (disposed ? undefined : callbacks.getSignal?.()) ?? lifetime.capture().signal,
 			abort: () => requireCallback("abort")(), hasPendingMessages: () => readCallback("hasPendingMessages")(), shutdown: deny,
-			getContextUsage: deny, compact: deny, getSystemPrompt: () => readCallback("getSystemPrompt")(),
+			getContextUsage: () => readCallback("getContextUsage")(), compact: deny, getSystemPrompt: () => readCallback("getSystemPrompt")(),
 		};
 		runner.bindCore(actions, context, { registerProvider: deny, registerNativeProvider: deny, unregisterProvider: deny });
-		runner.bindCommandContext({ waitForIdle: () => requireCallback("waitForIdle")(), newSession: deny, fork: deny, navigateTree: deny, switchSession: deny, reload: deny });
-		const nativeUI = createNativeExtensionUI(lifetime, () => uiAdapter, message => requireCallback("notify")(message));
+		runner.bindCommandContext({ waitForIdle: () => requireCallback("waitForIdle")(), newSession: deny, fork: deny,
+			navigateTree: (id, options) => callbacks.session ? callbacks.session.navigateTree(id, options) : deny(), switchSession: deny, reload: deny });
+		const nativeUI = createNativeExtensionUI(lifetime, () => uiAdapter, (message, type) => requireCallback("notify")(message, type));
+		if (callbacks.getEditorText) nativeUI.ui.getEditorText = () => requireCallback("getEditorText")();
+		if (callbacks.setEditorText) nativeUI.ui.setEditorText = text => requireCallback("setEditorText")(text);
 		runner.setUIContext(nativeUI.ui, "print");
 		// Upstream considers any UI object available, even in print mode. Our
 		// notice-only context must not claim a mounted Obsidian editor exists.
@@ -225,6 +251,10 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			})));
 		};
 		return {
+			hasHandlers: (name: string) => runner.hasHandlers(name as Parameters<ExtensionRunner["hasHandlers"]>[0]),
+			emit: (event: Parameters<ExtensionRunner["emit"]>[0]) => invoke(() => runner.emit(event)),
+			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),
+			complete: models.complete,
 			hasBeforeAgentStart: runner.hasHandlers("before_agent_start"),
 			commands: runner.getRegisteredCommands().map(command => ({ name: command.invocationName, description: command.description })),
 			tools: registeredTools,
