@@ -5136,6 +5136,16 @@ button.piem-chat__latest--asking {
 	--icon-size: var(--icon-xs);
 }
 
+/*
+ * Flex centres boxes, but a default line-height centres them around the *em*
+ * box, whose middle sits ~1.5px below where the ink of a small label reads —
+ * so the glyph beside it looked to sag. Line-height 1 makes the box's middle
+ * and the ink's middle the same point, which is what the eye aligns to.
+ */
+.piem-chat__subagents-action-label {
+	line-height: 1;
+}
+
 @media (hover: hover) {
 
 	.piem-chat__subagents-action:hover:not(:disabled) {
