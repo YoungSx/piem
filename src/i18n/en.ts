@@ -792,6 +792,14 @@ export const en = {
 		loadingSuggestions: "Loading suggestions…",
 		noSuggestions: "No suggestions available",
 		expiresIn: "Closes in {seconds} seconds",
+		dialogTitle: "Extension",
+		optionsLabel: "Extension choices",
+		noOptions: "No choices available",
+		loading: "Loading",
+		cancelled: "Cancelled",
+		actionsLabel: "Extension actions",
+		runningAction: "Running action…",
+		actionFailed: "This action failed. Try again.",
 	},
 
 	/** Session dialogs: titles, search, and chat actions. */

@@ -1,5 +1,6 @@
 import type { AssistantMessage, Context, Model, ModelsApiStreamOptions } from "@earendil-works/pi-ai";
 import { abortable, linkedAbortSignal, type ExtensionLifetime } from "./extensionLifetime";
+import { createExtensionModelAuth } from "./extensionModelAuth";
 import { unavailable } from "./node/unavailable";
 
 export type ExtensionComplete = (model: Model<string>, context: Context, options: ModelsApiStreamOptions<string>) => Promise<AssistantMessage>;
@@ -59,6 +60,7 @@ export function createExtensionModels(options: {
 	getModels(): Model<string>[];
 	complete: ExtensionComplete;
 	assertAvailable(): void;
+	assertCanComplete?(): void;
 }) {
 	let pending = 0;
 	const configured = () => { options.assertAvailable(); return options.getModels(); };
@@ -66,43 +68,56 @@ export function createExtensionModels(options: {
 		const matches = configured().filter(model => model.provider === provider && model.id === id);
 		return matches.length === 1 ? matches[0] : undefined;
 	};
-	const available = () => configured().map(extensionModelSnapshot);
+	const assertCanComplete = () => {
+		if (options.assertCanComplete) options.assertCanComplete();
+		else options.assertAvailable();
+	};
+	const complete = (requested: Model<string>, context: Context, request: ModelsApiStreamOptions<string> = {}): Promise<AssistantMessage> => options.lifetime.run(async scope => {
+		assertCanComplete();
+		const authoritative = resolve(requested.provider, requested.id);
+		if (!authoritative) throw new Error("Extension model must name one configured, unambiguous model with credentials.");
+		const model = structuredClone(authoritative);
+		const snapshot = validatedOptions(request, model);
+		if (pending >= EXTENSION_COMPLETION_LIMIT) throw new Error(`At most ${EXTENSION_COMPLETION_LIMIT} extension model requests may run per conversation.`);
+		const timeout = new AbortController();
+		const signal = linkedAbortSignal(scope.signal, snapshot.signal, timeout.signal);
+		const timer = window.setTimeout(() => timeout.abort(), EXTENSION_COMPLETION_TIMEOUT_MS);
+		try {
+			if (signal.signal.aborted) throw new DOMException("Extension model request was cancelled.", "AbortError");
+			const copiedContext = structuredClone(context);
+			pending++;
+			// Releasing the caller is not proof the transport stopped. Obsidian's
+			// requestUrl may finish later; keep its slot until the real work settles.
+			const work = Promise.resolve().then(() => {
+				if (signal.signal.aborted) throw new DOMException("Extension model request was cancelled.", "AbortError");
+				return options.complete(model, copiedContext, { ...snapshot, signal: signal.signal });
+			});
+			void work.then(() => { pending--; }, () => { pending--; });
+			const result = await abortable(work, signal.signal);
+			scope.assertActive();
+			return result;
+		} finally {
+			window.clearTimeout(timer);
+			signal.dispose();
+		}
+	});
+	const auth = createExtensionModelAuth({ lifetime: options.lifetime, resolve, complete, assertCanComplete });
+	const snapshot = (model: Model<string>) => auth.bindModel(extensionModelSnapshot(model));
+	const available = () => configured().map(snapshot);
 	const find = (provider: string, id: string) => {
 		const model = resolve(provider, id);
-		return model && extensionModelSnapshot(model);
+		return model && snapshot(model);
 	};
 	return {
 		getAvailable: available,
 		getAll: available,
 		find,
 		hasConfiguredAuth: (model: Model<string>) => Boolean(find(model.provider, model.id)),
-		complete: (requested: Model<string>, context: Context, request: ModelsApiStreamOptions<string> = {}): Promise<AssistantMessage> => options.lifetime.run(async scope => {
-			const authoritative = resolve(requested.provider, requested.id);
-			if (!authoritative) throw new Error("Extension model must name one configured, unambiguous model with credentials.");
-			const model = structuredClone(authoritative);
-			const snapshot = validatedOptions(request, model);
-			if (pending >= EXTENSION_COMPLETION_LIMIT) throw new Error(`At most ${EXTENSION_COMPLETION_LIMIT} extension model requests may run per conversation.`);
-			const timeout = new AbortController();
-			const signal = linkedAbortSignal(scope.signal, snapshot.signal, timeout.signal);
-			const timer = window.setTimeout(() => timeout.abort(), EXTENSION_COMPLETION_TIMEOUT_MS);
-			try {
-				if (signal.signal.aborted) throw new DOMException("Extension model request was cancelled.", "AbortError");
-				const copiedContext = structuredClone(context);
-				pending++;
-				// Releasing the caller is not proof the transport stopped. Obsidian's
-				// requestUrl may finish later; keep its slot until the real work settles.
-				const work = Promise.resolve().then(() => {
-					if (signal.signal.aborted) throw new DOMException("Extension model request was cancelled.", "AbortError");
-					return options.complete(model, copiedContext, { ...snapshot, signal: signal.signal });
-				});
-				void work.then(() => { pending--; }, () => { pending--; });
-				const result = await abortable(work, signal.signal);
-				scope.assertActive();
-				return result;
-			} finally {
-				window.clearTimeout(timer);
-				signal.dispose();
-			}
-		}),
+		complete,
+		getApiKey: auth.getApiKey,
+		getApiKeyAndHeaders: auth.getApiKeyAndHeaders,
+		// Host-only hooks; these must not become modelRegistry methods.
+		snapshot,
+		revokeAuth: auth.revoke,
 	};
 }

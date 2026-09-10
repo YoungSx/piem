@@ -41,6 +41,7 @@
 		"@earendil-works/pi-coding-agent": "0.84.3",
 		"@modelcontextprotocol/client": "^2.0.0",
 		"events": "3.3.0",
+		"get-east-asian-width": "1.6.0",
 		"obsidian": "1.13.1",
 		"pathe": "2.0.3",
 		"pi-assistant-provenance": "0.1.0",

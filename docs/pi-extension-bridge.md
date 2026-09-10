@@ -7,18 +7,22 @@ host runs the bookmark adapter and the community adapter against the existing
 agent and Vault-backed session store. It is a reusable host for supported
 contracts, not a full Node environment or a sandbox for arbitrary code.
 
+The generic compatibility layer adds host capabilities only. It installs no new
+community extension, including `pi-suggest`, and adds no default model requests.
+Existing Quick actions keep their generation and click-to-send behavior.
+
 ## Contracts
 
 | Surface | Implemented behavior |
 | --- | --- |
 | Loading | Original `loadExtensionFromFactory`, static sources only |
 | Execution | Original `ExtensionRunner` and tool wrapper; tools run sequentially |
-| Registration | Commands, tools, lifecycle and context handlers, private event bus; unsupported registrations and duplicate names fail |
+| Registration | Commands, tools, shortcuts, lifecycle and context handlers, private event bus; unsupported registrations and duplicate names fail |
 | Context | Original `context` pipeline, in order; a failed handler aborts the request |
 | Session | Read views refreshed from the owning Vault session and lane; labels use the existing log |
-| Models | Configured, credentialed, unambiguous models; metadata queries and `complete` use Piem's transport; keys and authentication headers never enter callbacks |
+| Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks |
 | Messages | Command-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 per command |
-| UI | Native Obsidian dialogs, composer text, text widgets/status and autocomplete; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
+| UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete and shortcut actions; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
 | Node | Virtual path/URL/environment, EventEmitter, immutable UTF-8 package resources |
 | Lifetime | One host per agent lifetime; disposal invalidates captured APIs and clears event subscriptions |
 
@@ -34,6 +38,24 @@ entries and the owning lane's current branch. Synchronous Pi actions are capture
 by the service before success is reported. Model changes are recorded, clamped
 for thinking support, and applied through Pi's `prepareNextTurn` hook.
 
+## Package imports
+
+Audited community sources may keep root imports from either `@earendil-works`
+or the earlier `@mariozechner` namespace. Both resolve to the same browser
+compatibility entrypoints at build time. Extension functions are not rewritten;
+unsupported exports or package subpaths fail the build.
+
+| Package root, under either namespace | Runtime exports |
+| --- | --- |
+| `pi-ai` | `complete` |
+| `pi-tui` | `Container`, `Text`, `SelectList`, `Key`, `matchesKey`, `parseKey`, `getKeybindings`, `visibleWidth`, `truncateToWidth` |
+| `pi-coding-agent` | `BorderedLoader`, `DynamicBorder`, `theme`, `getSelectListTheme`, `getAgentDir` |
+
+These are explicit subsets. `stream`, `completeSimple`, arbitrary CLI helpers
+and a terminal engine are not included. `getAgentDir()` returns a virtual path;
+it does not make synchronous configuration files readable or writable. The
+resource-only `fs` behavior above still applies.
+
 ## Native UI and lifecycle
 
 The bridge maps intent to Obsidian UI: `select`, `confirm`, `input` and `editor`
@@ -43,17 +65,43 @@ conversation allows one dialog at a time; caller cancellation, a finite timeout,
 Stop, panel closure and conversation changes dismiss pending dialogs. Timed
 dialogs display a countdown and release their timer when closed.
 
-`setWidget` accepts text lines above or below the composer. `setStatus` displays
-text beneath it. `addAutocompleteProvider` wraps native completion data; users
-can type or select **Show suggestions**, then choose with touch or the keyboard.
+`setWidget` accepts text lines or a supported component factory above or below
+the composer. `setStatus` displays text beneath it. `addAutocompleteProvider`
+wraps native completion data; users can type or select **Show suggestions**,
+then choose with touch or the keyboard.
 Suggestions fill the draft; they do not send it. Existing slash commands and Tab
 focus navigation are preserved. Reopening a panel restores its extension text
 and completion providers without repeating `session_start`.
 
-These are native controls. Pi terminal component factories, `custom`, custom
-editors, raw terminal input, terminal themes and shortcuts are not implemented.
-An extension using those interfaces needs a native UI adapter; `hasUI` alone
-does not establish compatibility.
+Factories using the compatibility `Container`, `Text`, `SelectList`,
+`DynamicBorder` and `BorderedLoader` map to native layout, text, selectable
+options, borders and cancellable progress. `ctx.ui.custom(factory)` opens them
+in an Obsidian modal; `done(value)` returns the result and native dismissal
+returns `null`. Both touch and keyboard selection use the component's own
+callbacks. A loader exposes its abort signal without creating a spinner
+interval. Closing or replacing a surface retires its callbacks and resources;
+retained widget factories remount when the panel returns.
+
+Standard component renders carry their native structure with the returned line
+array. A wrapper such as `render: width => container.render(width)` preserves
+that structure. Copying the array or reformatting its lines loses the structure;
+arbitrary render strings remain plain text, never HTML or inferred buttons.
+Custom dialogs with input handlers but no supported interactive components are rejected.
+The bridge does not forward raw keyboard data to arbitrary terminal handlers.
+
+`ctx.ui.theme` and the exported theme accept supported Pi color names and text
+formatters such as `fg`, `bg` and `bold`; they return plain text. Native controls
+inherit Obsidian's colors and styling. `tui.requestRender()` refreshes the native
+surface; terminal cursor operations, theme switching, custom editors, raw
+terminal input and overlay positioning/handles remain unsupported. An `overlay`
+flag still opens a native modal. `hasUI` alone does not establish compatibility.
+
+Registered shortcuts appear in a collapsible **Extension actions** menu below
+the composer, so they remain reachable on touch screens. Explicit modified keys
+also work while the composer has focus. Typing, composition, Enter, Tab,
+navigation and standard edit shortcuts retain their existing behavior.
+Normalized duplicate shortcut keys fail registration; actions from an inactive
+panel and concurrent shortcut invocations are rejected.
 
 Supported events are `session_start`, `session_shutdown`, `before_agent_start`,
 `agent_start`, `agent_end`, `agent_settled`, `turn_start`, `turn_end`,
@@ -73,13 +121,43 @@ serving later turns in the same conversation. Shared `pi.sendMessage`,
 Disposal immediately retires old capabilities and subscriptions, allowing at
 most one second for `session_shutdown` cleanup.
 
+Cancellation covers handlers, factories, dialogs and model requests that the
+host manages and awaits. Standard component selection/cancel callbacks are
+synchronous `void` callbacks. If an extension starts its own asynchronous task
+there, the extension must cancel it through its component's `dispose()` and an
+`AbortController`; the browser bridge cannot track arbitrary promises or
+closures. A successful `session_start` context intentionally survives reopening
+the same conversation's panel. It is not a guarantee that every late write from
+extension-owned background work is blocked. Ownership checks still isolate
+different conversations.
+
 ## Model requests
 
-`ctx.modelRegistry` exposes `getAvailable`, `getAll`, `find`, `hasConfiguredAuth`
-and `complete`. The caller's model chooses only provider/id; the host resolves
-the configured endpoint and credentials again. `complete` sends through the
-same transport as chat and includes returned usage in the owning conversation.
-Supported options are `signal`, `maxTokens`, `temperature`, `reasoningEffort`,
+`ctx.modelRegistry` exposes `getAvailable`, `getAll`, `find`, `hasConfiguredAuth`,
+`complete`, `getApiKey` and `getApiKeyAndHeaders`. An extension can keep the usual
+imported `complete(model, context, options)` call, passing the `apiKey` and
+`headers` returned by its registry. Successful `getApiKeyAndHeaders` returns
+`{ ok: true, apiKey, headers }`; an unconfigured model returns
+`{ ok: false, error }`, and `getApiKey` returns `undefined` for it.
+
+The returned key is an opaque host capability and the headers are empty. Real
+provider secrets stay inside Piem. A capability binds the owning conversation,
+model and captured callback scope; it keeps that scope across `await`. Model
+metadata can be read again or shallow-copied: only provider/id selects the model,
+and the host resolves the configured endpoint and credentials again. A known
+snapshot from another conversation, another model, a revoked capability or
+arbitrary header overrides fails explicitly. There is no global current-host
+fallback and no direct provider request path.
+
+Cancellation retires the affected callback's capabilities. Stop, panel attachment
+changes and disposal clear all of that host's capabilities. Successful callbacks
+may retain them; at most 128 distinct callback/model capabilities can be retained
+per conversation. Repeated reads in one callback reuse its capability; reaching
+the limit fails explicitly rather than evicting a live one.
+
+Both completion forms use the same transport as chat and include returned usage
+in the owning conversation. Supported options are `signal`, `maxTokens`,
+`temperature`, `reasoningEffort`,
 `cacheRetention`, `sessionId` and string `toolChoice`. Unknown options fail rather
 than bypassing the host's routing.
 
@@ -108,10 +186,14 @@ settles. No polling or permanent timers are added.
    Run `scripts/smoke-community-obsidian.mjs` against a disposable real Obsidian
    vault, on desktop and with official mobile emulation.
 
-`scripts/smoke-extension-ui-obsidian.mjs` additionally exercises native dialogs,
-composer completions, lifecycle and model requests with a local test factory
-in the shipped service. It verifies the host, not compatibility with every
-community package. `pi-suggest` is not installed by this bridge change.
+`scripts/smoke-extension-ui-obsidian.mjs` exercises native dialogs, composer
+completions, lifecycle and model requests with a local test factory in the
+shipped service. Use `scripts/smoke-generic-bridge-obsidian.mjs` to verify the
+generic imports, component widgets, custom selection, cancellation, shortcut
+actions and imported model completion. Its local contract fixture lives in
+`scripts/fixtures/native-extension-contract.mjs`; the fixture is not registered
+as a production extension. These checks verify host contracts, not compatibility
+with every community package.
 
 The smoke uses a local deterministic model endpoint to exercise the real protocol,
 model switch and context. It is not a live-model quality evaluation. Mobile

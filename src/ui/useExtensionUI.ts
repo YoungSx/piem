@@ -19,10 +19,13 @@ export function useExtensionUI(
 	draftReady: boolean,
 ) {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const editorCleanup = useRef<(() => void) | undefined>();
 	const current = useRef({ service, sessionPath, language, commands, setInput, inputRef, draftReady });
 	current.current = { service, sessionPath, language, commands, setInput, inputRef, draftReady };
 	const [attachment, setAttachment] = useState<{ service: ObsidianAgentService; sessionPath: string; adapter: ObsidianExtensionUI }>();
 	const adapter = attachment?.service === service && attachment.sessionPath === sessionPath && draftReady ? attachment.adapter : undefined;
+	const activeAdapter = useRef(adapter);
+	activeAdapter.current = adapter;
 	const snapshot = useSyncExternalStore(adapter?.subscribe ?? subscribeEmpty, adapter?.getSnapshot ?? getEmpty);
 	useEffect(() => {
 		if (!sessionPath || !draftReady) return;
@@ -64,6 +67,21 @@ export function useExtensionUI(
 			next.dispose();
 		};
 	}, [service, sessionPath, draftReady]);
-	const bindEditor = useCallback((element: HTMLTextAreaElement | null) => { textareaRef.current = element; }, []);
+	const bindEditor = useCallback((element: HTMLTextAreaElement | null) => {
+		editorCleanup.current?.();
+		editorCleanup.current = undefined;
+		textareaRef.current = element;
+		if (!element) return;
+		const handle = (event: KeyboardEvent): void => {
+			if (event.target === element) activeAdapter.current?.handleShortcut(event);
+		};
+		element.addEventListener("keydown", handle);
+		editorCleanup.current = () => element.removeEventListener("keydown", handle);
+	}, []);
+	useEffect(() => {
+		// StrictMode replays effects without replacing the textarea ref.
+		bindEditor(textareaRef.current);
+		return () => { editorCleanup.current?.(); editorCleanup.current = undefined; };
+	}, [bindEditor]);
 	return { snapshot, bindEditor };
 }

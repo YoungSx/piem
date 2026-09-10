@@ -89,15 +89,15 @@ describe("native extension host", () => {
 		expect(() => context.ui).toThrow();
 	});
 
-	it("print mode never claims UI and terminal factories fail explicitly", async () => {
+	it("print mode never claims UI and still refuses terminal-only operations", async () => {
 		let context!: ExtensionContext;
 		const host = await makeHost(pi => { pi.on("session_start", (_event, ctx) => { context = ctx; }); });
 		try {
 			await host.start();
 			expect(context.mode).toBe("print");
 			expect(context.hasUI).toBe(false);
-			expect(() => context.ui.theme).toThrow("terminal theme");
-			expect(() => context.ui.setWidget("terminal", () => ({ render: () => [], invalidate: () => {} }))).toThrow("terminal widget factory");
+			expect(context.ui.theme.fg("accent", "Hello")).toBe("Hello");
+			expect(() => context.ui.setWidget("terminal", () => ({ render: () => [], invalidate: () => {} }))).toThrow("not attached");
 			expect(() => context.ui.onTerminalInput(() => undefined)).toThrow("terminal-only");
 		} finally { host.dispose(); }
 	});
