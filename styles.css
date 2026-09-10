@@ -5094,6 +5094,98 @@ button.piem-chat__latest--asking {
 	z-index: var(--layer-menu, 65);
 }
 
+/*
+ * The popover's chat-level controls, in one row above the runs.
+ *
+ * Negative margins walk the divider past the popover's own padding, so the
+ * header reads as the top of the list rather than one more row inside it.
+ */
+.piem-chat__subagents-actions {
+	align-items: center;
+	border-bottom: 1px solid var(--background-modifier-border);
+	display: flex;
+	gap: var(--size-4-2);
+	margin: calc(-1 * var(--size-4-1)) calc(-1 * var(--size-4-1)) var(--size-4-2);
+	padding: 0 var(--size-4-2) var(--size-4-1);
+}
+
+/*
+ * A text button, not a filled one: the popover's rows are quiet pressable text,
+ * and a filled control would shout over them from above. Same reset the rows
+ * carry — Obsidian styles every plain `button` as a form control.
+ */
+.piem-chat__subagents-action {
+	background: none;
+	border: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	height: auto;
+	min-height: var(--size-4-6);
+	padding: var(--size-4-1) var(--size-4-2);
+}
+
+@media (hover: hover) {
+
+	.piem-chat__subagents-action:hover:not(:disabled) {
+		background: var(--background-modifier-hover);
+		color: var(--text-normal);
+	}
+}
+
+/* The receipt for "nothing left to tidy": greyed in place, still readable. */
+.piem-chat__subagents-action:disabled {
+	color: var(--text-faint);
+	cursor: default;
+}
+
+/*
+ * The popover's chat-level controls, in one row above the runs.
+ *
+ * Negative margins walk the divider past the popover's own padding, so the
+ * header reads as the top of the list rather than one more row inside it.
+ */
+.piem-chat__subagents-actions {
+	align-items: center;
+	border-bottom: 1px solid var(--background-modifier-border);
+	display: flex;
+	gap: var(--size-4-2);
+	margin: calc(-1 * var(--size-4-1)) calc(-1 * var(--size-4-1)) var(--size-4-2);
+	padding: 0 var(--size-4-2) var(--size-4-1);
+}
+
+/*
+ * A text button, not a filled one: the popover's rows are quiet pressable text,
+ * and a filled control would shout over them from above. Same reset the rows
+ * carry — Obsidian styles every plain `button` as a form control.
+ */
+.piem-chat__subagents-action {
+	background: none;
+	border: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	height: auto;
+	min-height: var(--size-4-6);
+	padding: var(--size-4-1) var(--size-4-2);
+}
+
+@media (hover: hover) {
+
+	.piem-chat__subagents-action:hover:not(:disabled) {
+		background: var(--background-modifier-hover);
+		color: var(--text-normal);
+	}
+}
+
+/* The receipt for "nothing left to tidy": greyed in place, still readable. */
+.piem-chat__subagents-action:disabled {
+	color: var(--text-faint);
+	cursor: default;
+}
+
 .piem-chat__subagents-item {
 	align-items: baseline;
 	background: transparent;

@@ -34,6 +34,7 @@ async function renderIcon(
 	snapshots: readonly SubagentSnapshot[],
 	onOpen: (id?: string) => void = () => undefined,
 	language: Language = "en",
+	onArchiveFinished: () => void = () => undefined,
 ): Promise<HTMLElement> {
 	const host = document.createElement("div");
 	document.body.appendChild(host);
@@ -44,7 +45,7 @@ async function renderIcon(
 	});
 	root.render(
 		<TranslatorProvider language={language}>
-			<SubagentEntryIcon snapshots={snapshots} onOpen={onOpen} />
+			<SubagentEntryIcon snapshots={snapshots} onOpen={onOpen} onArchiveFinished={onArchiveFinished} />
 		</TranslatorProvider>,
 	);
 	await flushRender();
@@ -61,6 +62,10 @@ function popover(host: HTMLElement): HTMLElement | null {
 
 function items(host: HTMLElement): HTMLButtonElement[] {
 	return Array.from(host.querySelectorAll<HTMLButtonElement>(".piem-chat__subagents-item"));
+}
+
+function actions(host: HTMLElement): HTMLButtonElement[] {
+	return Array.from(host.querySelectorAll<HTMLButtonElement>(".piem-chat__subagents-action"));
 }
 
 /**
@@ -292,18 +297,79 @@ describe("SubagentEntryIcon offers no way to act on a child", () => {
 	beforeEach(cleanup);
 	afterEach(cleanup);
 
-	it("has exactly one control per run, and it only navigates", async () => {
-		// The popover is a shortcut into the panel, not a second control surface: a
-		// stop button here would be the same rule break as one in the panel, with
-		// less room to explain itself.
+	it("has one control per run, and it only navigates", async () => {
+		// The popover is a shortcut into the panel, not a second control surface.
+		// The two chat-level controls (archive, open the panel) sit in the header;
+		// a per-run row stays a pure jump, and a stop button here would be the
+		// same rule break as one in the panel, with less room to explain itself.
 		const host = await renderIcon([snapshot({ status: "running" })]);
 		await pointerOver(host.querySelector(".piem-chat__subagents")!, "mouse");
 
+		expect(items(host)).toHaveLength(1);
+
 		const labels = Array.from(host.querySelectorAll("button"), (element) => element.getAttribute("aria-label") ?? "");
 
-		expect(labels).toHaveLength(2);
 		expect(labels.join(" ").toLowerCase()).not.toContain("stop");
 		expect(labels.join(" ").toLowerCase()).not.toContain("kill");
+	});
+});
+
+describe("SubagentEntryIcon popover actions", () => {
+	beforeEach(cleanup);
+	afterEach(cleanup);
+
+	it("offers archive and the panel side by side above the rows", async () => {
+		const host = await renderIcon([snapshot({ status: "done" })]);
+		await pointerOver(host.querySelector(".piem-chat__subagents")!, "mouse");
+
+		const [archive, openPanel] = actions(host);
+
+		expect(archive?.textContent).toBe("Archive finished");
+		expect(openPanel?.textContent).toBe("View details");
+	});
+
+	it("archives through the panel's own action and stays open", async () => {
+		// The button going grey under the pointer — not the popover vanishing — is
+		// the receipt: the rows stay so the reader can keep scanning.
+		let archived = 0;
+		const host = await renderIcon([snapshot({ status: "done" })], () => undefined, "en", () => {
+			archived += 1;
+		});
+		await pointerOver(host.querySelector(".piem-chat__subagents")!, "mouse");
+
+		actions(host)[0]?.click();
+		await flushRender();
+
+		expect(archived).toBe(1);
+		expect(popover(host)).not.toBeNull();
+	});
+
+	it("disables archive once nothing could move, and only then", async () => {
+		// A running child is not something to tidy — the panel's rule, mirrored.
+		const busy = await renderIcon([snapshot({ status: "running" }), snapshot({ id: "s2", status: "done" })]);
+		await pointerOver(busy.querySelector(".piem-chat__subagents")!, "mouse");
+		expect(actions(busy)[0]?.disabled).toBe(false);
+
+		const allRunning = await renderIcon([snapshot({ status: "running" })]);
+		await pointerOver(allRunning.querySelector(".piem-chat__subagents")!, "mouse");
+		expect(actions(allRunning)[0]?.disabled).toBe(true);
+
+		// Already-archived runs do not count as archivable either.
+		const allArchived = await renderIcon([snapshot({ status: "done", archived: true })]);
+		await pointerOver(allArchived.querySelector(".piem-chat__subagents")!, "mouse");
+		expect(actions(allArchived)[0]?.disabled).toBe(true);
+	});
+
+	it("opens the panel with no run named from the header, closing first", async () => {
+		const opened: (string | undefined)[] = [];
+		const host = await renderIcon([snapshot({})], (id) => opened.push(id));
+		await pointerOver(host.querySelector(".piem-chat__subagents")!, "mouse");
+
+		actions(host)[1]?.click();
+		await flushRender();
+
+		expect(opened).toEqual([undefined]);
+		expect(popover(host)).toBeNull();
 	});
 });
 

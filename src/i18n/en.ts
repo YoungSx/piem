@@ -1671,7 +1671,8 @@ export const en = {
 	 *
 	 * The panel's controls are exactly three, and the shape of that set is the
 	 * design (issues #153, #233, #290): stop one run, stop all of them, put the
-	 * finished ones away. Every other leaf here names or describes something. What
+	 * finished ones away. The chat-side popover reaches for two of the three —
+	 * archive and the way in — but adds no control of its own. Every other leaf here names or describes something. What
 	 * is missing is missing on purpose — there is no reply field, because a
 	 * subagent cannot see this conversation and a reply would have nowhere to land,
 	 * and no delete, because archiving a run the parent has not collected yet must
@@ -1690,6 +1691,14 @@ export const en = {
 		entryRunning: "{count} subagent(s) working. Open the subagent panel.",
 		entrySettled: "{count} subagent(s) in this chat. Open the subagent panel.",
 		popoverAria: "Subagents in this chat",
+		/**
+		 * The popover's two chat-level controls, beside each other above the rows:
+		 * jump to the panel, and archive from here. "Archive finished" is the
+		 * panel's own leaf re-used verbatim, so both entrances say the same thing
+		 * about the same action.
+		 */
+		openPanel: "View details",
+		openPanelAria: "Open the subagent panel",
 		/** One popover row: opens the panel already showing that run. Task first — a reader scanning rows remembers what they asked, and "scout" describes several of them. */
 		openDetail: "{task} — open run",
 		listAria: "Subagents, oldest first",

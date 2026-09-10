@@ -845,7 +845,13 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 							 */
 							trailing={
 								onOpenSubagents && ownSubagents.length > 0 ? (
-									<SubagentEntryIcon snapshots={ownSubagents} onOpen={onOpenSubagents} />
+									<SubagentEntryIcon
+										snapshots={ownSubagents}
+										onOpen={onOpenSubagents}
+										// The panel's own archive action, reached from the chat:
+										// one registry call, so both controls tidy identically.
+										onArchiveFinished={() => service.getSubagentRegistry().archiveSettled()}
+									/>
 								) : null
 							}
 						/>
