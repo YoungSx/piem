@@ -256,6 +256,30 @@ describe("Opening a stored conversation", () => {
 		expect(lastOpened()).toBe(c.path);
 	});
 
+	it("focuses a warm selection before an unrelated cold read finishes", async () => {
+		const { service, memory, manager, host, a, b, c } = await fixture();
+		await service.openSession(c.path);
+		await service.openSession(a.path);
+		await flushRender();
+		const subscribe = spyOn(Agent.prototype, "subscribe");
+		const gate = memory.hold(b.path);
+		const cold = service.openSession(b.path);
+		await gate.arrived;
+		const warm = service.openSession(c.path);
+		const duplicate = service.openSession(c.path);
+		try {
+			await flushRender();
+			expect(service.getSnapshot().session?.path).toBe(c.path);
+			expect(manager.getActiveSessionPath()).toBe(c.path);
+			expect(host.textContent).toContain("Conversation C");
+			expect(service.getSnapshot().isOpeningSession).toBe(false);
+			expect(duplicate).toBe(warm);
+			expect(subscribe).not.toHaveBeenCalled();
+		} finally { gate.release(); await Promise.all([cold, warm, duplicate]); subscribe.mockRestore(); }
+		expect(service.getSnapshot().session?.path).toBe(c.path);
+		expect(manager.getActiveSessionPath()).toBe(c.path);
+	});
+
 	it("returning to the visible chat cancels a pending selection", async () => {
 		const { service, memory, host, a, b } = await fixture();
 		const gate = memory.hold(b.path);

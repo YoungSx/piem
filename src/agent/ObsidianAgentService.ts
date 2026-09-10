@@ -2779,12 +2779,15 @@ export class ObsidianAgentService {
 			return Promise.resolve();
 		}
 		const sequence = ++this.sessionOpenSequence;
+		const isWarm = Boolean(this.runtimes.get(path)?.agent) && this.sessionManager.isLoaded(path);
 		// Serialize preparation as well as the disk read: the same session must
 		// never acquire two live agents when A → B → A overtakes a cold open.
 		// Superseded requests are skipped before work and cannot move focus after it.
-		const opening = this.sessionOpenQueue.then(() => this.openSessionRequest(path, sequence));
+		// A ready runtime needs no construction, so it must not wait behind an
+		// unrelated cold read that the user has just stopped waiting for.
+		const opening = (isWarm ? Promise.resolve() : this.sessionOpenQueue).then(() => this.openSessionRequest(path, sequence));
 		// A cleanup/listener failure must not poison later navigation requests.
-		this.sessionOpenQueue = opening.catch(() => undefined);
+		if (!isWarm) this.sessionOpenQueue = opening.catch(() => undefined);
 		const hadPendingSelection = this.pendingSessionOpen !== null;
 		this.pendingSessionOpen = { path, promise: opening };
 		// Before the first await: the panel can announce the wait and stop sends
@@ -2792,7 +2795,7 @@ export class ObsidianAgentService {
 		// A live runtime only needs its existing summary refreshed. Publishing a
 		// loading frame on that short path needlessly redraws the departed history
 		// before the requested chat. Keep the send guard synchronous either way.
-		if (hadPendingSelection || !this.runtimes.get(path)?.agent || !this.sessionManager.isLoaded(path)) this.notify();
+		if (hadPendingSelection || !isWarm) this.notify();
 		return opening;
 	}
 
