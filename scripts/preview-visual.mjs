@@ -1095,6 +1095,75 @@ SCENARIOS["chat-context-popover"] = async () => {
 	return { element, cleanup };
 };
 
+/*
+ * The subagent popover, open, with the chat-level header above its rows.
+ *
+ * The three children come through the real registry — one still running, one
+ * settled, one failed — because the header's archive button reads its own
+ * archivable rule off exactly those statuses, and a hand-drawn popover could
+ * not be trusted to show the disabled state where it would really appear. The
+ * popover opens through the component's actual keyboard gate: focus pins it,
+ * which is also the way a Tabbing reader reaches these rows at all.
+ */
+SCENARIOS["chat-subagents-popover"] = async () => {
+	const { SubagentRunError } = await import("../src/subagent/runner.ts");
+	const { element, cleanup } = await mountChat({
+		streamFn: scriptedStreamFn([CHIPS_JSON, "Three children out: one still sweeping, one back, one that broke."]),
+		// The panel route goes nowhere in this harness; the popover is the subject.
+		onOpenSubagents: () => {},
+		drive: async (service) => {
+			const registry = service.getSubagentRegistry();
+			const ownerId = service.getSnapshot().session?.path;
+			const spawnOne = (overrides) =>
+				registry.spawn({
+					id: registry.nextId(),
+					parentSignal: undefined,
+					ownerId,
+					abort: () => undefined,
+					dispose: () => undefined,
+					depth: 1,
+					thinkingLevel: "off",
+					...overrides,
+				});
+			spawnOne({
+				task: "Sweep the vault for duplicate reading notes",
+				role: { name: "scout" },
+				model: { id: "m-deepseek-pro" },
+				start: () => new Promise(() => {}),
+			});
+			spawnOne({
+				task: "Compare the two PDF readers and report price and sync",
+				role: { name: "researcher" },
+				model: { id: "m-deepseek-pro" },
+				start: async () => ({
+					text: "**Zotero** wins on price; **Papers** is stronger on mobile.",
+					turns: 6,
+					usage: { tokens: 18_400, cost: 0.0142, requests: 6 },
+				}),
+			});
+			spawnOne({
+				task: "Move notes older than 2024 into the Archive folder",
+				role: { name: "archiver" },
+				model: { id: "m-deepseek-lite" },
+				start: async () => {
+					throw new SubagentRunError("Folder 'Archive' does not exist and creation was refused", []);
+				},
+			});
+			await flushRender();
+			const entry = document.querySelector(".piem-chat__subagents-button");
+			if (!(entry instanceof HTMLElement)) {
+				throw new Error("the subagent entry icon never rendered");
+			}
+			entry.focus();
+			await settle(() => document.querySelector(".piem-chat__subagents-popover") !== null);
+			if (document.querySelector(".piem-chat__subagents-actions") === null) {
+				throw new Error("the popover header (archive / view details) never rendered");
+			}
+		},
+	});
+	return { element, cleanup };
+};
+
 /** Inspector snapshots, hand-built: pure data, no live registry needed. */
 const INSPECTOR_SNAPSHOTS = [
 	{

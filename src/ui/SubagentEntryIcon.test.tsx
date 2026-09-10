@@ -328,6 +328,25 @@ describe("SubagentEntryIcon popover actions", () => {
 		expect(openPanel?.textContent).toBe("View details");
 	});
 
+	it("pairs each action with a glyph and keeps its words in a droppable span", async () => {
+		// The glyph is the wide-screen affordance; the span is what a narrow panel
+		// may hide (the stylesheet drops it under 20rem). The aria-label carries
+		// the accessible name either way, so hiding text never un-names a button.
+		const host = await renderIcon([snapshot({ status: "done" })]);
+		await pointerOver(host.querySelector(".piem-chat__subagents")!, "mouse");
+
+		const [archive, openPanel] = actions(host);
+
+		expect(archive?.querySelector(".piem-chat__subagents-action-icon")).not.toBeNull();
+		expect(openPanel?.querySelector(".piem-chat__subagents-action-icon")).not.toBeNull();
+		expect(archive?.querySelector(".piem-chat__subagents-action-label")?.textContent).toBe("Archive finished");
+		expect(openPanel?.querySelector(".piem-chat__subagents-action-label")?.textContent).toBe("View details");
+		// Icon-only mode leans on the label attribute — the words are the fallback,
+		// not the accessible name.
+		expect(archive?.getAttribute("aria-label")).toBe("Archive every run that has finished");
+		expect(openPanel?.getAttribute("aria-label")).toBe("Open the subagent panel");
+	});
+
 	it("archives through the panel's own action and stays open", async () => {
 		// The button going grey under the pointer — not the popover vanishing — is
 		// the receipt: the rows stay so the reader can keep scanning.

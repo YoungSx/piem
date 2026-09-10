@@ -225,7 +225,13 @@ export function SubagentEntryIcon({ snapshots, onOpen, onArchiveFinished }: Suba
 							aria-label={t.t("subagents.archiveFinishedAria")}
 							onClick={onArchiveFinished}
 						>
-							{t.t("subagents.archiveFinished")}
+							<ObsidianIcon name="archive" className="piem-chat__subagents-action-icon" />
+							{/*
+							 * The label rides in its own span so a narrow panel can drop it and
+							 * leave the glyph: the accessible name is the button's aria-label,
+							 * which does not care what the visible text is doing.
+							 */}
+							<span className="piem-chat__subagents-action-label">{t.t("subagents.archiveFinished")}</span>
 						</button>
 						<button
 							type="button"
@@ -237,7 +243,8 @@ export function SubagentEntryIcon({ snapshots, onOpen, onArchiveFinished }: Suba
 								onOpen();
 							}}
 						>
-							{t.t("subagents.openPanel")}
+							<ObsidianIcon name="eye" className="piem-chat__subagents-action-icon" />
+							<span className="piem-chat__subagents-action-label">{t.t("subagents.openPanel")}</span>
 						</button>
 					</div>
 					{snapshots.map((snapshot) => (
