@@ -160,6 +160,11 @@ describe("CommandMenu", () => {
 		]);
 	});
 
+	it("labels built-in extension commands without calling them skills", async () => {
+		const { host } = await renderMenu("", [{ name: "continue", description: "Continue current task", kind: "extension", invocation: "continue" }]);
+		expect(host.querySelector(".piem-chat__command-menu-kind")?.textContent).toBe("Extension");
+	});
+
 	it("keeps the kind tag at the trailing edge of a row with no description", async () => {
 		// A description-less row has no growing middle to push the tag over, so the
 		// trailing column is held by `margin-left: auto` in the stylesheet rather

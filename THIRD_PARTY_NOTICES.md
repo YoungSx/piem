@@ -75,3 +75,20 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+## Bundled Pi community extensions
+
+The original npm sources are compiled into `main.js`, with exact versions in
+`package.json` and `bun.lock` and reviewed source hashes in
+`scripts/pi-extension-packages.json`:
+
+- [pi-assistant-provenance](https://github.com/w-winter/dot314): MIT, Warren Winter.
+- [pi-model-switch](https://github.com/nicobailon/pi-model-switch): MIT declared
+  by its published package. The package has no separate license or copyright file.
+- [pi-invisible-continue](https://github.com/monotykamary/pi-invisible-continue):
+  MIT declared by its published package, author Tom X Nguyen. The package has no
+  separate license file.
+
+The available upstream notices, attribution and declared MIT terms are preserved
+in `licenses/pi-extension-bridge.txt`, which is included in the release bundle.

@@ -21,6 +21,7 @@ export const en = {
 
 	/** Commands, the ribbon icon, and the workspace menu. */
 	commands: {
+		continueTask: "Continue current task",
 		addBookmark: "Bookmark latest reply",
 		removeBookmark: "Remove latest bookmark",
 		listBookmarks: "View conversation bookmarks",
@@ -44,6 +45,13 @@ export const en = {
 	},
 
 	/** Chat panel — header, banner, composer, message list, and trace rows. */
+	extensions: {
+		noImages: "The continue command does not send images. Remove the attachments first.",
+		busy: "The conversation is preparing. Try continuing again in a moment.",
+		noConversation: "Start a conversation before continuing it.",
+		included: "Built-in Pi extensions",
+		description: "Bookmarks, model handoff notes, model switching and invisible continuation are active. The agent can switch to models with configured keys; continuing starts a model request.",
+	},
 	bookmarks: {
 		excerpt: "Showing the first 4,000 characters. The full reply remains in the conversation.",
 		addTitle: "Bookmark the latest reply",
@@ -441,8 +449,9 @@ export const en = {
 		/** Popover footnote for thinking models: reasoning tokens already inside the reply count. */
 		reasoningNote: "incl. {tokens} reasoning",
 		/** Accessible name for the `/`-command autocomplete list. */
-		commandMenuAria: "Prompt commands and skills",
+		commandMenuAria: "Prompt commands, skills and extensions",
 		/** Source labels shown beside autocomplete entries. */
+		commandKindExtension: "Extension",
 		commandKindTemplate: "Prompt",
 		commandKindSkill: "Skill",
 		/** The folded pill standing in for a skill's full text inside the user's own turn. */

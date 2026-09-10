@@ -9,6 +9,12 @@ Piem 对你仓库做的每一件事，都经由下面某个工具。没有暗管
 件自己的目录（`.obsidian/plugins/piem`）默认禁止访问——代理没法在对话中途重
 写自己。
 
+## 模型选择
+
+`switch_model` 查询、搜索和切换已有 API 密钥的模型。切换在调用它的对话中，
+从下一次请求起生效，并保存默认选择；新服务商会收到该对话。上游显示零价格
+代表未知。详见[内置 Pi 扩展](extending.zh-CN.md#内置-pi-扩展)。
+
 ## 文件
 
 `read` · `write` · `edit` · `ls` · `find` · `grep` · `move_note` · `trash_note`

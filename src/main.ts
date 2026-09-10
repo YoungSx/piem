@@ -428,6 +428,7 @@ export default class PiemPlugin extends Plugin {
 				void this.openSessionSearch();
 			},
 		});
+		this.addCommand({ id: "continue-task", name: t.t("commands.continueTask"), callback: () => { void this.agentService?.runExtensionCommand("continue"); } });
 		this.addCommand({ id: "bookmark-reply", name: t.t("commands.addBookmark"), callback: () => this.bookmarkDialogs?.add() });
 		this.addCommand({ id: "unbookmark-reply", name: t.t("commands.removeBookmark"), callback: () => { void this.bookmarkDialogs?.remove(); } });
 		this.addCommand({ id: "view-bookmarks", name: t.t("commands.listBookmarks"), callback: () => { void this.bookmarkDialogs?.list(); } });

@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved eight
+ * The number is anchored to measurement, not taste, and it has moved nine
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -73,6 +73,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *    The ceiling follows to 1.71 MiB. Dynamic loading, terminal UI and syntax
  *    highlighting stay excluded and have their own composition bans below.
  *
+ * 9. The shared host and three original community factories measured 1,822,186 B
+ *    with all notices. The ceiling follows to 1.74 MiB; no filesystem image,
+ *    terminal, provider catalog or dynamic installer was added.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -82,7 +86,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.71 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.74 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -166,6 +170,10 @@ const EMPTY_FAUX_INITIALIZER_BYTES = 17;
  * {@link BANNED_MODULES}, so a nested or pnpm-style layout is caught too.
  */
 const REQUIRED_MODULES = new Map([
+	["node_modules/pi-assistant-provenance/extensions/assistant-provenance/index.ts", "The original provenance extension must ship."],
+	["node_modules/pi-model-switch/index.ts", "The original model-switch extension must ship."],
+	["node_modules/pi-invisible-continue/continue.ts", "The original invisible-continue extension must ship."],
+	["node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/wrapper.js", "Extension tools must use the original Pi wrapper."],
 	["node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js", "The bundled bookmark must use Pi's original factory loader."],
 	["node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js", "The bundled bookmark must use Pi's original extension runner."],
 	["node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js", "The bundled extension must use Pi's original event bus."],

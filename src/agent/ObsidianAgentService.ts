@@ -37,6 +37,9 @@ import { vendorIconName } from "../net/vendorIcons";
 import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent } from "./compaction";
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
+import { CommunityHost } from "../extensions/communityHost";
+import { configuredModels } from "../extensions/configuredModels";
+import { ExtensionModelSwitch } from "../extensions/modelSwitch";
 import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
 import type { AskUserBroker } from "../tools/askUserBroker";
@@ -405,7 +408,7 @@ export interface ChatSnapshot {
 	availableCommands: {
 		name: string;
 		description: string;
-		kind: "template" | "skill";
+		kind: "template" | "skill" | "extension";
 		invocation: string;
 	}[];
 }
@@ -714,6 +717,7 @@ export class ObsidianAgentService {
 	/** Why the last {@link initialize} failed, if it did; rides the error banner until dismissed. */
 	private initializationError: string | undefined;
 	private modelsBundle: ObsidianModelsBundle | null = null;
+	private readonly extensionModelSwitch: ExtensionModelSwitch;
 	private modelsBundleKey: string | null = null;
 
 	/**
@@ -809,6 +813,11 @@ export class ObsidianAgentService {
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
 		this.builtinSkills = options.builtinSkills;
 		this.persistSettings = options.persistSettings ?? ((options?: { reconfigure?: boolean }) => (options?.reconfigure === false ? Promise.resolve() : this.refreshConfiguration()));
+		this.extensionModelSwitch = new ExtensionModelSwitch({
+			getSettings: this.getSettings, sessions: this.sessionManager,
+			persistSettings: this.persistSettings, notify: () => this.notify(),
+			reportFailure: error => this.log.error("Failed to restore model preference", () => ({ error: causeMessage(error) })),
+		});
 		this.getExternalToolsFn = options.getExternalTools ?? (async () => []);
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
 		this.credentials = options.credentials;
@@ -1064,6 +1073,15 @@ export class ObsidianAgentService {
 			this.setNotice(rt, this.t().t(rt.isCompacting ? "chat.busyTidying" : "chat.busyResending"));
 			return false;
 		}
+		const extensionCommand = parsePromptCommand(trimmedPrompt);
+		const explicitExtension = extensionCommand?.name.startsWith("extension:");
+		const extensionName = explicitExtension ? extensionCommand!.name.slice("extension:".length) : extensionCommand?.name;
+		const matchedExtension = rt.communityHost?.commands.find(command => command.name === extensionName);
+		if (extensionCommand && matchedExtension && (explicitExtension || !findPromptTemplate(this.promptTemplates, extensionCommand.name) && !findSkill(rt.skills, extensionCommand.name))) {
+			if (images.length) { this.setNotice(rt, this.t().t("extensions.noImages")); return false; }
+			try { return await this.runExtensionFor(rt, matchedExtension.name, extensionCommand.additionalInstructions); }
+			catch (error) { this.setError(rt, causeMessage(error)); return false; }
+		}
 		return await this.deliverPrompt(trimmedPrompt, images);
 	}
 
@@ -1287,7 +1305,7 @@ export class ObsidianAgentService {
 			// recovery reads on the next load. Filed against the lane it departs
 			// on, so recovery reads the entry back where the run left it rather
 			// than against a name assumed later.
-			await this.beginRunOperation(rt, dispatch);
+			if (!await this.beginRunOperation(rt, dispatch)) return false;
 			// Queued messages the interrupt never got to dispatch — a run that
 			// died on a provider error, which {@link dispatchQueuedPrompts}
 			// deliberately does not re-send into — must not wait behind this
@@ -1377,6 +1395,7 @@ export class ObsidianAgentService {
 		// retroactively in one already under way.
 		agent.clearSteeringQueue();
 		for (const message of rt.promptQueue.messages()) {
+			if (message.role === "custom") break;
 			agent.steer(message);
 		}
 	}
@@ -1532,7 +1551,7 @@ export class ObsidianAgentService {
 				return;
 			}
 			const last = agent.state.messages.at(-1);
-			await this.beginRunOperation(rt, last ? [last] : []);
+			if (!await this.beginRunOperation(rt, last ? [last] : [])) return;
 			await agent.continue();
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
@@ -1610,6 +1629,7 @@ export class ObsidianAgentService {
 	 * and hiding them behind an error banner loses them.
 	 */
 	private async sendPromptEntries(rt: SessionRuntime, entries: readonly QueueEntry[]): Promise<void> {
+		const epoch = rt.stopEpoch;
 		const agent = rt.agent;
 		if (!agent) {
 			return;
@@ -1628,10 +1648,11 @@ export class ObsidianAgentService {
 			rt.activeRunContext = this.freezeRunContext(rt);
 			this.notify();
 			await this.compactContextIfNeeded(rt, agent);
-			await this.beginRunOperation(rt, entries.map((entry) => entry.message));
+			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.bookmarkClosing) return;
+			if (!await this.beginRunOperation(rt, entries.map((entry) => entry.message))) return;
 			await agent.prompt(entries.map((entry) => entry.message));
 		} catch (error) {
-			rt.promptQueue.restore(entries);
+			if (rt.stopEpoch === epoch && rt.agent === agent && !rt.bookmarkClosing) rt.promptQueue.restore(entries);
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
 			rt.promptPreparations -= 1;
@@ -1675,7 +1696,7 @@ export class ObsidianAgentService {
 				return;
 			}
 			const last = agent.state.messages.at(-1);
-			await this.beginRunOperation(rt, last ? [last] : []);
+			if (!await this.beginRunOperation(rt, last ? [last] : [])) return;
 			await agent.continue();
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
@@ -1706,40 +1727,43 @@ export class ObsidianAgentService {
 	 * block the send the user asked for. The cost of a missing entry is only
 	 * that a crash during that run leaves nothing for recovery to find.
 	 */
-	private async beginRunOperation(rt: SessionRuntime, originalPrompt: readonly AgentMessage[]): Promise<void> {
+	private async beginRunOperation(rt: SessionRuntime, originalPrompt: readonly AgentMessage[]): Promise<boolean> {
+		const agent = rt.agent;
 		const lane = rt.activeLane;
-		// The open-path model assertion, relocated here (see the open path's
-		// comment on why it must not fire at open time). Every run start funnels
-		// through this method, so a session whose recorded model drifted from the
-		// defaults gets its `model_change` append exactly when the user acts —
-		// never on a look-only open. Same best-effort contract as the ledger
-		// write below: a failed assertion logs and lets the send proceed.
+		const epoch = rt.stopEpoch;
+		const isCurrent = () => this.runtimes.get(rt.sessionPath) === rt && rt.agent === agent && rt.stopEpoch === epoch && !rt.bookmarkClosing;
+		if (!agent || !isCurrent()) return false;
+		// Protect the asynchronous start independently of the eventual run claim.
+		// Stop can settle an idle agent before this write completes, but cannot
+		// release this claim or make a late start belong to another run.
+		const release = this.sessionManager.claimOperation(rt.sessionPath);
 		try {
-			await this.sessionManager.ensureConfigurationFor(rt.sessionPath, this.getSessionDefaults(), lane);
-		} catch (error) {
-			this.log.debug("Model assertion at run start failed", () => ({
-				lane,
-				error: causeMessage(error),
-			}));
-		}
-		rt.activeRunLedger = undefined;
-		// Claimed for the run's whole life: a sweep that fires while this session
-		// is in the background (a new chat, a create elsewhere) must not trash the
-		// file the run is appending to. Released when the run settles. The loaded
-		// check is belt-and-braces — a session reachable here is hydrated — but a
-		// missed claim degrades to the old evictable contract, while a throw here
-		// would surface as a failed prompt.
-		if (this.sessionManager.isLoaded(rt.sessionPath)) {
+			try {
+				const model = agent.state.model;
+				await this.sessionManager.ensureConfigurationFor(rt.sessionPath, { provider: model.provider, modelId: model.id }, lane);
+			} catch (error) {
+				this.log.debug("Model assertion at run start failed", () => ({ lane, error: causeMessage(error) }));
+			}
+			if (!isCurrent()) return false;
+			let runId: string | undefined;
+			try {
+				runId = await this.sessionManager.beginRunOperationFor(rt.sessionPath, [...originalPrompt], lane);
+			} catch (error) {
+				this.log.error("Failed to record run start", () => ({ lane, error: causeMessage(error) }));
+			}
+			if (!isCurrent()) {
+				// Close THIS late record directly: assigning it to activeRunLedger
+				// would let a newer run's stop or finish consume the wrong record.
+				if (runId && this.sessionManager.isLoaded(rt.sessionPath)) {
+					try { await this.sessionManager.endRunOperationFor(rt.sessionPath, runId, "aborted", undefined, lane); }
+					catch (error) { this.log.error("Failed to close cancelled run start", () => ({ lane, error: causeMessage(error) })); }
+				}
+				return false;
+			}
+			rt.activeRunLedger = runId ? { runId, lane } : undefined;
 			this.sessionManager.retainSession(rt.sessionPath);
-		}
-		try {
-			rt.activeRunLedger = { runId: await this.sessionManager.beginRunOperationFor(rt.sessionPath, [...originalPrompt], lane), lane };
-		} catch (error) {
-			this.log.error("Failed to record run start", () => ({
-				lane,
-				error: causeMessage(error),
-			}));
-		}
+			return true;
+		} finally { release(); }
 	}
 
 	/**
@@ -2595,6 +2619,41 @@ export class ObsidianAgentService {
 		return rt.bookmarkHost;
 	}
 
+	/** Native commands and /continue share the same original extension handler. */
+	async runExtensionCommand(name: string, args = ""): Promise<boolean> {
+		const captured = this.current();
+		await this.initialize();
+		const rt = captured ?? this.current();
+		if (!rt || this.runtimes.get(rt.sessionPath) !== rt) return false;
+		try { return await this.runExtensionFor(rt, name, args); }
+		catch (error) { this.setError(rt, causeMessage(error)); return false; }
+	}
+
+	private async runExtensionFor(rt: SessionRuntime, name: string, args: string): Promise<boolean> {
+		const host = rt.communityHost;
+		const agent = rt.agent;
+		if (!host || !agent || rt.bookmarkClosing || rt.bookmarkWork || rt.isCompacting || rt.retryInFlight || rt.sessionRefreshing || rt.sessionOperations || !agent.state.isStreaming && rt.promptPreparations) {
+			this.setNotice(rt, this.t().t("extensions.busy"));
+			return false;
+		}
+		const epoch = rt.stopEpoch;
+		rt.promptPreparations += 1;
+		try {
+			const messages = await host.run(name, args);
+			if (rt.communityHost !== host || rt.stopEpoch !== epoch || rt.bookmarkClosing) return false;
+			if (!messages.length) return true;
+			if (!this.ensureCredentialReady(rt)) return false;
+			if (!agent.state.messages.some(message => message.role === "user" || message.role === "assistant")) {
+				this.setNotice(rt, this.t().t("extensions.noConversation"));
+				return false;
+			}
+			for (const message of messages) rt.promptQueue.add({ text: "/continue", imageCount: 0, stagedImages: [], message });
+			this.notify();
+			if (!agent.state.isStreaming) await this.sendPromptEntries(rt, rt.promptQueue.drain());
+			return true;
+		} finally { rt.promptPreparations -= 1; }
+	}
+
 	/** Sessions for this vault, newest first. */
 	async listSessions(): Promise<ActiveSessionInfo[]> {
 		await this.initialize();
@@ -3428,6 +3487,12 @@ export class ObsidianAgentService {
 			contextRefs: this.contextRefList(rt),
 			isFollowingActiveNote: rt?.pinnedNotes.followActive ?? true,
 			availableCommands: [
+				...(rt?.communityHost?.commands ?? []).map(command => ({
+					name: command.name,
+					description: command.name === "continue" ? this.t().t("commands.continueTask") : command.description ?? "",
+					kind: "extension" as const,
+					invocation: findPromptTemplate(this.promptTemplates, command.name) || findSkill(rt?.skills ?? [], command.name) ? `extension:${command.name}` : command.name,
+				})),
 				...this.promptTemplates.map((template) => ({
 					name: template.name,
 					description: template.description ?? "",
@@ -3761,7 +3826,7 @@ export class ObsidianAgentService {
 		// at spawn-execute time and must read the spawning session's state — a
 		// focused panel on session B must not leak B's thinking level or skills
 		// into a spawn started by session A.
-		return this.subagentExtension.createTools(() => rt.skills).map((tool) => {
+		return [...this.subagentExtension.createTools(() => rt.skills), ...(rt.communityHost?.tools ?? [])].map((tool) => {
 			if (!tool.execute) {
 				return tool;
 			}
@@ -3808,6 +3873,8 @@ export class ObsidianAgentService {
 	private async replaceAgent(rt: SessionRuntime, messages: AgentMessage[], thinkingLevel: ThinkingLevel): Promise<void> {
 		rt.skills = this.skills;
 		rt.unsubscribeAgent?.();
+		rt.communityHost?.dispose();
+		rt.communityHost = undefined;
 		// A fresh agent's queues are empty by construction, so the mirror has to
 		// say so too. Every caller of this method is a conversation switch
 		// (new session, loaded session, thinking-level change) — queued words
@@ -3834,6 +3901,43 @@ export class ObsidianAgentService {
 		const model = getSelectedModel(settings);
 		// Annotated because the `shouldStopAfterTurn` closure below refers to
 		// `agent`, and an inferred type would be circular.
+		const generation = rt.stopEpoch;
+		const assertOwner = () => {
+			if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || rt.communityHost !== community) {
+				throw new Error("Extension session is no longer available.");
+			}
+		};
+		const community = await CommunityHost.create({
+			getEntries: () => {
+				assertOwner();
+				return (rt.agent?.state.messages ?? messages).map((message, index) => ({ id: rt.messageEntryIds.get(message) ?? `pending-${index}`, type: "message", message }));
+			},
+			notify: message => { assertOwner(); this.setNotice(rt, message); },
+			getModel: () => { assertOwner(); return rt.agent?.state.model; },
+			getModels: () => { assertOwner(); return configuredModels(this.getSettings()).map(choice => choice.model); },
+			setModel: model => this.extensionModelSwitch.switch({
+				runtime: rt, agent,
+				isCurrent: () => this.runtimes.get(rt.sessionPath) === rt,
+				refresh: () => this.refreshSessionInfo(rt),
+			}, model),
+			getThinkingLevel: () => { assertOwner(); return rt.agent?.state.thinkingLevel ?? thinkingLevel; },
+			isIdle: () => { assertOwner(); return !rt.agent?.state.isStreaming; },
+			getActiveTools: () => { assertOwner(); return rt.agent?.state.tools.map(tool => tool.name) ?? []; },
+		});
+		if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || rt.stopEpoch !== generation) {
+			community.dispose();
+			throw new Error("Extension session is no longer available.");
+		}
+		rt.communityHost = community;
+		let tools: AgentTool[];
+		try {
+			tools = [...(await this.buildToolsAsync(rt)), ...(await this.fetchExternalTools())];
+			assertOwner();
+		} catch (error) {
+			community.dispose();
+			if (rt.communityHost === community) rt.communityHost = undefined;
+			throw error;
+		}
 		const agent: Agent = new Agent({
 			// The custom endpoint rides the same transport as builtin providers;
 			// only the provider registration differs. Resolved per request rather
@@ -3863,12 +3967,13 @@ export class ObsidianAgentService {
 			// user request. The note body is re-read per request instead, which is what
 			// makes it honest: an `edit` the model just made is visible to its next turn.
 			transformContext: async (messages) => {
+				const transformed = await community.transformContext(messages);
 				const frozen = rt.activeRunContext ?? this.freezeRunContext(rt);
 				const activePath = frozen.refs.find((ref) => ref.kind === "active")?.path;
 				const note = activePath ? await this.readActiveNote(activePath) : null;
 				// The date is read per request rather than frozen with the refs: a run
 				// that spans midnight must not keep asserting yesterday's date.
-				return injectContext(messages, {
+				return injectContext(transformed, {
 					refs: frozen.refs,
 					note,
 					selection: frozen.selection,
@@ -3888,10 +3993,13 @@ export class ObsidianAgentService {
 				// The caller resolves this: the loaded session's own level, or the
 				// seed a new session was created with. Global settings have no say.
 				thinkingLevel,
-				tools: [...(await this.buildToolsAsync(rt)), ...(await this.fetchExternalTools())],
+				tools,
 				messages,
 			},
 			getApiKey: (provider) => this.getApiKey(provider),
+			// Pi snapshots its model for each request. A tool switch takes effect at
+			// the supported turn seam, after the previous model's tools have settled.
+			prepareNextTurn: () => ({ model: agent.state.model, thinkingLevel: agent.state.thinkingLevel }),
 			// Fires after a turn's tool calls finish and before the next provider
 			// request (`runLoop`, at its `shouldStopAfterTurn` call) — pi's README
 			// pattern when the context has crossed the compaction line: end the

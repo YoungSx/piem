@@ -10,7 +10,7 @@ import { isComposing } from "./keyboard";
 export interface CommandEntry {
 	name: string;
 	description: string;
-	kind: "template" | "skill";
+	kind: "template" | "skill" | "extension";
 	/** Text inserted after `/`; differs only for a shadowed skill. */
 	invocation: string;
 }
@@ -270,7 +270,7 @@ export function CommandMenu({ commands, query, menuId, onActiveChange, onSelect,
 						<span className="piem-chat__command-menu-name">/{match.name}</span>
 						{match.description ? <span className="piem-chat__command-menu-desc">{match.description}</span> : null}
 						<span className="piem-chat__command-menu-kind">
-							{t.t(match.kind === "template" ? "chat.commandKindTemplate" : "chat.commandKindSkill")}
+							{t.t(match.kind === "template" ? "chat.commandKindTemplate" : match.kind === "skill" ? "chat.commandKindSkill" : "chat.commandKindExtension")}
 						</span>
 					</button>
 				</li>

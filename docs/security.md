@@ -30,6 +30,13 @@ No vault notes, conversation content or provider keys accompany this download.
 The resource is checksum-verified Markdown, written under `Piem/builtin-skills/`;
 no scripts execute and it never follows a newer release independently of the plugin.
 
+Bundled `switch_model` can move the current conversation to another model whose
+API key you configured, and saves that selection. That provider receives the
+conversation and normal note context on its next request. `/continue` starts a
+normal billable model request. Provenance notes name earlier models in request
+context; they do not send anything to a separate service. These extensions run
+only the code shipped in the plugin, and cannot load local or remote scripts.
+
 There is no telemetry, analytics, crash reporter or Piem-operated backend.
 
 The practical consequence: **point Piem at a vault you are willing to send to
