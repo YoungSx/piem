@@ -286,7 +286,14 @@ function toResponse(response: RequestUrlResponse): Response {
  * a stall from down here. A wedged endpoint is ended by the user pressing stop,
  * which the race below turns into a real rejection.
  */
-export function createObsidianRequestUrlFetch(): FetchFn {
+export function createObsidianRequestUrlFetch(options?: {
+	/**
+	 * Observes actual network completion, which may outlive an aborted fetch.
+	 * The handle carries no response and resolves on success or failure so an
+	 * owner can retain its concurrency slot without changing fetch rejection.
+	 */
+	onRequest?: (settled: Promise<void>) => void;
+}): FetchFn {
 	const obsidianFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const url = resolveUrl(input);
 		const method = resolveMethod(input, init);
@@ -311,6 +318,7 @@ export function createObsidianRequestUrlFetch(): FetchFn {
 		}
 
 		const requestPromise = requestUrl(params);
+		options?.onRequest?.(requestPromise.then(() => undefined, () => undefined));
 
 		// `requestUrl` ignores signals and keeps its promise pending, so abort has
 		// to reject the wait rather than merely flag it — otherwise pressing stop

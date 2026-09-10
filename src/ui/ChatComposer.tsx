@@ -9,6 +9,8 @@ import { useAutosize } from "./useAutosize";
 import { CommandMenu, type CommandEntry } from "./CommandMenu";
 import type { PendingImage } from "./pendingImages";
 import type { QueuedPrompt } from "../agent/promptQueue";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
+import { ExtensionCompletionMenu } from "./ExtensionCompletionMenu";
 
 interface ChatComposerProps {
 	input: string;
@@ -53,6 +55,11 @@ interface ChatComposerProps {
 	 * what the id belongs to; the panel only forwards it.
 	 */
 	onAnchorIdChange?: (id: string | undefined) => void;
+	/** Session-owned adapter for extension editor reads and writes. */
+	onEditorElement?: (element: HTMLTextAreaElement | null) => void;
+	extensionAutocomplete?: AutocompleteProvider;
+	aboveEditor?: React.ReactNode;
+	belowEditor?: React.ReactNode;
 	/**
 	 * The context chip row, rendered inside the composer shell above the textarea.
 	 *
@@ -169,6 +176,10 @@ export function ChatComposer({
 	onAbort,
 	onFocusRequested,
 	onAnchorIdChange,
+	onEditorElement,
+	extensionAutocomplete,
+	aboveEditor,
+	belowEditor,
 	contextRow,
 	modelSwitcher,
 	thinkingSelector,
@@ -209,6 +220,10 @@ export function ChatComposer({
 			: "send";
 	const sendDisabled = isInitializing || !isConfigured || !input.trim();
 	const [menuOpen, setMenuOpen] = useState(false);
+	const [completionOpen, setCompletionOpen] = useState(false);
+	const [completionRequest, setCompletionRequest] = useState(0);
+	const [cursor, setCursor] = useState(input.length);
+	const blurTimer = useRef<number | undefined>(undefined);
 	// Per-instance rather than a constant: Obsidian allows several leaves of one
 	// view type, so two open chat panels would otherwise share one id and the
 	// skip link in each would jump to whichever mounted first.
@@ -244,7 +259,7 @@ export function ChatComposer({
 	}, [input]);
 	// Folded, the menu cannot stand: its anchor — the textarea — is not mounted,
 	// and reopening unfolded should not resurrect a list the user never saw.
-	const showMenu = !collapsed && menuOpen && commandQuery !== null && commands.length > 0;
+	const showMenu = !extensionAutocomplete && !collapsed && menuOpen && commandQuery !== null && commands.length > 0;
 
 	const selectCommand = (command: CommandEntry): void => {
 		onInputChange(`/${command.invocation} `);
@@ -380,9 +395,17 @@ export function ChatComposer({
 		// must stand down rather than jump at nothing.
 		onAnchorIdChange?.(collapsed ? undefined : anchorId);
 	}, [onAnchorIdChange, anchorId, collapsed]);
+	useEffect(() => {
+		onEditorElement?.(textareaRef.current);
+		return () => { onEditorElement?.(null); };
+	}, [onEditorElement, collapsed]);
+	useEffect(() => () => {
+		if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
+	}, []);
 
 	return (
 		<footer className="piem-chat__composer">
+			{aboveEditor}
 			<div className="piem-chat__composer-shell" onPointerDown={keepFocusOnPress}>
 				<div className="piem-chat__composer-top">
 					{contextRow}
@@ -509,10 +532,22 @@ export function ChatComposer({
 							// close it the moment it stops being one. Kept here rather than in an
 							// effect so the menu tracks the keystroke, not a render behind it.
 							setMenuOpen(value.startsWith("/"));
+							setCompletionOpen(true);
+							setCompletionRequest(0);
+							setCursor(event.currentTarget.selectionStart);
+						}}
+						onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+						onFocus={() => {
+							if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
 						}}
 						onBlur={() => {
 							// Defer so a click on a menu item fires before the menu unmounts.
-							window.setTimeout(() => setMenuOpen(false), 0);
+							if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
+							blurTimer.current = window.setTimeout(() => {
+								setMenuOpen(false);
+								setCompletionOpen(false);
+								blurTimer.current = undefined;
+							}, 0);
 						}}
 						onPaste={handlePaste}
 						onDrop={handleDrop}
@@ -549,6 +584,12 @@ export function ChatComposer({
 						onClose={() => setMenuOpen(false)}
 					/>
 				) : null}
+				{extensionAutocomplete && !collapsed && completionOpen ? (
+					<ExtensionCompletionMenu provider={extensionAutocomplete} input={input} cursor={cursor}
+						force={completionRequest > 0} request={completionRequest}
+						menuId={menuId} anchorRef={textareaRef} onInputChange={onInputChange}
+						onActiveChange={setActiveOptionId} onClose={() => setCompletionOpen(false)} />
+				) : null}
 				{!collapsed ? (
 					<div className="piem-chat__composer-bar">
 						{/*
@@ -565,6 +606,15 @@ export function ChatComposer({
 						 */}
 						{modelSwitcher}
 						{thinkingSelector}
+						{extensionAutocomplete ? <IconButton icon="list-plus" label={t.t("extensionUI.showSuggestions")}
+							onClick={() => {
+								const textarea = textareaRef.current;
+								if (!textarea) return;
+								textarea.focus();
+								setCursor(textarea.selectionStart);
+								setCompletionRequest((request) => request + 1);
+								setCompletionOpen(true);
+							}} /> : null}
 						{contextGauge}
 						{isStreaming && input.trim() ? (
 							/*
@@ -598,6 +648,7 @@ export function ChatComposer({
 					</div>
 				) : null}
 			</div>
+			{belowEditor}
 		</footer>
 	);
 }

@@ -7,6 +7,8 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ObsidianAgentService as ObsidianAgentServiceType } from "../agent/ObsidianAgentService";
 import type { PiemSettings } from "../settings";
 import type { UserSkillsLoad } from "../skills/userSkills";
+import type { StaticExtension } from "../extensions/extensionHost";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { flushRender, installDom } from "../testUtils/dom";
 
 installObsidianStub();
@@ -222,6 +224,8 @@ const NO_USER_SKILLS = async (): Promise<UserSkillsLoad> => ({ skills: [], diagn
 describe("ChatApp × real service (issue #168)", () => {
 	/** Roots mounted by this suite, unmounted in afterEach so listeners die with the test. */
 	const roots: { unmount: () => void }[] = [];
+	const services: ObsidianAgentServiceType[] = [];
+	const drafts: InstanceType<typeof DraftStore>[] = [];
 	/**
 	 * What the panel's boundary caught, if anything.
 	 *
@@ -239,12 +243,13 @@ describe("ChatApp × real service (issue #168)", () => {
 
 	async function mountPanel(
 		scripted: { streamFn: StreamFn; prompts: string[] },
-		options: { yieldIO?: boolean } = {},
+		options: { yieldIO?: boolean; extensionFactories?: readonly StaticExtension[] } = {},
 	): Promise<{
 		service: ObsidianAgentServiceType;
 		prompts: string[];
 		/** Mimics the user switching notes in the Obsidian workspace. */
 		setActiveFile: (path: string | null) => void;
+		draftStore: InstanceType<typeof DraftStore>;
 	}> {
 		const adapter = options.yieldIO ? yieldingAdapter(memoryAdapter()) : memoryAdapter();
 		// The real view passes a DraftStore; the composer hook behaves
@@ -252,6 +257,7 @@ describe("ChatApp × real service (issue #168)", () => {
 		// match production rather than the store-less harness. The store now
 		// takes the session directory and keeps drafts under `drafts/`.
 		const draftStore = new DraftStore(adapter, SESSION_DIR);
+		drafts.push(draftStore);
 		const settings: PiemSettings = {
 			...DEFAULT_SETTINGS,
 			providers: [
@@ -301,7 +307,9 @@ describe("ChatApp × real service (issue #168)", () => {
 		const service = new ObsidianAgentService(app, () => settings, sessionManager, {
 			streamFn: scripted.streamFn,
 			loadUserSkills: NO_USER_SKILLS,
+			extensionFactories: options.extensionFactories,
 		});
+		services.push(service);
 
 		const host = document.createElement("div");
 		document.body.appendChild(host);
@@ -322,6 +330,7 @@ describe("ChatApp × real service (issue #168)", () => {
 		await flushRender();
 		return {
 			service,
+			draftStore,
 			prompts: scripted.prompts,
 			setActiveFile: (path: string | null) => {
 				activeFile = path === null ? null : (files.get(path) ?? null);
@@ -338,8 +347,82 @@ describe("ChatApp × real service (issue #168)", () => {
 			roots.pop()?.unmount();
 		}
 		await flushRender();
+		for (const service of services.splice(0)) service.dispose();
+		for (const store of drafts.splice(0)) { await store.flush(); store.dispose(); }
 		document.body.replaceChildren();
 		crashes.length = 0;
+	});
+
+	it("carries extension text through the live editor and keeps drafts in their own conversations", async () => {
+		const uiBySession = new Map<string, ExtensionUIContext>();
+		const extension: StaticExtension = { id: "native-ui-test", factory: (pi) => {
+			pi.on("session_start", (_event, ctx) => {
+				if (ctx.hasUI) uiBySession.set(ctx.sessionManager.getSessionId(), ctx.ui);
+			});
+		} };
+		const { service, draftStore } = await mountPanel(scriptedStreamFn([CHIPS_JSON]), { yieldIO: true, extensionFactories: [extension] });
+		await flushRender(() => uiBySession.size > 0);
+		const firstSession = service.getSnapshot().session!;
+		const firstUI = uiBySession.get(firstSession.id)!;
+		firstUI.setEditorText("A draft");
+		firstUI.setWidget("next", ["A native suggestion"]);
+		firstUI.setStatus("state", "A is ready");
+		await flushRender();
+		expect(document.querySelector("textarea")?.value).toBe("A draft");
+		expect(document.querySelector(".piem-chat__extension-widget")?.textContent).toBe("A native suggestion");
+		expect(document.querySelector(".piem-chat__extension-status")?.textContent).toBe("A is ready");
+		const editor = document.querySelector("textarea")!;
+		editor.setSelectionRange(2, 7);
+		firstUI.pasteToEditor("changed");
+		await flushRender();
+		expect(editor.value).toBe("A changed");
+		expect(await draftStore.get(firstSession.id)).toBe("A changed");
+
+		const question = firstUI.input("Question for A").catch(() => undefined);
+		await flushRender(() => document.querySelector("form") !== null);
+		await service.newSession({ force: true });
+		await flushRender(() => {
+			const session = service.getSnapshot().session;
+			return !!session && session.id !== firstSession.id && uiBySession.has(session.id);
+		});
+		await question;
+		expect(document.querySelector("form")).toBeNull();
+		expect(document.querySelector("textarea")?.value).toBe("");
+		expect(() => firstUI.setEditorText("Late A write")).toThrow();
+		const secondSession = service.getSnapshot().session!;
+		uiBySession.get(secondSession.id)!.setEditorText("B draft");
+		await flushRender();
+		await service.openSession(firstSession.path);
+		await flushRender(() => document.querySelector("textarea")?.value === "A changed");
+		expect(await draftStore.get(secondSession.id)).toBe("B draft");
+		expect(crashes).toHaveLength(0);
+	});
+
+	it("Stop cancels an extension dialog while leaving the registered completion provider usable", async () => {
+		let liveUI: ExtensionUIContext | undefined;
+		const extension: StaticExtension = { id: "native-stop-test", factory: (pi) => {
+			pi.on("session_start", (_event, ctx) => {
+				if (!ctx.hasUI) return;
+				liveUI = ctx.ui;
+				ctx.ui.addAutocompleteProvider((current) => ({ ...current, getSuggestions: async () => ({
+					prefix: "", items: [{ value: "Follow up", label: "Continue here" }],
+				}) }));
+			});
+		} };
+		const { service } = await mountPanel(scriptedStreamFn([CHIPS_JSON]), { extensionFactories: [extension] });
+		await flushRender(() => liveUI !== undefined);
+		const pending = liveUI!.input("Waiting for an answer").catch(() => undefined);
+		await flushRender(() => document.querySelector("form") !== null);
+		service.abort();
+		await pending;
+		await flushRender();
+		expect(document.querySelector("form")).toBeNull();
+		document.querySelector<HTMLButtonElement>('button[aria-label="Show suggestions"]')!.click();
+		await flushRender(() => document.querySelector('[role="option"]') !== null);
+		document.querySelector<HTMLButtonElement>('[role="option"] button')!.click();
+		await flushRender();
+		expect(document.querySelector("textarea")?.value).toBe("Follow up");
+		expect(crashes).toHaveLength(0);
 	});
 
 	it("the empty screen asks the model for chips on cold start and replaces the built-ins", async () => {

@@ -54,6 +54,8 @@ export class DraftStore {
 	private readonly legacyPath: string;
 	/** Chat id → text, the cache every read and write goes through. */
 	private readonly drafts = new Map<string, string>();
+	/** Active disk reads only; a keystroke invalidates their captured revision. */
+	private readonly reading = new Map<string, { revision: number; readers: number }>();
 	private loaded: Promise<void> | null = null;
 	/** Chats whose in-memory text has not landed on disk yet. */
 	private readonly dirty = new Set<string>();
@@ -108,15 +110,22 @@ export class DraftStore {
 		if (this.dirty.has(sessionId)) {
 			return "";
 		}
-		const text = await this.readDraft(sessionId);
-		// Only successful reads are cached: a missing file stays uncached, so a
-		// draft that arrives later (sync, a second window) is found on the next
-		// look instead of being shadowed by a remembered blank.
-		if (text !== null) {
-			this.drafts.set(sessionId, text);
-			return text;
+		const pending = this.reading.get(sessionId) ?? { revision: 0, readers: 0 };
+		this.reading.set(sessionId, pending);
+		pending.readers++;
+		const revision = pending.revision;
+		try {
+			const text = await this.readDraft(sessionId);
+			// Typing or clearing while disk I/O was pending wins, even if a flush
+			// already removed the dirty marker before this old read comes back.
+			if (pending.revision !== revision) return this.drafts.get(sessionId) ?? "";
+			// Only successful reads are cached, so a later sync can supply a draft
+			// that was absent when this conversation first opened.
+			if (text !== null) this.drafts.set(sessionId, text);
+			return text ?? "";
+		} finally {
+			if (--pending.readers === 0) this.reading.delete(sessionId);
 		}
-		return "";
 	}
 
 	/**
@@ -127,6 +136,8 @@ export class DraftStore {
 	 */
 	async set(sessionId: string, text: string): Promise<void> {
 		await this.ensureLoaded();
+		const pending = this.reading.get(sessionId);
+		if (pending) pending.revision++;
 		const trimmed = text.slice(0, MAX_DRAFT_LENGTH);
 		if (!trimmed.trim()) {
 			// An emptied composer has no draft; keeping a stale file would contradict
@@ -134,7 +145,7 @@ export class DraftStore {
 			// write — and no pointless removal racing a sync pass.
 			const existing = this.drafts.get(sessionId);
 			this.drafts.delete(sessionId);
-			if (existing !== undefined && existing.trim()) {
+			if (pending || existing !== undefined && existing.trim()) {
 				this.dirty.add(sessionId);
 				this.scheduleWrite();
 			}
@@ -156,6 +167,8 @@ export class DraftStore {
 	 */
 	async clear(sessionId: string): Promise<void> {
 		await this.ensureLoaded();
+		const pending = this.reading.get(sessionId);
+		if (pending) pending.revision++;
 		this.drafts.delete(sessionId);
 		this.dirty.add(sessionId);
 		this.scheduleWrite();
