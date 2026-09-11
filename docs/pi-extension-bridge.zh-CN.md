@@ -15,20 +15,20 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 | --- | --- |
 | 加载 | 原版 `loadExtensionFromFactory`，只加载静态源码 |
 | 执行 | 原版 `ExtensionRunner` 和工具包装器，工具串行执行 |
-| 注册 | 命令、工具、快捷键、输入/上下文及生命周期处理器、内部事件总线；不支持的注册及重复名称直接失败 |
+| 注册 | 命令、工具、快捷键、处理器和内部事件总线；不支持事件或名称冲突时跳过该扩展；忽略的渲染器和 Markdown 变换有日志；flag 保留注册默认值 |
 | 上下文 | 按顺序运行原版 `context` 管线；处理器失败则终止请求 |
 | 工具拦截 | 通过 pi 自带的 agent 钩子调用原版 `tool_call` / `tool_result`；被拦截的调用不执行，就地修改 `input` 会传给工具，处理器失败只让该次调用报错 |
-| 会话 | 从所属 Vault 会话及分支刷新读视图；标签保存后返回成功，摘要分支通过可等待的 Vault 适配发布 |
+| 会话 | 从所属 Vault 会话及分支刷新读视图；自定义条目和标签保存后返回成功，摘要分支通过可等待的 Vault 适配发布 |
 | 模型 | 已配凭据且标识唯一的模型；目录及 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调；已审核搜索/改写工厂另外可解析当前服务商凭据 |
 | 消息 | 操作内的 `sendMessage`，要求 `triggerTurn` 和 `followUp`，最多 16 条待发消息；内部 `/acm` 不发给模型 |
 | 界面 | Obsidian 原生弹窗、支持的组件工厂、草稿、组件及状态、补全和快捷操作；面板连接时为 `rpc`/`hasUI:true`，未连接时为 `print`/`false` |
 | Node | 虚拟路径、URL、环境、EventEmitter、不可变 UTF-8 包资源 |
 | 生命周期 | 每段聊天拥有独立宿主；停止使待执行工作失效，重载使旧接口失效，自有定时器和请求跟踪到结束 |
 
-`fs` 不访问 Vault。独立工厂只可读取 `/extensions/config` 下的 JSON 配置快照；
-宿主把插件设置映射为 `clarify.json`。`/clarify model` 经正常设置保存流程写入，
-文件系统写入、监听和进程执行一律明确失败。其他上游可选文件仍不挂载。
-桌面用户技能仍走原有的独立 Node 路径。
+`fs` 不访问 Vault。已审核的独立工厂可以读、写、删除 `/extensions/config` 下
+属于自己的 JSON 配置，操作成功前等待插件设置保存。宿主把 `clarify.json` 和
+`/clarify model` 接到同一设置保存流程。任意文件路径、监听和进程执行仍明确
+失败，其他上游可选文件不挂载。桌面用户技能仍走原有的独立 Node 路径。
 
 `pi-scoped-factories.mjs` 在构建时编译已审核的源码图，把平台导入绑定到各自
 宿主，纯函数依赖仍用静态导入共享。不在运行时求值代码，不替换全局网络或
@@ -45,6 +45,18 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 报告成功。模型切换保存记录、按模型能力收敛思考档位，并通过 Pi 的
 `prepareNextTurn` 钩子从下一次请求生效。
 
+`pi.appendEntry(customType, data)` 把 JSON 扩展状态保存为 `custom` 条目。
+同一处理器可以立即通过 `getEntries`、`getBranch`、`getLeafEntry` 读回。
+它不进入模型上下文，也不显示在聊天记录中；自定义消息使用另一套接口。
+宿主在命令、启动、事件和工具返回前等待条目写入，保存失败会报错。停止会取消
+排队写入；已开始的 Vault 写入可能完成，清理时会等待它结束。
+空白会话的条目先留在内存，首次发送消息时随会话一起保存，沿用会话延迟落盘
+规则。离开尚未发送消息的空白聊天，可能丢弃这些临时状态。
+
+`registerFlag` 保留 Pi 声明的默认值，`getFlag` 可读到该值。未知或尚无值的
+flag 返回 `undefined`；Obsidian 不提供命令行参数。消息/条目渲染器及
+Markdown 变换目前只注册、不实际渲染，扩展加载报告会记录降级诊断。
+
 ## 包导入
 
 审核过的社区源码可以保留 `@earendil-works` 或旧 `@mariozechner` 命名空间的
@@ -58,8 +70,8 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 | `pi-coding-agent` | `BorderedLoader`、`DynamicBorder`、`theme`、`getSelectListTheme`、`getAgentDir` |
 
 支持范围以此表为准，不包含 `stream`、`completeSimple`、任意 CLI 辅助函数或
-终端引擎。`getAgentDir()` 返回虚拟路径，不会让同步配置文件变得可读或可写，
-`fs` 仍只读取前述包资源。
+终端引擎。`getAgentDir()` 返回虚拟路径，只有前述已审核、属于该扩展的 JSON
+配置可以写入；它不提供通用文件系统访问。
 
 ## 原生界面与生命周期
 
@@ -100,11 +112,31 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 支持事件：`session_start`、`session_shutdown`、`before_agent_start`、`agent_start`、
 `agent_end`、`agent_settled`、`turn_start`、`turn_end`、`message_start`、
 `message_update`、`message_end`、三种 `tool_execution_*`、`tool_call` 和
-`tool_result`，以及 `context`、`input`、`model_select`、`session_tree`。
+`tool_result`，以及 `context`、`input`、`model_select`、`thinking_level_select`、
+`session_tree`、`session_compact_failed`、`session_before_fork`、`session_before_switch`。
 首次连接面板或执行时启动一次。原版 Runner 负责处理器顺序和结果合并。
 `before_agent_start` 的系统提示只用于该轮；自定义消息和 `message_end` 改写
 走现有持久化流程。`agent_settled` 等排队续跑和自动整理完成后触发。流式增量
 不会读取 Vault，没有订阅的事件不会额外执行处理器。
+
+`thinking_level_select` 在保存后报告之前和实际应用的思考档位。运行中选择
+的新档位等本轮结束后生效；再次选择原档位可撤回待应用的变更。模型能力引起的
+档位收敛走同一事件；保存失败或模型切换回滚时不发成功事件。事件始终属于
+发起变更的聊天，后台聊天也一样。
+
+`session_compact_failed` 覆盖手动和达到阈值的整理失败或取消。取消时
+`aborted:true`，不带错误文字。Piem 没有溢出恢复或扩展提供摘要的压缩路径，
+所以 `willRetry`、`fromExtension` 均为 false。`ctx.compact({onError})` 能收到
+真实失败；成功事件、`session_before_compact`、自定义指令和结果回调仍不支持，
+其完整契约需要能在真实日志中定位的压缩切点。
+
+`session_tree` 在扩展摘要跳转、重试或编辑重发保存后触发，携带真实的新旧叶子
+编号，以及这次创建的摘要条目。跳转失败不发成功事件。`session_before_fork`
+在复制回复前触发，`position:"at"`；`session_before_switch` 在新建或打开
+聊天前触发，`reason` 为 `"new"` 或 `"resume"`。返回 `{cancel:true}` 或抛错
+都会阻止该操作，用户后来的选择会取代仍在等待的处理器。这些事件不代表通用
+`ctx.fork`、`ctx.switchSession`、`ctx.newSession` 或 `session_before_tree`
+已支持；摘要导航仍只允许选中本次准备的摘要编号。
 
 `tool_call` 和 `tool_result` 是拦截而非观察，因此走代理自身的工具调用路径，
 不走 `tool_execution_*` 三兄弟所用的事件流。`tool_call` 处理器返回
@@ -115,11 +147,12 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 与上游一致；vault 工具本身仍会检查自己的路径，被改过的路径无法离开 vault。
 `tool_result` 处理器返回的 `content`、`details`、`isError`、`usage` 会整字段
 替换已执行结果的对应字段，不做深合并。处理器抛错时只让它自己那次调用失败，
-不放行：装来审查工具调用的扩展一旦崩溃，就等于什么都没批准。两个事件都不读
-Vault；扩展两个都没订阅的聊天，每次调用不付任何代价。
+不放行：装来审查工具调用的扩展一旦崩溃，就等于什么都没批准。两个事件不在
+每次调用前刷新 Vault；处理器写了自定义条目或标签时，返回前会等待保存，
+只读处理器不增加存储工作。
 
 停止和新提问会取消未完成的扩展工作。被取消处理器已捕获的接口始终失效，
-完成启动的回调可继续服务该会话后续回合。共享的 `pi.sendMessage`、`pi.setLabel`、
+完成启动的回调可继续服务该会话后续回合。共享的 `pi.sendMessage`、`pi.appendEntry`、`pi.setLabel`、
 `pi.setModel` 写操作必须在处理器第一次 `await` 前启动；异步界面和模型调用使用
 带所属关系的 `ctx` 能力。已静态审核的研究扩展另有每会话独占操作，统一拥有
 延迟定时器，因此可保留上游异步 `pi.*` 动作，同时检查取消状态。其他工厂继续

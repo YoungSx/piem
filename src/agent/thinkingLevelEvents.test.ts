@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ExtensionFactory, ThinkingLevelSelectEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory, ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import type { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import { stubWindowTimers } from "../testUtils/windowStub";
@@ -10,6 +10,7 @@ const restoreTimers = stubWindowTimers();
 afterAll(restoreTimers);
 
 const { harness } = await import("../testUtils/nativeExtensionServiceHarness");
+type ThinkingLevelSelectEvent = Extract<ExtensionEvent, { type: "thinking_level_select" }>;
 
 describe("thinking level observations", () => {
 	function observe() {

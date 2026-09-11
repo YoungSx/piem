@@ -17,21 +17,22 @@ Existing Quick actions keep their generation and click-to-send behavior.
 | --- | --- |
 | Loading | Original `loadExtensionFromFactory`, static sources only |
 | Execution | Original `ExtensionRunner` and tool wrapper; tools run sequentially |
-| Registration | Commands, tools, shortcuts, input/context and lifecycle handlers, private event bus; unsupported registrations and duplicate names fail |
+| Registration | Commands, tools, shortcuts, handlers and private event bus; unsupported events and conflicting names skip that extension; ignored renderers/Markdown transformers are logged; flags retain registered defaults |
 | Context | Original `context` pipeline, in order; a failed handler aborts the request |
 | Tool interception | Original `tool_call` / `tool_result` emitters through pi's own agent hooks; a blocked call does not run, in-place `input` patches reach the tool, and a failed handler becomes that one call's error |
-| Session | Read views refreshed from the owning Vault session and lane; labels flush before success and summary branches publish through an awaited Vault adapter |
+| Session | Read views refreshed from the owning Vault session and lane; custom entries and labels flush before success and summary branches publish through an awaited Vault adapter |
 | Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth |
 | Messages | Operation-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 pending messages; private `/acm` stays inside the host |
 | UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete and shortcut actions; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
 | Node | Virtual path/URL/environment, EventEmitter, immutable UTF-8 package resources |
 | Lifetime | One host per conversation; stop invalidates pending work, reload invalidates old APIs, and owned timers and requests are tracked to completion |
 
-`fs` does not access the Vault. Scoped factories can read only JSON configuration
-snapshots under `/extensions/config`; the host supplies `clarify.json` from plugin
-settings. The `/clarify model` command saves through the normal settings writer.
-All filesystem writes, watches and processes fail explicitly. Other optional
-upstream files remain absent. Desktop user skills keep their separate Node path.
+`fs` does not access the Vault. Audited scoped factories can read, write and delete
+their own JSON configuration under `/extensions/config`, saved through plugin
+settings before an operation succeeds. The host maps `clarify.json` and
+`/clarify model` to the same settings writer. Arbitrary filesystem paths, watches
+and processes fail explicitly. Other optional upstream files remain absent.
+Desktop user skills keep their separate Node path.
 
 `pi-scoped-factories.mjs` compiles each reviewed graph at build time and closes its
 platform imports over a per-host object. Shared pure imports stay static. There is
@@ -52,6 +53,21 @@ entries and the owning lane's current branch. Synchronous Pi actions are capture
 by the service before success is reported. Model changes are recorded, clamped
 for thinking support, and applied through Pi's `prepareNextTurn` hook.
 
+`pi.appendEntry(customType, data)` stores JSON extension state as a `custom`
+entry. The same handler can immediately read it through `getEntries`, `getBranch`
+and `getLeafEntry`. It does not enter the model context or the transcript; custom
+messages use a separate API. The host waits for entry writes at command, startup,
+event and tool boundaries, and reports write failures. Stop cancels queued writes;
+an already-started Vault write can finish and is awaited during cleanup.
+A blank conversation keeps entries in memory until its first message saves the
+session, matching the session's lazy persistence. Leaving an unsent blank chat
+can discard this temporary state.
+
+`registerFlag` retains Pi's declared default, which `getFlag` returns. An unknown
+flag, or one without a value, returns `undefined`; Obsidian supplies no CLI
+arguments. Message/entry renderers and Markdown transformers are currently
+registered but not rendered, with a diagnostic in the extension load report.
+
 ## Package imports
 
 Audited community sources may keep root imports from either `@earendil-works`
@@ -67,8 +83,8 @@ unsupported exports or package subpaths fail the build.
 
 These are explicit subsets. `stream`, `completeSimple`, arbitrary CLI helpers
 and a terminal engine are not included. `getAgentDir()` returns a virtual path;
-it does not make synchronous configuration files readable or writable. The
-resource-only `fs` behavior above still applies.
+only the audited per-extension JSON configuration described above is writable.
+It grants no general filesystem access.
 
 ## Native UI and lifecycle
 
@@ -120,12 +136,36 @@ panel and concurrent shortcut invocations are rejected.
 Supported events are `session_start`, `session_shutdown`, `before_agent_start`,
 `agent_start`, `agent_end`, `agent_settled`, `turn_start`, `turn_end`,
 `message_start`, `message_update`, `message_end`, the three
-`tool_execution_*` events, `tool_call` and `tool_result`, plus `context`, `input`, `model_select` and `session_tree`. Startup happens once on first panel
+`tool_execution_*` events, `tool_call` and `tool_result`, plus `context`, `input`,
+`model_select`, `thinking_level_select`, `session_tree`, `session_compact_failed`,
+`session_before_fork` and `session_before_switch`. Startup happens once on first panel
 attachment or execution. The original Runner orders handlers and combines
 their results. A `before_agent_start` system prompt applies to that run; custom
 messages and `message_end` replacements follow the existing persistence path.
 `agent_settled` waits for queued continuations and automatic compaction. Streaming
 deltas do not read the Vault; unused events do no handler work.
+
+`thinking_level_select` reports the previous and newly applied effective level
+after it is saved. A selection made during a run waits for that run to settle;
+choosing the original level again retracts the pending change. Model capability
+clamps use the same event, and a failed write or rolled-back model switch emits
+no success event. Events belong to their conversation, including background chats.
+
+`session_compact_failed` covers failed or cancelled manual and threshold
+compactions. Cancellations set `aborted:true` without an error message. Piem has no
+overflow-recovery or extension-supplied compaction, so `willRetry` and
+`fromExtension` are false. `ctx.compact({onError})` receives actual failures;
+success events, `session_before_compact`, custom instructions and result callbacks
+remain unsupported because their full compaction contract needs a real log cut.
+
+`session_tree` follows a saved extension summary navigation, retry or edit-resend,
+with real old/new leaf IDs and the saved summary when one was created. Failed
+navigation emits no success event. `session_before_fork` runs before a reply is
+copied (`position:"at"`); `session_before_switch` runs before creating or opening
+a chat (`reason:"new"` or `"resume"`). Returning `{cancel:true}` or throwing
+prevents that operation. A later user selection supersedes a waiting handler.
+These hooks do not enable general `ctx.fork`, `ctx.switchSession`, `ctx.newSession`
+or `session_before_tree`; summary navigation remains restricted to its prepared ID.
 
 `tool_call` and `tool_result` intercept rather than observe, so they run through
 the agent's own tool-call path instead of the event stream the `tool_execution_*`
@@ -141,13 +181,14 @@ leave the vault. A `tool_result` handler's `content`, `details`, `isError` and
 `usage` each replace that field of the executed result outright; there is no deep
 merge. A handler that throws fails its own call rather than letting it through:
 an extension installed to vet a tool call has approved nothing when it crashes.
-Neither event reads the Vault, and a conversation whose extensions subscribe to
-neither pays nothing per call.
+Neither event refreshes the Vault before each call. A handler that writes custom
+entries or labels waits for those writes before returning; a read-only handler
+adds no storage work.
 
 Stop and new prompts cancel unfinished extension work. Captured capabilities
 from a cancelled handler remain invalid; completed startup callbacks can keep
 serving later turns in the same conversation. Shared `pi.sendMessage`,
-`pi.setLabel` and `pi.setModel` mutations must begin before the handler's first
+`pi.appendEntry`, `pi.setLabel` and `pi.setModel` mutations must begin before the handler's first
 `await`; asynchronous native UI/model work uses captured `ctx` capabilities.
 The statically audited research factories use an exclusive per-conversation
 operation that also owns their deferred timers, allowing their upstream asynchronous
