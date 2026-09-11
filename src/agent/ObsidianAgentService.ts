@@ -2155,6 +2155,8 @@ export class ObsidianAgentService {
 			if (!entryId) {
 				return false;
 			}
+			const session = this.sessionManager.getSessionFor(rt.sessionPath);
+			const oldLeafId = await session.view(rt.activeLane).getLeafId();
 
 			// `summarizeAbandonedBranch` performs the rewind itself, after collecting
 			// the branch off the pre-rewind log, and returns the summary message (if
@@ -2178,6 +2180,18 @@ export class ObsidianAgentService {
 			agent.state.messages = agent.state.messages.slice(0, promptIndex);
 			if (summaryMessage) {
 				agent.state.messages = [...agent.state.messages.slice(0, promptIndex), summaryMessage];
+			}
+			const newLeafId = await session.view(rt.activeLane).getLeafId();
+			if (oldLeafId !== newLeafId && rt.agent === agent) {
+				const entry = newLeafId ? await session.getEntry(newLeafId) : undefined;
+				try {
+					await rt.communityHost?.emit({
+						type: "session_tree", oldLeafId, newLeafId, fromExtension: false,
+						...(summaryMessage && entry?.type === "branch_summary" ? { summaryEntry: { ...entry, timestamp: new Date(entry.timestamp).toISOString() } } : {}),
+					});
+				} catch (error) {
+					if (rt.agent === agent) this.setError(rt, causeMessage(error));
+				}
 			}
 			this.notify();
 			return await this.deliverPrompt(prompt, images);
@@ -5082,7 +5096,9 @@ export class ObsidianAgentService {
 			// an extension needs the refusal in its own call.
 			throw new Error("Compaction needs a configured model credential.");
 		}
-		return this.runExclusiveCompaction(rt, agent, { force: true });
+		const compacted = await this.runExclusiveCompaction(rt, agent, { force: true });
+		if (!compacted && rt.compactionEvent?.state === "failed") throw new Error(rt.compactionEvent.error);
+		return compacted;
 	}
 
 	/**
@@ -5160,6 +5176,9 @@ export class ObsidianAgentService {
 		try {
 			this.notify();
 			return await this.performCompaction(rt, agent, signal, force);
+		} catch (error) {
+			await this.reportCompactionFailure(rt, agent, force, causeMessage(error), signal.aborted || (error instanceof Error && error.name === "AbortError"));
+			return false;
 		} finally {
 			/*
 			 * `performCompaction` has already decided what the row says next: a
@@ -5206,46 +5225,18 @@ export class ObsidianAgentService {
 		// about what the transcript's usage describes. A skipped tidy changed
 		// nothing either and is not an attempt; an aborted one was called off by
 		// the user, and the abort path resets the latch itself.
-		if (outcome.status !== "skipped" && !signal.aborted) {
+		if (outcome.status !== "skipped" && !signal.aborted && !(outcome.status === "failed" && outcome.aborted)) {
 			rt.compactionGate = "awaiting";
 		}
 
 		if (outcome.status === "failed") {
-			// A cancelled compaction is not a failure worth a banner: pi reports the
-			// abort through this same `failed` outcome (`CompactionError` with code
-			// "aborted", which `retryAssistantCall` treats as terminal and never
-			// retries), and a user who pressed stop is already being told the run
-			// stopped.
-			if (signal.aborted) {
-				return false;
-			}
-			/*
-			 * Reported on the row the attempt already occupies, not in the banner.
-			 *
-			 * It used to go to the notice channel, on the reasoning that a compaction
-			 * sits between two turns and so has nothing in the transcript to anchor
-			 * it to. It does now: the attempt draws its own row from the moment it
-			 * starts, so the failure lands where the reader last saw it working —
-			 * which is also what keeps a quiet, non-blocking failure out of the
-			 * banner, where nothing that leaves the panel usable belongs (issue
-			 * #239).
-			 *
-			 * The anchor is the running record's, so the row does not jump on its way
-			 * from working to failed.
-			 */
-			rt.compactionEvent = {
-				state: "failed",
-				anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length,
-				error: outcome.message,
-			};
+			await this.reportCompactionFailure(rt, agent, force, outcome.message, signal.aborted || outcome.aborted);
 			return false;
 		}
 		if (outcome.status === "skipped") {
 			return false;
 		}
 
-		agent.state.messages = outcome.messages;
-		rt.lastCompaction = outcome.result;
 		// The meter is blind until the next reply records: every assistant usage the
 		// transcript now holds reports the pre-compaction total, so the turn
 		// meter and {@link shouldStopForCompaction} both wait out that first
@@ -5253,9 +5244,32 @@ export class ObsidianAgentService {
 		// the hook to do.
 		this.recordOverheadUsage(rt, outcome.result.usage);
 		await this.sessionManager.appendCompactionFor(rt.sessionPath, outcome.result, rt.activeLane);
+		if (rt.agent !== agent) return false;
+		agent.state.messages = outcome.messages;
+		rt.lastCompaction = outcome.result;
 		await this.refreshSessionInfo(rt);
 		this.notify();
 		return true;
+	}
+
+	/** A failed observer cannot turn a best-effort tidy into a failed prompt. */
+	private async reportCompactionFailure(rt: SessionRuntime, agent: Agent, force: boolean, message: string, aborted: boolean): Promise<void> {
+		if (this.disposed || rt.agent !== agent || rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) return;
+		if (!aborted) {
+			rt.compactionEvent = { state: "failed", anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length, error: message };
+		}
+		const host = rt.communityHost;
+		try {
+			await host?.emit({
+				type: "session_compact_failed", reason: force ? "manual" : "threshold", aborted,
+				...(aborted ? {} : { errorMessage: message }),
+				// Piem has no overflow-retry path or extension-supplied summary.
+				willRetry: false, fromExtension: false,
+			});
+		} catch (error) {
+			if (rt.agent === agent && rt.communityHost === host && !aborted) this.setError(rt, causeMessage(error));
+			this.log.debug("Extension compaction failure handler failed", () => ({ error: causeMessage(error) }));
+		}
 	}
 
 	/**
