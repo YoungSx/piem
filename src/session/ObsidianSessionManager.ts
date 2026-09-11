@@ -3,20 +3,32 @@ import {
 	buildContextEntries,
 	buildSessionContext as buildPiSessionContext,
 	type BranchSummaryResult,
+	type FileError,
+	InMemorySessionStorage,
 	JsonlSessionRepo,
+	type Result,
 	sessionEntryToContextMessages,
 	type AgentMessage,
 	type CompactResult,
 	type Entry,
 	type JsonlSessionMetadata,
+	type JsonlV4Header,
+	type LaneRecord,
+	type LogItem,
 	type OperationFinishedRecord,
 	type OperationStartedRecord,
-	type Session,
+	Session,
 	type ThinkingLevel,
 	createScanningSessionSearch,
 	type SessionSearch,
 	type SessionSearchOptions,
 } from "@earendil-works/pi-agent-core";
+import { uuidv7 } from "@earendil-works/pi-ai";
+// Deep imports past pi's package `exports` map, same precedent as
+// `sessionMutationLine.ts`: the JSONL codec is not re-exported at the package
+// root, and the header writer below needs pi's own encoder to guarantee a
+// header pi's loader will validate.
+import { encodeHeader } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js";
 import type { LoggerLike } from "../logging/Logger";
 import { normalizeFolderPath } from "../vault/path";
 import { sanitizeMessageForLog } from "../vault/image";
@@ -140,6 +152,15 @@ export class ObsidianSessionManager {
 	 */
 	private readonly claimed = new Set<string>();
 	private readonly transientClaims = new Map<string, number>();
+	/**
+	 * Paths whose live `Session` still runs on the in-memory storage
+	 * {@link createBlankSession} built: the blank sheet, reserved but not yet
+	 * written. Materialization and deletion both drop the path from here the
+	 * moment its answer changes, so membership is the one honest test for
+	 * "no file behind this path yet" — pi keeps the session's storage private,
+	 * and metadata cannot tell the two storages apart.
+	 */
+	private readonly blankPaths = new Set<string>();
 	/** Which hydrated session the legacy single-session API surface reads. */
 	private activePath: string | null = null;
 	/**
@@ -179,17 +200,168 @@ export class ObsidianSessionManager {
 		return new ObsidianSessionManager(app.vault.adapter, policy, "piem", log, localStorageLastOpenedSessionStore(vaultKey));
 	}
 
+	/**
+	 * Creates a session with a durable file behind it: the blank sheet plus its
+	 * materialization in one step.
+	 *
+	 * The panel never calls this — {@link createBlankSession} is its path, so a
+	 * session a user merely looked at never touches the disk. This is the shape
+	 * callers that *demand* persistence keep: startup-ready tests, and any future
+	 * consumer whose session exists to be read by something other than the user
+	 * typing into it.
+	 */
 	async createSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
+		const info = await this.createBlankSession();
+		const materialized = await this.materializeSession(info.path, defaults);
+		// Materialized on the spot means focused on the spot: this caller's
+		// session is durable, so it earns the record the blank sheet
+		// deliberately withholds — otherwise a restart would not return to it.
+		this.lastOpened?.write(materialized.path);
+		return materialized;
+	}
+
+	/**
+	 * The blank sheet a "new chat" click opens: a session that lives in memory
+	 * only, behind a path reserved for the file it will become.
+	 *
+	 * Nothing is written — no header, no model or thinking facts, no
+	 * last-opened record — so an untouched sheet is invisible everywhere the
+	 * product looks for sessions: the history list reads the disk, retention
+	 * reads the disk, and a restart finds no file and no record. The first real
+	 * message is what makes the session durable, in {@link materializeSession}.
+	 *
+	 * The reserved path is the whole trick. Every consumer of a live session
+	 * keys on its path — runtimes, claims, tools, the extension bridge — and
+	 * pi's in-memory storage has none, so the sheet reserves the exact filename
+	 * pi's `create` will mint for the same id: `sessionFileName(createdAt, id)`
+	 * is deterministic in both. Moving from memory to file then keeps every key
+	 * and the session id stable; only the storage under the `Session` is
+	 * swapped, in {@link materializeSession}.
+	 */
+	async createBlankSession(): Promise<ActiveSessionInfo> {
+		const id = uuidv7();
+		const createdAt = Date.now();
+		// pi nests sessions under a cwd-encoded directory (`--<cwd>--`): the
+		// reserved path must include it or materialization lands one level up.
+		const sessionDir = `${this.resolveSessionDir()}/${reservedSessionDirectoryName(this.cwd)}`;
+		const path = `${sessionDir}/${reservedSessionFileName(createdAt, id)}`;
+		const metadata: JsonlSessionMetadata = {
+			id, createdAt, cwd: this.cwd, path, modifiedAt: createdAt, sourceFormat: 4,
+		};
+		// The sheet's Session runs on the in-memory storage, whose metadata has
+		// no path of its own — the reserved path above is the only path it will
+		// ever have. `Session` is generic over storage metadata, and piem's
+		// registry speaks `JsonlSessionMetadata`; the sheet's hand-built entry
+		// carries that shape, so the session is cast to match the registry it
+		// lives in. Every read goes through the registry entry, never the
+		// session-borne metadata, so the widened metadata inside pi is harmless.
+		const session = new Session(new InMemorySessionStorage({ id, createdAt })) as unknown as PiSession;
+		this.hydrated.set(path, { session, metadata });
+		this.blankPaths.add(path);
+		this.activePath = path;
+		return this.summarize(metadata, session);
+	}
+
+	/**
+	 * Whether `path` names a blank sheet: one {@link createBlankSession}
+	 * opened and nothing has written to the disk for it yet. A path that was
+	 * materialized, loaded from disk, or never known is not blank.
+	 */
+	isBlankSession(path: string): boolean {
+		return this.blankPaths.has(path);
+	}
+
+	/**
+	 * Materializes the blank sheet at `path` if it is still blank; a path that
+	 * already has its file (loaded, materialized, or never known) is left alone
+	 * and answers with the summary unchanged.
+	 *
+	 * Callers bring the configuration the *first run* speaks, not the seed the
+	 * sheet was opened with: between the click and the first message the user
+	 * may have picked another model or level, and the sheet kept those as
+	 * memory only. This is where they become facts a restart can read.
+	 */
+	async materializeIfBlank(path: string, defaults: SessionDefaults): Promise<ActiveSessionInfo> {
+		if (!this.isBlankSession(path)) {
+			return this.summarize(this.requireHydrated(path).metadata, this.requireHydrated(path).session);
+		}
+		return this.materializeSession(path, defaults);
+	}
+
+	/**
+	 * Turns the blank sheet at `path` into the durable session it reserved the
+	 * name of: creates the file under the same id at the reserved path, replays
+	 * what accumulated in memory, and swaps the live `Session` over to it.
+	 *
+	 * The replay rides pi's own storage APIs rather than raw lines: `setName`
+	 * restores the fact, `appendRecord` re-arms the run ledger if a record had
+	 * landed, and `appendEntry` carries every entry with its id and parent —
+	 * so a name given before the first message, or any other write the sheet
+	 * accepted, survives as though it had been written to the file all along.
+	 * pi's serialized queues guarantee no write is in flight once the caller's
+	 * checkpoint is reached, so the log read here is the whole log.
+	 */
+	private async materializeSession(path: string, defaults: SessionDefaults): Promise<ActiveSessionInfo> {
+		const blank = this.requireHydrated(path);
 		const sessionDir = this.resolveSessionDir();
-		const session = await this.repo(sessionDir).create({ cwd: this.cwd });
+		// `repo.create` mints its own `createdAt`, which would part the real
+		// filename from the reserved one — so the header is written here, at
+		// the reserved path, and `repo.open` re-loads it as the durable session
+		// (deep-imported `encodeHeader` is pi's own encoder; the header shape is
+		// the v4 one pi validates on load).
+		const header: JsonlV4Header = {
+			kind: "header",
+			version: 4,
+			id: blank.metadata.id,
+			createdAt: blank.metadata.createdAt,
+			cwd: this.cwd,
+		};
+		fileResultOrThrow(await this.fs.writeFile(path, encodeHeader(header)), `Failed to initialize session ${path}`);
+		const session = await this.repo(sessionDir).open({ ...blank.metadata, sourceFormat: 4 });
 		const metadata = await session.getMetadata();
-		this.hydrated.set(metadata.path, { session, metadata });
-		this.activePath = metadata.path;
-		this.lastOpened?.write(metadata.path);
-		await this.appendModelChange(defaults.provider, defaults.modelId);
-		await this.appendThinkingLevelChange(defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL);
+		const items = await blank.session.getLog();
+		const lanes = await blank.session.getLanes();
+		const name = await blank.session.getName();
+		if (name) {
+			await session.setName(name);
+		}
+		for (const item of items) {
+			if (item.kind === "record") {
+				const { seq: _seq, timestamp: _timestamp, ...restored } = item.record;
+				await session.appendRecord(restored);
+			} else if (item.kind === "entry") {
+				const { seq: _s, timestamp: _t, parentId: _p, ...restored } = item.entry;
+				await session.appendEntry(restored, "main");
+			}
+			// "lane" pointers are replayed below from `getLanes`, which carries
+			// the branch heads the entries' own appends lost; "fact" items other
+			// than the name (labels) ride `setLabel` the same way if ever set.
+		}
+		for (const lane of lanes) {
+			if (lane.lane !== "main") {
+				await session.createLane(lane.lane, lane.leafId);
+			} else if (lane.leafId !== null) {
+				await session.moveLane("main", lane.leafId);
+			}
+		}
+		// The swap must precede the fact appends: they go through
+		// `getSessionFor`, which reads this registry — writing them while the
+		// blank sheet still occupies the entry would leave them in memory,
+		// discarded with the sheet.
+		this.hydrated.set(path, { session, metadata });
+		this.blankPaths.delete(path);
+		await this.appendModelChangeFor(path, defaults.provider, defaults.modelId);
+		await this.appendThinkingLevelChangeFor(path, defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL);
 		await this.evictSurplusSessions(sessionDir);
-		return this.getActiveSessionInfo();
+		return this.summarize(metadata, session);
+	}
+
+	private requireHydrated(path: string): HydratedSession {
+		const live = this.hydrated.get(path);
+		if (!live) {
+			throw new Error(`No session loaded: ${path}`);
+		}
+		return live;
 	}
 
 	async continueRecentSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
@@ -221,7 +393,10 @@ export class ObsidianSessionManager {
 			await this.loadSession(sessions[0].path);
 			return this.getActiveSessionInfo();
 		}
-		return this.createSession(defaults);
+		// An empty vault opens the blank sheet, not a durable session: the first
+		// conversation this device ever has should not be forced onto the disk
+		// before its first word, same as any other new chat.
+		return this.createBlankSession();
 	}
 
 	/**
@@ -348,9 +523,14 @@ export class ObsidianSessionManager {
 	async deleteSession(path: string): Promise<void> {
 		const target = normalizeFolderPath(path, { allowPluginInternals: true });
 		if (this.transientClaims.has(target)) throw new Error("The conversation still has an active operation.");
-		const result = await this.fs.remove(target, { force: true });
-		if (!result.ok) {
-			throw result.error;
+		// A blank sheet never had its file, so there is nothing on the disk to
+		// trash — skipping the remove keeps a no-op from masquerading as a
+		// success that tells the caller the file was moved somewhere findable.
+		if (!this.blankPaths.has(target)) {
+			const result = await this.fs.remove(target, { force: true });
+			if (!result.ok) {
+				throw result.error;
+			}
 		}
 		// Dropping the entry is what hands the file back to the disk: the next
 		// load of this path opens a fresh instance rather than a session whose
@@ -360,6 +540,7 @@ export class ObsidianSessionManager {
 		this.hydrated.delete(target);
 		this.claimed.delete(target);
 		this.transientClaims.delete(target);
+		this.blankPaths.delete(target);
 		if (this.activePath === target) {
 			this.activePath = null;
 		}
@@ -1089,6 +1270,31 @@ export function sessionIdFromSessionPath(path: string): string | null {
 	const cut = stem.lastIndexOf("_");
 	const id = cut === -1 ? "" : stem.slice(cut + 1);
 	return id || null;
+}
+
+/**
+ * The filename pi's `JsonlSessionRepo.create` mints for a session: the
+ * creation timestamp (colons and dots flattened to dashes) then the id.
+ * pi keeps this rule private, so it is mirrored here — and only used with an
+ * id pi itself will be handed at materialization, where `create({ id })` must
+ * land on exactly this name for the reserved path to match.
+ */
+function reservedSessionFileName(createdAt: number, id: string): string {
+	const timestamp = new Date(createdAt).toISOString().replace(/[:.]/g, "-");
+	return `${timestamp}_${id}.jsonl`;
+}
+
+/** The cwd-encoded directory pi nests every session file under (`--<cwd>--`). */
+function reservedSessionDirectoryName(cwd: string): string {
+	return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+}
+
+/** pi's `fileResult` discipline: a failed file write is thrown, not returned. */
+function fileResultOrThrow<T>(result: Result<T, FileError>, message: string): T {
+	if (!result.ok) {
+		throw new Error(`${message}: ${result.error.message}`);
+	}
+	return result.value;
 }
 
 function extractMessageText(message: AgentMessage): string {
