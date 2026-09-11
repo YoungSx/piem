@@ -21,7 +21,7 @@ async function fixture(factory: ExtensionFactory) {
 		getEntries: () => [], getBranch: () => [], getModel: () => undefined,
 		getThinkingLevel: () => "off", isIdle: () => true, notify: () => {},
 		prepare: async () => { reads++; }, deliver: () => {},
-		platform: { fetch: async () => { throw new Error("No network expected"); }, readConfig: () => undefined, onError: error => { throw error; } },
+		platform: { fetch: async () => { throw new Error("No network expected"); }, onError: error => { throw error; } },
 	}, [{ id: "tool-interception", factory }]);
 	return { host, reads: () => reads };
 }
