@@ -1,5 +1,5 @@
 import { clampThinkingLevel, type Model } from "@earendil-works/pi-ai";
-import type { Agent } from "@earendil-works/pi-agent-core";
+import type { Agent, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { SessionRuntime } from "../agent/SessionRuntime";
 import type { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import type { PiemSettings } from "../settings";
@@ -10,6 +10,7 @@ interface ModelSwitchOwner {
 	agent: Agent;
 	isCurrent(): boolean;
 	refresh(): Promise<void>;
+	thinkingLevelChanged(previousLevel: ThinkingLevel, level: ThinkingLevel): Promise<void>;
 }
 interface ModelSwitchSource {
 	getSettings(): PiemSettings;
@@ -27,6 +28,7 @@ export class ExtensionModelSwitch {
 	switch(owner: ModelSwitchOwner, requested: Pick<Model<string>, "provider" | "id">): Promise<boolean> {
 		const { runtime: rt, agent } = owner;
 		const epoch = rt.stopEpoch;
+		let thinkingChange: { previousLevel: ThinkingLevel; level: ThinkingLevel } | undefined;
 		const task = this.tail.then(async () => {
 			const ownsSession = () => !rt.bookmarkClosing && owner.isCurrent() && rt.agent === agent;
 			const assertOwner = () => {
@@ -56,6 +58,7 @@ export class ExtensionModelSwitch {
 				await owner.refresh();
 				assertOwner();
 				this.source.notify();
+				if (oldThinking !== nextThinking) thinkingChange = { previousLevel: oldThinking, level: nextThinking };
 				return true;
 			} catch (error) {
 				// A replaced/unloaded plugin must never start another settings write.
@@ -76,6 +79,10 @@ export class ExtensionModelSwitch {
 			} finally { rt.sessionOperations -= 1; release(); }
 		});
 		this.tail = task.catch(() => undefined);
-		return task;
+		return task.then(async switched => {
+			// Release the settings queue first: an observer may switch models too.
+			if (switched && thinkingChange) await owner.thinkingLevelChanged(thinkingChange.previousLevel, thinkingChange.level);
+			return switched;
+		});
 	}
 }

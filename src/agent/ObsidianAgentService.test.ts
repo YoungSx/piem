@@ -3369,11 +3369,11 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 	/** Records which runtime each reconfigure lands on, shadowing the private method. */
 	function spyReconfigures(service: ObsidianAgentServiceType): string[] {
 		const paths: string[] = [];
-		const target = service as unknown as { reconfigureRuntime: (rt: SessionRuntime) => Promise<void> };
+		const target = service as unknown as { reconfigureRuntime: (rt: SessionRuntime, level?: ThinkingLevel) => Promise<void> };
 		const original = target.reconfigureRuntime.bind(service);
-		target.reconfigureRuntime = async (rt) => {
+		target.reconfigureRuntime = async (rt, level) => {
 			paths.push(rt.sessionPath);
-			await original(rt);
+			await original(rt, level);
 		};
 		return paths;
 	}
@@ -3490,10 +3490,10 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 		expect(rt?.agent?.state.model.id).toBe("qwen-plus");
 	});
 
-	it("clamps a pending thinking level to the model it lands on, and logs the clamped value once", async () => {
+	it("clamps a pending thinking level to the model it lands on without logging an unchanged value", async () => {
 		// Neither model reasons, so "high" can only ever apply as "off" — the
 		// point is that the clamp reads the pending model at flush time and that
-		// the session log records what was actually applied, not what was asked.
+		// the session log does not record the unsupported choice or duplicate off.
 		const gated = createRecordingGatedStreamFn();
 		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn });
 		configureTwoModels(settings);
@@ -3516,11 +3516,10 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 
 		gated.release();
 		await run;
-		await waitFor(() => appended.length >= 1);
 
 		const rt = peekRuntime(service, service.getActiveSessionPath() ?? "");
 		expect(rt?.agent?.state.thinkingLevel).toBe("off");
-		expect(appended).toEqual(["off"]);
+		expect(appended).toEqual([]);
 		expect(rt?.pendingConfiguration).toBeNull();
 	});
 

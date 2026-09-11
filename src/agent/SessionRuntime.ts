@@ -345,6 +345,8 @@ export class SessionRuntime {
 	 * kind overwrites the first: last write wins.
 	 */
 	pendingConfiguration: { modelId?: string; thinkingLevel?: ThinkingLevel } | null = null;
+	/** Serialize selections while their applied value is being saved and announced. */
+	configurationApplying = false;
 
 	// --- per-conversation context refs (split from the global `activePath`) ---
 
