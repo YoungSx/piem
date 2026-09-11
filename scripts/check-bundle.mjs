@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved eleven
+ * The number is anchored to measurement, not taste, and it has moved fourteen
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -92,6 +92,12 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     bytes buy is the removal of a hardcoded path comparison that only ever
  *     answered `clarify.json`: ownership is now structural, so a second
  *     extension needs no edit here. No filesystem image, no vault mirror.
+ * 14. Holding a new chat in memory until its first message (pi's in-memory
+ *     session storage, deep-imported beside the JSONL codec it shares)
+ *     measured 1,975,900 B on top of the namespaced config store. The ceiling
+ *     follows to 1.90 MiB: the blank sheet needs the storage class at runtime,
+ *     so the bytes are the feature. No new dependency; the storage sits in the
+ *     same module tree the durable session already pulls in.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -106,7 +112,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.89 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.90 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

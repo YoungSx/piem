@@ -1805,8 +1805,36 @@ export class ObsidianAgentService {
 		// release this claim or make a late start belong to another run.
 		const release = this.sessionManager.claimOperation(rt.sessionPath);
 		try {
+			// The first message is what makes the session durable: a blank sheet
+			// still in memory becomes its file here, before any fact the run is
+			// about to append. Configuration is taken from the agent's live
+			// state — the user may have picked another model or level on the
+			// sheet, and those picks were kept as memory only until now. Renames,
+			// model changes, level changes never reach this path, which is the
+			// product rule: only a message persists the session. A non-blank
+			// path (already materialized, loaded from disk) is a no-op.
+			const model = agent.state.model;
+			if (this.sessionManager.isBlankSession(rt.sessionPath)) {
+				try {
+					await this.sessionManager.materializeIfBlank(rt.sessionPath, {
+						provider: model.provider,
+						modelId: model.id,
+						thinkingLevel: agent.state.thinkingLevel,
+					});
+					// A bump only for the transition: the sheet became a file, and
+					// the session picker must re-list to show it. Steady-state runs
+					// must not bump — effects keyed on the revision re-render per
+					// message otherwise.
+					rt.sessionRevision += 1;
+				} catch (error) {
+					this.log.error("Failed to materialize blank session; aborting the send", () => ({
+						path: rt.sessionPath,
+						error: causeMessage(error),
+					}));
+					return false;
+				}
+			}
 			try {
-				const model = agent.state.model;
 				await this.sessionManager.ensureConfigurationFor(rt.sessionPath, { provider: model.provider, modelId: model.id }, lane);
 			} catch (error) {
 				this.log.debug("Model assertion at run start failed", () => ({ lane, error: causeMessage(error) }));
@@ -2529,13 +2557,13 @@ export class ObsidianAgentService {
 		}
 		this.cancelSessionOpen();
 		// A session with no turns and nothing running is already the blank sheet
-		// a click is asking for: swapping in another one would mint a duplicate
-		// empty session on disk and spend retention budget on it. Double-clicks
-		// that outrun the first swap fall through to the in-flight latch above. A
-		// run in flight is *not* blank — "new session" mid-run still means
-		// abort-and-leave. `force` bypasses the blank check for the
-		// delete-the-last-session fallback, where the agent still shows the
-		// deleted session's state and must not count as content.
+		// a click is asking for: swapping in another one would abandon the sheet
+		// for nothing and spend a runtime on it. Double-clicks that outrun the
+		// first swap fall through to the in-flight latch above. A run in flight
+		// is *not* blank — "new session" mid-run still means abort-and-leave.
+		// `force` bypasses the blank check for the delete-the-last-session
+		// fallback, where the agent still shows the deleted session's state and
+		// must not count as content.
 		const previous = this.current();
 		if (
 			!options?.force &&
@@ -2558,8 +2586,18 @@ export class ObsidianAgentService {
 			// session will run on, since the previous one may have run another.
 			const inherited = await this.sessionManager.readLastSessionThinkingLevel();
 			const seed = clampThinkingLevel(getSelectedModel(this.getSettings()), inherited ?? DEFAULT_THINKING_LEVEL);
-			const defaults = this.getSessionDefaults();
-			const info = await this.sessionManager.createSession({ ...defaults, thinkingLevel: seed });
+			// The sheet is held in memory only: the first message is what makes a
+			// session durable (`beginRunOperation` materializes it), so a sheet
+			// the user merely looked at leaves no file, no history row, and no
+			// last-opened record behind. Its seed configuration lives in the
+			// sheet's memory as real facts, so context readers see the same shape
+			// on a sheet as on a stored chat.
+			const seedModel = getSelectedModel(this.getSettings());
+			const info = await this.sessionManager.createBlankSession({
+				provider: seedModel.provider,
+				modelId: seedModel.id,
+				thinkingLevel: seed,
+			});
 			this.currentPath = info.path;
 			const rt = this.runtimeFor(info.path);
 			rt.sessionInfo = info;
@@ -2901,16 +2939,17 @@ export class ObsidianAgentService {
 				rt.panelError = undefined;
 			}
 			if (!isCurrentRequest()) return;
-			const abandonedPath = this.currentPath;
 			// One synchronous commit, after all fallible preparation. A failed or
 			// superseded open leaves the old title, transcript and draft together.
 			// Existing agents are simply refocused; their background runs stay live.
+			// The session being left needs no retirement: an untouched blank sheet
+			// never had a file, so switching away costs nothing and switching back
+			// re-focuses its live runtime through this same path.
 			this.sessionManager.focusSession(info.path);
 			this.currentPath = info.path;
 			this.sessionInfo = info;
 			this.pendingSessionOpen = null;
 			this.notify();
-			await this.sweepAbandonedBlankSheet(abandonedPath);
 		} catch (error) {
 			// The failure belongs to the requested chat, not the healthy one still
 			// visible. An obsolete selection or disposed plugin reports nothing.
@@ -2927,47 +2966,6 @@ export class ObsidianAgentService {
 					}
 				}
 			}
-		}
-	}
-
-	/**
-	 * Retires the session just left when it never became a conversation.
-	 *
-	 * "New chat" is not a promise to store a file: it means a blank sheet, and
-	 * the runtime that served it already reuses an untouched one (`newSession`'s
-	 * blank-sheet guard). The switch away is the moment a fresh sheet proves
-	 * unwanted, and only then — a session the user typed one character into, or
-	 * whose run is still streaming in the background, is a real conversation
-	 * and keeps every protection the runtime pool grants it. Same predicate as
-	 * that guard, read off the abandoned runtime.
-	 *
-	 * Best effort by design: a refusal to sweep must never block the switch
-	 * the user asked for, so a failure logs and leaves the blank session to
-	 * the retention sweep it would have outlived anyway.
-	 */
-	private async sweepAbandonedBlankSheet(abandonedPath: string | null): Promise<void> {
-		if (!abandonedPath) {
-			return;
-		}
-		const abandoned = this.runtimes.get(abandonedPath);
-		const agent = abandoned?.agent;
-		if (!agent || agent.state.isStreaming || agent.state.messages.length > 0) {
-			return;
-		}
-		try {
-			// Belt-and-braces: the predicate above excludes a streaming run, so
-			// this is idempotent at worst. Abort first — a sweep on a live run
-			// would delete the file the ledger is still appending to.
-			await this.abortSession(abandonedPath);
-			await this.sessionManager.deleteSession(abandonedPath);
-			this.removeRuntime(abandoned);
-			this.sessionRevision += 1;
-			this.notify();
-		} catch (error) {
-			this.log.warn("Blank session sweep failed; leaving it for retention", () => ({
-				path: abandonedPath,
-				error: causeMessage(error),
-			}));
 		}
 	}
 

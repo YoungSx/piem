@@ -13,8 +13,6 @@ import {
 	type Entry,
 	type JsonlSessionMetadata,
 	type JsonlV4Header,
-	type LaneRecord,
-	type LogItem,
 	type OperationFinishedRecord,
 	type OperationStartedRecord,
 	Session,
@@ -211,7 +209,7 @@ export class ObsidianSessionManager {
 	 * typing into it.
 	 */
 	async createSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
-		const info = await this.createBlankSession();
+		const info = await this.createBlankSession(defaults);
 		const materialized = await this.materializeSession(info.path, defaults);
 		// Materialized on the spot means focused on the spot: this caller's
 		// session is durable, so it earns the record the blank sheet
@@ -237,8 +235,14 @@ export class ObsidianSessionManager {
 	 * is deterministic in both. Moving from memory to file then keeps every key
 	 * and the session id stable; only the storage under the `Session` is
 	 * swapped, in {@link materializeSession}.
+	 *
+	 * The seed configuration lands in the sheet's memory as real entries — the
+	 * same facts a durable file's first lines would carry — so every consumer
+	 * reading the session through its context (extension bridges, `buildSessionContextFor`)
+	 * sees the same shape on a sheet as on a stored chat. `materializeSession`
+	 * replays them, moving the facts to the file exactly once.
 	 */
-	async createBlankSession(): Promise<ActiveSessionInfo> {
+	async createBlankSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
 		const id = uuidv7();
 		const createdAt = Date.now();
 		// pi nests sessions under a cwd-encoded directory (`--<cwd>--`): the
@@ -259,6 +263,8 @@ export class ObsidianSessionManager {
 		this.hydrated.set(path, { session, metadata });
 		this.blankPaths.add(path);
 		this.activePath = path;
+		await this.appendModelChangeFor(path, defaults.provider, defaults.modelId);
+		await this.appendThinkingLevelChangeFor(path, defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL);
 		return this.summarize(metadata, session);
 	}
 
@@ -344,14 +350,26 @@ export class ObsidianSessionManager {
 				await session.moveLane("main", lane.leafId);
 			}
 		}
-		// The swap must precede the fact appends: they go through
+		// The swap must precede any further appends: they go through
 		// `getSessionFor`, which reads this registry — writing them while the
 		// blank sheet still occupies the entry would leave them in memory,
 		// discarded with the sheet.
 		this.hydrated.set(path, { session, metadata });
 		this.blankPaths.delete(path);
-		await this.appendModelChangeFor(path, defaults.provider, defaults.modelId);
-		await this.appendThinkingLevelChangeFor(path, defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL);
+		// `materializeIfBlank`'s contract: callers bring the configuration the
+		// *first run* speaks, which may part from the seed the sheet opened with
+		// (the user picked another model between the click and the message). The
+		// replay already carried the seed facts; only a real difference earns a
+		// change entry, so the file's facts stay deduplicated the way
+		// `ensureConfigurationFor` keeps them.
+		const replayed = await this.buildSessionContextFor(path);
+		if (replayed.model?.provider !== defaults.provider || replayed.model?.modelId !== defaults.modelId) {
+			await this.appendModelChangeFor(path, defaults.provider, defaults.modelId);
+		}
+		const level = defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL;
+		if ((replayed.thinkingLevel ?? DEFAULT_THINKING_LEVEL) !== level) {
+			await this.appendThinkingLevelChangeFor(path, level);
+		}
 		await this.evictSurplusSessions(sessionDir);
 		return this.summarize(metadata, session);
 	}
@@ -396,7 +414,7 @@ export class ObsidianSessionManager {
 		// An empty vault opens the blank sheet, not a durable session: the first
 		// conversation this device ever has should not be forced onto the disk
 		// before its first word, same as any other new chat.
-		return this.createBlankSession();
+		return this.createBlankSession(defaults);
 	}
 
 	/**
