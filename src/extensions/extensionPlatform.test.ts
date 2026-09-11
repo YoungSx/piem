@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { stubWindowTimers } from "../testUtils/windowStub";
+import { createExtensionConfigStore, type ExtensionConfigData } from "./extensionConfigStore";
 import { createExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 
 function deferred<T>() {
@@ -26,11 +27,24 @@ afterEach(async () => {
 	for (const host of hosts.splice(0)) { host.dispose(); await host.drain(); }
 	restoreTimers();
 });
+/** A store over a plain map, so platform tests exercise real read/write paths. */
+function memoryStore(seed: ExtensionConfigData = {}) {
+	let data: ExtensionConfigData | undefined = Object.keys(seed).length ? structuredClone(seed) : undefined;
+	const saves: Array<ExtensionConfigData | undefined> = [];
+	const store = createExtensionConfigStore({
+		getData: () => data,
+		setData: next => { data = next; },
+		persist: async () => { saves.push(structuredClone(data)); },
+		queue: work => work(),
+	});
+	return { store, saves, get data() { return data; } };
+}
+
 function setup(options: Partial<ExtensionPlatformCallbacks> = {}) {
 	const errors: unknown[] = [];
 	const activities: boolean[] = [];
 	const host = createExtensionPlatform({
-		fetch: async () => new Response("{}"), complete: async () => response, readConfig: () => undefined,
+		fetch: async () => new Response("{}"), complete: async () => response,
 		onError: error => errors.push(error), activityChanged: busy => activities.push(busy), ...options,
 	});
 	hosts.push(host);
@@ -39,17 +53,17 @@ function setup(options: Partial<ExtensionPlatformCallbacks> = {}) {
 
 describe("extension platform lifetime", () => {
 	it("keeps parallel platforms separate and rejects overlapping or nested operations", async () => {
-		const one = setup({ readConfig: () => '{"owner":"one"}' });
-		const two = setup({ readConfig: () => '{"owner":"two"}' });
+		const one = setup({ config: memoryStore({ "pi-clarify": { "clarify.json": '{"owner":"one"}' } }).store });
+		const two = setup({ config: memoryStore({ "pi-clarify": { "clarify.json": '{"owner":"two"}' } }).store });
 		const gate = deferred<void>();
 		const first = one.host.withOperation(async signal => {
 			expect(signal).toBe(one.host.getSignal());
 			await expect(one.host.withOperation(() => 0)).rejects.toThrow("already running");
 			await gate.promise;
-			return one.host.platform.readFileSync("/extensions/config/clarify.json", "utf8");
+			return one.host.forExtension("pi-clarify").readFileSync("/extensions/config/clarify.json", "utf8");
 		});
 		await expect(one.host.withOperation(() => 0)).rejects.toThrow("already running");
-		const second = await two.host.withOperation(() => two.host.platform.readFileSync("/extensions/config/clarify.json", "utf8"));
+		const second = await two.host.withOperation(() => two.host.forExtension("pi-clarify").readFileSync("/extensions/config/clarify.json", "utf8"));
 		gate.resolve();
 		expect(await first).toBe('{"owner":"one"}');
 		expect(second).toBe('{"owner":"two"}');
@@ -234,24 +248,57 @@ describe("extension platform lifetime", () => {
 		expect(one.host.busy).toBe(false);
 	});
 
-	it("exposes only read-only JSON snapshots and a private empty environment", () => {
-		const reads: string[] = [];
-		const { host } = setup({ readConfig: path => { reads.push(path); return path.endsWith("clarify.json") ? "{}" : undefined; } });
+	it("namespaces configuration per extension and refuses paths outside it", () => {
+		const backing = memoryStore({ "pi-clarify": { "clarify.json": "{}" } });
+		const { host } = setup({ config: backing.store });
+		const clarify = host.forExtension("pi-clarify");
+		const search = host.forExtension("pi-web-search");
 		expect(host.platform.getAgentDir()).toBe("/extensions/config");
-		expect(host.platform.readFileSync("/extensions/config/clarify.json", "utf8")).toBe("{}");
-		expect(host.platform.existsSync("/extensions/config/missing.json")).toBe(false);
-		expect(() => host.platform.readFileSync("/extensions/config/missing.json", "utf8")).toThrow("No extension config snapshot");
-		try { host.platform.readFileSync("/extensions/config/missing.json", "utf8"); } catch (error) { expect(error).toMatchObject({ code: "ENOENT" }); }
-		expect(() => host.platform.readFileSync("/extensions/config/../../secret.json", "utf8")).toThrow("outside");
-		expect(() => host.platform.readFileSync("/extensions/config/script.js", "utf8")).toThrow("outside");
-		expect(() => host.platform.readFileSync("/extensions/config/clarify.json", "base64")).toThrow("non-UTF-8");
-		expect(reads.every(path => path.startsWith("/extensions/config/"))).toBe(true);
+		expect(clarify.readFileSync("/extensions/config/clarify.json", "utf8")).toBe("{}");
+		// The same path resolves to each caller's own namespace, so one extension
+		// can neither read nor overwrite another's file by naming it.
+		expect(search.existsSync("/extensions/config/clarify.json")).toBe(false);
+		search.writeFileSync("/extensions/config/clarify.json", '{"provider":"other"}', "utf8");
+		expect(clarify.readFileSync("/extensions/config/clarify.json", "utf8")).toBe("{}");
+		expect(search.readFileSync("/extensions/config/clarify.json", "utf8")).toBe('{"provider":"other"}');
+		expect(backing.data).toEqual({ "pi-clarify": { "clarify.json": "{}" }, "pi-web-search": { "clarify.json": '{"provider":"other"}' } });
+		search.unlinkSync("/extensions/config/clarify.json");
+		expect(search.existsSync("/extensions/config/clarify.json")).toBe(false);
+		expect(backing.data).toEqual({ "pi-clarify": { "clarify.json": "{}" } });
+		expect(clarify.existsSync("/extensions/config/missing.json")).toBe(false);
+		expect(() => clarify.readFileSync("/extensions/config/missing.json", "utf8")).toThrow("No extension config snapshot");
+		try { clarify.readFileSync("/extensions/config/missing.json", "utf8"); } catch (error) { expect(error).toMatchObject({ code: "ENOENT" }); }
+		for (const path of ["/extensions/config/../../secret.json", "/extensions/config/script.js", "/extensions/config/nested/file.json"]) {
+			expect(() => clarify.readFileSync(path, "utf8")).toThrow("outside");
+			expect(() => clarify.writeFileSync(path, "{}", "utf8")).toThrow("outside");
+		}
+		expect(() => clarify.readFileSync("/extensions/config/clarify.json", "base64")).toThrow("non-UTF-8");
+		expect(() => clarify.writeFileSync("/extensions/config/clarify.json", "{}", "base64")).toThrow("non-UTF-8");
+		// Upstream calls mkdirSync on the directory before writing; anything else
+		// is still an unsupported filesystem operation rather than a silent no-op.
+		clarify.mkdirSync("/extensions/config", { recursive: true });
+		expect(() => clarify.mkdirSync("/extensions/config/nested")).toThrow("does not support");
 		expect(host.platform.getEnvApiKey("openai")).toBeUndefined();
 		expect(Object.keys(host.platform.process.env)).toEqual([]);
 		expect(Object.isFrozen(host.platform.process)).toBe(true);
 		expect(Object.isFrozen(host.platform.process.env)).toBe(true);
-		for (const action of [host.platform.mkdirSync, host.platform.writeFileSync, host.platform.unlinkSync]) expect(action).toThrow("does not support");
 		expect(() => new host.platform.Text()).toThrow("terminal UI");
 		expect(() => new host.platform.BorderedLoader()).toThrow("terminal UI");
+	});
+
+	it("fails visibly when no configuration store is attached", () => {
+		const { host } = setup();
+		const clarify = host.forExtension("pi-clarify");
+		expect(() => clarify.readFileSync("/extensions/config/clarify.json", "utf8")).toThrow("does not support");
+		expect(() => clarify.existsSync("/extensions/config/clarify.json")).toThrow("does not support");
+		expect(() => clarify.writeFileSync("/extensions/config/clarify.json", "{}", "utf8")).toThrow("does not support");
+		// An unowned platform can name no namespace at all, so every operation on
+		// it refuses rather than reading or writing some shared default.
+		for (const action of [
+			() => host.platform.readFileSync("/extensions/config/clarify.json", "utf8"),
+			() => host.platform.existsSync("/extensions/config/clarify.json"),
+			() => host.platform.writeFileSync("/extensions/config/clarify.json", "{}", "utf8"),
+			() => host.platform.unlinkSync("/extensions/config/clarify.json"),
+		]) expect(action).toThrow("does not support");
 	});
 });

@@ -54,7 +54,7 @@ export class CommunityHost {
 				return response;
 			},
 			beforeTimer: async () => { await callbacks.waitForIdle?.(); await callbacks.prepare(); },
-			afterTimer: async () => { await callbacks.session?.flush(); owner.deliver(); },
+			afterTimer: async () => { await owner.flushWrites(); owner.deliver(); },
 		});
 		await owner.initialize();
 		return owner;
@@ -62,14 +62,17 @@ export class CommunityHost {
 
 	private async initialize(): Promise<void> {
 		const callbacks = this.callbacks;
-		const platform = this.platform.platform;
+		// Each scoped factory receives a view bound to its own id, so the config
+		// namespace it can address comes from construction, not from the path it
+		// asks for. Sharing one platform object would make them interchangeable.
+		const scoped = (owner: string) => this.platform.forExtension(owner);
 		this.host = await createExtensionHost(this.extensions ?? [
 			{ id: "pi-invisible-continue", factory: invisibleContinue },
 			{ id: "pi-assistant-provenance", factory: provenance },
 			{ id: "pi-model-switch", factory: modelSwitch },
-			{ id: "pi-web-search", factory: createWebSearch(platform) },
-			{ id: "pi-clarify", factory: createClarify(platform) },
-			{ id: "pi-context", factory: createContext(platform) },
+			{ id: "pi-web-search", factory: createWebSearch(scoped("pi-web-search")) },
+			{ id: "pi-clarify", factory: createClarify(scoped("pi-clarify")) },
+			{ id: "pi-context", factory: createContext(scoped("pi-context")) },
 		], {
 			...callbacks,
 			...(this.extensions ? { getAuth: undefined } : { assertOperation: () => this.assertActive() }),
@@ -200,6 +203,21 @@ export class CommunityHost {
 	cancelInvocation(): void { this.host.cancel(); }
 	closed(): Promise<void> { return this.host.closed(); }
 
+	/**
+	 * Persists everything this operation staged, before any success is reported.
+	 *
+	 * A staged config value is not a saved one. `writeFileSync` is synchronous
+	 * and cannot await the settings write, so the actual save is awaited here —
+	 * at the same boundary the session flush already uses. Config goes first:
+	 * its rejection has to reach the caller as a failure rather than be masked
+	 * by a later step, since an extension that was told "saved" and was not is
+	 * the one outcome worse than an error.
+	 */
+	private async flushWrites(): Promise<void> {
+		await this.callbacks.platform.config?.flush();
+		await this.callbacks.session?.flush();
+	}
+
 	assertActive(): void { if (this.disposed) throw new Error("Extension host was disposed."); this.platform.assertActive(); }
 	getSignal(): AbortSignal { return this.platform.getSignal(); }
 	async drain(): Promise<void> { await this.platform.drain(); }
@@ -250,7 +268,7 @@ export class CommunityHost {
 			try {
 				const result = await work();
 				this.assertActive();
-				await this.callbacks.session?.flush();
+				await this.flushWrites();
 				const failure = this.failure.error;
 				if (failure) throw failure;
 				return result;

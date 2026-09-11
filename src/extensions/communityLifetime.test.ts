@@ -14,7 +14,7 @@ async function fixture(factory: ExtensionFactory) {
 		getEntries: () => [], getBranch: () => [], getModel: () => undefined,
 		getThinkingLevel: () => "off", isIdle: () => true, notify: () => {},
 		prepare: async () => { reads++; }, deliver: () => {},
-		platform: { fetch: async () => { throw new Error("No network expected"); }, readConfig: () => undefined, onError: error => { throw error; } },
+		platform: { fetch: async () => { throw new Error("No network expected"); }, onError: error => { throw error; } },
 	}, [{ id: "native-lifetime", factory }]);
 	return { host, reads: () => reads };
 }
@@ -34,7 +34,7 @@ describe("community host preserves native lifetime contracts", () => {
 		const host = await CommunityHost.create({
 			getEntries: () => [], getModels: () => [model], getModel: () => model, notify: () => {},
 			prepare: async () => {}, deliver: () => {}, complete: async () => { entered(); return await wire; },
-			platform: { fetch: async () => { throw new Error("Unexpected fetch"); }, readConfig: () => undefined, onError: () => {} },
+			platform: { fetch: async () => { throw new Error("Unexpected fetch"); }, onError: () => {} },
 		}, [{ id: "timeout", factory: pi => { pi.registerCommand("complete", { handler: async (_args, ctx) => { await ctx.modelRegistry.complete(model, { messages: [] }); } }); } }]);
 		try {
 			const command = host.run("complete");

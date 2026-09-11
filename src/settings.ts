@@ -18,6 +18,7 @@ import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compac
 
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
 import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
+import { normalizeExtensionConfig, type ExtensionConfigData } from "./extensions/extensionConfigStore";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
 import { DEFAULT_LOG_LEVEL, readLogLevel, type LogLevelSetting } from "./logging/logLevel";
@@ -193,6 +194,15 @@ export interface PiemSettings {
 	logLevel: LogLevelSetting;
 	/** Configured MCP servers; empty means no remote tools join the agent. */
 	mcpServers: McpServerConfig[];
+	/**
+	 * Per-extension JSON configuration, namespaced by extension id.
+	 *
+	 * Audited community extensions expect a writable agent directory; mobile has
+	 * none, so {@link ./extensions/extensionConfigStore} stands in for it. Absent
+	 * rather than `{}` so a vault where no extension ever wrote stays as it was.
+	 * Extension-supplied, therefore bounded on load rather than trusted.
+	 */
+	extensionConfig?: ExtensionConfigData;
 }
 
 export const DEFAULT_SETTINGS: PiemSettings = {
@@ -334,6 +344,8 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	}
 	const builtinSkillState = normalizeBuiltinSkillState(data?.builtinSkillState);
 	if (builtinSkillState) settings.builtinSkillState = builtinSkillState;
+	const extensionConfig = normalizeExtensionConfig(data?.extensionConfig);
+	if (extensionConfig) settings.extensionConfig = extensionConfig;
 	return settings;
 }
 
