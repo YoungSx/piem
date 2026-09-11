@@ -20,8 +20,8 @@ export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMe
 	 * whole settings closure with it. So it returns `loadReports` and this class,
 	 * which the service constructs and therefore can hand a logger, is the one
 	 * that writes them down. Optional and defaulted to {@link NOOP_LOGGER} for
-	 * the same reason {@link DraftStore} and the MCP manager are: constructing
-	 * one bare is a valid test configuration, and an `if` at the emit site is how
+	 * the same reason the draft store and the MCP manager are: constructing one
+	 * bare is a valid test configuration, and an `if` at the emit site is how
 	 * logging quietly stops happening.
 	 */
 	logger?: LoggerLike;
