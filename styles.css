@@ -2699,19 +2699,81 @@ button.piem-chat__latest--asking {
  * The full path, where truncation hands the reader back what the chip took
  * away: a chip shows only the file name, and the folder is the one thing a
  * reader cannot recover from context.
+ *
+ * It is also the popover's open affordance — the verbs used to spend their
+ * first slot on "Open", but the path is the one thing here the reader is
+ * already looking for, so the press belongs to it. As a control it takes the
+ * *quiet* shape: the muted 12px text it always was, no border, no fill, hover
+ * and focus the only tells. A full-strength button face here would stack two
+ * button styles in a two-line popover and turn the path into decoration; the
+ * text itself is the affordance, and the geometry below is what makes it
+ * pressable — full width, and the WCAG 2.5.8 24px floor the verbs already
+ * clear, which on a phone is the floor the row's own buttons sit on.
  */
 .piem-chat__context-chip-path {
+	align-items: center;
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	/*
+	 * `width: 100%` plus padding on a button, without this, is the popover's own
+	 * padding counted twice and a path line 16px wider than the box it sits in.
+	 */
+	box-sizing: border-box;
 	color: var(--text-muted);
+	cursor: pointer;
+	display: flex;
 	font-size: var(--font-ui-smaller);
+	gap: var(--size-4-1);
+	height: auto;
+	justify-content: flex-start;
+	min-height: var(--size-4-6);
+	padding: var(--size-4-1) var(--size-4-2);
+	text-align: start;
+	/*
+	 * The line was a `div` and inherited the popover's `normal`; as a button it
+	 * inherits nothing, because app.css sets `white-space: nowrap` on every
+	 * button. Left alone, the one element here that *must* wrap is the one
+	 * element that refuses to, and a vault path runs straight out through the
+	 * popover's border.
+	 */
+	white-space: normal;
+	width: 100%;
+}
+
+@media (hover: hover) {
+
+	.piem-chat__context-chip-path:hover {
+		background: var(--background-modifier-hover);
+	}
+}
+
+.piem-chat__context-chip-path:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: -2px;
+}
+
+/*
+ * The path itself wraps rather than ellipsizes: a long folder is the line's
+ * whole reason for existing, so truncating it here would hand back the chip's
+ * own problem. `anywhere` (not `break-word`) lets a path segment split mid-
+ * word, which vault paths do whenever a folder name outruns the popover.
+ */
+.piem-chat__context-chip-path-text {
+	color: inherit;
+	min-width: 0;
 	overflow-wrap: anywhere;
-	padding: var(--size-4-1) var(--size-4-2) 0;
+	text-align: start;
 }
 
 /*
  * The actions share one row under the path. The popover used to stack them
  * full-width, and three rows of sentence-length buttons made a disclosure for
  * one chip taller than a chat turn; one-word verbs laid across a line cut it
- * to two lines of content total.
+ * to two lines of content total. With "Open" living on the path line the row
+ * is two verbs, and the width they no longer spend is width the path gets
+ * back — the folder that used to ellipsize at the narrow widths.
  */
 .piem-chat__context-chip-actions {
 	display: flex;
@@ -2761,27 +2823,19 @@ button.piem-chat__latest--asking {
 }
 
 /*
- * Narrow panels drop the verbs and keep the glyphs. A phone's 393px leaf is
- * below the 32rem container breakpoint the header and the thinking switcher
- * already answer to, and there the three verbs were the widest thing in the
- * popover — the disclosure for one chip stretched wider than the chip itself.
- * The icons already name these actions (and each button keeps its
- * `aria-label`), so the words are the redundant string, the same call the
- * thinking switcher made when it hid its level word.
+ * The verb stays a word at every width this panel is drawn at. It used to be
+ * hidden below 32rem, back when the row held three sentence-length labels and
+ * they were the widest thing in the popover; two one-word verbs fit a 300px
+ * sidebar with room over, and `eye-off` — a struck-through eye — is not a glyph
+ * a reader decodes into "stop following" unaided.
+ *
+ * `line-height: 1` for the reason the chip's own label carries it: a 12px word
+ * in an inherited ~1.5 line box centres on its em box, ~1.5px below where its
+ * ink reads, and beside a 14px glyph in a centred flex row that shows up as the
+ * icon sagging.
  */
-@container piem-chat (max-width: 32rem) {
-
-	.piem-chat__context-chip-action-label {
-		display: none;
-	}
-
-	/*
-	 * With the word gone the button is a square around its glyph; the padding is
-	 * what keeps the pointer target at the WCAG 2.5.8 floor the base rule set.
-	 */
-	.piem-chat__context-chip-action {
-		padding: var(--size-4-2);
-	}
+.piem-chat__context-chip-action-label {
+	line-height: 1;
 }
 
 /*

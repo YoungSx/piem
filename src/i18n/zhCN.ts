@@ -315,7 +315,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		chipFollowed: "{path}，自动跟随中",
 		chipPinned: "{path}，已固定",
 		chipPopoverAria: "{name} 的操作",
-		openNote: "打开",
+		// 没有「打开」：路径行本身就是打开的按钮，动词再写一遍是复读。
 		pinToChat: "固定",
 		// 不是「移除」：笔记还在，chip 只是回到跟随态。「移除」是纯固定 chip
 		// 的动词——那一条会整个消失；在这里承诺移除只会落空。

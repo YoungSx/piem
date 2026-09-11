@@ -609,9 +609,10 @@ export const en = {
 		rowAria: "Notes shared with Piem",
 		followActive: "Follow the active note",
 		/**
-		 * Two leaves rather than one template with the kind substituted in. The
-		 * kind word has to agree with the sentence around it, and a language that
-		 * inflects could not fix that from a shared template.
+		 * The popover's path button — the open affordance the verbs used to carry
+		 * as their first word. Two leaves rather than one template with the kind
+		 * substituted in: the kind word has to agree with the sentence around it,
+		 * and a language that inflects could not fix that from a shared template.
 		 */
 		openFollowed: "Open {path}, followed automatically",
 		openPinned: "Open {path}, pinned",
@@ -628,9 +629,10 @@ export const en = {
 		/**
 		 * One-word verbs, laid out on one row — the popover spends its height on
 		 * the path, not on three stacked sentences. Each always means the note
-		 * the popover is about, so none takes a name placeholder.
+		 * the popover is about, so none takes a name placeholder. There is no
+		 * "Open": the path line above the verbs is the open affordance, so a
+		 * verb for it would restate the line the reader just read.
 		 */
-		openNote: "Open",
 		pinToChat: "Pin",
 		/**
 		 * Not "Remove": the note stays — the chip simply returns to following.

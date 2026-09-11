@@ -166,10 +166,11 @@ interface ContextChipProps {
  *
  * The button's whole job is to identify the note and disclose the actions; the
  * popover is where those actions live, because actions that fire once in a
- * note's lifetime have no business spending row width forever. Pinning keeps
- * the popover open on purpose: the pin row leaves it, which is the visible
- * answer to the press. The other rows end the chip or leave the panel, and
- * close before they go.
+ * note's lifetime have no business spending row width forever. The popover
+ * leads with the full path as its own button — that press opens the note —
+ * followed by the verbs. Pinning keeps the popover open on purpose: the pin
+ * row leaves it, which is the visible answer to the press. The other rows end
+ * the chip or leave the panel, and close before they go.
  */
 function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: ContextChipProps): React.JSX.Element {
 	const t = useT();
@@ -276,24 +277,37 @@ function ContextChip({ contextRef, onOpen, onPin, onUnpin, onStopFollowing }: Co
 					aria-label={t.t("contextRow.chipPopoverAria", { name: label })}
 					onMouseOver={suppressOwnTooltip}
 				>
-					{/* The chip truncates to a file name; this line is where the folder
-					    the reader cannot recover from context comes back. */}
-					<span className="piem-chat__context-chip-path">{contextRef.path}</span>
+					{/*
+					 * The chip truncates to a file name; this line is where the folder
+					 * the reader cannot recover from context comes back. It is also
+					 * the popover's open affordance — the row of verbs below used to
+					 * spend its first slot on "Open", but the path is the one thing
+					 * here the reader is already looking *for*, so pressing it names
+					 * what it opens. It renders as quiet text: no border, no fill,
+					 * hover only — the popover stays one disclosure with a primary
+					 * line, not a stack of three buttons where the top one has a
+					 * sentence in it.
+					 */}
+					<button
+						type="button"
+						className="piem-chat__context-chip-path"
+						aria-label={t.t(isActive ? "contextRow.openFollowed" : "contextRow.openPinned", { path: contextRef.path })}
+						onClick={() => {
+							// Close before navigating: the leaf takes over, and a popover
+							// left hanging over the composer would outlive its own subject.
+							setIsOpen(false);
+							onOpen(contextRef.path);
+						}}
+					>
+						<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
+						<span className="piem-chat__context-chip-path-text">{contextRef.path}</span>
+					</button>
 					<div className="piem-chat__context-chip-actions">
-						<button
-							type="button"
-							className="piem-chat__context-chip-action"
-							aria-label={t.t("contextRow.openNote")}
-							onClick={() => {
-								// Close before navigating: the leaf takes over, and a popover
-								// left hanging over the composer would outlive its own subject.
-								setIsOpen(false);
-								onOpen(contextRef.path);
-							}}
-						>
-							<ObsidianIcon name="file-text" className="piem-chat__context-chip-action-icon" />
-							<span className="piem-chat__context-chip-action-label">{t.t("contextRow.openNote")}</span>
-						</button>
+						{/*
+						 * No "Open" here: the path line above is the open affordance, and
+						 * a verb row whose first word duplicated the line the reader just
+						 * read spent the row's narrow width on a restatement.
+						 */}
 						{isActive ? (
 							/*
 							 * The pin control is a toggle, not a one-way street: once the
