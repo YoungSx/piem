@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
@@ -35,6 +35,7 @@ export class CommunityHost {
 	private disposed = false;
 	private failure: { error?: Error } = {};
 	private activeTools?: Set<string>;
+	private navigationDispatches = 0;
 
 	private needsContextReset = false;
 	private ui?: ExtensionUIAdapter;
@@ -151,6 +152,25 @@ export class CommunityHost {
 	}
 	get commands() { return this.host.commands.filter(command => command.name !== "acm"); }
 	get busy() { return this.platform.busy; }
+	/** A selection can arrive while another handler awaits input; never wait for that handler's own idle. */
+	async beforeSessionChange(event: SessionBeforeForkEvent | SessionBeforeSwitchEvent): Promise<boolean> {
+		if (!this.host.hasHandlers(event.type)) return false;
+		// An existing operation already owns a refreshed read view. Refreshing it
+		// again can wait on a ContextSession navigation that is calling us itself.
+		const emit = () => this.host.emit(event, false);
+		this.navigationDispatches++;
+		try {
+			let result;
+			if (this.platform.busy) {
+				const work = emit().then(async result => { await this.flushWrites(); this.assertActive(); return result; });
+				this.platform.trackRequest(work.then(() => undefined));
+				result = await work;
+			} else result = await this.operate(emit);
+			// This matches Pi's runtime: skipConversationRestore remains in its types,
+			// but the upstream fork path only consumes cancel.
+			return result?.cancel === true;
+		} finally { this.navigationDispatches--; }
+	}
 	async syncModel(): Promise<void> {
 		if (!this.host.hasHandlers("model_select")) return;
 		const emit = () => this.host.emit({ type: "model_select", model: this.callbacks.getModel!()!, previousModel: undefined, source: "set" });
@@ -166,6 +186,14 @@ export class CommunityHost {
 	}
 	emitAgentEvent(event: AgentEvent): Promise<void> {
 		if (!this.host.hasHandlers(event.type)) return this.host.emitAgentEvent(event);
+		if (this.navigationDispatches && this.platform.busy) {
+			// A pending switch dialog must not suppress the source chat's live
+			// message/tool observers. Reuse its captured view and retain each task
+			// until writes settle, even if the navigation handler finishes first.
+			const work = this.host.emitAgentEvent(event, false).then(() => this.flushWrites());
+			this.platform.trackRequest(work);
+			return work;
+		}
 		return this.operate(() => this.host.emitAgentEvent(event), undefined,
 			event.type !== "message_update" && event.type !== "tool_execution_update");
 	}

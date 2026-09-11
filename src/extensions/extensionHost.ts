@@ -540,7 +540,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			 */
 			loadReports: reports as readonly ExtensionLoadReport[],
 			hasHandlers: (name: string) => runner.hasHandlers(name),
-			emit: (event: Parameters<ExtensionRunner["emit"]>[0]) => invoke(() => runner.emit(event)),
+			emit: <T extends Parameters<ExtensionRunner["emit"]>[0]>(event: T, refresh = true) => invoke(() => runner.emit(event), refresh),
 			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),
 			complete: models.complete,
 			hasBeforeAgentStart: runner.hasHandlers("before_agent_start"),
@@ -616,12 +616,12 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				if (!runner.hasHandlers("before_agent_start")) return undefined;
 				return invoke(() => runner.emitBeforeAgentStart(prompt, images, systemPrompt, { cwd: "/vault" }));
 			},
-			emitAgentEvent: async (event: AgentEvent): Promise<void> => {
+			emitAgentEvent: async (event: AgentEvent, refresh = true): Promise<void> => {
 				await start();
 				if (!runner.hasHandlers(event.type)) { agentEvents.observe(event); return; }
 				// Streaming updates do not change the stored branch; no Vault read
 				// per token. The service awaits this before persisting message_end.
-				await invoke(scope => agentEvents.emit(event, () => scope.assertActive()), event.type !== "message_update" && event.type !== "tool_execution_update");
+				await invoke(scope => agentEvents.emit(event, () => scope.assertActive()), refresh && event.type !== "message_update" && event.type !== "tool_execution_update");
 			},
 			settled: async (): Promise<void> => {
 				await start();

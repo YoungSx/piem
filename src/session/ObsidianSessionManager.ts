@@ -241,8 +241,9 @@ export class ObsidianSessionManager {
 	 * reading the session through its context (extension bridges, `buildSessionContextFor`)
 	 * sees the same shape on a sheet as on a stored chat. `materializeSession`
 	 * replays them, moving the facts to the file exactly once.
+	 * `focus: false` lets the panel finish cancellable preparation before selecting the sheet.
 	 */
-	async createBlankSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
+	async createBlankSession(defaults: SessionDefaults, focus = true): Promise<ActiveSessionInfo> {
 		const id = uuidv7();
 		const createdAt = Date.now();
 		// pi nests sessions under a cwd-encoded directory (`--<cwd>--`): the
@@ -262,7 +263,7 @@ export class ObsidianSessionManager {
 		const session = new Session(new InMemorySessionStorage({ id, createdAt })) as unknown as PiSession;
 		this.hydrated.set(path, { session, metadata });
 		this.blankPaths.add(path);
-		this.activePath = path;
+		if (focus) this.activePath = path;
 		await this.appendModelChangeFor(path, defaults.provider, defaults.modelId);
 		await this.appendThinkingLevelChangeFor(path, defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL);
 		return this.summarize(metadata, session);
@@ -439,7 +440,7 @@ export class ObsidianSessionManager {
 		const target = normalizeFolderPath(path, { allowPluginInternals: true });
 		if (!this.hydrated.has(target)) throw new Error(`No session loaded: ${target}`);
 		this.activePath = target;
-		this.lastOpened?.write(target);
+		if (!this.blankPaths.has(target)) this.lastOpened?.write(target);
 	}
 
 	/**
