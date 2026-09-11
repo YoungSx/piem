@@ -14,10 +14,10 @@ function assistant(stopReason: AssistantMessage["stopReason"]): AssistantMessage
 		api: "openai",
 		provider: "deepseek",
 		model: "test-model",
-		usage: { input: 0, cacheRead: 0, output: 0, total: 0 },
+		usage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 		stopReason,
 		timestamp: 0,
-	} as AssistantMessage;
+	};
 }
 
 function user(text: string): UserMessage {
