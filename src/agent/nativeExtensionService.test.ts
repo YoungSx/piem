@@ -16,14 +16,20 @@ const { ObsidianAgentService } = await import("./ObsidianAgentService");
 const { ObsidianSessionManager } = await import("../session/ObsidianSessionManager");
 const { DEFAULT_SETTINGS } = await import("../settings");
 
-function harness(factory: ExtensionFactory) {
+/**
+ * `reasoning` is opt-in because the default fixture model deliberately has none:
+ * `setThinkingLevel` clamps to model capability, so a level asked for on a
+ * non-reasoning model correctly records as "off" and would make a test that
+ * asserts "medium" pass only by accident.
+ */
+function harness(factory: ExtensionFactory, options: { reasoning?: boolean } = {}) {
 	const adapter = new MemoryAdapter() as unknown as DataAdapter;
 	const sessions = new ObsidianSessionManager(adapter, "Piem/sessions", "obsidian-vault:Bridge test");
 	const settings = {
 		...DEFAULT_SETTINGS,
 		providers: [{ id: "bridge-provider", name: "Test gateway", baseUrl: "https://bridge.test/v1",
 			protocol: "openai-completions" as const, apiKey: "test-key", secretRef: "", source: "user" as const, oauthFlow: "" as const }],
-		models: [{ id: "bridge-model", providerId: "bridge-provider", modelApiId: "test-model", displayName: "Test model", reasoning: false, supportsImages: false }],
+		models: [{ id: "bridge-model", providerId: "bridge-provider", modelApiId: "test-model", displayName: "Test model", reasoning: options.reasoning === true, supportsImages: false }],
 		activeModelId: "bridge-model",
 	};
 	const app = {
@@ -128,6 +134,77 @@ describe("native extension service lifecycle", () => {
 			expect(custom).toHaveLength(2);
 			expect(JSON.stringify(custom)).toContain("native-context");
 			expect(await sessions.findOpenRunOperations()).toHaveLength(0);
+		} finally { service.dispose(); }
+	});
+});
+
+describe("native extension writes reach the owning conversation", () => {
+	it("renames the conversation its host belongs to, not the one on screen", async () => {
+		const { service, sessions } = harness(pi => {
+			pi.registerCommand("name", { handler: async (args) => { pi.setSessionName(args); } });
+		});
+		try {
+			await service.initialize();
+			const first = service.getActiveSessionPath()!;
+			// A turn first: `newSession` treats an empty conversation as already the
+			// blank sheet a switch is asking for, and would no-op below.
+			expect(await service.sendPrompt("First question")).toBe(true);
+			expect(await service.runExtensionCommand("name", "Named from an extension")).toBe(true);
+			expect(service.getSnapshot().session?.name).toBe("Named from an extension");
+
+			// Switch the panel elsewhere, then reopen: the name has to have been
+			// written to the first conversation's own log, not to whichever chat was
+			// focused at write time.
+			await service.newSession();
+			expect(service.getActiveSessionPath()).not.toBe(first);
+			expect(service.getSnapshot().session?.name).toBeUndefined();
+			// The name is durable on the first conversation, not on whichever chat
+			// was focused when the extension asked. Read through `getName()` rather
+			// than off the metadata: a rename is a fact in the log, so the log is
+			// where it lives — the same read `readActiveSessionName` does, trimmed
+			// and collapsing empty to undefined.
+			expect((await sessions.getSessionFor(first).getName())?.trim() || undefined).toBe("Named from an extension");
+			await service.openSession(first);
+			expect(service.getSnapshot().session?.name).toBe("Named from an extension");
+		} finally { service.dispose(); }
+	});
+
+	it("reads its own conversation's tools and commands, and leaks no executable", async () => {
+		let tools: unknown;
+		let commands: unknown;
+		const { service } = harness(pi => {
+			pi.registerTool({
+				name: "bridge_probe", label: "Probe", description: "A registered extension tool.",
+				parameters: { type: "object", properties: {} } as never,
+				execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+			});
+			pi.registerCommand("inspect", { handler: async () => { tools = pi.getAllTools(); commands = pi.getCommands(); } });
+		});
+		try {
+			await service.initialize();
+			expect(await service.runExtensionCommand("inspect")).toBe(true);
+			// The agent's own list, so `getActiveTools` and `getAllTools` cannot
+			// disagree about which tools this conversation holds.
+			const names = (tools as Array<{ name: string }>).map(tool => tool.name);
+			expect(names).toContain("bridge_probe");
+			expect(names.length).toBeGreaterThan(1);
+			expect((commands as Array<{ name: string }>).map(command => command.name)).toContain("inspect");
+			// The property that matters: nothing reachable from either result can be
+			// called. `execute` closes over this runtime — its session path, its agent
+			// state, its transport — so a single leaked function is a route around
+			// every ownership check the host makes.
+			const functions: string[] = [];
+			const seen = new WeakSet<object>();
+			const walk = (value: unknown, path: string): void => {
+				if (typeof value === "function") { functions.push(path); return; }
+				if (!value || typeof value !== "object" || seen.has(value)) return;
+				seen.add(value);
+				for (const [key, member] of Object.entries(value)) walk(member, `${path}.${key}`);
+			};
+			walk(tools, "tools");
+			walk(commands, "commands");
+			expect(functions).toEqual([]);
+			expect(JSON.stringify([tools, commands])).not.toContain("test-key");
 		} finally { service.dispose(); }
 	});
 });
