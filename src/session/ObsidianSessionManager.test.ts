@@ -259,6 +259,31 @@ describe("ObsidianSessionManager", () => {
 		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
 		expect(await adapter.read(blank.path)).toContain("Hello");
 	});
+
+	it("replays custom entry label replacements and removals when a blank chat is saved", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		const blank = await manager.createBlankSession(DEFAULTS);
+		const session = manager.getSessionFor(blank.path);
+		const checkpoint = await session.appendCustomEntry("checkpoint", { phase: 1 });
+		await session.setLabel(checkpoint, "Research");
+		await session.setLabel(checkpoint, "Revised research");
+		const removed = await session.appendCustomEntry("checkpoint", { phase: 2 });
+		await session.setLabel(removed, "Temporary");
+		await session.setLabel(removed, undefined);
+		const labels = (await session.getLog()).filter(item => item.kind === "fact" && item.fact === "label")
+			.map(item => ({ targetId: item.targetId, label: item.label }));
+		expect(await manager.listSessions()).toEqual([]);
+		await manager.materializeIfBlank(blank.path, DEFAULTS);
+		const reloaded = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		await reloaded.loadSession(blank.path);
+		const saved = reloaded.getSession();
+		expect(await saved.getEntry(checkpoint)).toMatchObject({ type: "custom", customType: "checkpoint", data: { phase: 1 } });
+		expect(await saved.getLabel(checkpoint)).toBe("Revised research");
+		expect(await saved.getLabel(removed)).toBeUndefined();
+		expect((await saved.getLog()).filter(item => item.kind === "fact" && item.fact === "label")
+			.map(item => ({ targetId: item.targetId, label: item.label }))).toEqual(labels);
+	});
 });
 
 /**
