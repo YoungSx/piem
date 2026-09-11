@@ -15,6 +15,7 @@ const { ObsidianAgentService } = await import("./ObsidianAgentService");
 const { ObsidianSessionManager } = await import("../session/ObsidianSessionManager");
 const { DEFAULT_SETTINGS } = await import("../settings");
 type SessionCompactFailedEvent = Extract<ExtensionEvent, { type: "session_compact_failed" }>;
+type SessionCompactEvent = Extract<ExtensionEvent, { type: "session_compact" }>;
 
 function harness(factory: ExtensionFactory, tokens = 4) {
 	const adapter = new MemoryAdapter();
@@ -61,7 +62,88 @@ function summaryResponse() {
 		arrayBuffer: new TextEncoder().encode(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join("") + "data: [DONE]\n\n").buffer };
 }
 
-describe("extension compaction failure observations", () => {
+describe("extension compaction observations", () => {
+	it("emits the actual saved compaction once, with a current read view and explicit cursor boundary", async () => {
+		const seen: SessionCompactEvent[] = [];
+		let snapshot: unknown;
+		const { service, sessions } = harness(pi => { pi.on("session_compact", (event, ctx) => {
+			seen.push(event);
+			snapshot = ctx.sessionManager.getEntry(event.compactionEntry.id);
+			expect(ctx.sessionManager.getLeafId()).toBe(event.compactionEntry.id);
+		}); });
+		try {
+			await service.sendPrompt("Hello");
+			requestUrlMock.mockResolvedValue(summaryResponse());
+			await service.compactNow();
+			expect(seen).toHaveLength(1);
+			const event = seen[0]!;
+			expect(event).toMatchObject({ type: "session_compact", reason: "manual", willRetry: false, fromExtension: false });
+			const saved = await sessions.getSession().getEntry(event.compactionEntry.id);
+			expect(saved?.type).toBe("compaction");
+			expect(JSON.parse(JSON.stringify(event.compactionEntry))).toEqual({ ...saved, timestamp: new Date(saved!.timestamp).toISOString() });
+			expect(snapshot).toEqual(JSON.parse(JSON.stringify(event.compactionEntry)));
+			expect(() => event.compactionEntry.firstKeptEntryId).toThrow("CLI compaction cursors");
+			expect(service.getSnapshot().messages[0]?.role).toBe("compactionSummary");
+		} finally { service.dispose(); }
+	});
+
+	it("observes threshold success and preserves the saved summary when the observer fails", async () => {
+		const seen: SessionCompactEvent[] = [];
+		const { service, sessions, requests } = harness(pi => { pi.on("session_compact", event => {
+			seen.push(event); throw new Error("Success observer failed");
+		}); }, 31_000);
+		try {
+			await service.sendPrompt("First");
+			requestUrlMock.mockResolvedValue(summaryResponse());
+			expect(await service.sendPrompt("Second")).toBe(true);
+			expect(seen).toHaveLength(1);
+			expect(seen[0]).toMatchObject({ reason: "threshold", fromExtension: false, willRetry: false });
+			expect((await sessions.getSession().getEntry(seen[0]!.compactionEntry.id))?.type).toBe("compaction");
+			expect(requests).toHaveLength(2);
+			expect(JSON.stringify(requests[1]?.messages)).toContain("SUMMARY");
+			expect(service.getSnapshot().compactionEvent).toBeNull();
+		} finally { service.dispose(); }
+	});
+
+	it("lets a success observer await a skipped tidy without awaiting its own attempt", async () => {
+		let successes = 0;
+		let settled = false;
+		const { service } = harness(pi => { pi.on("session_compact", async () => {
+			if (++successes === 1) { await service.compactNow(); settled = true; }
+		}); });
+		try {
+			await service.sendPrompt("Hello");
+			requestUrlMock.mockResolvedValue(summaryResponse());
+			await service.compactNow();
+			expect(successes).toBe(1);
+			expect(settled).toBe(true);
+			expect(requestUrlMock).toHaveBeenCalledTimes(1);
+		} finally { service.dispose(); }
+	});
+
+	it("keeps a successful background compaction on its original session", async () => {
+		const entered = Promise.withResolvers<void>();
+		const held = Promise.withResolvers<ReturnType<typeof summaryResponse>>();
+		const seen: Array<{ id: string; event: SessionCompactEvent }> = [];
+		const { service, sessions } = harness(pi => { pi.on("session_compact", (event, ctx) => { seen.push({ id: ctx.sessionManager.getSessionId(), event }); }); });
+		try {
+			await service.sendPrompt("First chat");
+			const firstPath = service.getActiveSessionPath()!;
+			const firstId = (await sessions.getActiveSessionInfo()).id;
+			requestUrlMock.mockImplementation(() => { entered.resolve(); return held.promise; });
+			const compacting = service.compactNow();
+			await entered.promise;
+			await service.newSession();
+			await service.sendPrompt("Second chat");
+			held.resolve(summaryResponse());
+			await compacting;
+			expect(seen).toHaveLength(1);
+			expect(seen[0]?.id).toBe(firstId);
+			expect((await sessions.getSessionFor(firstPath).getEntry(seen[0]!.event.compactionEntry.id))?.type).toBe("compaction");
+			expect(service.getSnapshot().messages.some(message => message.role === "compactionSummary")).toBe(false);
+		} finally { held.resolve(summaryResponse()); service.dispose(); }
+	});
+
 	it("reports one manual failure and delivers ctx.compact onError inside a command", async () => {
 		const seen: SessionCompactFailedEvent[] = [];
 		const errors: string[] = [];
@@ -101,7 +183,8 @@ describe("extension compaction failure observations", () => {
 
 	it("reports user cancellation once without an error message or failed row", async () => {
 		const seen: SessionCompactFailedEvent[] = [];
-		const { service } = harness(pi => { pi.on("session_compact_failed", event => { seen.push(event); }); });
+		let successes = 0;
+		const { service } = harness(pi => { pi.on("session_compact_failed", event => { seen.push(event); }); pi.on("session_compact", () => { successes++; }); });
 		let release!: () => void;
 		const entered = Promise.withResolvers<void>();
 		try {
@@ -116,12 +199,14 @@ describe("extension compaction failure observations", () => {
 			await compacting;
 			expect(seen).toEqual([{ type: "session_compact_failed", reason: "manual", aborted: true, willRetry: false, fromExtension: false }]);
 			expect(service.getSnapshot().compactionEvent).toBeNull();
+			expect(successes).toBe(0);
 		} finally { release?.(); service.dispose(); }
 	});
 
 	it("reports a persistence failure without replacing the live transcript", async () => {
 		const seen: SessionCompactFailedEvent[] = [];
-		const { service, adapter } = harness(pi => { pi.on("session_compact_failed", event => { seen.push(event); }); });
+		let successes = 0;
+		const { service, adapter } = harness(pi => { pi.on("session_compact_failed", event => { seen.push(event); }); pi.on("session_compact", () => { successes++; }); });
 		try {
 			await service.sendPrompt("Hello");
 			const original = structuredClone(service.getSnapshot().messages);
@@ -135,6 +220,7 @@ describe("extension compaction failure observations", () => {
 			expect(seen).toHaveLength(1);
 			expect(seen[0]?.errorMessage).toContain("Disk full");
 			expect(service.getSnapshot().messages).toEqual(original);
+			expect(successes).toBe(0);
 		} finally { service.dispose(); }
 	});
 

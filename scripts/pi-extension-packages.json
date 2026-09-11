@@ -45,6 +45,7 @@
     "virtualRoot": "/extensions/pi-invisible-continue"
   },
   "pi-web-search": {
+    "entry": "src/index.ts",
     "version": "1.5.0",
     "virtualRoot": "/extensions/pi-web-search",
     "files": {
@@ -56,6 +57,7 @@
     }
   },
   "pi-clarify": {
+    "entry": "extensions/clarify.ts",
     "version": "1.0.1",
     "virtualRoot": "/extensions/pi-clarify",
     "files": {
@@ -64,6 +66,7 @@
     }
   },
   "pi-context": {
+    "entry": "src/index.ts",
     "version": "2.2.0",
     "virtualRoot": "/extensions/pi-context",
     "files": {

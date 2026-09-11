@@ -3,9 +3,13 @@ import { normalize } from "pathe";
 import type { FetchFn } from "../net/obsidianFetch";
 import { unavailable } from "./node/unavailable";
 import { EXTENSION_CONFIG_ROOT, type ExtensionConfigStore } from "./extensionConfigStore";
+import { createExtensionRequestPool, createExtensionResources } from "./extensionResources";
+import { createScopedProcess } from "./node/scopedProcess";
 
 export interface ExtensionPlatformCallbacks {
 	fetch: FetchFn;
+	/** Must settle only after physical network IO; may outlive the conversation. */
+	backgroundFetch?: FetchFn;
 	complete(model: Model<string>, context: Context, options?: SimpleStreamOptions): Promise<AssistantMessage>;
 	/**
 	 * Namespaced JSON configuration. Absent means no extension may read or write
@@ -28,11 +32,19 @@ export interface ExtensionPlatform {
 	mkdirSync(path: string, options?: unknown): void;
 	writeFileSync(path: string, data: string, encoding?: string): void;
 	unlinkSync(path: string): void;
+	readdirSync(path: string): string[];
 	Text: new (...args: unknown[]) => object;
 	BorderedLoader: new (...args: unknown[]) => object;
 	process: Readonly<{ env: Readonly<Record<string, string | undefined>> }>;
 	setTimeout(callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]): number;
 	clearTimeout(id?: number): void;
+}
+
+export interface BackgroundExtensionPlatform extends Omit<ExtensionPlatform, "process"> {
+	process: ReturnType<typeof createScopedProcess>;
+	setInterval(callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]): number;
+	clearInterval(id?: number): void;
+	timersPromises: ReturnType<typeof createExtensionResources>["timersPromises"];
 }
 
 interface Operation {
@@ -51,6 +63,11 @@ const asError = (error: unknown): Error => error instanceof Error ? error : new 
 export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	let disposed = false;
 	let operation: Operation | undefined;
+	const backgrounds = new Set<ReturnType<typeof createExtensionResources>>();
+	const backgroundFetch = createExtensionRequestPool((input, init) => {
+		if (!callbacks.backgroundFetch) return Promise.reject(new Error("An extension background transport is required."));
+		return callbacks.backgroundFetch(input, init);
+	});
 	const report = (error: unknown): void => {
 		try { callbacks.onError(error); } catch { /* An error sink must not create an unhandled timer rejection. */ }
 	};
@@ -140,7 +157,6 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	 * rejects any `..` that survived normalization.
 	 */
 	const configFile = (path: string): string => {
-		assertActive();
 		const name = normalize(path);
 		if (!name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) || !name.endsWith(".json")) return unavailable("reads outside extension JSON snapshots");
 		const file = name.slice(EXTENSION_CONFIG_ROOT.length + 1);
@@ -159,12 +175,14 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	 * store, not a filesystem, and pretending otherwise would be the silent
 	 * no-op the bridge exists to avoid.
 	 */
-	const configView = (owner: string | undefined): Pick<ExtensionPlatform, "readFileSync" | "existsSync" | "mkdirSync" | "writeFileSync" | "unlinkSync"> => {
+	const configView = (owner: string | undefined, check = assertActive): Pick<ExtensionPlatform, "readFileSync" | "existsSync" | "mkdirSync" | "writeFileSync" | "unlinkSync" | "readdirSync"> => {
 		const read = (path: string): string | undefined => {
+			check();
 			const file = configFile(path);
 			return owner === undefined ? unavailable("extension configuration") : requireStore().read(owner, file);
 		};
 		const write = (path: string, text: string | undefined): void => {
+			check();
 			const file = configFile(path);
 			if (owner === undefined) return unavailable("extension configuration");
 			requireStore().stage(owner, file, text);
@@ -181,7 +199,7 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 			// already exists as a namespace; any other path is a real directory
 			// request this host cannot honour.
 			mkdirSync: path => {
-				assertActive();
+				check();
 				if (owner === undefined) return unavailable("extension configuration");
 				if (normalize(path) !== EXTENSION_CONFIG_ROOT) unavailable("fs.mkdirSync");
 			},
@@ -191,6 +209,11 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 				write(path, data);
 			},
 			unlinkSync: path => write(path, undefined),
+			readdirSync: path => {
+				check();
+				if (owner === undefined || normalize(path) !== EXTENSION_CONFIG_ROOT) return unavailable("fs.readdirSync outside extension configuration");
+				return requireStore().list(owner);
+			},
 		};
 	};
 	class UnsupportedTerminal {
@@ -237,6 +260,46 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		 * bound here, at construction, so ownership cannot be argued at call time.
 		 */
 		forExtension: (owner: string): ExtensionPlatform => ({ ...platform, ...configView(owner) }),
+		/** One reviewed factory receives a private environment and background lifetime. */
+		forBackgroundExtension: (owner: string) => {
+			assertActive();
+			const resources = createExtensionResources({ fetch: backgroundFetch, onError: report });
+			backgrounds.add(resources);
+			const config = configView(owner, resources.assertActive);
+			let closing = false;
+			const checkWrite = (): void => {
+				resources.assertActive();
+				if (closing) throw new Error("Extension configuration is read-only during shutdown.");
+			};
+			const persist = (): void => {
+				// Observe without consuming: foreground commands still await and
+				// reject on the same failed save; cancelled operations cannot hide it.
+				void callbacks.config?.settled().catch(error => {
+					try { resources.assertActive(); report(error); } catch { /* The retired owner has no UI. */ }
+				});
+			};
+			const result: BackgroundExtensionPlatform = {
+				...platform,
+				complete: (model, context, options) => { resources.assertActive(); return platform.complete(model, context, options); },
+				getAgentDir: () => { resources.assertActive(); return platform.getAgentDir(); },
+				fetch: resources.fetch,
+				setTimeout: resources.setTimeout, clearTimeout: resources.clearTimeout,
+				setInterval: resources.setInterval, clearInterval: resources.clearInterval,
+				timersPromises: resources.timersPromises,
+				readFileSync: (path, encoding) => { resources.assertActive(); return config.readFileSync(path, encoding); },
+				existsSync: path => { resources.assertActive(); return config.existsSync(path); },
+				readdirSync: path => { resources.assertActive(); return config.readdirSync(path); },
+				mkdirSync: (path, options) => { checkWrite(); config.mkdirSync(path, options); },
+				writeFileSync: (path, text, encoding) => { checkWrite(); config.writeFileSync(path, text, encoding); persist(); },
+				unlinkSync: path => { checkWrite(); config.unlinkSync(path); persist(); },
+				process: createScopedProcess(resources.assertActive),
+			};
+			return {
+				platform: result,
+				beginShutdown: () => { closing = true; resources.beginShutdown(); },
+				dispose: () => { resources.dispose(); backgrounds.delete(resources); },
+			};
+		},
 		/** Retain physical IO without delaying the caller's timeout or abort. */
 		trackRequest: (settled: Promise<void>): void => {
 			const scope = requireScope();
@@ -265,6 +328,8 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 			if (disposed) return;
 			disposed = true;
 			if (operation) cancelScope(operation);
+			for (const resources of backgrounds) resources.dispose();
+			backgrounds.clear();
 		},
 		drain: (): Promise<void> => operation?.drained ?? Promise.resolve(),
 		get busy(): boolean { return operation !== undefined; },

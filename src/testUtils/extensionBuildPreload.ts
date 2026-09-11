@@ -17,11 +17,9 @@ plugin({
 		for (const name of Object.keys(SCOPED_FACTORIES)) {
 			build.module(`${SCOPED_FACTORY_PREFIX}${name}`, async () => {
 				const snapshot = await readFile(resolve(root, "scripts/pi-extension-packages.json"), "utf8");
-				const audits = JSON.parse(snapshot) as Record<string, { version: string; files: Record<string, string> }>;
+				const audits = JSON.parse(snapshot) as Record<string, { entry: string; version: string; files: Record<string, string> }>;
 				const audit = audits[name];
 				if (!audit) throw new Error(`Missing extension audit: ${name}`);
-				const metadata = JSON.parse(await readFile(resolve(root, "node_modules", name, "package.json"), "utf8")) as { version: string };
-				if (metadata.version !== audit.version) throw new Error(`Re-audit ${name} before upgrading.`);
 				const { contents } = await buildScopedFactory(root, name, audit);
 				return { contents, loader: "js" };
 			});

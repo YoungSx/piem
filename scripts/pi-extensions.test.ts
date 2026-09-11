@@ -218,6 +218,8 @@ describe("scoped original extension factories", () => {
 		const directory = mkdtempSync(path.join(tmpdir(), "pi-scoped-audit-"));
 		const pkgRoot = path.join(directory, "node_modules/pi-context/src");
 		mkdirSync(pkgRoot, { recursive: true });
+		writeFileSync(path.join(pkgRoot, "../package.json"), JSON.stringify({ version: "1.0.0" }));
+		const metadata = { entry: "src/index.ts", version: "1.0.0" };
 		try {
 			for (const [source, error] of [
 				['import fs from "node:child_process"; export default () => fs;', "Unaudited scoped extension dependency"],
@@ -225,11 +227,11 @@ describe("scoped original extension factories", () => {
 				['export default () => require("node:fs");', "Dynamic extension loading is unavailable"],
 			] as const) {
 				writeFileSync(path.join(pkgRoot, "index.ts"), source);
-				const audit = { files: { "src/index.ts": createHash("sha256").update(source).digest("hex") } };
+				const audit = { ...metadata, files: { "src/index.ts": createHash("sha256").update(source).digest("hex") } };
 				await expect(buildScopedFactory(directory, "pi-context", audit)).rejects.toThrow(error);
 			}
-			await expect(buildScopedFactory(directory, "pi-context", { files: { "src/index.ts": "changed" } })).rejects.toThrow("Audited extension file changed");
-			await expect(buildScopedFactory(directory, "pi-context", { files: {} })).rejects.toThrow("Unaudited extension source");
+			await expect(buildScopedFactory(directory, "pi-context", { ...metadata, files: { "src/index.ts": "changed" } })).rejects.toThrow("Audited extension file changed");
+			await expect(buildScopedFactory(directory, "pi-context", { ...metadata, files: {} })).rejects.toThrow("Unaudited extension source");
 		} finally { rmSync(directory, { recursive: true, force: true }); }
 	});
 });

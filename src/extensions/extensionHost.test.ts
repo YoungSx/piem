@@ -13,12 +13,12 @@ function reportFor(host: { loadReports: readonly { id: string; error?: Error; ig
 
 describe("static extension host contract", () => {
 	it("skips an extension registering an unsupported event without failing the host", async () => {
-		const host = await createExtensionHost([{ id: "unsupported", factory: pi => { pi.on("before_provider_request", () => {}); } }], callbacks);
+		const host = await createExtensionHost([{ id: "unsupported", factory: pi => { pi.on("before_provider_headers", () => {}); } }], callbacks);
 		try {
 			// The handler is not merely uncalled — the extension is not loaded at all,
 			// because a filter that never runs makes the extension wrong, not reduced.
-			expect(host.hasHandlers("before_provider_request")).toBe(false);
-			expect(reportFor(host, "unsupported").error?.message).toContain("extension event before_provider_request");
+			expect(host.hasHandlers("before_provider_headers")).toBe(false);
+			expect(reportFor(host, "unsupported").error?.message).toContain("extension event before_provider_headers");
 		} finally { host.dispose(); }
 	});
 
@@ -38,7 +38,7 @@ describe("static extension host contract", () => {
 	it("loads the extensions after a rejected one instead of taking the host down with it", async () => {
 		let ran = 0;
 		const host = await createExtensionHost([
-			{ id: "unsupported", factory: pi => { pi.on("before_provider_request", () => {}); } },
+			{ id: "unsupported", factory: pi => { pi.on("before_provider_headers", () => {}); } },
 			{ id: "working", factory: pi => pi.registerCommand("later", { handler: async () => { ran++; } }) },
 		], callbacks);
 		try {
@@ -70,7 +70,7 @@ describe("static extension host contract", () => {
 			// the subscription is live and the flag default is in shared state.
 			pi.events.on("tick", () => { heard++; });
 			pi.registerFlag("verbose", { type: "boolean", default: true });
-			pi.on("before_provider_request", () => {});
+			pi.on("before_provider_headers", () => {});
 		};
 		const host = await createExtensionHost([
 			{ id: "rejected", factory: rejected },

@@ -64,10 +64,13 @@ export interface ExtensionConfigStoreOptions {
 
 export interface ExtensionConfigStore {
 	read(owner: string, file: string): string | undefined;
+	list(owner: string): string[];
 	/** Stages a value and enqueues its save. Throws on a rejected name or size. */
 	stage(owner: string, file: string, text: string | undefined): void;
 	/** Resolves once every staged value is persisted; rejects if one was not. */
 	flush(): Promise<void>;
+	/** Observe saves without clearing a failure an enclosing command must see. */
+	settled(): Promise<void>;
 }
 
 function assertName(value: string, pattern: RegExp, what: string): string {
@@ -105,6 +108,13 @@ export function createExtensionConfigStore(options: ExtensionConfigStoreOptions)
 		tail = tail.then(() => work, () => work);
 	};
 	return {
+		list: owner => {
+			const names = new Set(Object.keys(options.getData()?.[owner] ?? {}));
+			for (const entry of options.projections ?? []) {
+				if (entry.owner === owner && entry.read() !== undefined) names.add(entry.file);
+			}
+			return [...names].sort();
+		},
 		read: (owner, file) => {
 			const projection = projections.get(`${owner}/${file}`);
 			if (projection) return projection.read();
@@ -145,5 +155,6 @@ export function createExtensionConfigStore(options: ExtensionConfigStoreOptions)
 			tail = pending.catch(() => undefined);
 			return pending;
 		},
+		settled: () => tail,
 	};
 }
