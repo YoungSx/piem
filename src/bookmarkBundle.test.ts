@@ -24,6 +24,7 @@ interface LoadedPlugin {
 	agentService: Service;
 	sessionManager: {
 		appendMessageFor(path: string, message: AgentMessage): Promise<string>;
+		materializeIfBlank(path: string, defaults: { provider: string; modelId: string; thinkingLevel?: string }): Promise<{ path: string }>;
 	};
 }
 const message = (text: string): AgentMessage => ({ role: "assistant", api: "openai-completions", provider: "test", model: "test", stopReason: "stop", timestamp: 1, content: [{ type: "text", text }], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
@@ -43,12 +44,19 @@ async function load(memory: MemoryAdapter) {
 	return { plugin, record, required, dynamic, realm };
 }
 
+/** The sheet a fresh plugin opens is in-memory until its first message. */
+async function makeStored(plugin: LoadedPlugin, path: string): Promise<void> {
+	await plugin.sessionManager.materializeIfBlank(path, { provider: "test", modelId: "test" });
+}
+
+
 describe("shipped bookmark extension without Node", () => {
 	it("registers commands, persists through the real service and survives reloading the bundle", async () => {
 		const memory = new MemoryAdapter();
 		const first = await load(memory);
 		expect(first.record.commands).toEqual(expect.arrayContaining(["bookmark-reply", "unbookmark-reply", "view-bookmarks"]));
 		const path = first.plugin.agentService.getActiveSessionPath()!;
+		await makeStored(first.plugin, path);
 		await first.plugin.sessionManager.appendMessageFor(path, message("Remember this"));
 		expect(await first.realm.evaluate('Promise.resolve().then(() => [typeof process, typeof Buffer, typeof globalThis.require, typeof window.process, typeof window.Buffer, typeof Bun])')).toEqual(Array(6).fill("undefined"));
 		await first.plugin.agentService.newSession({ force: true });
@@ -69,6 +77,7 @@ describe("shipped bookmark extension without Node", () => {
 		const memory = new MemoryAdapter();
 		const { plugin } = await load(memory);
 		const path = plugin.agentService.getActiveSessionPath()!;
+		await makeStored(plugin, path);
 		await plugin.sessionManager.appendMessageFor(path, message("Saved answer"));
 		const append = memory.append.bind(memory);
 		memory.append = async () => { throw new Error("Disk full"); };

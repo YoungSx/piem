@@ -398,21 +398,23 @@ describe("ObsidianAgentService", () => {
 		const original = service.getSnapshot().session;
 
 		// A chat with no turns is already what "new session" asks for; the
-		// repeated clicks must not mint duplicate empty sessions behind it.
+		// repeated clicks must not abandon the sheet for nothing.
 		await service.newSession();
 		await service.newSession();
 
 		expect(service.getSnapshot().session?.id).toBe(original?.id);
-		expect((await service.listSessions()).length).toBe(1);
+		// The sheet lives in memory only: no file was ever minted for it, so the
+		// history list — which reads the disk — has nothing to show.
+		expect((await service.listSessions()).length).toBe(0);
 	});
 
-	it("sweeps the untouched blank sheet when a session switch leaves it", async () => {
+	it("leaves the blank sheet without a trace when a session switch abandons it", async () => {
 		const service = createService();
 		await service.sendPrompt("Something to return to");
 		const first = service.getSnapshot().session;
 
-		// New chat mints a fresh file; switching back to the first session is the
-		// moment the blank one proves unwanted and must not linger on disk.
+		// New chat opens a blank sheet; switching back to the first session
+		// abandons it — and an abandoned sheet never had a file to sweep.
 		await service.newSession();
 		const blank = service.getSnapshot().session;
 		expect(blank?.id).not.toBe(first?.id);
@@ -422,6 +424,10 @@ describe("ObsidianAgentService", () => {
 
 		expect(service.getSnapshot().session?.id).toBe(first?.id);
 		expect((await service.listSessions()).map((session) => session.id)).toEqual([first?.id]);
+		// The sheet's runtime survives the switch (issue #235): coming back to it
+		// re-focuses the same in-memory conversation.
+		await service.openSession(blank?.path ?? "");
+		expect(service.getSnapshot().session?.id).toBe(blank?.id);
 	});
 
 	it("keeps a left-behind session that has a conversation", async () => {
@@ -444,14 +450,15 @@ describe("ObsidianAgentService", () => {
 		);
 	});
 
-	it("collapses a double-click on new chat into a single fresh session", async () => {
+	it("collapses a double-click on new chat into a single fresh sheet", async () => {
 		const service = createService();
 		await service.sendPrompt("Something to leave behind");
 
-		// Both clicks race before the first swap lands; only one may create.
+		// Both clicks race before the first swap lands; only one sheet opens,
+		// and it mints no file — the disk count stays at the conversation left.
 		await Promise.all([service.newSession(), service.newSession()]);
 
-		expect((await service.listSessions()).length).toBe(2);
+		expect((await service.listSessions()).length).toBe(1);
 	});
 
 	it("still creates a replacement when the last blank session is deleted", async () => {
@@ -465,6 +472,67 @@ describe("ObsidianAgentService", () => {
 		// session — a blank sheet there does not mean "reuse it".
 		expect(service.getSnapshot().session?.path).toBeTruthy();
 		expect(service.getSnapshot().session?.path).not.toBe(deleted);
+	});
+
+	it("materializes the session file on the first message, not before", async () => {
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter);
+		await service.initialize();
+		const sheet = service.getSnapshot().session;
+
+		// The blank sheet: reserved path, no file, absent from history.
+		expect(sheet?.path).toContain(".jsonl");
+		expect(await adapter.exists(sheet?.path ?? "")).toBe(false);
+		expect((await service.listSessions()).map((session) => session.id)).toEqual([]);
+
+		await service.sendPrompt("First words");
+
+		// The same session is now durable: same id, the reserved path bearing a
+		// real file, and a history row pointing at it.
+		const after = service.getSnapshot().session;
+		expect(after?.id).toBe(sheet?.id);
+		expect(after?.path).toBe(sheet?.path);
+		expect(await adapter.exists(sheet?.path ?? "")).toBe(true);
+		expect((await service.listSessions()).map((session) => session.id)).toEqual([sheet?.id ?? ""]);
+	});
+
+	it("materializes the model the first run speaks, not the seed the sheet opened with", async () => {
+		const adapter = new MemoryAdapter();
+		const { service, settings } = createServiceWithSettings(adapter);
+		settings.models.push({
+			id: "m-test-pro", providerId: "p-test", modelApiId: "test-model-pro",
+			displayName: "Test Model Pro", reasoning: false, supportsImages: false,
+		});
+
+		await service.initialize();
+		await service.newSession();
+		// The user picks another model on the sheet, after it opened.
+		settings.activeModelId = "m-test-pro";
+		await service.sendPrompt("Pick up my pick");
+
+		// The durable file must name the model the first run spoke — the sheet
+		// was opened on another, and picks made on the sheet were memory only
+		// until the first message materialized them.
+		const sessionPath = service.getSnapshot().session?.path ?? "";
+		const log = await adapter.read(sessionPath);
+		expect(log).toContain('"modelId":"test-model-pro"');
+	});
+
+	it("leaves no trace of a blank session across a restart", async () => {
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter);
+		await service.initialize();
+		const sheet = service.getSnapshot().session;
+
+		// Simulate the restart: a fresh service over the same vault, with the
+		// last-opened record read like a new process would.
+		const rebooted = createService(adapter);
+		await rebooted.initialize();
+
+		// Nothing on disk names the sheet, and no last-opened record can point
+		// an open panel at it: the reboot lands elsewhere, never on a ghost.
+		expect((await rebooted.listSessions()).map((session) => session.id)).not.toContain(sheet?.id);
+		expect(rebooted.getSnapshot().session?.id ?? "").not.toBe(sheet?.id);
 	});
 
 	it("keeps a renamed session's name after the transcript is reloaded", async () => {
@@ -5049,12 +5117,14 @@ describe("session fork", () => {
 		await service.initialize();
 		const before = service.getSnapshot().session?.path;
 
-		// No messages yet, so no entry id exists to anchor a fork on.
+		// No messages yet, so no entry id exists to anchor a fork on. The sheet
+		// may still be blank in memory here — that is the fixture's point: a
+		// refusal must not force it onto the disk either.
 		expect(await service.forkSessionAt(0)).toBe(false);
 		// A refusal is a no-op, not a half-done fork: the panel is still on the
 		// chat it was on, and no copy was minted for it to land in.
 		expect(service.getSnapshot().session?.path).toBe(before);
-		expect(await service.listSessions()).toHaveLength(1);
+		expect(await service.listSessions()).toHaveLength(0);
 	});
 
 	it("keeps the interrupted-run ledger on each session's own main line", async () => {
@@ -5083,7 +5153,9 @@ describe("interrupted run recovery", () => {
 	it("offers to continue a run the previous process left open", async () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter);
-		await service.initialize();
+		// A message first: the fixture plants an orphan inside a real file, and
+		// a sheet nothing was said into has none to plant into.
+		await service.sendPrompt("A session someone was using");
 		const sessionPath = service.getSnapshot().session?.path ?? "";
 		const manager = new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test");
 		await manager.loadSession(sessionPath);
@@ -5120,7 +5192,7 @@ describe("interrupted run recovery", () => {
 	it("withdraws the offer when the user sends instead", async () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter);
-		await service.initialize();
+		await service.sendPrompt("A session someone was using");
 		const sessionPath = service.getSnapshot().session?.path ?? "";
 		const manager = new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test");
 		await manager.loadSession(sessionPath);
@@ -5137,7 +5209,7 @@ describe("interrupted run recovery", () => {
 	it("withdraws the offer on dismissal", async () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter);
-		await service.initialize();
+		await service.sendPrompt("A session someone was using");
 		const sessionPath = service.getSnapshot().session?.path ?? "";
 		const manager = new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test");
 		await manager.loadSession(sessionPath);

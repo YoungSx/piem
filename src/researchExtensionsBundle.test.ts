@@ -99,10 +99,17 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		expect(saved.clarifyModelId).toBe("beta");
 		f.unload();
 		const restored = await researchFixture({ memory: f.memory, settings: saved, plan: { clarify: { text: "Ready after reload." } } }, cleanup);
+		// The chat never spoke a message, so it was never written: one that only
+		// ever rewrote its own draft leaves no file, and the reload opens a fresh
+		// blank sheet instead. The clarify pin lives in settings rather than in the
+		// conversation, so it carries over — which is what the rest of this test
+		// exercises.
 		await restored.service.openSession(path);
+		expect(restored.service.getActiveSessionPath()).not.toBe(path);
+		const restoredPath = restored.service.getActiveSessionPath()!;
 		let restoredDraft = "Keep me in this conversation";
-		cleanup.push(restored.bindEditor(path, { read: () => restoredDraft, replace: text => { restoredDraft = text; } }));
-		await restored.idle(path);
+		cleanup.push(restored.bindEditor(restoredPath, { read: () => restoredDraft, replace: text => { restoredDraft = text; } }));
+		await restored.idle(restoredPath);
 		expect(await restored.service.runExtensionCommand("clarify")).toBe(true);
 		await restored.idle();
 		expect(restoredDraft).toBe("Ready after reload.");
