@@ -172,7 +172,7 @@ describe("extension compaction failure observations", () => {
 
 	it("delivers a failure observer's follow-up after its triggering command returned", async () => {
 		const entered = Promise.withResolvers<void>();
-		const response = Promise.withResolvers<{ status: number; headers: Record<string, string>; arrayBuffer: ArrayBuffer }>();
+		const response = Promise.withResolvers<{ status: number; headers: Record<string, string>; arrayBuffer: ArrayBufferLike }>();
 		const continued = Promise.withResolvers<void>();
 		let failures = 0;
 		let replies = 0;
