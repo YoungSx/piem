@@ -339,10 +339,12 @@ export class ObsidianSessionManager {
 			} else if (item.kind === "entry") {
 				const { seq: _s, timestamp: _t, parentId: _p, ...restored } = item.entry;
 				await session.appendEntry(restored, "main");
+			} else if (item.kind === "fact" && item.fact === "label") {
+				await session.setLabel(item.targetId, item.label);
 			}
 			// "lane" pointers are replayed below from `getLanes`, which carries
-			// the branch heads the entries' own appends lost; "fact" items other
-			// than the name (labels) ride `setLabel` the same way if ever set.
+			// the branch heads the entries' own appends lost. Label facts above
+			// retain their order, including replacements and removals.
 		}
 		for (const lane of lanes) {
 			if (lane.lane !== "main") {
