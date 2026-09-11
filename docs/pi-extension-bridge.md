@@ -19,6 +19,7 @@ Existing Quick actions keep their generation and click-to-send behavior.
 | Execution | Original `ExtensionRunner` and tool wrapper; tools run sequentially |
 | Registration | Commands, tools, shortcuts, input/context and lifecycle handlers, private event bus; unsupported registrations and duplicate names fail |
 | Context | Original `context` pipeline, in order; a failed handler aborts the request |
+| Tool interception | Original `tool_call` / `tool_result` emitters through pi's own agent hooks; a blocked call does not run, in-place `input` patches reach the tool, and a failed handler becomes that one call's error |
 | Session | Read views refreshed from the owning Vault session and lane; labels flush before success and summary branches publish through an awaited Vault adapter |
 | Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth |
 | Messages | Operation-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 pending messages; private `/acm` stays inside the host |
@@ -118,13 +119,30 @@ panel and concurrent shortcut invocations are rejected.
 
 Supported events are `session_start`, `session_shutdown`, `before_agent_start`,
 `agent_start`, `agent_end`, `agent_settled`, `turn_start`, `turn_end`,
-`message_start`, `message_update`, `message_end`, and the three
-`tool_execution_*` events, plus `context`, `input`, `model_select` and `session_tree`. Startup happens once on first panel
+`message_start`, `message_update`, `message_end`, the three
+`tool_execution_*` events, `tool_call` and `tool_result`, plus `context`, `input`, `model_select` and `session_tree`. Startup happens once on first panel
 attachment or execution. The original Runner orders handlers and combines
 their results. A `before_agent_start` system prompt applies to that run; custom
 messages and `message_end` replacements follow the existing persistence path.
 `agent_settled` waits for queued continuations and automatic compaction. Streaming
 deltas do not read the Vault; unused events do no handler work.
+
+`tool_call` and `tool_result` intercept rather than observe, so they run through
+the agent's own tool-call path instead of the event stream the `tool_execution_*`
+trio uses. A `tool_call` handler returning `{ block: true, reason }` stops the
+tool from executing and the reason becomes that call's error result, which the
+model reads and can react to; the rest of the run continues. Mutating
+`event.input` in place patches the arguments the tool receives, as upstream
+documents — the object handed to handlers is the per-call copy Pi passes to the
+tool, so the conversation still records the call the model actually made. Nothing
+is re-validated against the tool's schema after a mutation, matching upstream;
+the vault tools re-check their own paths regardless, so a patched path cannot
+leave the vault. A `tool_result` handler's `content`, `details`, `isError` and
+`usage` each replace that field of the executed result outright; there is no deep
+merge. A handler that throws fails its own call rather than letting it through:
+an extension installed to vet a tool call has approved nothing when it crashes.
+Neither event reads the Vault, and a conversation whose extensions subscribe to
+neither pays nothing per call.
 
 Stop and new prompts cancel unfinished extension work. Captured capabilities
 from a cancelled handler remain invalid; completed startup callbacks can keep

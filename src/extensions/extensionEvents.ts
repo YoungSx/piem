@@ -5,6 +5,12 @@ export const SUPPORTED_EXTENSION_EVENTS = new Set([
 	"context", "session_start", "session_shutdown", "before_agent_start", "agent_start", "agent_end", "agent_settled",
 	"turn_start", "turn_end", "message_start", "message_update", "message_end",
 	"tool_execution_start", "tool_execution_update", "tool_execution_end",
+	// Interception, not observation: unlike the tool_execution_* trio these run
+	// inside the agent's own tool-call path and can block a call or rewrite its
+	// result. They are routed through the Agent's beforeToolCall/afterToolCall
+	// hooks rather than this class, because pi's runner gives them dedicated
+	// emitters that the generic emit() deliberately excludes.
+	"tool_call", "tool_result",
 	"input", "model_select", "session_tree",
 ]);
 
