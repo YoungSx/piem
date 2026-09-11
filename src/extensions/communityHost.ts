@@ -3,6 +3,7 @@ import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIAdapter } from "./extensionUI";
+import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 import { createClarify, createContext, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
@@ -11,6 +12,19 @@ export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMe
 	platform: Omit<ExtensionPlatformCallbacks, "complete">;
 	prepare(): Promise<void>;
 	deliver(messages: AgentMessage[]): void;
+	/**
+	 * Where this host's load verdicts go.
+	 *
+	 * The extension host deliberately holds no logger — it is a bridge, and a
+	 * bridge that reaches for the plugin's observability stack would carry the
+	 * whole settings closure with it. So it returns `loadReports` and this class,
+	 * which the service constructs and therefore can hand a logger, is the one
+	 * that writes them down. Optional and defaulted to {@link NOOP_LOGGER} for
+	 * the same reason {@link DraftStore} and the MCP manager are: constructing
+	 * one bare is a valid test configuration, and an `if` at the emit site is how
+	 * logging quietly stops happening.
+	 */
+	logger?: LoggerLike;
 }
 
 /** One conversation owns its factories, transport, pending actions and timers. */
@@ -24,7 +38,10 @@ export class CommunityHost {
 
 	private needsContextReset = false;
 	private ui?: ExtensionUIAdapter;
-	private constructor(private readonly callbacks: CommunityCallbacks, private readonly extensions?: readonly StaticExtension[]) {}
+	private readonly log: LoggerLike;
+	private constructor(private readonly callbacks: CommunityCallbacks, private readonly extensions?: readonly StaticExtension[]) {
+		this.log = (callbacks.logger ?? NOOP_LOGGER).child("extensions");
+	}
 
 	static async create(callbacks: CommunityCallbacks, extensions?: readonly StaticExtension[]): Promise<CommunityHost> {
 		const owner = new CommunityHost(callbacks, extensions);
@@ -81,6 +98,18 @@ export class CommunityHost {
 				this.pending.push({ role: "user", content, timestamp: Date.now() });
 			},
 		});
+		// The host's own doc comment refuses a silent no-op, and a report nobody
+		// reads is exactly that. Warn for an extension that is not running: it is
+		// gone, nothing else in the UI says so, and a missing tool or command is
+		// what the user will notice first. Info for one that loaded reduced — the
+		// same call the MCP manager makes for a mount, and for the same reason: it
+		// happens once per host, and it is the anchor for the later "why did my
+		// transformer never run" question. Not warn, because the extension is
+		// working; not debug, because nothing else records it at all.
+		for (const { id, error, ignored } of this.host.loadReports) {
+			if (error) this.log.warn(`Extension skipped: ${id}`, () => ({ error: error.message }));
+			else this.log.info(`Extension loaded degraded: ${id}`, () => ({ ignored: ignored.join(", ") }));
+		}
 		for (const tool of this.host.tools) {
 			if (tool.name === "switch_model") tool.description += " In Piem, only unambiguous configured models are available. A switch changes the next request in this conversation and saves the default choice; that provider receives the conversation. Pricing is unknown. Local aliases.json is not mounted.";
 			if (tool.name === "web_search") tool.description += " Sends the search query and supplied URLs to the configured model provider through Obsidian. Requires a provider endpoint supporting native search; search may incur extra charges. Never silently switches providers.";

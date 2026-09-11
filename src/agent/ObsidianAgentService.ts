@@ -4126,6 +4126,7 @@ export class ObsidianAgentService {
 		});
 		const community = await CommunityHost.create({
 			session: contextSession,
+			logger: this.log,
 			prepare: async () => { assertOwner(); await view.refresh(); await contextSession.refresh(); },
 			platform: {
 				fetch: (input, init) => {

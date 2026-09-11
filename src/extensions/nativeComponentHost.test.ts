@@ -367,11 +367,21 @@ describe("native component host lifecycle", () => {
 });
 
 describe("native extension shortcut lifetime", () => {
-	it("rejects duplicate normalized shortcuts across extensions", async () => {
-		await expect(createExtensionHost([
+	it("skips the loser of a normalized shortcut collision and keeps the winner bound", async () => {
+		const instance = await createExtensionHost([
 			{ id: "one", factory: pi => pi.registerShortcut("ctrl+shift+k", { handler: () => {} }) },
 			{ id: "two", factory: pi => pi.registerShortcut("shift+ctrl+k", { handler: () => {} }) },
-		], { getEntries: () => [], notify: () => {} })).rejects.toThrow("Duplicate extension shortcut");
+		], { getEntries: () => [], notify: () => {} });
+		try {
+			// Two extensions claiming the same chord is a collision between
+			// strangers, so only the second loses. The first keeps the binding,
+			// which is what makes a single attached action the evidence.
+			expect(instance.loadReports.map(report => report.id)).toEqual(["two"]);
+			expect(instance.loadReports[0]!.error?.message).toContain("Duplicate extension shortcut");
+			const ui = adapter();
+			instance.attachUI(ui.ui);
+			expect(ui.shortcuts()).toHaveLength(1);
+		} finally { instance.dispose(); }
 	});
 
 	it("does not revive an old shortcut when the same adapter is attached again", async () => {

@@ -4,7 +4,7 @@ import type { ContextUsage, Extension, ExtensionActions, ExtensionContextActions
 import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
-import { createEventBus } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js";
+import { createEventBus, type EventBusController } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js";
 import { wrapRegisteredTools } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/wrapper.js";
 import { unavailable } from "./node/unavailable";
 import { ExtensionLifetime, abortable, type ExtensionScope } from "./extensionLifetime";
@@ -71,19 +71,120 @@ function limited<T extends object>(members: T, name: string): T {
 	});
 }
 
-function validateRegistration(extension: Extension): void {
+/**
+ * What one extension gave up to load here, for the caller to log.
+ *
+ * `skipped` means the extension is not running at all; `degraded` means it is
+ * running with a capability this host cannot serve. Both are reported, never
+ * swallowed — the same rule {@link unavailable} and {@link limited} enforce for
+ * a call, applied to a load.
+ */
+export interface ExtensionLoadReport {
+	id: string;
+	/** Present when the extension was skipped; absent when it merely degraded. */
+	error?: Error;
+	/** Capabilities registered but never asked for. Empty for a skipped extension. */
+	ignored: string[];
+}
+
+/**
+ * Registrations this host will not serve, split by whether that is visible.
+ *
+ * Refusing the extension outright — which is what this used to do for all of
+ * these — is a worse answer than it looks. The bridge exists to run community
+ * extensions on mobile Obsidian, and a package written for the CLI reaches for
+ * CLI things incidentally: one `registerFlag` for a `--verbose` nobody can pass
+ * in Obsidian used to cost the extension its tools, its commands, and (through
+ * the host-wide catch) every *other* extension's too.
+ *
+ * So the three cases are told apart:
+ *
+ * - An unsupported **event** still skips the extension. A handler that never
+ *   runs is a behavioural hole the extension cannot detect: it registered for
+ *   `before_provider_request` because it intends to rewrite the request, and
+ *   silently not calling it makes the extension wrong rather than reduced.
+ * - **Flags** are ignored with nothing recorded against the extension, because
+ *   Pi's own contract for an unregistered flag is `getFlag(name) → undefined`
+ *   (see the loader's `getFlag`), which every flag-reading extension already
+ *   handles. There is no command line here to populate one from, so the value
+ *   an extension would observe is the value Pi would have given it anyway.
+ * - **Renderers and markdown transformers** are ignored *and recorded*. Pi
+ *   stores them and hands them back through `runner.getMessageRenderer` /
+ *   `getEntryRenderer` / `getMarkdownTransformers`; this host never calls those,
+ *   because the transcript is rendered in React (`src/ui/MessageList.tsx`). So
+ *   the registration succeeds and is then never consulted, which is exactly the
+ *   silent capability loss worth a diagnostic: a transformer that was supposed
+ *   to rewrite every reply is simply absent, and only this report says so.
+ */
+function validateRegistration(extension: Extension): string[] {
 	for (const event of extension.handlers.keys()) {
 		if (!SUPPORTED_EXTENSION_EVENTS.has(event)) unavailable(`extension event ${event}`);
 	}
-	if (extension.flags.size || extension.messageRenderers.size || extension.entryRenderers?.size || extension.markdownTransformer) {
-		unavailable("extension flags or terminal renderers");
-	}
+	// Flags are deliberately absent from this list: ignoring one is invisible to
+	// the extension, so there is nothing to warn a reader about.
+	const ignored: string[] = [];
+	// Ignored and the extension may misbehave: registration succeeds, nothing
+	// ever asks for the result.
+	if (extension.messageRenderers.size) ignored.push("message renderers");
+	if (extension.entryRenderers?.size) ignored.push("entry renderers");
+	if (extension.markdownTransformer) ignored.push("markdown transformer");
+	return ignored;
+}
+
+/**
+ * Tracks one extension's claims on state shared with every other extension, so
+ * rejecting it can leave the host as though it had never been offered.
+ *
+ * Three things outlive the `Extension` object a rejected load produces, which is
+ * why dropping that object is not enough:
+ *
+ * - **Event-bus subscriptions.** `pi.events.on` reaches the bus directly, and
+ *   the runtime only unsubscribes on `invalidate()` — i.e. host teardown. A
+ *   skipped extension would keep hearing every channel and keep running its
+ *   handlers. So each load gets its own `on`, recording the unsubscribers.
+ * - **Flag defaults**, written into the shared `runtime.flagValues` by
+ *   `commit()`. Left behind, they would answer another extension's `getFlag`
+ *   for the same name.
+ * - **Queued provider registrations**, which `bindCore` would later flush on
+ *   behalf of an extension that is not running.
+ */
+function claim(events: EventBusController, runtime: ReturnType<typeof createExtensionRuntime>) {
+	const unsubscribes: Array<() => void> = [];
+	const flagsBefore = new Set(runtime.flagValues.keys());
+	const providersBefore = runtime.pendingProviderRegistrations.length;
+	const nativeProvidersBefore = runtime.pendingNativeProviderRegistrations.length;
+	return {
+		// Only `on` is wrapped. `emit` is shared by design — that is how two
+		// cooperating extensions talk — and wrapping it would change delivery.
+		events: {
+			emit: (channel: string, data: unknown) => { events.emit(channel, data); },
+			on: (channel: string, handler: (data: unknown) => void) => {
+				const unsubscribe = events.on(channel, handler);
+				unsubscribes.push(unsubscribe);
+				return unsubscribe;
+			},
+		},
+		registeredProvider: (): boolean =>
+			runtime.pendingProviderRegistrations.length !== providersBefore
+			|| runtime.pendingNativeProviderRegistrations.length !== nativeProvidersBefore,
+		release: (): void => {
+			for (const unsubscribe of unsubscribes) unsubscribe();
+			for (const name of runtime.flagValues.keys()) if (!flagsBefore.has(name)) runtime.flagValues.delete(name);
+			runtime.pendingProviderRegistrations.length = providersBefore;
+			runtime.pendingNativeProviderRegistrations.length = nativeProvidersBefore;
+		},
+	};
 }
 
 /**
  * Static Pi factories share the real loader, runner and tool adapter. The host owns
  * their lifetime and the supported contract; the caller owns its authoritative
  * session, persistence and transport. No filesystem or provider registry is created.
+ *
+ * One extension's failure is that extension's failure. A factory that throws, or
+ * that registers something this bridge cannot serve, is skipped and reported
+ * through `loadReports`; the rest load and the host is usable. Only a genuinely
+ * host-wide fault — the runner refusing to construct — takes the host down.
  */
 export async function createExtensionHost(factories: readonly StaticExtension[], callbacks: ExtensionHostCallbacks) {
 	const runtime = createExtensionRuntime();
@@ -104,30 +205,67 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 	};
 	try {
 		const extensions: Extension[] = [];
+		const reports: ExtensionLoadReport[] = [];
 		const ids = new Set<string>();
 		const commands = new Set<string>();
 		const tools = new Set<string>();
 		const shortcutKeys = new Set<string>();
 		for (const { id, factory } of factories) {
+			// A duplicate id is a defect in *our* static list, not a collision
+			// between two independent packages: the ids are literals in
+			// `communityHost.ts`, one per audited factory. Skipping the second
+			// would hide a copy-paste mistake behind a log line and leave the
+			// host quietly missing an extension we shipped on purpose.
 			if (ids.has(id)) throw new Error(`Duplicate extension: ${id}`);
 			ids.add(id);
-			const extension = await loadExtensionFromFactory(factory, "/vault", events, runtime, `<builtin:${id}>`);
-			validateRegistration(extension);
-			for (const shortcut of extension.shortcuts.values()) {
-				const key = parseKey(shortcut.shortcut);
-				if (!key) unavailable(`extension shortcut ${shortcut.shortcut}`);
-				if (shortcutKeys.has(key)) throw new Error(`Duplicate extension shortcut: ${key}`);
-				shortcutKeys.add(key);
-			}
-			for (const [names, registered, kind] of [[commands, extension.commands, "command"], [tools, extension.tools, "tool"]] as const) {
-				for (const name of registered.keys()) {
-					if (names.has(name)) throw new Error(`Duplicate extension ${kind}: ${name}`);
-					names.add(name);
+			// Every claim this extension staked on shared state, so a rejection
+			// can put all of it back. Pi's loader already unwinds a factory that
+			// *throws* (`load.discard()`), but one that returns and then fails
+			// validation here has been committed: its event-bus subscriptions are
+			// live, its flag defaults are in the shared `runtime.flagValues`, and
+			// its provider registrations are queued. Undoing that is this host's
+			// job, and it cannot be done by dropping the Extension object.
+			const claimed = claim(events, runtime);
+			try {
+				const extension = await loadExtensionFromFactory(factory, "/vault", claimed.events, runtime, `<builtin:${id}>`);
+				const ignored = validateRegistration(extension);
+				// Provider registrations are checked per extension rather than once
+				// after the loop, so the extension that queued one is the extension
+				// that pays for it. Checked before the name reservations below so a
+				// rejected extension has claimed no names.
+				if (claimed.registeredProvider()) unavailable("extension provider registration");
+				const keys = new Set<string>();
+				for (const shortcut of extension.shortcuts.values()) {
+					const key = parseKey(shortcut.shortcut);
+					if (!key) unavailable(`extension shortcut ${shortcut.shortcut}`);
+					// Two community extensions binding the same chord is a conflict
+					// between strangers, and neither is wrong. Skip the loser.
+					if (shortcutKeys.has(key)) throw new Error(`Duplicate extension shortcut: ${key}`);
+					keys.add(key);
 				}
+				const claimedNames: Array<[Set<string>, string]> = [];
+				for (const [names, registered, kind] of [[commands, extension.commands, "command"], [tools, extension.tools, "tool"]] as const) {
+					for (const name of registered.keys()) {
+						// Same reasoning as shortcuts, and the reason this is not a
+						// host-wide failure: two packages that never heard of each
+						// other can both offer `/search`. The first one loaded keeps
+						// the name; the second is skipped whole, because a partly
+						// registered extension is worse than an absent one.
+						if (names.has(name)) throw new Error(`Duplicate extension ${kind}: ${name}`);
+						claimedNames.push([names, name]);
+					}
+				}
+				for (const [names, name] of claimedNames) names.add(name);
+				for (const key of keys) shortcutKeys.add(key);
+				extensions.push(extension);
+				if (ignored.length) reports.push({ id, ignored });
+			} catch (error) {
+				// The extension is out. Release everything it took so the host it
+				// is not part of cannot be affected by it.
+				claimed.release();
+				reports.push({ id, error: error instanceof Error ? error : new Error(String(error)), ignored: [] });
 			}
-			extensions.push(extension);
 		}
-		if (runtime.pendingProviderRegistrations.length || runtime.pendingNativeProviderRegistrations.length) unavailable("extension provider registration");
 		const session = limited({
 			...createExtensionSession(callbacks, lifetime.assertActive.bind(lifetime)),
 			...(callbacks.session ? {
@@ -253,6 +391,14 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			})));
 		};
 		return {
+			/**
+			 * Extensions that did not load, and extensions that loaded reduced.
+			 *
+			 * Read once by the caller after construction and logged there — the
+			 * host has no logger and should not grow one, but a skipped extension
+			 * that nothing reports is the silent no-op this file exists to refuse.
+			 */
+			loadReports: reports as readonly ExtensionLoadReport[],
 			hasHandlers: (name: string) => runner.hasHandlers(name),
 			emit: (event: Parameters<ExtensionRunner["emit"]>[0]) => invoke(() => runner.emit(event)),
 			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),
