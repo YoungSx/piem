@@ -2143,6 +2143,9 @@ export class ObsidianAgentService {
 		if (!this.ensureCredentialReady(rt) || !this.ensureImagesSupported(rt, images)) {
 			return false;
 		}
+		const epoch = rt.stopEpoch;
+		const isCurrent = () => !this.disposed && !rt.bookmarkClosing && rt.agent === agent
+			&& rt.stopEpoch === epoch && this.runtimes.get(rt.sessionPath) === rt && this.current() === rt;
 		rt.retryInFlight = true;
 		// The window this flag opens is one the agent does not narrate: no stream
 		// events, no compaction. Without a notify here the panel stays visually
@@ -2157,6 +2160,7 @@ export class ObsidianAgentService {
 			}
 			const session = this.sessionManager.getSessionFor(rt.sessionPath);
 			const oldLeafId = await session.view(rt.activeLane).getLeafId();
+			if (!isCurrent()) return false;
 
 			// `summarizeAbandonedBranch` performs the rewind itself, after collecting
 			// the branch off the pre-rewind log, and returns the summary message (if
@@ -2182,17 +2186,19 @@ export class ObsidianAgentService {
 				agent.state.messages = [...agent.state.messages.slice(0, promptIndex), summaryMessage];
 			}
 			const newLeafId = await session.view(rt.activeLane).getLeafId();
-			if (oldLeafId !== newLeafId && rt.agent === agent) {
+			if (oldLeafId !== newLeafId && isCurrent()) {
 				const entry = newLeafId ? await session.getEntry(newLeafId) : undefined;
+				if (!isCurrent()) return false;
 				try {
 					await rt.communityHost?.emit({
 						type: "session_tree", oldLeafId, newLeafId, fromExtension: false,
 						...(summaryMessage && entry?.type === "branch_summary" ? { summaryEntry: { ...entry, timestamp: new Date(entry.timestamp).toISOString() } } : {}),
 					});
 				} catch (error) {
-					if (rt.agent === agent) this.setError(rt, causeMessage(error));
+					if (isCurrent()) this.setError(rt, causeMessage(error));
 				}
 			}
+			if (!isCurrent()) return false;
 			this.notify();
 			return await this.deliverPrompt(prompt, images);
 		} finally {
