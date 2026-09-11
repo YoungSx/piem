@@ -3395,13 +3395,21 @@ export class ObsidianAgentService {
 	 * Mid-run (issue #252) the change is allowed but deferred, like
 	 * {@link setActiveModel}: the pending level rides
 	 * {@link SessionRuntime.pendingConfiguration} and
-	 * {@link flushPendingConfiguration} applies it when the run settles, with
-	 * {@link reconfigureRuntime} doing the clamp against the model then in force
-	 * and the session-log append — the only writer, so no double entry and no
-	 * unclamped value recorded. Accepted edge: choosing a level mid-run and then
-	 * starting a *new* session before the run lands means the new session
-	 * inherits the old recorded level, since the pending choice has not been
-	 * appended anywhere yet.
+	 * {@link flushPendingConfiguration} applies it to the live agent when the run
+	 * settles.
+	 *
+	 * The session log is a separate question on that path, and the deferral does
+	 * not answer it. {@link applyRuntimeConfiguration} appends only when its clamp
+	 * *changes* the level, and the flush writes the pending level onto
+	 * `agent.state` first — so a level the model supports leaves the clamp nothing
+	 * to disagree with and nothing is recorded. Finishing that write is therefore
+	 * the deferring caller's job — what {@link setRuntimeThinkingLevel}'s return
+	 * value is for. The extension bridge does it; issue #252 owns doing it for
+	 * this selector too.
+	 *
+	 * Accepted edge: choosing a level mid-run and then starting a *new* session
+	 * before the run lands means the new session inherits the old recorded level,
+	 * since the pending choice has not been appended anywhere yet.
 	 */
 	async setThinkingLevel(level: ThinkingLevel): Promise<void> {
 		const rt = this.current();
@@ -3422,16 +3430,22 @@ export class ObsidianAgentService {
 	 * the narrowing against model capability stays in
 	 * {@link applyRuntimeConfiguration}, so the bridge and the panel cannot
 	 * disagree about what "set high on a model without it" records.
+	 *
+	 * Returns whether the level was *deferred* — true when the session log has
+	 * not been told and the caller still owes it an entry. Only the immediate
+	 * path can write here; on the deferred path the level does not exist yet as
+	 * anything but a pending record, and the run in flight is exactly what must
+	 * not have its reasoning budget rewritten under it.
 	 */
-	private async setRuntimeThinkingLevel(rt: SessionRuntime, level: ThinkingLevel): Promise<void> {
+	private async setRuntimeThinkingLevel(rt: SessionRuntime, level: ThinkingLevel): Promise<boolean> {
 		const agent = rt.agent;
 		if (!agent || agent.state.thinkingLevel === level) {
-			return;
+			return false;
 		}
 		if (this.isBusy(rt)) {
 			rt.pendingConfiguration = { ...rt.pendingConfiguration, thinkingLevel: level };
 			this.notify();
-			return;
+			return true;
 		}
 		agent.state.thinkingLevel = level;
 		if (this.sessionManager.isLoaded(rt.sessionPath)) {
@@ -3440,6 +3454,7 @@ export class ObsidianAgentService {
 			finally { rt.sessionOperations -= 1; }
 		}
 		this.notify();
+		return false;
 	}
 
 	async refreshConfiguration(): Promise<void> {
@@ -3549,8 +3564,12 @@ export class ObsidianAgentService {
 	 * The level is written onto the agent state *before*
 	 * {@link reconfigureRuntime} runs: the reconfigure's existing clamp reads
 	 * `agent.state.thinkingLevel` against the model now in force, so an
-	 * unsupported level for the pending model is clamped and logged there —
-	 * one writer for the session file, not two.
+	 * unsupported level for the pending model is clamped and logged there.
+	 *
+	 * A level the clamp leaves alone is *not* logged by that path, and this method
+	 * does not repair it: the deferred write is the caller's to finish, which is
+	 * what {@link setRuntimeThinkingLevel}'s return value is for. Issue #252 owns
+	 * the panel selector's half of that.
 	 *
 	 * Refuses while still busy rather than throwing: the flush runs from settle
 	 * paths, and a run that lands into another compaction (mid-run compact
@@ -4313,7 +4332,30 @@ export class ObsidianAgentService {
 			 */
 			setThinkingLevel: async level => {
 				assertOwner();
-				await this.setRuntimeThinkingLevel(rt, level);
+				const deferred = await this.setRuntimeThinkingLevel(rt, level);
+				assertOwner();
+				/*
+				 * The deferral is unavoidable here and the append is therefore ours.
+				 * An extension only runs inside its own conversation's turn or
+				 * command, so `extensionCommand`/`extensionBusy` — both part of
+				 * {@link isBusy} — are true by definition: this call *always* takes
+				 * the pending path, and the write the non-deferred path does is never
+				 * reached. Left at that, the live agent honours the level and the
+				 * session file never hears about it, so a reload replays the old one.
+				 *
+				 * Clamped against the model now in force, matching
+				 * {@link applyRuntimeConfiguration}, and appended only when the clamp
+				 * changes nothing — which is exactly the case that method's own append
+				 * skips. When the clamp *does* move the level, the settle's
+				 * reconfigure records the narrowed value itself, and writing here too
+				 * would put the same entry in the log twice.
+				 */
+				if (!deferred) return;
+				const clamped = clampThinkingLevel(getSelectedModel(this.getSettings()), level);
+				if (clamped !== level || !this.sessionManager.isLoaded(rt.sessionPath)) return;
+				rt.sessionOperations += 1;
+				try { await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, clamped, rt.activeLane); }
+				finally { rt.sessionOperations -= 1; }
 				assertOwner();
 			},
 			setSessionName: async name => {

@@ -139,6 +139,60 @@ describe("native extension service lifecycle", () => {
 });
 
 describe("native extension writes reach the owning conversation", () => {
+	it("records a thinking level an extension set, in the session log", async () => {
+		const { service, sessions } = harness(pi => {
+			pi.registerCommand("think", { handler: async () => { pi.setThinkingLevel("medium"); } });
+		}, { reasoning: true });
+		const recorded = async () => (await sessions.getSession().findEntries({ order: "oldestFirst" }))
+			.filter(entry => entry.type === "thinking_level_change")
+			.map(entry => (entry as { thinkingLevel: string }).thinkingLevel);
+		try {
+			await service.initialize();
+			expect(await service.runExtensionCommand("think")).toBe(true);
+			// The point of the test, and the reason the bridge appends for itself. An
+			// extension only ever calls from inside its own command or turn, so
+			// `extensionCommand`/`extensionBusy` hold and `setRuntimeThinkingLevel`
+			// always takes the deferred path — the append it does when idle is
+			// unreachable from here. The settle then applies the level to the agent
+			// but writes nothing, because `applyRuntimeConfiguration` appends only
+			// when its clamp *moves* the level and this level survives the clamp
+			// untouched. Without the bridge's own append the level would live in
+			// memory alone and a reload would replay the old one.
+			expect(await recorded()).toEqual(["off", "medium"]);
+			expect(service.getSnapshot().thinkingLevel).toBe("medium");
+
+			// Still one entry after a real turn settles: the reconfigure on that
+			// settle must not append a second copy of what the bridge recorded.
+			expect(await service.sendPrompt("First question")).toBe(true);
+			expect(await recorded()).toEqual(["off", "medium"]);
+		} finally { service.dispose(); }
+	});
+
+	it("defers a mid-run level change to the settle instead of moving the running turn", async () => {
+		let release!: () => void;
+		let entered!: () => void;
+		const started = new Promise<void>(resolve => { entered = resolve; });
+		const gate = new Promise<void>(resolve => { release = resolve; });
+		const { service, sessions } = harness(pi => {
+			// Fired from inside the run, which is what makes this the deferral path:
+			// `isBusy` is true, so the level must wait for the run to land.
+			pi.on("agent_start", () => { pi.setThinkingLevel("medium"); });
+			pi.on("message_start", async () => { entered(); await gate; });
+		}, { reasoning: true });
+		try {
+			await service.initialize();
+			const run = service.sendPrompt("First question");
+			await started;
+			// Still the level the run began on: a run must not change reasoning
+			// budget halfway through.
+			expect(service.getSnapshot().thinkingLevel).toBe("off");
+			release();
+			expect(await run).toBe(true);
+			expect(service.getSnapshot().thinkingLevel).toBe("medium");
+			expect(JSON.stringify(await sessions.getSession().findEntries({ order: "oldestFirst" }))).toContain("medium");
+		} finally { release(); service.dispose(); }
+	});
+
 	it("renames the conversation its host belongs to, not the one on screen", async () => {
 		const { service, sessions } = harness(pi => {
 			pi.registerCommand("name", { handler: async (args) => { pi.setSessionName(args); } });
