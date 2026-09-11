@@ -62,6 +62,46 @@ function gate() {
 }
 
 describe("extension vetoes before native session navigation", () => {
+	it.each([false, true])("initializes a dormant source before its first navigation (loaded: %s)", async loaded => {
+		const order: string[] = [];
+		const { service, target } = harness(pi => {
+			let ready = false;
+			pi.on("session_start", () => { ready = true; order.push("start"); });
+			pi.on("session_before_switch", () => { expect(ready).toBe(true); order.push("before"); return { cancel: true }; });
+		});
+		try {
+			if (loaded) await target();
+			await service.initialize();
+			const source = service.getActiveSessionPath();
+			const destination = await target();
+			expect(order).toEqual([]);
+			await service.openSession(destination);
+			expect(order).toEqual(["start", "before"]);
+			expect(service.getActiveSessionPath()).toBe(source);
+		} finally { service.dispose(); }
+	});
+
+	it.each([false, true])("refuses a startup-triggered selection without waiting on that startup itself (same target: %s)", async sameTarget => {
+		const order: string[] = [];
+		let nested = "";
+		const { service, target } = harness(pi => {
+			pi.on("session_start", async () => {
+				order.push("start");
+				await service.openSession(nested);
+				order.push("ready");
+			});
+			pi.on("session_before_switch", () => { order.push("before"); return { cancel: true }; });
+		});
+		try {
+			await service.initialize();
+			const source = service.getActiveSessionPath();
+			nested = await target();
+			await service.openSession(sameTarget ? nested : await target());
+			expect(order).toEqual(["start", "ready", "before"]);
+			expect(service.getActiveSessionPath()).toBe(source);
+		} finally { service.dispose(); }
+	});
+
 	it("cancels forks before copying and passes the real reply entry and at position", async () => {
 		let cancel = true;
 		const events: SessionBeforeForkEvent[] = [];
