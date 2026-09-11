@@ -369,7 +369,7 @@ export async function testSuggestionConnection(
 					messages: [
 						{
 							role: "user",
-							content: buildSuggestionPrompt("empty", null, options.language, t),
+							content: buildSuggestionPrompt("empty", null, options.language),
 							timestamp: Date.now(),
 						},
 					],

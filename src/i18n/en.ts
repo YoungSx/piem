@@ -673,10 +673,10 @@ export const en = {
 
 	/**
 	 * One-tap prompts. `empty` is the empty screen's deterministic first moves;
-	 * `suggest` builds the model-generated request that replaces them and owns
-	 * the post-reply row. `label` names the chip on screen; `prompt` is the
-	 * full text a tap sends, written as a message to the model rather than a
-	 * button title.
+	 * the model-generated replacements come from
+	 * `src/agent/quickActionSuggestionRequest.ts`. `label` names the chip on
+	 * screen; `prompt` is the full text a tap sends, written as a message to
+	 * the model rather than a button title.
 	 */
 	quickActions: {
 		label: "Suggested prompts",
@@ -711,19 +711,12 @@ export const en = {
 				prompt: "What can you help me with in my vault? Give three concrete examples.",
 			},
 		},
-		suggest: {
-			instruction:
-				"You are generating one-tap follow-up prompts for a chat assistant. Reply with ONLY a JSON array of at most {count} objects, each {\"label\": string, \"prompt\": string}. Each label is 2-4 words shown on a button; each prompt is the full message the button sends. Do not use markdown, code fences, or any text outside the array. Write in {language}.",
-			emptyWithNote:
-				"The conversation is empty and the user has the note \"{path}\" open as context.",
-			emptyNoNote:
-				"The conversation is empty and no note is open; the suggestions should be about the user's vault in general.",
-			emptyNoNoteWorkspace:
-				"The conversation is empty and no note is open; the suggestions should be grounded in the user's workspace below.",
-			workspaceIntro: "The user's workspace:",
-			reply:
-				"Base the suggestions on this assistant reply:\n\n{reply}",
-		},
+		/**
+		 * No `suggest` block: the model-facing prompt is authored once in English
+		 * inside `src/agent/quickActionSuggestionRequest.ts` — model-facing copy is
+		 * not user interface, and the output language is named in the instruction
+		 * itself. Only the settings-page copy below stays translated.
+		 */
 		suggestSettings: {
 			name: "Suggestion model",
 			desc: "Quick-action suggestions are their own small request. By default they follow the session's model; pick a lighter one here to make the chips faster and cheaper.",

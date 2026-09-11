@@ -2367,7 +2367,6 @@ export class ObsidianAgentService {
 				subject,
 				workspace: workspaceForPrompt,
 				language,
-				t: this.t(),
 				apiKey: this.getApiKey(model.provider),
 				signal: controller.signal,
 			});
