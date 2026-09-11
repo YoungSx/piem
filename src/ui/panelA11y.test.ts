@@ -695,15 +695,26 @@ describe("narrow-panel layout is keyed on the panel, not the window", () => {
 		expect(allDeclarations).toContain("@container piem-chat (max-width: 32rem)");
 	});
 
-	it("hides the chip popover's verbs on the narrow panel the other reflows answer to", () => {
-		// On a phone the three verbs were the widest thing in the disclosure, and
-		// their icons already name the actions (the TSX keeps an `aria-label` per
-		// button, which is what a hidden span leaves behind). The strip must live
-		// inside the container query — a bare rule would strip the words on every
-		// panel, and a viewport media query would be unreachable in a leaf.
-		const narrow = blocksFor("@container piem-chat (max-width: 32rem) {").find((block) => block.includes(".piem-chat__context-chip-action-label"));
-		expect(narrow).toBeDefined();
-		expect(narrow).toContain(".piem-chat__context-chip-action-label {\n\t\tdisplay: none;\n\t}");
+	it("keeps the chip popover's verbs as words at every width, narrow included", () => {
+		/*
+		 * The narrow panel used to strip these to bare glyphs, back when the row
+		 * held three sentence-length labels and they were the widest thing in the
+		 * disclosure. It is two one-word verbs now, and they fit a 300px sidebar
+		 * with room over — so the strip is gone, and this holds it gone: `eye-off`,
+		 * a struck-through eye, is not a glyph a reader decodes into "stop
+		 * following" unaided, and even the widest content the row can reach (zh's
+		 * 取消固定 · 取消跟随, four glyphs per verb) fits the narrowest panel.
+		 *
+		 * The scan is file-wide rather than aimed at the container query, because
+		 * the hide could come back through any gate — a `pointer: coarse` block, an
+		 * `.is-mobile` prefix — and each one puts a reader back in front of two
+		 * unlabelled glyphs.
+		 */
+		const hides = [...allDeclarations.matchAll(/\.piem-chat__context-chip-action-label\s*\{([^}]*)\}/g)]
+			.map((match) => (match[1] ?? "").trim())
+			.filter((body) => /display:\s*none/.test(body));
+
+		expect(hides).toEqual([]);
 	});
 
 	it("has no viewport-width breakpoint left anywhere", () => {

@@ -136,7 +136,7 @@ describe("ContextRow", () => {
 		expect(open?.getAttribute("aria-label")).toBe("Projects/2026/Q3/weekly-0827.md, followed automatically");
 
 		const chip = await openPopover(host);
-		expect(chip.querySelector(".piem-chat__context-chip-path")?.textContent).toBe("Projects/2026/Q3/weekly-0827.md");
+		expect(chip.querySelector(".piem-chat__context-chip-path-text")?.textContent).toBe("Projects/2026/Q3/weekly-0827.md");
 	});
 
 	it("names the kind in the accessible name, not only in the fill", async () => {
@@ -156,7 +156,7 @@ describe("ContextRow", () => {
 		expect(names).toEqual(["Notes/followed.md, followed automatically", "Notes/kept.md, pinned"]);
 	});
 
-	it("opens the note from the chip's popover, closing first", async () => {
+	it("opens the note from the popover's path line, closing first", async () => {
 		const opened: string[] = [];
 		const host = await renderRow({
 			refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }],
@@ -164,13 +164,34 @@ describe("ContextRow", () => {
 		});
 		const chip = await openPopover(host);
 
-		chip.querySelector<HTMLButtonElement>(".piem-chat__context-chip-action")?.click();
+		// The path line is the open affordance — the verbs used to spend their
+		// first slot on "Open", but the path is the one thing the reader is
+		// already looking for, so the press belongs to it.
+		chip.querySelector<HTMLButtonElement>(".piem-chat__context-chip-path")?.click();
 		await flushRender();
 
 		// The popover closes before navigating: a panel left hanging over the
 		// composer would outlive its own subject.
 		expect(opened).toEqual(["Notes/today.md"]);
 		expect(chip.querySelector(".piem-chat__context-chip-popover")).toBeNull();
+	});
+
+	it("names the path line by the kind of note it opens", async () => {
+		const host = await renderRow({
+			refs: [
+				{ kind: "active", path: "Notes/today.md", isPinned: false },
+				{ kind: "pinned", path: "Notes/spec.md", isPinned: true },
+			],
+		});
+
+		// The path line renders as quiet text, so the accessible name is the only
+		// place saying what the press does. The kind word must agree with the
+		// sentence, same reason the chip's own names keep two leaves.
+		const openFollowed = await openPopover(host, 0).then((chip) => chip.querySelector(".piem-chat__context-chip-path"));
+		expect(openFollowed?.getAttribute("aria-label")).toBe("Open Notes/today.md, followed automatically");
+
+		const openPinned = await openPopover(host, 1).then((chip) => chip.querySelector(".piem-chat__context-chip-path"));
+		expect(openPinned?.getAttribute("aria-label")).toBe("Open Notes/spec.md, pinned");
 	});
 
 	it("labels the dismiss control by the behaviour it stops, not the note", async () => {
@@ -434,26 +455,33 @@ describe("ContextRow", () => {
 		expect(host.querySelector(".piem-chat__context-row")?.getAttribute("aria-label")).toBe("共享给 Piem 的笔记");
 	});
 
-	it("translates the popover's actions", async () => {
+	it("translates the popover's actions and the path line's open name", async () => {
 		const host = await renderRow({ refs: [{ kind: "active", path: "Notes/today.md", isPinned: false }] }, "zh-cn");
 
 		// Each verb means the note the popover is about, so none carries the name;
-		// the file name is the path line's job.
+		// the file name is the path line's job. Two verbs now, not three —
+		// 「打开」 lives on the path line, not the verb row.
 		const chip = await openPopover(host);
-		expect(action(chip, "打开")).not.toBeNull();
 		expect(action(chip, "固定")).not.toBeNull();
 		// Still the behaviour, not the note: a translation that said "移除"
 		// would promise something the control cannot deliver in any language.
 		expect(action(chip, "取消跟随")).not.toBeNull();
 
-		// The toggle's other face translates too — and does not become "移除",
-		// which is the pinned chip's verb for a chip that disappears.
-		document.body.replaceChildren();
+		// The open affordance's own name translates, kind word and all — and does
+		// not become "移除", which is the pinned chip's verb for a chip that
+		// disappears.
 		const pinnedHost = await renderRow(
 			{ refs: [{ kind: "active", path: "Notes/today.md", isPinned: true }] },
 			"zh-cn",
 		);
-		expect(action(await openPopover(pinnedHost), "取消固定")).not.toBeNull();
+		const pinnedChip = await openPopover(pinnedHost);
+		// The kind word rides the ref's kind, not the pin state — same rule the
+		// chip's own name follows: a followed note that is pinned is still
+		// followed, so the open name says 自动跟随中.
+		expect(pinnedChip.querySelector(".piem-chat__context-chip-path")?.getAttribute("aria-label")).toBe(
+			"打开 Notes/today.md，自动跟随中",
+		);
+		expect(action(pinnedChip, "取消固定")).not.toBeNull();
 	});
 
 	it("names every action for the narrow panel that strips the words", async () => {
@@ -468,8 +496,8 @@ describe("ContextRow", () => {
 			button.getAttribute("aria-label"),
 			button.querySelector(".piem-chat__context-chip-action-label")?.textContent ?? null,
 		]);
+		// Two verbs now, not three: "Open" moved to the path line above.
 		expect(named).toEqual([
-			["Open", "Open"],
 			["Pin", "Pin"],
 			["Unfollow", "Unfollow"],
 		]);
@@ -483,7 +511,6 @@ describe("ContextRow", () => {
 			(button) => [button.getAttribute("aria-label"), button.querySelector(".piem-chat__context-chip-action-label")?.textContent ?? null],
 		);
 		expect(pinnedNamed).toEqual([
-			["Open", "Open"],
 			["Unpin", "Unpin"],
 			["Unfollow", "Unfollow"],
 		]);

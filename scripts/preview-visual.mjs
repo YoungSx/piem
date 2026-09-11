@@ -446,16 +446,24 @@ SCENARIOS["settings-badges"] = async () => {
  */
 SCENARIOS["chat-context-chips"] = async () => {
 	const cells = [];
-	for (const [label, open, width] of [
+	for (const [label, open, width, language] of [
 		["closed", false, 390],
 		["closed, narrow", false, 300],
 		["popover open", true, 390],
-		// The narrow panel strips the popover's verbs down to glyphs — the shape a
-		// phone actually draws — so it gets its own cell with the popover open.
+		// The verbs are words at every width the plugin draws, so the narrow cell
+		// is here to hold that claim to its tightest case: 300px is the smallest
+		// sidebar Obsidian gives this panel.
 		["popover open, narrow", true, 300],
-		// The wide counterpart proves the strip is bound to the container query and
-		// not a global: above 32rem the verbs come back.
 		["popover open, wide", true, 560],
+		/*
+		 * The widest the verb row can get. Chinese spends four glyphs on each of
+		 * these verbs where English spends one short word, and a followed note that
+		 * is *also* pinned swaps the two-glyph 固定 for the four-glyph 取消固定 — so
+		 * this pair (取消固定 · 取消跟随) is the longest content the row will ever
+		 * carry. If the words fit at 300px here, there is no width left to check.
+		 */
+		["zh · followed + pinned", true, 390, "zh-cn"],
+		["zh · followed + pinned, narrow", true, 300, "zh-cn"],
 	]) {
 		// One cell at a time in the document: the next mount replaces the
 		// previous panel, so every `document.querySelector` below unambiguously
@@ -463,11 +471,18 @@ SCENARIOS["chat-context-chips"] = async () => {
 		document.body.replaceChildren();
 		const { element, cleanup } = await mountChat({
 			streamFn: scriptedStreamFn([CHIPS_JSON, "Noted — I am reading `Books/Deep Work.md` with you."]),
+			settings: language ? { ...makeSettings(), language } : undefined,
 			drive: async (service) => {
 				// A path long enough that the chip must truncate it, and one pinned
 				// note so the row carries both kinds the tests separate.
-				service.setActiveNotePath("Projects/2026/Q3/reading-notes/Deep Work — weekly audit.md");
+				const activePath = "Projects/2026/Q3/reading-notes/Deep Work — weekly audit.md";
+				service.setActiveNotePath(activePath);
 				service.pinContextRef("Books/Deep Work.md");
+				// Pinning the followed note is what puts the *longer* of the two pin
+				// verbs in the row — the widest state the popover has.
+				if (language) {
+					service.pinContextRef(activePath);
+				}
 				if (open) {
 					await flushRender();
 					const chip = document.querySelectorAll(".piem-chat__context-chip")[0];
@@ -562,7 +577,7 @@ ${cells
 	.join("\n")}
 </body></html>`;
 	await Promise.all(cells.map(({ cleanup }) => cleanup()));
-	return { element: null, cleanup: async () => {}, html, width: 390 + 300 + 390 + 300 + 560 + 390 + 300 + 6 * 20 + 32 + 40, height: 700 };
+	return { element: null, cleanup: async () => {}, html, width: 390 + 300 + 390 + 300 + 560 + 390 + 300 + 390 + 300 + 8 * 20 + 32 + 40, height: 700 };
 };
 
 /*
