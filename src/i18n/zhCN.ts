@@ -338,6 +338,11 @@ export const zhCN: DeepPartial<EnCopy> = {
 
 	quickActions: {
 		label: "试试这样问",
+		/** 与 en 的 continueAfterFailure 对应；label 上按钮，prompt 是按下后发出的消息。 */
+		continueAfterFailure: {
+			label: "继续",
+			prompt: "继续。",
+		},
 		empty: {
 			summarizeNote: {
 				label: "总结这篇笔记",

@@ -12,6 +12,7 @@
  * renderer; `QuickActions.tsx` owns the markup.
  */
 
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../i18n";
 
 /** One suggested prompt. `id` keys the row; `label` names the chip; `prompt` is what a tap sends. */
@@ -19,6 +20,36 @@ export interface QuickAction {
 	id: string;
 	label: string;
 	prompt: string;
+}
+
+/**
+ * Whether the run that just settled ended on a failed reply.
+ *
+ * Walks back from the transcript tail for the same reason
+ * `regenerableIndex` does: a run that used tools parks itself on a
+ * `toolResult` between model calls, and the settled state this reads has to
+ * find the reply behind whatever the run left last. The walk stops at the
+ * first user turn — a reply behind one belongs to an earlier exchange, and
+ * its failure was already offered its chip when that exchange settled.
+ *
+ * `error` only, never `aborted`: a stop is the user's own hand, and the panel
+ * does not offer to undo it. The verdict stays the reader's, not the
+ * panel's, for configuration failures too — the chip sends an ordinary
+ * message, so retrying a provider that is refusing is a choice the user
+ * makes with full sight of the banner, not one the wording of an error
+ * message makes for them.
+ */
+export function lastReplyFailed(messages: readonly AgentMessage[]): boolean {
+	for (let cursor = messages.length - 1; cursor >= 0; cursor -= 1) {
+		const message = messages[cursor];
+		if (message?.role === "assistant") {
+			return message.stopReason === "error";
+		}
+		if (message?.role === "user") {
+			return false;
+		}
+	}
+	return false;
 }
 
 /**
@@ -36,6 +67,27 @@ export const MAX_QUICK_ACTIONS = 3;
  * and the parse's slice, so the row, the prompt, and the parse agree.
  */
 export const MAX_REPLY_QUICK_ACTIONS = 6;
+
+/**
+ * The one chip offered when a reply died mid-run.
+ *
+ * Its prompt is a real, visible "Continue" message — deliberately not a hidden
+ * `agent.continue()`: the half-finished reply stays on the transcript and the
+ * model picks up from it the same way it would from any user nudge, which is
+ * also why this needs none of the tail surgery a `continue()` demands. The
+ * label and the prompt are separate copy leaves because every other chip keeps
+ * them separate too; the preset gets to read "Continue" on the button while
+ * sending the fuller sentence.
+ *
+ * One chip, not a row: the failure already says what happened (the reply
+ * cutoff pill and the banner), so the only thing left to offer is the way
+ * forward, and padding it with canned suggestions would bury that.
+ */
+export function continueAfterFailureQuickAction(t: Translator): QuickAction[] {
+	return [
+		{ id: "continueAfterFailure", label: t.t("quickActions.continueAfterFailure.label"), prompt: t.t("quickActions.continueAfterFailure.prompt") },
+	];
+}
 
 /**
  * The empty screen's first moves, shaped by what is open.

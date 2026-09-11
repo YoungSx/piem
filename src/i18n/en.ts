@@ -680,6 +680,11 @@ export const en = {
 	 */
 	quickActions: {
 		label: "Suggested prompts",
+		/** The chip offered when a reply died mid-run; its prompt is what a tap sends. */
+		continueAfterFailure: {
+			label: "Continue",
+			prompt: "Continue.",
+		},
 		empty: {
 			summarizeNote: {
 				label: "Summarize this note",
