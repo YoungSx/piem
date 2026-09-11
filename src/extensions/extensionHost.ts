@@ -64,8 +64,8 @@ export interface ExtensionHostCallbacks {
 	 *
 	 * Piem's own guards decide whether a compaction runs at all, and the promise
 	 * says which happened: `false` is "nothing needed tidying", a rejection is a
-	 * real failure. The bridge reports the first through `onComplete` and the
-	 * second through `onError`, and never awaits either — see the `compact` action.
+	 * real failure. The bridge routes failure through `onError`; result callbacks
+	 * remain unsupported because the CLI requires a retained-entry pointer.
 	 */
 	compact?(): Promise<boolean>;
 	/**

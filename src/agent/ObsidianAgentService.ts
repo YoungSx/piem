@@ -35,7 +35,7 @@ import { resolveRetrySettings } from "../net/retrySettings";
 import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "../net/streamRetry";
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
-import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent } from "./compaction";
+import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent, type CompactionOutcome } from "./compaction";
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
@@ -651,6 +651,8 @@ export interface ObsidianAgentServiceOptions {
 interface CompactionRunOptions {
 	/** Summarize even when the context still fits; the command-palette path. */
 	force?: boolean;
+	/** Extension actions must release their request before cancelled observers acquire a fresh operation. */
+	waitForObservers?: boolean;
 }
 
 export class ObsidianAgentService {
@@ -5161,9 +5163,12 @@ export class ObsidianAgentService {
 			// an extension needs the refusal in its own call.
 			throw new Error("Compaction needs a configured model credential.");
 		}
-		const compacted = await this.runExclusiveCompaction(rt, agent, { force: true });
-		if (!compacted && rt.compactionEvent?.state === "failed") throw new Error(rt.compactionEvent.error);
-		return compacted;
+		const outcome = await this.runExclusiveCompaction(rt, agent, { force: true, waitForObservers: false });
+		if (outcome.status === "failed") {
+			if (outcome.aborted) throw new DOMException("Compaction cancelled", "AbortError");
+			throw new Error(outcome.message);
+		}
+		return outcome.status === "compacted";
 	}
 
 	/**
@@ -5196,10 +5201,10 @@ export class ObsidianAgentService {
 		try {
 			rt.panelError = undefined;
 			rt.noticeMessage = undefined;
-			const compacted = await this.runExclusiveCompaction(rt, agent, { force: true });
+			const outcome = await this.runExclusiveCompaction(rt, agent, { force: true });
 			// A failure is already on its own transcript row, and "nothing to tidy" on
 			// top of it would contradict it.
-			if (!compacted && !rt.panelError && rt.compactionEvent === null) {
+			if (outcome.status === "skipped" && !rt.panelError && rt.compactionEvent === null) {
 				this.setNotice(rt, this.t().t("chat.nothingToCompact"));
 			}
 		} finally {
@@ -5218,35 +5223,58 @@ export class ObsidianAgentService {
 	 * gives them one `isCompacting` lifecycle, one single-flight guard, and one
 	 * set of success side effects.
 	 *
-	 * Returns whether anything was compacted; failures are surfaced, not thrown.
+	 * Failures are surfaced, not thrown. Observers run after this attempt releases
+	 * its single-flight slot, so a failure handler can retry without awaiting itself.
 	 */
-	private async runExclusiveCompaction(rt: SessionRuntime, agent: Agent, options: CompactionRunOptions = {}): Promise<boolean> {
+	private async runExclusiveCompaction(rt: SessionRuntime, agent: Agent, options: CompactionRunOptions = {}): Promise<CompactionOutcome> {
 		if (!rt.compaction) {
-			rt.compactionController = new AbortController();
-			rt.compaction = this.trackCompaction(rt, agent, rt.compactionController.signal, options.force === true);
+			const controller = new AbortController();
+			const host = rt.communityHost;
+			rt.compactionController = controller;
+			const result = this.trackCompaction(rt, agent, controller.signal, options.force === true).finally(() => {
+				if (rt.compaction?.result === result) {
+					rt.compaction = null;
+					rt.compactionController = null;
+				}
+			});
+			const attempt = { result, notified: Promise.resolve() };
+			rt.compaction = attempt;
+			attempt.notified = result.then(async outcome => {
+				if (outcome.status !== "failed") return;
+				// Stop retired the platform operation that launched ctx.compact.
+				// Its action promise awaits result only, so draining here cannot
+				// wait on this observer. Old callbacks stay cancelled; the event
+				// receives its own fresh scope after that operation has released.
+				if (controller.signal.aborted) await host?.drain();
+				if (rt.communityHost === host) await this.reportCompactionFailure(rt, agent, options.force === true, outcome.message, outcome.aborted);
+			}).catch(error => { this.log.debug("Compaction observer did not settle", () => ({ error: causeMessage(error) })); });
 		}
-		try {
-			return await rt.compaction;
-		} finally {
-			rt.compaction = null;
-			rt.compactionController = null;
-		}
+		const attempt = rt.compaction;
+		const outcome = await attempt.result;
+		if (options.waitForObservers !== false) await attempt.notified;
+		return outcome;
 	}
 
-	private async trackCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<boolean> {
+	private async trackCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<CompactionOutcome> {
 		// The anchor is read here rather than in `performCompaction` because the row
 		// has to appear at the tail the reader is looking at *now* — a prompt's
 		// pre-flight tidy runs before the user's own message joins the transcript.
 		rt.compactionEvent = { state: "running", anchor: agent.state.messages.length };
 		try {
-			this.notify();
-			return await this.performCompaction(rt, agent, signal, force);
-		} catch (error) {
-			await this.reportCompactionFailure(rt, agent, force, causeMessage(error), signal.aborted || (error instanceof Error && error.name === "AbortError"));
-			return false;
+			let outcome: CompactionOutcome;
+			try {
+				this.notify();
+				outcome = await this.performCompaction(rt, agent, signal, force);
+			} catch (error) {
+				outcome = { status: "failed", message: causeMessage(error), aborted: signal.aborted || (error instanceof Error && error.name === "AbortError") };
+			}
+			if (outcome.status === "failed" && !outcome.aborted && rt.agent === agent && !rt.bookmarkClosing) {
+				rt.compactionEvent = { state: "failed", anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length, error: outcome.message };
+			}
+			return outcome;
 		} finally {
 			/*
-			 * `performCompaction` has already decided what the row says next: a
+				 * The attempt has already decided what the row says next: a
 			 * failure worth reporting replaced this record with its own, and every
 			 * other ending — success, nothing to do, abort — leaves the row nothing
 			 * to say. Only the running record is cleared, so a failure recorded
@@ -5259,7 +5287,7 @@ export class ObsidianAgentService {
 		}
 	}
 
-	private async performCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<boolean> {
+	private async performCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<CompactionOutcome> {
 		const model = getSelectedModel(this.getSettings());
 		const outcome = await compactIfNeeded({
 			messages: agent.state.messages,
@@ -5280,7 +5308,7 @@ export class ObsidianAgentService {
 		// old transcript back and append its summary into the *new* session's log.
 		// Compacting between turns widens that window from milliseconds to seconds.
 		if (rt.agent !== agent) {
-			return false;
+			return { status: "skipped" };
 		}
 
 		// This is the futility latch's reset point ({@link SessionRuntime
@@ -5294,13 +5322,7 @@ export class ObsidianAgentService {
 			rt.compactionGate = "awaiting";
 		}
 
-		if (outcome.status === "failed") {
-			await this.reportCompactionFailure(rt, agent, force, outcome.message, signal.aborted || outcome.aborted);
-			return false;
-		}
-		if (outcome.status === "skipped") {
-			return false;
-		}
+		if (outcome.status !== "compacted") return outcome;
 
 		// The meter is blind until the next reply records: every assistant usage the
 		// transcript now holds reports the pre-compaction total, so the turn
@@ -5309,20 +5331,17 @@ export class ObsidianAgentService {
 		// the hook to do.
 		this.recordOverheadUsage(rt, outcome.result.usage);
 		await this.sessionManager.appendCompactionFor(rt.sessionPath, outcome.result, rt.activeLane);
-		if (rt.agent !== agent) return false;
+		if (rt.agent !== agent) return { status: "skipped" };
 		agent.state.messages = outcome.messages;
 		rt.lastCompaction = outcome.result;
 		await this.refreshSessionInfo(rt);
 		this.notify();
-		return true;
+		return outcome;
 	}
 
 	/** A failed observer cannot turn a best-effort tidy into a failed prompt. */
 	private async reportCompactionFailure(rt: SessionRuntime, agent: Agent, force: boolean, message: string, aborted: boolean): Promise<void> {
 		if (this.disposed || rt.agent !== agent || rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) return;
-		if (!aborted) {
-			rt.compactionEvent = { state: "failed", anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length, error: message };
-		}
 		const host = rt.communityHost;
 		try {
 			await host?.emit({
@@ -5330,7 +5349,7 @@ export class ObsidianAgentService {
 				...(aborted ? {} : { errorMessage: message }),
 				// Piem has no overflow-retry path or extension-supplied summary.
 				willRetry: false, fromExtension: false,
-			});
+			}, true);
 		} catch (error) {
 			if (rt.agent === agent && rt.communityHost === host && !aborted) this.setError(rt, causeMessage(error));
 			this.log.debug("Extension compaction failure handler failed", () => ({ error: causeMessage(error) }));

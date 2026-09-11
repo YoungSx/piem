@@ -1,7 +1,7 @@
 import { type Agent, type Skill, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Usage } from "@earendil-works/pi-ai";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
-import { type CompactionEvent, type CompactResult } from "./compaction";
+import { type CompactionEvent, type CompactionOutcome, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
 import type { CommunityHost } from "../extensions/communityHost";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
@@ -201,8 +201,8 @@ export class SessionRuntime {
 	 * (compaction, branch summarization, suggestions).
 	 */
 	overheadUsage: Usage[] = [];
-	/** Single-flight guard for compaction — the in-flight promise, if any. */
-	compaction: Promise<boolean> | null = null;
+	/** The storage work finishes before observers may request another compaction. */
+	compaction: { result: Promise<CompactionOutcome>; notified: Promise<void> } | null = null;
 	/**
 	 * The attempt the transcript draws: running from launch until it settles, then
 	 * either gone (a success leaves pi's summary message behind instead) or held as

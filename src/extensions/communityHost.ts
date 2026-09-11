@@ -260,11 +260,21 @@ export class CommunityHost {
 		return this.takeMessages();
 	}
 	async input(text: string) { return this.operate(() => this.host.input(text)); }
-	async emit(event: Parameters<ExtensionHost["emit"]>[0]): Promise<void> {
+	async emit(event: Parameters<ExtensionHost["emit"]>[0], detached = false): Promise<void> {
 		if (!this.host.hasHandlers(event.type)) return;
 		// A host action can emit an observation while its command owns the
 		// platform. Its outer operation still owns flushing and delivery.
-		if (this.platform.busy) { await this.host.emit(event); return; }
+		if (this.platform.busy) {
+			const work = this.host.emit(event).then(async () => {
+				// Compaction completes independently of its triggering command.
+				// That command may have already collected its follow-ups, so this
+				// observation must flush and deliver its own queued effects.
+				if (detached) { await this.flushWrites(); this.assertActive(); this.deliver(); }
+			});
+			if (detached) this.platform.trackRequest(work);
+			await work;
+			return;
+		}
 		await this.operate(async () => { await this.host.emit(event); });
 		this.deliver();
 	}
