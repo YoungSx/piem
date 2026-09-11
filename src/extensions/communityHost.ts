@@ -201,7 +201,7 @@ export class CommunityHost {
 		return this.host.settled();
 	}
 	cancelInvocation(): void { this.host.cancel(); }
-	closed(): Promise<void> { return this.host.closed(); }
+	async closed(): Promise<void> { await this.host.closed(); await this.callbacks.session?.settled(); }
 
 	/**
 	 * Persists everything this operation staged, before any success is reported.
@@ -220,7 +220,7 @@ export class CommunityHost {
 
 	assertActive(): void { if (this.disposed) throw new Error("Extension host was disposed."); this.platform.assertActive(); }
 	getSignal(): AbortSignal { return this.platform.getSignal(); }
-	async drain(): Promise<void> { await this.platform.drain(); }
+	async drain(): Promise<void> { await this.platform.drain(); await this.callbacks.session?.settled(); }
 
 	async run(name: string, args = ""): Promise<AgentMessage[]> {
 		await this.operate(() => this.host.run(name, args));
@@ -241,7 +241,6 @@ export class CommunityHost {
 		this.host.cancel();
 		this.platform.cancel();
 		this.pending = [];
-		this.callbacks.session?.cancel();
 		// Native factories retain completed startup callbacks. The audited context
 		// factory alone requires rebuilding its private pending-compaction state.
 		this.needsContextReset = this.extensions === undefined;

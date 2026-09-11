@@ -301,10 +301,12 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const session = limited({
 			...createExtensionSession(callbacks, lifetime.assertActive.bind(lifetime)),
 			...(callbacks.session ? {
+				getEntries: () => callbacks.session!.getEntries(),
 				getBranch: (id?: string) => callbacks.session!.getBranch(id),
 				getTree: () => callbacks.session!.getTree(),
 				getChildren: (id: string) => callbacks.session!.getChildren(id),
 				getLeafId: () => callbacks.session!.getLeafId(),
+				getLeafEntry: () => callbacks.session!.getEntry(callbacks.session!.getLeafId() ?? ""),
 				getEntry: (id: string) => callbacks.session!.getEntry(id),
 				branchWithSummary: (id: string, summary: string) => callbacks.session!.branchWithSummary(id, summary),
 				branch: (id: string) => callbacks.session!.branch(id),
@@ -319,6 +321,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			onRequest: settled => callbacks.trackRequest?.(settled),
 		});
 		const { snapshot: snapshotModel, revokeAuth, ...publicModelMembers } = modelMembers;
+		const cancel = (): void => { revokeAuth(); lifetime.cancel(); callbacks.session?.cancel(); };
 		const models = limited({
 			...publicModelMembers,
 			...(callbacks.getAuth ? { getApiKeyAndHeaders: (model: Model<string>) => requireCallback("getAuth")(model) } : {}),
@@ -360,7 +363,8 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		};
 		const actions: ExtensionActions = {
 			sendMessage: (message, options) => { assertAction(); requireCallback("sendMessage")(message, options); },
-			sendUserMessage: (message, options) => { assertAction(); requireCallback("sendUserMessage")(message, options); }, appendEntry: deny,
+			sendUserMessage: (message, options) => { assertAction(); requireCallback("sendUserMessage")(message, options); },
+			appendEntry: (customType, data) => { assertAction(); requireCallback("session").appendEntry(customType, data); },
 			// Pi types both of these as synchronous `void` while the Vault writes
 			// behind them are asynchronous. `settle` is the whole seam: the write is
 			// started inside the caller's still-valid scope, then handed to the host's
@@ -472,7 +476,14 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			assertActive();
 			if (refresh) await callbacks.refreshSession?.();
 			scope.assertActive();
-			return lifetime.withScope(scope, () => work(scope));
+			try { return await lifetime.withScope(scope, () => work(scope)); }
+			finally {
+				// start, context filters and parallel tool hooks also pass here;
+				// CommunityHost.operate alone would leave their writes unsaved.
+				scope.assertActive();
+				await callbacks.session?.flush();
+				scope.assertActive();
+			}
 		});
 		let started: Promise<void> | undefined;
 		let startCancelled = false;
@@ -594,8 +605,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				if (uiAdapter === adapter) return;
 				attachmentRevision++;
 				nativeUI.detach();
-				revokeAuth();
-				lifetime.cancel();
+				cancel();
 				uiAdapter?.reset();
 				uiAdapter = adapter;
 				runner.setUIContext(nativeUI.ui, adapter ? "rpc" : "print");
@@ -618,7 +628,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				if (!runner.hasHandlers("agent_settled")) return;
 				await invoke(async () => { await runner.emit({ type: "agent_settled" }); });
 			},
-			cancel: (): void => { revokeAuth(); lifetime.cancel(); },
+			cancel,
 			closed: (): Promise<void> => closing,
 			dispose: (reason: SessionShutdownEvent["reason"] = "quit"): void => {
 				if (disposed) return;

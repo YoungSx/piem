@@ -1,4 +1,4 @@
-import type { Session } from "@earendil-works/pi-agent-core";
+import type { CustomEntry, ProvisionedEntry, Session } from "@earendil-works/pi-agent-core";
 import { ContextSnapshot } from "./contextSnapshot";
 
 export interface ContextNavigation {
@@ -23,6 +23,8 @@ export interface ContextSessionSource {
 /**
  * The CLI extension reads synchronously; Vault storage commits asynchronously.
  * Refresh before tools/events and flush before their success leaves the host.
+ * Custom state follows its Session's persistence: a blank chat remains in memory
+ * until its first message materializes the session, just like Pi's lazy log.
  * Only a navigation plan exists between branchWithSummary and navigateTree;
  * durable reads never pretend that plan has already changed the user's history.
  */
@@ -30,6 +32,8 @@ export class ContextSession {
 	private session?: Session;
 	private snapshot?: ContextSnapshot;
 	private readonly labels = new Map<string, string | undefined>();
+	private entries: ProvisionedEntry<CustomEntry>[] = [];
+	private writeFailure?: { error: unknown };
 	private navigation?: ContextNavigation;
 	private tail: Promise<unknown> = Promise.resolve();
 	private disposed = false;
@@ -39,11 +43,13 @@ export class ContextSession {
 
 	refresh(): Promise<void> {
 		return this.enqueue(async epoch => {
-			if (this.labels.size || this.navigation) throw new Error("Context changes must settle before refreshing history.");
+			if (this.navigation) throw new Error("Context changes must settle before refreshing history.");
+			if (this.labels.size || this.entries.length) await this.writeChanges(epoch);
 			this.snapshot = undefined;
 			const session = await this.source.load();
 			this.assertActive(epoch, session);
 			await this.readSnapshot(session, epoch);
+			this.writeFailure = undefined;
 		});
 	}
 
@@ -66,27 +72,51 @@ export class ContextSession {
 		this.labels.set(id, label);
 	}
 
+	appendEntry(customType: string, data?: unknown): void {
+		const snapshot = this.current();
+		if (this.navigation) throw new Error("Finish context navigation before appending extension state.");
+		if (typeof customType !== "string") throw new Error("Extension entry type must be a string.");
+		// Match the CLI's JSON wire shape and detach data before the caller can
+		// mutate it. Cycles and bigint fail here, before a staged entry exists.
+		const persisted = JSON.parse(JSON.stringify({ customType, ...(data === undefined ? {} : { data }) })) as { customType: string; data?: unknown };
+		const entry: ProvisionedEntry<CustomEntry> = { type: "custom", id: this.session!.idGenerator.next(), ...persisted };
+		this.entries.push(entry);
+		snapshot.appendCustomEntry(entry);
+	}
+
 	flush(): Promise<void> {
-		return this.enqueue(async epoch => {
-			if (!this.labels.size) return;
-			this.current();
-			const session = this.session!;
-			const labels = [...this.labels];
-			this.labels.clear();
-			try {
-				for (const [id, label] of labels) {
-					this.assertActive(epoch, session);
-					await session.setLabel(id, label);
-					this.assertActive(epoch, session);
-				}
-				if (labels.length) await this.readSnapshot(session, epoch);
-			} catch (error) {
-				// The next operation must reload disk. An in-flight write may have
-				// committed even if its owner was stopped while Vault was saving.
-				this.snapshot = undefined;
-				throw error;
+		return this.enqueue(epoch => this.writeChanges(epoch));
+	}
+
+	private async writeChanges(epoch: number): Promise<void> {
+		if (this.writeFailure) throw this.writeFailure.error;
+		if (!this.labels.size && !this.entries.length) return;
+		this.current();
+		const session = this.session!;
+		const entries = this.entries.splice(0);
+		const labels = [...this.labels];
+		this.labels.clear();
+		try {
+			for (const entry of entries) {
+				this.assertActive(epoch, session);
+				await session.appendEntry(entry, this.lane);
+				this.assertActive(epoch, session);
 			}
-		});
+			for (const [id, label] of labels) {
+				this.assertActive(epoch, session);
+				await session.setLabel(id, label);
+				this.assertActive(epoch, session);
+			}
+			await this.readSnapshot(session, epoch);
+		} catch (error) {
+			// Concurrent hooks share this queue. Every waiter must see a failed
+			// batch; none may report success for state another waiter failed to save.
+			this.writeFailure = { error };
+			this.entries = [];
+			this.labels.clear();
+			this.snapshot = undefined;
+			throw error;
+		}
 	}
 
 	branchWithSummary(targetId: string | null, summary: string): string {
@@ -94,7 +124,7 @@ export class ContextSession {
 		if (this.navigation) throw new Error("A context navigation is already pending.");
 		if (targetId !== null && !snapshot.getEntry(targetId)) throw new Error(`Unknown context entry: ${targetId}`);
 		if (!summary.trim() || summary.length > 128_000) throw new Error("A handoff summary must contain 1–128000 characters.");
-		if (this.labels.size) throw new Error("Checkpoint changes must be saved before navigation.");
+		if (this.labels.size || this.entries.length) throw new Error("Context changes must be saved before navigation.");
 		const summaryEntryId = this.session!.idGenerator.next();
 		this.navigation = {
 			summaryEntryId, targetId, fromId: snapshot.leafId ?? "root", expectedLeafId: snapshot.leafId,
@@ -138,6 +168,8 @@ export class ContextSession {
 	cancel(): void {
 		this.epoch += 1;
 		this.labels.clear();
+		this.entries = [];
+		this.writeFailure = undefined;
 		this.navigation = undefined;
 		this.snapshot = undefined;
 	}
@@ -173,6 +205,7 @@ export class ContextSession {
 			this.assertActive(epoch, session);
 			if (newer.length) continue;
 			this.snapshot = new ContextSnapshot(log, leaf);
+			for (const entry of this.entries) this.snapshot.appendCustomEntry(entry);
 			this.session = session;
 			return;
 		}

@@ -1,6 +1,6 @@
-import type { Entry, LogItem } from "@earendil-works/pi-agent-core";
+import type { CustomEntry, Entry, LogItem, ProvisionedEntry } from "@earendil-works/pi-agent-core";
 
-type DatedEntry<T extends Entry> = T extends Entry ? Omit<T, "timestamp"> & { timestamp: string } : never;
+type DatedEntry<T extends Entry> = T extends Entry ? Omit<T, "timestamp" | "seq"> & { timestamp: string; seq?: number } : never;
 /** The audited extension's read view, not a second CLI SessionManager. */
 export type ContextEntry = DatedEntry<Entry> | {
 	type: "custom_message";
@@ -26,7 +26,7 @@ export class ContextSnapshot {
 	private readonly children = new Map<string | null, ContextEntry[]>();
 	private readonly labels = new Map<string, string>();
 
-	constructor(log: readonly LogItem[], readonly leafId: string | null) {
+	constructor(log: readonly LogItem[], public leafId: string | null) {
 		this.sequence = log.at(-1)?.seq ?? 0;
 		for (const item of log) {
 			if (item.kind === "entry") {
@@ -41,6 +41,17 @@ export class ContextSnapshot {
 			}
 		}
 		if (leafId !== null && !this.entries.has(leafId)) throw new Error("Context snapshot is missing its current entry.");
+	}
+
+	/** The id is reserved now; storage supplies its real sequence when flushed. */
+	appendCustomEntry(entry: ProvisionedEntry<CustomEntry>): void {
+		if (this.entries.has(entry.id)) return;
+		const projected: ContextEntry = { ...structuredClone(entry), parentId: this.leafId, timestamp: new Date().toISOString() };
+		this.entries.set(projected.id, projected);
+		const siblings = this.children.get(projected.parentId) ?? [];
+		siblings.push(projected);
+		this.children.set(projected.parentId, siblings);
+		this.leafId = projected.id;
 	}
 
 	getEntries(): ContextEntry[] { return [...this.entries.values()].map(entry => structuredClone(entry)); }
