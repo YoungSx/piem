@@ -86,6 +86,12 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 12. Search, clarify and context, integrated with the native UI/lifecycle
  *     bridge and the generic compat layer, raise the measured size again; the
  *     ceiling follows to 1.88 MiB.
+ * 13. Per-extension writable configuration — a namespaced store in plugin
+ *     settings standing in for the agent directory that does not exist on a
+ *     phone — measured 1,973,012 B. The ceiling follows to 1.89 MiB. What the
+ *     bytes buy is the removal of a hardcoded path comparison that only ever
+ *     answered `clarify.json`: ownership is now structural, so a second
+ *     extension needs no edit here. No filesystem image, no vault mirror.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -100,7 +106,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.88 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = Math.round(1.89 * 1024 * 1024);
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

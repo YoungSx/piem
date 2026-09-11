@@ -74,7 +74,7 @@ describe("audited community graph", () => {
 		const host = await api.CommunityHost.create({
 			getEntries: () => [], getModel: () => model, getModels: () => [model], isIdle: () => true, notify: () => {},
 			prepare: async () => {}, deliver: unavailable,
-			platform: { fetch: unavailable, complete: unavailable, readConfig: () => undefined, onError: unavailable },
+			platform: { fetch: unavailable, complete: unavailable, onError: unavailable },
 		});
 		expect(host.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(["switch_model", "web_search", "context_checkpoint", "context_timeline", "context_compact"]));
 		const markers = await host.run("continue");
