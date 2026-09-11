@@ -264,6 +264,23 @@ describe("thinking level observations", () => {
 		} finally { service.dispose(); }
 	});
 
+	it("keeps the model selected by a clamp observer in both live and saved configuration", async () => {
+		const { service, sessions, settings } = harness(pi => {
+			pi.on("thinking_level_select", async (event, ctx) => {
+				if (event.level === "off") await pi.setModel(ctx.modelRegistry.getAvailable().find(model => model.id === "third")!);
+			});
+		}, { reasoning: true });
+		settings.models.push({ ...settings.models[0]!, id: "plain", modelApiId: "plain", reasoning: false });
+		settings.models.push({ ...settings.models[0]!, id: "third", modelApiId: "third", reasoning: true });
+		try {
+			await service.initialize();
+			await service.setThinkingLevel("high");
+			await service.setActiveModel("plain");
+			expect(service.getSnapshot().runningModelId).toBe("third");
+			expect((await sessions.buildSessionContext()).model?.modelId).toBe("third");
+		} finally { service.dispose(); }
+	});
+
 	it("keeps a saved selection when an observer fails, and rejects an unsaved selection without an event", async () => {
 		const { service, sessions } = harness(pi => {
 			pi.on("thinking_level_select", () => { throw new Error("Thinking observer failed"); });

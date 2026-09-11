@@ -3609,7 +3609,6 @@ export class ObsidianAgentService {
 		if (!agent || !this.sessionManager.isLoaded(rt.sessionPath)) {
 			return;
 		}
-		const defaults = this.getSessionDefaults();
 		const model = getSelectedModel(this.getSettings());
 		agent.state.model = model;
 		// Preserve the session's level unless a pending selection or the newly
@@ -3633,7 +3632,10 @@ export class ObsidianAgentService {
 		// same call so an edited `/name` takes effect on the next message whichever
 		// kind it is — the asymmetry where only skills did was not explicable.
 		await this.reloadCommandsSafely();
-		await this.sessionManager.ensureConfigurationFor(rt.sessionPath, defaults, rt.activeLane);
+		// An observer may have completed another model switch while we awaited
+		// it. Persist the live result, not the pre-event configuration snapshot.
+		const appliedModel = agent.state.model;
+		await this.sessionManager.ensureConfigurationFor(rt.sessionPath, { provider: appliedModel.provider, modelId: appliedModel.id }, rt.activeLane);
 		await this.refreshSessionInfo(rt);
 		this.notify();
 	}
