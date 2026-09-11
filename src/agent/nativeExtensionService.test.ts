@@ -55,10 +55,43 @@ function harness(factory: ExtensionFactory, options: { reasoning?: boolean } = {
 		streamFn, extensionFactories: [{ id: "bridge-test", factory }],
 		loadUserSkills: async () => ({ skills: [], diagnostics: [], searched: [] }),
 	});
-	return { service, sessions, requests };
+	return { service, sessions, requests, adapter };
 }
 
 describe("native extension service lifecycle", () => {
+	it("persists extension state on its owning chat without exposing it to the model", async () => {
+		let id: string | null = null;
+		let startupId: string | null = null;
+		const { service, sessions, requests, adapter } = harness(pi => {
+			pi.on("session_start", (_event, ctx) => { pi.appendEntry("startup-state"); startupId = ctx.sessionManager.getLeafId(); });
+			pi.registerCommand("remember", { handler: async (_args, ctx) => {
+				pi.appendEntry("private-state", { note: "extension-only-marker" });
+				id = ctx.sessionManager.getLeafId();
+				expect(ctx.sessionManager.getEntries().at(-1)).toEqual(ctx.sessionManager.getBranch().at(-1));
+			} });
+		});
+		try {
+			await service.initialize();
+			expect(await service.runExtensionCommand("remember")).toBe(true);
+			const blankId = id;
+			expect(await sessions.getSession().getEntry(blankId!)).toMatchObject({ type: "custom", data: { note: "extension-only-marker" } });
+			expect(await sessions.listSessions()).toEqual([]);
+			expect(await service.sendPrompt("First question")).toBe(true);
+			expect(await sessions.getSession().getEntry(blankId!)).toMatchObject({ type: "custom", data: { note: "extension-only-marker" } });
+			expect(await sessions.listSessions()).toHaveLength(1);
+			expect(await service.runExtensionCommand("remember")).toBe(true);
+			expect(await sessions.getSession().getEntry(id!)).toMatchObject({ type: "custom", customType: "private-state", data: { note: "extension-only-marker" } });
+			expect(await service.sendPrompt("Second question")).toBe(true);
+			expect(JSON.stringify(requests)).not.toContain("extension-only-marker");
+			expect(JSON.stringify(service.getSnapshot().messages)).not.toContain("extension-only-marker");
+			const reloaded = new ObsidianSessionManager(adapter, "Piem/sessions", "obsidian-vault:Bridge test");
+			await reloaded.loadSession((await sessions.getActiveSessionInfo()).path);
+			expect(await reloaded.getSession().getEntry(startupId!)).toMatchObject({ type: "custom", customType: "startup-state" });
+			expect(await reloaded.getSession().getEntry(blankId!)).toMatchObject({ type: "custom", data: { note: "extension-only-marker" } });
+			expect(await reloaded.getSession().getEntry(id!)).toMatchObject({ type: "custom", data: { note: "extension-only-marker" } });
+		} finally { service.dispose(); }
+	});
+
 	it.each(["message_end", "agent_end"] as const)("persists successful replies and closes the run when %s handlers fail", async eventType => {
 		const { service, sessions, requests } = harness(pi => {
 			if (eventType === "message_end") pi.on("message_end", event => {
