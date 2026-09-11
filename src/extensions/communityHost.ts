@@ -152,12 +152,16 @@ export class CommunityHost {
 	}
 	get commands() { return this.host.commands.filter(command => command.name !== "acm"); }
 	get busy() { return this.platform.busy; }
+	get isStarting() { return this.host.isStarting; }
 	/** A selection can arrive while another handler awaits input; never wait for that handler's own idle. */
 	async beforeSessionChange(event: SessionBeforeForkEvent | SessionBeforeSwitchEvent): Promise<boolean> {
 		if (!this.host.hasHandlers(event.type)) return false;
+		// A startup callback must finish initialization before any veto handler;
+		// waiting on its own startup promise would deadlock an indirect selection.
+		if (this.host.isStarting) return true;
 		// An existing operation already owns a refreshed read view. Refreshing it
 		// again can wait on a ContextSession navigation that is calling us itself.
-		const emit = () => this.host.emit(event, false);
+		const emit = async () => { await this.host.start(); return this.host.emit(event, false); };
 		this.navigationDispatches++;
 		try {
 			let result;
@@ -190,7 +194,8 @@ export class CommunityHost {
 			// A pending switch dialog must not suppress the source chat's live
 			// message/tool observers. Reuse its captured view and retain each task
 			// until writes settle, even if the navigation handler finishes first.
-			const work = this.host.emitAgentEvent(event, false).then(() => this.flushWrites());
+			this.navigationDispatches++;
+			const work = this.host.emitAgentEvent(event, false).then(() => this.flushWrites()).finally(() => { this.navigationDispatches--; });
 			this.platform.trackRequest(work);
 			return work;
 		}

@@ -486,6 +486,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			}
 		});
 		let started: Promise<void> | undefined;
+		let starting = false;
 		let startCancelled = false;
 		let closing: Promise<void> = Promise.resolve();
 		const start = (reason: SessionStartEvent["reason"] = "startup"): Promise<void> => {
@@ -494,7 +495,11 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			// its rejected promise must not permanently disable every command.
 			if (startCancelled) return Promise.resolve();
 			started ??= runner.hasHandlers("session_start")
-				? invoke(async () => { await runner.emit({ type: "session_start", reason }); }).catch((error: unknown) => {
+				? invoke(async () => {
+					starting = true;
+					try { await runner.emit({ type: "session_start", reason }); }
+					finally { starting = false; }
+				}).catch((error: unknown) => {
 					if (error instanceof Error && error.name === "AbortError") startCancelled = true;
 					throw error;
 				})
@@ -539,6 +544,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			 * that nothing reports is the silent no-op this file exists to refuse.
 			 */
 			loadReports: reports as readonly ExtensionLoadReport[],
+			get isStarting() { return starting; },
 			hasHandlers: (name: string) => runner.hasHandlers(name),
 			emit: <T extends Parameters<ExtensionRunner["emit"]>[0]>(event: T, refresh = true) => invoke(() => runner.emit(event), refresh),
 			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),

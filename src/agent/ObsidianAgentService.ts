@@ -2940,7 +2940,12 @@ export class ObsidianAgentService {
 
 	private selectSession(path: string, beforeSwitch: boolean): Promise<void> {
 		if (this.disposed) return Promise.resolve();
-		if (this.pendingSessionOpen?.path === path) return this.pendingSessionOpen.promise;
+		if (this.pendingSessionOpen?.path === path) {
+			// A startup handler may indirectly repeat the selection whose preflight
+			// is waiting for that startup. Coalescing would await its own completion.
+			if (this.current()?.communityHost?.isStarting) return Promise.resolve();
+			return this.pendingSessionOpen.promise;
+		}
 		if (this.currentPath === path && this.current()?.agent) {
 			this.cancelSessionOpen();
 			return Promise.resolve();

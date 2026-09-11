@@ -20,6 +20,35 @@ async function fixture(factory: ExtensionFactory) {
 }
 
 describe("community host preserves native lifetime contracts", () => {
+	it("keeps joined observers active after the navigation handler has finished", async () => {
+		let enterNavigation!: () => void, releaseNavigation!: () => void, enterObserver!: () => void, releaseObserver!: () => void;
+		const enteredNavigation = new Promise<void>(resolve => { enterNavigation = resolve; });
+		const navigationGate = new Promise<void>(resolve => { releaseNavigation = resolve; });
+		const enteredObserver = new Promise<void>(resolve => { enterObserver = resolve; });
+		const observerGate = new Promise<void>(resolve => { releaseObserver = resolve; });
+		let ended = 0;
+		const f = await fixture(pi => {
+			pi.on("session_before_switch", async () => { enterNavigation(); await navigationGate; return { cancel: true }; });
+			pi.on("tool_execution_update", async () => { enterObserver(); await observerGate; });
+			pi.on("tool_execution_end", () => { ended++; });
+		});
+		try {
+			const navigation = f.host.beforeSessionChange({ type: "session_before_switch", reason: "resume", targetSessionFile: "target" });
+			await enteredNavigation;
+			const observing = f.host.emitAgentEvent({ type: "tool_execution_update", toolCallId: "one", toolName: "read", args: {}, partialResult: { content: [], details: {} } });
+			await enteredObserver;
+			releaseNavigation();
+			expect(await navigation).toBe(true);
+			expect(f.host.busy).toBe(true);
+			await f.host.emitAgentEvent({ type: "tool_execution_end", toolCallId: "two", toolName: "read", result: { content: [], details: {} }, isError: false });
+			expect(ended).toBe(1);
+			releaseObserver();
+			await observing;
+			await f.host.drain();
+			expect(f.host.busy).toBe(false);
+		} finally { releaseNavigation(); releaseObserver(); f.host.dispose(); await f.host.closed(); }
+	});
+
 	it("returns a completion timeout while retaining its unfinished native request", async () => {
 		let expire!: () => void;
 		const restoreTimeout = stubWindowMembers({
