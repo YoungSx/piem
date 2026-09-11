@@ -39,6 +39,7 @@ import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type Compac
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
+import { hasClarifyMarker } from "../extensions/communityFactories.mjs";
 import type { StaticExtension } from "../extensions/extensionHost";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 import { extensionSessionView } from "./extensionSessionView";
@@ -1080,7 +1081,7 @@ export class ObsidianAgentService {
 			try { return await this.runExtensionFor(rt, matchedExtension.name, extensionCommand.additionalInstructions); }
 			catch (error) { this.setError(rt, causeMessage(error)); return false; }
 		}
-		if (/(?:^|\s)-clarify(?:\s|$)/.test(trimmedPrompt)) {
+		if (hasClarifyMarker(trimmedPrompt)) {
 			if (images.length) { this.setNotice(rt, this.t().t("extensions.noImages")); return false; }
 			try { return await this.runExtensionFor(rt, "clarify-input", trimmedPrompt); }
 			catch (error) { this.setError(rt, causeMessage(error)); return false; }
@@ -2689,7 +2690,7 @@ export class ObsidianAgentService {
 
 
 	isExtensionInput(prompt: string): boolean {
-		if (/(?:^|\s)-clarify(?:\s|$)/.test(prompt)) return true;
+		if (hasClarifyMarker(prompt)) return true;
 		const command = parsePromptCommand(prompt.trim());
 		if (!command) return false;
 		const explicit = command.name.startsWith("extension:");

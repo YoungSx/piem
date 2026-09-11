@@ -32,7 +32,7 @@ export async function searchScenarios(h) {
 	await h.plan("search-401", { chat: [{ tool: { name: "web_search", args: { query: "拒绝凭据验收" } } }, { text: "搜索服务拒绝了凭据。" }], search: { error: 401 } });
 	await h.service.sendPrompt("检查搜索服务拒绝凭据的情况。"); await h.idle();
 	const denied = h.service.getSnapshot().messages.filter(message => message.role === "toolResult" && message.toolName === "web_search").at(-1);
-	h.record("search-401: failure has HTTP evidence", h.textOf(denied).includes("401") && (denied.isError || denied.details?.error));
+	h.record("search-401: native failure has HTTP evidence", h.textOf(denied).includes("401") && denied.isError === true);
 	h.record("search-401: no invented citations", !h.textOf(denied).includes(source));
 	h.record("search-401: no automatic retry", (await h.requests("search-401", "search")).length === 1);
 

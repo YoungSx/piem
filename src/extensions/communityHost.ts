@@ -57,6 +57,7 @@ export class CommunityHost {
 			...callbacks,
 			...(this.extensions ? { getAuth: undefined } : { assertOperation: () => this.assertActive() }),
 			refreshSession: () => callbacks.prepare(),
+			trackRequest: settled => { if (this.platform.busy) this.platform.trackRequest(settled); },
 			setActiveTools: names => { this.activeTools = new Set(names); callbacks.setActiveTools?.(names); },
 			setEditorText: text => { this.assertActive(); callbacks.setEditorText?.(text); },
 			notify: (message, type) => {
@@ -106,7 +107,13 @@ export class CommunityHost {
 			execute: (...args) => this.operate(async () => {
 				const current = this.host.tools.find(candidate => candidate.name === tool.name);
 				if (!current) throw new Error(`Unknown extension tool: ${tool.name}`);
-				return current.execute(...args);
+				const result = await current.execute(...args);
+				// Upstream search encodes failures in details; Pi core expects a throw.
+				const details: unknown = result.details;
+				if ((tool.name === "web_search" || tool.name === "url_context") && details && typeof details === "object" && Reflect.get(details, "error")) {
+					throw new Error(result.content.filter(part => part.type === "text").map(part => part.text).join("\n"));
+				}
+				return result;
 			}, args[2]),
 		}));
 	}
@@ -127,7 +134,8 @@ export class CommunityHost {
 	}
 	emitAgentEvent(event: AgentEvent): Promise<void> {
 		if (!this.host.hasHandlers(event.type)) return this.host.emitAgentEvent(event);
-		return this.operate(() => this.host.emitAgentEvent(event));
+		return this.operate(() => this.host.emitAgentEvent(event), undefined,
+			event.type !== "message_update" && event.type !== "tool_execution_update");
 	}
 	settled(): Promise<void> {
 		if (!this.host.hasHandlers("agent_settled")) return Promise.resolve();
@@ -156,7 +164,9 @@ export class CommunityHost {
 		this.platform.cancel();
 		this.pending = [];
 		this.callbacks.session?.cancel();
-		this.needsContextReset = true;
+		// Native factories retain completed startup callbacks. The audited context
+		// factory alone requires rebuilding its private pending-compaction state.
+		this.needsContextReset = this.extensions === undefined;
 	}
 	dispose(reason?: SessionShutdownEvent["reason"]): void {
 		if (this.disposed) return;
@@ -166,7 +176,7 @@ export class CommunityHost {
 		this.host.dispose(reason);
 		this.pending = [];
 	}
-	private async operate<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+	private async operate<T>(work: () => Promise<T>, signal?: AbortSignal, refresh = true): Promise<T> {
 		if (this.disposed) throw new Error("Extension host was disposed.");
 		if (this.needsContextReset) {
 			await this.platform.drain();
@@ -179,7 +189,7 @@ export class CommunityHost {
 		}
 		return this.platform.withOperation(async () => {
 			this.failure = {};
-			await this.callbacks.prepare();
+			if (refresh) await this.callbacks.prepare();
 			this.assertActive();
 			try {
 				const result = await work();

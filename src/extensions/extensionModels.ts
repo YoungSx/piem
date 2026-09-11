@@ -61,6 +61,8 @@ export function createExtensionModels(options: {
 	complete: ExtensionComplete;
 	assertAvailable(): void;
 	assertCanComplete?(): void;
+	/** Observe actual work independently of the caller's cancellation/timeout. */
+	onRequest?(settled: Promise<void>): void;
 }) {
 	let pending = 0;
 	const configured = () => { options.assertAvailable(); return options.getModels(); };
@@ -92,6 +94,7 @@ export function createExtensionModels(options: {
 				if (signal.signal.aborted) throw new DOMException("Extension model request was cancelled.", "AbortError");
 				return options.complete(model, copiedContext, { ...snapshot, signal: signal.signal });
 			});
+			options.onRequest?.(work.then(() => undefined, () => undefined));
 			void work.then(() => { pending--; }, () => { pending--; });
 			const result = await abortable(work, signal.signal);
 			scope.assertActive();
@@ -113,7 +116,7 @@ export function createExtensionModels(options: {
 		getAll: available,
 		find,
 		hasConfiguredAuth: (model: Model<string>) => Boolean(find(model.provider, model.id)),
-		complete,
+complete,
 		getApiKey: auth.getApiKey,
 		getApiKeyAndHeaders: auth.getApiKeyAndHeaders,
 		// Host-only hooks; these must not become modelRegistry methods.
