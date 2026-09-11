@@ -17,6 +17,10 @@
  * would otherwise be guessing at a vault it has never seen; the reply placement
  * quotes the reply instead, which is both its subject and its context.
  *
+ * The prompt copy is authored once in English, in this module — model-facing
+ * strings are not user interface, so they carry no i18n burden; the output
+ * language is named inside the instruction itself.
+ *
  * Free of React and DOM imports so the prompt, the parse, and the failure
  * contract unit-test without a renderer or a network.
  */
@@ -24,7 +28,7 @@
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, UserMessage } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { MAX_QUICK_ACTIONS, MAX_REPLY_QUICK_ACTIONS, type QuickAction } from "../ui/quickActionSuggestions";
-import type { Language, Translator } from "../i18n";
+import type { Language } from "../i18n";
 import { EMPTY_WORKSPACE_CONTEXT, hasWorkspaceFacts, renderWorkspaceLines, type WorkspaceContext } from "./workspaceContext";
 
 /** Where the suggestions are headed; the placement decides the prompt's framing. */
@@ -35,6 +39,11 @@ export type SuggestionScope = "empty" | "reply";
  * The mapping lives here rather than in the ui module because the cap is the
  * request's business — and the ui module cannot import from the agent module
  * without closing a cycle.
+ *
+ * This caps the model's array, not the row: the row is a `QuickAction[]` the
+ * UI composes, and other contributors (the failure Continue chip today) may
+ * appear beside or instead of these — so nothing downstream may read the cap
+ * as "the row is full" or the request as "the row's only source".
  */
 const CAPS: Record<SuggestionScope, number> = { empty: MAX_QUICK_ACTIONS, reply: MAX_REPLY_QUICK_ACTIONS };
 
@@ -47,9 +56,9 @@ const REPLY_SAMPLE_LIMIT = 4_000;
 
 /**
  * A JSON array of three short objects needs nowhere near a full reply. The
- * reply placement's six do — labels, prompts, and JSON syntax add up, and a
- * request that stops mid-array fails the parse and takes the whole row with
- * it, so the ceiling moves with the cap rather than pinching the row.
+ * reply placement's larger cap does — labels, prompts, and JSON syntax add
+ * up, and a request that stops mid-array fails the parse and takes the whole
+ * row with it, so the ceiling moves with the cap rather than pinching the row.
  */
 const SUGGESTION_MAX_TOKENS = 512;
 const SUGGESTION_MAX_TOKENS_REPLY = 1_024;
@@ -71,6 +80,36 @@ export const SUGGESTION_STREAM_OPTIONS: SimpleStreamOptions = {
 /** The instruction is authored in English; the output language is named in words the model reads. */
 const LANGUAGE_NAMES: Record<Language, string> = { en: "English", "zh-cn": "简体中文" };
 
+/**
+ * The instruction half of the request, authored once in English — the output
+ * language is named inside it, so the instruction itself is not translated and
+ * no i18n table carries model-facing copy. Structured the way the prompt
+ * guides all ask: a one-line role, the output contract with a worked example,
+ * and the quality rules that keep the row worth its tap.
+ */
+const SUGGESTION_INSTRUCTION = `You are generating one-tap follow-up prompts for a chat assistant.
+
+Reply with ONLY a JSON array of at most {count} objects, each {"label": string, "prompt": string}. Each label is 2-4 words shown on a button; each prompt is the full message the button sends, under 25 words. Do not use markdown, code fences, or any text outside the array. Write both fields in {language}.
+
+Example (the shape, not the content — yours must fit the material below):
+[{"label": "Compare notes", "prompt": "Compare the weekly review note with last month's and list what changed."}]
+
+The suggestions must each do a different thing, name concrete material from the material below rather than speaking in general, and never ask what the material already answers.`;
+
+/**
+ * The empty screen's framing lines, joined with the workspace block into the
+ * tagged material that rides above the instruction. One prompt per shape of
+ * subject the empty screen can have: an open note, a probed workspace, or
+ * nothing at all.
+ */
+const EMPTY_WITH_NOTE = `The conversation is empty. The user has the note "{path}" open as context.`;
+const EMPTY_NO_NOTE = `The conversation is empty and no note is open; the suggestions should be about the user's vault in general.`;
+const EMPTY_NO_NOTE_WORKSPACE = `The conversation is empty and no note is open; the suggestions should be grounded in the user's workspace below.`;
+const WORKSPACE_INTRO = `The user's workspace:`;
+
+/** The reply placement's framing line; the quoted reply is its material. */
+const REPLY_INTRO = `Base the suggestions on this assistant reply:`;
+
 /** What a suggestion request returns: parsed chips, plus the usage the parse must not swallow. */
 export interface SuggestionResult {
 	/** Null when nothing usable came back; the caller decides what absence shows. */
@@ -86,30 +125,38 @@ export interface SuggestionResult {
  * one prompt, no system prompt to keep warm in a cache a side-channel will
  * never hit twice with the same prefix.
  *
+ * The material goes up top in XML tags and the instruction lands at the
+ * bottom — the order the prompt guides prescribe for longform data, and the
+ * tags that keep note names and reply text (which users author) from reading
+ * as instructions. Inside `<subject>`, every line between the framing and the
+ * workspace is either a framing line, a workspace fact, or user-authored
+ * bytes; the instruction cannot be reached by any of them.
+ *
  * The empty placements quote the workspace facts the caller probed (folder
  * siblings, other open tabs, recently opened notes) so the chips are grounded
  * in what the user is actually surrounded by, not guessing at the vault; the
  * reply placement omits them — its subject is the reply itself, and workspace
  * noise there would only dilute it.
  */
-export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | null, language: Language, t: Translator, workspace?: WorkspaceContext): string {
-	const lines = [t.t("quickActions.suggest.instruction", { language: LANGUAGE_NAMES[language], count: CAPS[scope] })];
+export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | null, language: Language, workspace?: WorkspaceContext): string {
+	const materials: string[] = [];
 	if (scope === "empty") {
 		// No probed workspace means an empty one: the guard reads a real context either way.
 		const quoted = workspace ?? EMPTY_WORKSPACE_CONTEXT;
 		const workspaceQuoted = hasWorkspaceFacts(quoted);
 		if (subject) {
-			lines.push(t.t("quickActions.suggest.emptyWithNote", { path: subject }));
+			materials.push(EMPTY_WITH_NOTE.replace("{path}", subject));
 		} else {
-			lines.push(t.t(workspaceQuoted ? "quickActions.suggest.emptyNoNoteWorkspace" : "quickActions.suggest.emptyNoNote"));
+			materials.push(workspaceQuoted ? EMPTY_NO_NOTE_WORKSPACE : EMPTY_NO_NOTE);
 		}
 		if (workspaceQuoted) {
-			lines.push([t.t("quickActions.suggest.workspaceIntro"), ...renderWorkspaceLines(quoted)].join("\n"));
+			materials.push([WORKSPACE_INTRO, ...renderWorkspaceLines(quoted)].join("\n"));
 		}
 	} else {
-		lines.push(t.t("quickActions.suggest.reply", { reply: subject ?? "" }));
+		materials.push(REPLY_INTRO);
+		materials.push(String(subject ?? ""));
 	}
-	return lines.join("\n\n");
+	return `<subject>\n${materials.join("\n\n")}\n</subject>\n\n${SUGGESTION_INSTRUCTION.replace("{count}", String(CAPS[scope])).replace("{language}", LANGUAGE_NAMES[language])}`;
 }
 
 /**
@@ -214,7 +261,6 @@ export async function fetchQuickActionSuggestions(options: {
 	scope: SuggestionScope;
 	subject: string | null;
 	language: Language;
-	t: Translator;
 	/** The probed workspace facts; quoted by the empty placements, ignored by reply. */
 	workspace?: WorkspaceContext;
 	signal?: AbortSignal;
@@ -224,7 +270,7 @@ export async function fetchQuickActionSuggestions(options: {
 		messages: [
 			{
 				role: "user",
-				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.t, options.workspace),
+				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.workspace),
 				timestamp: Date.now(),
 			} satisfies UserMessage,
 		],

@@ -369,19 +369,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 				prompt: "在我的笔记库里你能帮我做什么？举三个具体的例子。",
 			},
 		},
-		suggest: {
-			instruction:
-				"你正在为一位聊天助手生成一键追问按钮。只回复一个 JSON 数组，最多 {count} 个对象，每个形如 {\"label\": string, \"prompt\": string}。label 是显示在按钮上的 2-4 个词；prompt 是按下按钮后发送的完整消息。不要使用 markdown、代码围栏或数组以外的任何文字。用{language}书写。",
-			emptyWithNote:
-				"对话还是空的，用户正打开着笔记「{path}」作为上下文。",
-			emptyNoNote:
-				"对话还是空的，也没有打开任何笔记；建议应该围绕用户的笔记库整体。",
-			emptyNoNoteWorkspace:
-				"对话还是空的，也没有打开任何笔记；建议应该落在下面这些工作区素材上。",
-			workspaceIntro: "用户当前的工作区：",
-			reply:
-				"请基于下面这段助手的回答来给建议：\n\n{reply}",
-		},
+		/**
+		 * 与英文表同注：模型可见的 prompt 不做翻译，正文收敛在
+		 * `src/agent/quickActionSuggestionRequest.ts`；此处只留设置页文案。
+		 */
 		suggestSettings: {
 			name: "建议模型",
 			desc: "智能建议是一个独立的小请求。默认跟随当前会话的模型；在这里选一个更轻量的，建议按钮就会更快、更便宜。",

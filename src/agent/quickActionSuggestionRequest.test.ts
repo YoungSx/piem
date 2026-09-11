@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { getT } from "../i18n";
 import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
 import { buildSuggestionPrompt, fetchQuickActionSuggestions, lastAssistantText, parseSuggestedActions } from "./quickActionSuggestionRequest";
-
-const t = getT("en");
 
 function usage() {
 	return {
@@ -40,24 +37,39 @@ function fakeStream(message: AssistantMessage | Error) {
 
 describe("buildSuggestionPrompt", () => {
 	it("states the output contract and names the output language", () => {
-		const prompt = buildSuggestionPrompt("empty", null, "zh-cn", t);
+		const prompt = buildSuggestionPrompt("empty", null, "zh-cn");
 		expect(prompt).toContain("JSON array");
 		expect(prompt).toContain("简体中文");
 	});
 
+	it("wraps the material in a subject tag and ends with the instruction", () => {
+		// Longform data above, instructions below — the order the prompt guides
+		// prescribe — and the tag is what keeps user-authored bytes (note names,
+		// reply text) from reading as instructions.
+		const prompt = buildSuggestionPrompt("empty", null, "en");
+		expect(prompt).toMatch(/^<subject>\n/);
+		expect(prompt).toContain("\n</subject>\n\n");
+		expect(prompt.indexOf("You are generating")).toBeGreaterThan(prompt.lastIndexOf("</subject>"));
+	});
+
+	it("carries a worked example of the output shape", () => {
+		const prompt = buildSuggestionPrompt("empty", null, "en");
+		expect(prompt).toContain('[{"label": "');
+	});
+
 	it("names the open note for the empty screen with one", () => {
-		const prompt = buildSuggestionPrompt("empty", "Journal/2026-08-29.md", "en", t);
+		const prompt = buildSuggestionPrompt("empty", "Journal/2026-08-29.md", "en");
 		expect(prompt).toContain("Journal/2026-08-29.md");
 		expect(prompt).not.toContain("no note is open");
 	});
 
 	it("says the vault is the subject when nothing is open", () => {
-		const prompt = buildSuggestionPrompt("empty", null, "en", t);
+		const prompt = buildSuggestionPrompt("empty", null, "en");
 		expect(prompt).toContain("no note is open");
 	});
 
 	it("quotes the reply text for the post-reply row", () => {
-		const prompt = buildSuggestionPrompt("reply", "Here is the answer.", "en", t);
+		const prompt = buildSuggestionPrompt("reply", "Here is the answer.", "en");
 		expect(prompt).toContain("Here is the answer.");
 	});
 
@@ -67,7 +79,7 @@ describe("buildSuggestionPrompt", () => {
 			openTabs: ["Projects/piem.md"],
 			recentFiles: ["Journal/2026-08-29.md", "Ideas/home.md"],
 		};
-		const prompt = buildSuggestionPrompt("empty", null, "en", t, workspace);
+		const prompt = buildSuggestionPrompt("empty", null, "en", workspace);
 		expect(prompt).toContain("grounded in the user's workspace");
 		expect(prompt).toContain("The user's workspace:");
 		expect(prompt).toContain("Other open tabs: Projects/piem.md");
@@ -80,8 +92,8 @@ describe("buildSuggestionPrompt", () => {
 			openTabs: [],
 			recentFiles: [],
 		};
-		const prompt = buildSuggestionPrompt("empty", "Projects/home.md", "en", t, workspace);
-		expect(prompt).toContain('"Projects/home.md"');
+		const prompt = buildSuggestionPrompt("empty", "Projects/home.md", "en", workspace);
+		expect(prompt).toContain("Projects/home.md");
 		expect(prompt).toContain("Current folder: Projects");
 		expect(prompt).toContain("Also in this folder: piem.md, archive/ (+3 more)");
 	});
@@ -89,9 +101,9 @@ describe("buildSuggestionPrompt", () => {
 	it("stays byte-identical to the pre-workspace prompt when the probed context is empty", () => {
 		// The empty-vault case must not regress: no intro, no lines, same bytes.
 		for (const workspace of [undefined, EMPTY_WORKSPACE_CONTEXT]) {
-			expect(buildSuggestionPrompt("empty", null, "en", t, workspace)).toBe(buildSuggestionPrompt("empty", null, "en", t));
-			expect(buildSuggestionPrompt("empty", "notes/a.md", "en", t, workspace)).toBe(buildSuggestionPrompt("empty", "notes/a.md", "en", t));
-			expect(buildSuggestionPrompt("reply", "text", "en", t, workspace)).toBe(buildSuggestionPrompt("reply", "text", "en", t));
+			expect(buildSuggestionPrompt("empty", null, "en", workspace)).toBe(buildSuggestionPrompt("empty", null, "en"));
+			expect(buildSuggestionPrompt("empty", "notes/a.md", "en", workspace)).toBe(buildSuggestionPrompt("empty", "notes/a.md", "en"));
+			expect(buildSuggestionPrompt("reply", "text", "en", workspace)).toBe(buildSuggestionPrompt("reply", "text", "en"));
 		}
 	});
 
@@ -101,7 +113,7 @@ describe("buildSuggestionPrompt", () => {
 			openTabs: ["Projects/piem.md"],
 			recentFiles: ["Ideas/home.md"],
 		};
-		const prompt = buildSuggestionPrompt("reply", "The answer.", "en", t, workspace);
+		const prompt = buildSuggestionPrompt("reply", "The answer.", "en", workspace);
 		expect(prompt).toContain("The answer.");
 		expect(prompt).not.toContain("workspace");
 		expect(prompt).not.toContain("piem.md");
@@ -110,8 +122,8 @@ describe("buildSuggestionPrompt", () => {
 	it("asks for the scope's own cap: three on the empty screen, six after a reply", () => {
 		// The model and the parse must agree — a cap the instruction never names
 		// produces a row that the parse silently cuts down.
-		expect(buildSuggestionPrompt("empty", null, "en", t)).toContain("at most 3 objects");
-		expect(buildSuggestionPrompt("reply", "The answer.", "en", t)).toContain("at most 6 objects");
+		expect(buildSuggestionPrompt("empty", null, "en")).toContain("at most 3 objects");
+		expect(buildSuggestionPrompt("reply", "The answer.", "en")).toContain("at most 6 objects");
 	});
 });
 
@@ -204,7 +216,6 @@ describe("fetchQuickActionSuggestions", () => {
 			scope: "empty",
 			subject: null,
 			language: "en",
-			t,
 		});
 		expect(result.actions).toEqual([{ id: "suggested-0", label: "A", prompt: "p" }]);
 		expect(result.usage?.totalTokens).toBe(30);
@@ -227,7 +238,6 @@ describe("fetchQuickActionSuggestions", () => {
 				scope,
 				subject: null,
 				language: "en",
-				t,
 			});
 			expect(captured.options?.maxTokens).toBe(maxTokens);
 		}
@@ -240,7 +250,6 @@ describe("fetchQuickActionSuggestions", () => {
 			scope: "reply",
 			subject: "text",
 			language: "en",
-			t,
 		});
 		expect(result.actions).toBeNull();
 		expect(result.usage).toBeUndefined();
@@ -254,7 +263,6 @@ describe("fetchQuickActionSuggestions", () => {
 				scope: "empty",
 				subject: null,
 				language: "en",
-				t,
 			});
 			expect(result.actions).toBeNull();
 		}
@@ -269,7 +277,6 @@ describe("fetchQuickActionSuggestions", () => {
 			scope: "empty",
 			subject: null,
 			language: "en",
-			t,
 			signal: controller.signal,
 		});
 		expect(result.actions).toBeNull();
@@ -282,7 +289,6 @@ describe("fetchQuickActionSuggestions", () => {
 			scope: "empty",
 			subject: null,
 			language: "en",
-			t,
 		});
 		expect(result.actions).toBeNull();
 		// The request was still billed; the usage must survive the failed parse.
