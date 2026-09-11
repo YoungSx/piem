@@ -17,6 +17,7 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 | 执行 | 原版 `ExtensionRunner` 和工具包装器，工具串行执行 |
 | 注册 | 命令、工具、快捷键、输入/上下文及生命周期处理器、内部事件总线；不支持的注册及重复名称直接失败 |
 | 上下文 | 按顺序运行原版 `context` 管线；处理器失败则终止请求 |
+| 工具拦截 | 通过 pi 自带的 agent 钩子调用原版 `tool_call` / `tool_result`；被拦截的调用不执行，就地修改 `input` 会传给工具，处理器失败只让该次调用报错 |
 | 会话 | 从所属 Vault 会话及分支刷新读视图；标签保存后返回成功，摘要分支通过可等待的 Vault 适配发布 |
 | 模型 | 已配凭据且标识唯一的模型；目录及 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调；已审核搜索/改写工厂另外可解析当前服务商凭据 |
 | 消息 | 操作内的 `sendMessage`，要求 `triggerTurn` 和 `followUp`，最多 16 条待发消息；内部 `/acm` 不发给模型 |
@@ -98,12 +99,24 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 
 支持事件：`session_start`、`session_shutdown`、`before_agent_start`、`agent_start`、
 `agent_end`、`agent_settled`、`turn_start`、`turn_end`、`message_start`、
-`message_update`、`message_end`、三种 `tool_execution_*`，以及 `context`、`input`、
-`model_select`、`session_tree`。
+`message_update`、`message_end`、三种 `tool_execution_*`、`tool_call` 和
+`tool_result`，以及 `context`、`input`、`model_select`、`session_tree`。
 首次连接面板或执行时启动一次。原版 Runner 负责处理器顺序和结果合并。
 `before_agent_start` 的系统提示只用于该轮；自定义消息和 `message_end` 改写
 走现有持久化流程。`agent_settled` 等排队续跑和自动整理完成后触发。流式增量
 不会读取 Vault，没有订阅的事件不会额外执行处理器。
+
+`tool_call` 和 `tool_result` 是拦截而非观察，因此走代理自身的工具调用路径，
+不走 `tool_execution_*` 三兄弟所用的事件流。`tool_call` 处理器返回
+`{ block: true, reason }` 会阻止工具执行，该 reason 成为这次调用的错误结果，
+模型能读到并据此调整，本轮其余部分继续。按上游约定，原地修改 `event.input`
+会改写工具实际收到的参数：交给处理器的对象正是 Pi 传给工具的单次调用副本，
+所以聊天记录里仍是模型真正发出的那次调用。修改后不会按工具 schema 重新校验，
+与上游一致；vault 工具本身仍会检查自己的路径，被改过的路径无法离开 vault。
+`tool_result` 处理器返回的 `content`、`details`、`isError`、`usage` 会整字段
+替换已执行结果的对应字段，不做深合并。处理器抛错时只让它自己那次调用失败，
+不放行：装来审查工具调用的扩展一旦崩溃，就等于什么都没批准。两个事件都不读
+Vault；扩展两个都没订阅的聊天，每次调用不付任何代价。
 
 停止和新提问会取消未完成的扩展工作。被取消处理器已捕获的接口始终失效，
 完成启动的回调可继续服务该会话后续回合。共享的 `pi.sendMessage`、`pi.setLabel`、

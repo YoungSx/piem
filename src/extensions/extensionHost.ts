@@ -1,12 +1,13 @@
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
-import type { ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
 import { createEventBus } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js";
 import { wrapRegisteredTools } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/wrapper.js";
 import { unavailable } from "./node/unavailable";
+
 import { ExtensionLifetime, abortable, type ExtensionScope } from "./extensionLifetime";
 import { bindScopedContexts } from "./extensionContext";
 import { ExtensionAgentEvents, SUPPORTED_EXTENSION_EVENTS } from "./extensionEvents";
@@ -15,6 +16,9 @@ import { createExtensionSession } from "./extensionSession";
 import { createNativeExtensionUI } from "./nativeExtensionUI";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { parseKey } from "./compat/keys";
+
+/** Not re-exported from the package root, unlike its `tool_call` counterpart. */
+type ToolResultEventResult = NonNullable<Awaited<ReturnType<ExtensionRunner["emitToolResult"]>>>;
 
 export interface ExtensionEntry {
 	id: string;
@@ -265,6 +269,48 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				const command = runner.getCommand(name);
 				if (!command) throw new Error(`Unknown extension command: ${name}`);
 				await invoke(async () => { await command.handler(args, runner.createCommandContext()); });
+			},
+			/**
+			 * Runs `tool_call` handlers before a tool executes.
+			 *
+			 * `event.input` is mutable by contract: Pi's docs say handlers patch
+			 * arguments by mutating it in place, later handlers observe earlier
+			 * mutations, and no re-validation follows. So this must not clone —
+			 * the object handed in is the one the caller forwards to the tool, and
+			 * cloning here would accept mutations and then silently discard them,
+			 * which is worse than refusing the event. It is the one host operation
+			 * that deliberately breaks the structuredClone habit, and the caller
+			 * owns choosing an input object it is willing to have mutated.
+			 *
+			 * Not re-validated against the tool schema afterwards, matching
+			 * upstream. Re-validating would be a different contract from the one
+			 * extensions are written against — `validateToolArguments` coerces and
+			 * throws, so a handler that legitimately widens an argument would have
+			 * its call fail here but succeed under Pi's own CLI. The tools that
+			 * care re-check their own inputs anyway: every vault path goes through
+			 * `normalizeVaultPath` inside the tool, so a mutated path cannot
+			 * escape the vault regardless of what the schema said.
+			 */
+			toolCall: async (event: ToolCallEvent): Promise<ToolCallEventResult | undefined> => {
+				await start();
+				if (!runner.hasHandlers("tool_call")) return undefined;
+				return invoke(async scope => {
+					const result = await runner.emitToolCall(event);
+					// A cancelled conversation must not block or unblock a call
+					// that now belongs to a later run — mirrors message_end.
+					scope.assertActive();
+					return result;
+				}, false);
+			},
+			/** Runs `tool_result` handlers; the returned fields replace the executed result. */
+			toolResult: async (event: ToolResultEvent): Promise<ToolResultEventResult | undefined> => {
+				await start();
+				if (!runner.hasHandlers("tool_result")) return undefined;
+				return invoke(async scope => {
+					const result = await runner.emitToolResult(structuredClone(event));
+					scope.assertActive();
+					return result;
+				}, false);
 			},
 			transformContext: async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
 				await start();

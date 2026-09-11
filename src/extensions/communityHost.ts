@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { SessionShutdownEvent, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
@@ -136,6 +136,33 @@ export class CommunityHost {
 		if (!this.host.hasHandlers(event.type)) return this.host.emitAgentEvent(event);
 		return this.operate(() => this.host.emitAgentEvent(event), undefined,
 			event.type !== "message_update" && event.type !== "tool_execution_update");
+	}
+	/**
+	 * Intercepts a tool call before it executes.
+	 *
+	 * Deliberately not wrapped in {@link operate}. A parallel tool batch finalizes
+	 * several calls at once — measured: two `afterToolCall` invocations in flight
+	 * for one batch — and `operate` is exclusive, so the second would be rejected
+	 * with "An extension operation is already running" and the tool result of a
+	 * perfectly good call would be replaced by that error. These two hooks are
+	 * also already inside the agent's own run: the Vault refresh `operate` exists
+	 * to perform has just happened for this turn, and a tool call is the hot path
+	 * the refresh policy explicitly excludes elsewhere (`message_update`,
+	 * `tool_execution_update`). The host's own lifetime scope still bounds them,
+	 * so a stopped conversation's handler cannot affect a later call.
+	 *
+	 * `event.input` is passed through unchanged so in-place mutation reaches the
+	 * tool; see the host's own comment for why it is not cloned or re-validated.
+	 */
+	toolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {
+		if (!this.host.hasHandlers("tool_call")) return Promise.resolve(undefined);
+		this.assertActive();
+		return this.host.toolCall(event);
+	}
+	toolResult(event: ToolResultEvent): ReturnType<ExtensionHost["toolResult"]> {
+		if (!this.host.hasHandlers("tool_result")) return Promise.resolve(undefined);
+		this.assertActive();
+		return this.host.toolResult(event);
 	}
 	settled(): Promise<void> {
 		if (!this.host.hasHandlers("agent_settled")) return Promise.resolve();

@@ -4081,6 +4081,17 @@ export class ObsidianAgentService {
 				throw new Error("Extension session is no longer available.");
 			}
 		};
+		/**
+		 * The non-throwing form of {@link assertOwner}, for the tool-call hooks.
+		 *
+		 * A replaced or closed conversation has no opinion to offer about a tool
+		 * call, and saying so by throwing would turn a stale host into an error
+		 * tool result on a call that is running fine. The hooks return `undefined`
+		 * instead — no block, no rewrite — which is what "this extension is gone"
+		 * should mean to a live run.
+		 */
+		const isCurrentExtensionHost = (): boolean =>
+			!rt.bookmarkClosing && this.runtimes.get(rt.sessionPath) === rt && rt.communityHost === community;
 		const contextSession = new ContextSession({
 			load: async () => {
 				assertOwner();
@@ -4304,6 +4315,48 @@ export class ObsidianAgentService {
 			// Pi snapshots its model for each request. A tool switch takes effect at
 			// the supported turn seam, after the previous model's tools have settled.
 			prepareNextTurn: () => ({ model: agent.state.model, thinkingLevel: agent.state.thinkingLevel }),
+			// The two interception points extensions get on a tool call, wired to
+			// pi's own `tool_call` / `tool_result` events. Unlike the
+			// `tool_execution_*` trio — which `handleAgentEvent` forwards purely as
+			// observations — these run *inside* pi's tool-call path, so a handler
+			// can refuse a call or rewrite what the model reads back. That is why
+			// they hang off the agent's hooks rather than the event subscription:
+			// the loop awaits them at the one point where the answer still changes
+			// what happens. Upstream's own `AgentSession` implements these two
+			// extension events through exactly these hooks; this is the same wiring
+			// against the community host.
+			//
+			// Both are skipped outright when no extension subscribes (the check is
+			// inside `community.toolCall` / `community.toolResult`), so an
+			// unsubscribed vault pays one map lookup per call and no Vault read.
+			// `undefined` means "no opinion" and leaves the call as pi prepared it.
+			//
+			// A failing handler is deliberately allowed to propagate. pi's loop turns
+			// the rejection into an error tool result for that one call, which is the
+			// honest outcome: an extension that exists to vet tool calls and then
+			// crashes has not approved anything, and swallowing the error would run
+			// the call it was installed to inspect. Same reasoning as the context
+			// filter, which refuses to leak an unfiltered request; the difference is
+			// that the blast radius here is one tool call rather than the run, so the
+			// model is told and can react instead of the conversation ending.
+			beforeToolCall: async ({ toolCall, args }) => {
+				if (!isCurrentExtensionHost()) return undefined;
+				// `args` is the object pi hands to `tool.execute` next — it is a
+				// fresh structuredClone of the persisted `toolCall.arguments`, made
+				// by `validateToolArguments`. Passing it by reference is what makes
+				// the documented mutation contract real: a handler that patches
+				// `event.input` in place patches the arguments the tool receives,
+				// and because the clone is not the stored call, the session log and
+				// the panel still show what the model actually asked for.
+				return community.toolCall({ type: "tool_call", toolName: toolCall.name, toolCallId: toolCall.id, input: args as Record<string, unknown> });
+			},
+			afterToolCall: async ({ toolCall, args, result, isError }) => {
+				if (!isCurrentExtensionHost()) return undefined;
+				return community.toolResult({
+					type: "tool_result", toolName: toolCall.name, toolCallId: toolCall.id,
+					input: args as Record<string, unknown>, content: result.content ?? [], details: result.details, isError, usage: result.usage,
+				});
+			},
 			// Fires after a turn's tool calls finish and before the next provider
 			// request (`runLoop`, at its `shouldStopAfterTurn` call) — pi's README
 			// pattern when the context has crossed the compaction line: end the
