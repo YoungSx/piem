@@ -47,6 +47,8 @@ import { ContextSession } from "../extensions/contextSession";
 import { captureExtensionEditor } from "../extensions/extensionEditor";
 import { navigateExtensionSummary } from "../session/extensionNavigation";
 import { configuredModels } from "../extensions/configuredModels";
+import { createExtensionConfigStore } from "../extensions/extensionConfigStore";
+import { clarifyModelProjection } from "../extensions/clarifyConfig";
 import { ExtensionModelSwitch } from "../extensions/modelSwitch";
 import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
@@ -2749,6 +2751,26 @@ export class ObsidianAgentService {
 		}
 	}
 
+	/**
+	 * Serializes one extension-driven settings write against every other one.
+	 *
+	 * Both `/clarify model` and an extension writing its own config file read the
+	 * settings object, change one field and save the file whole. Interleaved, the
+	 * later save would persist the earlier snapshot and silently drop a field, so
+	 * every such writer queues on {@link extensionSettingsTail}.
+	 *
+	 * Deliberately not cancelled by Stop or a superseded host: the value is
+	 * already staged in the live settings object by the time this runs, and
+	 * refusing to write it would leave memory and `data.json` disagreeing until
+	 * some unrelated save happened to flush it. Whether the *staging* was allowed
+	 * is decided synchronously, by the caller's own ownership check.
+	 */
+	private queueExtensionSettingsWrite<T>(work: () => Promise<T>): Promise<T> {
+		const task = this.extensionSettingsTail.then(work, work);
+		this.extensionSettingsTail = task.catch(() => undefined);
+		return task;
+	}
+
 	private async configureClarify(rt: SessionRuntime, args: string): Promise<boolean> {
 		const parts = args.trim().split(/\s+/).slice(1);
 		if (!parts.length) {
@@ -2758,7 +2780,7 @@ export class ObsidianAgentService {
 			return true;
 		}
 		const epoch = rt.stopEpoch;
-		const task = this.extensionSettingsTail.then(async () => {
+		return this.queueExtensionSettingsWrite(async () => {
 			if (rt.bookmarkClosing || rt.stopEpoch !== epoch) return false;
 			const settings = this.getSettings();
 			const reset = parts.length === 1 && parts[0]?.toLowerCase() === "reset";
@@ -2772,8 +2794,6 @@ export class ObsidianAgentService {
 			this.setNotice(rt, this.t().t("extensions.clarifyModelSaved"));
 			return true;
 		});
-		this.extensionSettingsTail = task.catch(() => undefined);
-		return task;
 	}
 
 	/** Sessions for this vault, newest first. */
@@ -4146,12 +4166,23 @@ export class ObsidianAgentService {
 					return extensionFetch(input, { ...init, signal: undefined });
 				},
 
-				readConfig: path => {
-					if (path !== "/extensions/config/clarify.json") return undefined;
-					const choiceId = this.getSettings().clarifyModelId;
-					const pinned = choiceId ? resolveModelChoice(this.getSettings(), choiceId) : undefined;
-					return pinned ? JSON.stringify({ provider: pinned.provider, model: pinned.id }) : undefined;
-				},
+				config: createExtensionConfigStore({
+					getData: () => this.getSettings().extensionConfig,
+					setData: data => {
+						assertOwner();
+						const settings = this.getSettings();
+						if (data) settings.extensionConfig = data; else delete settings.extensionConfig;
+					},
+					persist: () => this.persistSettings({ reconfigure: false }),
+					// Shares one tail with `/clarify model`, so two writers cannot
+					// interleave a read-modify-write over the same settings object.
+					queue: work => this.queueExtensionSettingsWrite(work),
+					projections: [clarifyModelProjection({
+						getSettings: () => this.getSettings(),
+						persist: () => this.persistSettings({ reconfigure: false }),
+						assertOwner,
+					})],
+				}),
 				onError: error => { if (!rt.bookmarkClosing && rt.communityHost === community) this.setError(rt, causeMessage(error)); },
 				activityChanged: busy => { if (rt.communityHost === community) { rt.extensionBusy = busy; this.notify(); } },
 			},
