@@ -3372,7 +3372,7 @@ export class ObsidianAgentService {
 		}
 		settings.activeModelId = modelId;
 		const rt = this.current();
-		if (rt && this.isBusy(rt)) {
+		if (rt && (this.isBusy(rt) || rt.configurationApplying)) {
 			rt.pendingConfiguration = { ...rt.pendingConfiguration, modelId };
 			await this.persistSettings({ reconfigure: false });
 			this.notify();
@@ -3412,14 +3412,8 @@ export class ObsidianAgentService {
 	 * {@link flushPendingConfiguration} applies it to the live agent when the run
 	 * settles.
 	 *
-	 * The session log is a separate question on that path, and the deferral does
-	 * not answer it. {@link applyRuntimeConfiguration} appends only when its clamp
-	 * *changes* the level, and the flush writes the pending level onto
-	 * `agent.state` first — so a level the model supports leaves the clamp nothing
-	 * to disagree with and nothing is recorded. Finishing that write is therefore
-	 * the deferring caller's job — what {@link setRuntimeThinkingLevel}'s return
-	 * value is for. The extension bridge does it; issue #252 owns doing it for
-	 * this selector too.
+	 * The applied level, its session entry and its extension event share one
+	 * path. A pending choice is neither recorded nor announced before it lands.
 	 *
 	 * Accepted edge: choosing a level mid-run and then starting a *new* session
 	 * before the run lands means the new session inherits the old recorded level,
@@ -3440,35 +3434,59 @@ export class ObsidianAgentService {
 	 * {@link renameRuntimeSession} documents: a background conversation's
 	 * extension must move its own level, never the focused chat's.
 	 *
-	 * Deliberately not a clamp site. The level asked for is stored as asked, and
-	 * the narrowing against model capability stays in
-	 * {@link applyRuntimeConfiguration}, so the bridge and the panel cannot
-	 * disagree about what "set high on a model without it" records.
-	 *
-	 * Returns whether the level was *deferred* — true when the session log has
-	 * not been told and the caller still owes it an entry. Only the immediate
-	 * path can write here; on the deferred path the level does not exist yet as
-	 * anything but a pending record, and the run in flight is exactly what must
-	 * not have its reasoning budget rewritten under it.
+	 * Keep the requested level pending until the final model is known. Comparing
+	 * with the pending choice first also lets a user undo a mid-run selection by
+	 * selecting the still-running level again.
 	 */
-	private async setRuntimeThinkingLevel(rt: SessionRuntime, level: ThinkingLevel): Promise<boolean> {
+	private async setRuntimeThinkingLevel(rt: SessionRuntime, level: ThinkingLevel): Promise<void> {
 		const agent = rt.agent;
-		if (!agent || agent.state.thinkingLevel === level) {
-			return false;
-		}
-		if (this.isBusy(rt)) {
+		if (!agent) return;
+		if (this.isBusy(rt) || rt.configurationApplying) {
+			if ((rt.pendingConfiguration?.thinkingLevel ?? agent.state.thinkingLevel) === level) return;
 			rt.pendingConfiguration = { ...rt.pendingConfiguration, thinkingLevel: level };
 			this.notify();
-			return true;
+			return;
 		}
-		agent.state.thinkingLevel = level;
-		if (this.sessionManager.isLoaded(rt.sessionPath)) {
-			rt.sessionOperations += 1;
-			try { await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, level, rt.activeLane); }
-			finally { rt.sessionOperations -= 1; }
-		}
+		rt.configurationApplying = true;
+		try { await this.applyRuntimeThinkingLevel(rt, level); }
+		finally { rt.configurationApplying = false; }
 		this.notify();
-		return false;
+		await this.flushPendingConfiguration(rt);
+	}
+
+	/** The same effective value goes to the agent, session log and observers. */
+	private async applyRuntimeThinkingLevel(rt: SessionRuntime, requested: ThinkingLevel): Promise<void> {
+		const agent = rt.agent;
+		if (!agent || !this.sessionManager.isLoaded(rt.sessionPath)) return;
+		const level = clampThinkingLevel(agent.state.model, requested);
+		const previousLevel = agent.state.thinkingLevel;
+		if (level === previousLevel) return;
+		const host = rt.communityHost;
+		rt.sessionOperations += 1;
+		agent.state.thinkingLevel = level;
+		try {
+			await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, level, rt.activeLane);
+		} catch (error) {
+			if (rt.agent === agent && rt.communityHost === host && !rt.bookmarkClosing) {
+				if (agent.state.thinkingLevel === level) agent.state.thinkingLevel = previousLevel;
+				this.setError(rt, causeMessage(error));
+			}
+			throw error;
+		} finally { rt.sessionOperations -= 1; }
+		if (rt.agent === agent && rt.communityHost === host) await this.emitThinkingLevelChange(rt, previousLevel, level);
+	}
+
+	/** An observer failure cannot undo a level that was already saved. */
+	private async emitThinkingLevelChange(rt: SessionRuntime, previousLevel: ThinkingLevel, level: ThinkingLevel): Promise<void> {
+		const host = rt.communityHost;
+		if (!host || level === previousLevel || rt.bookmarkClosing) return;
+		try { await host.emit({ type: "thinking_level_select", level, previousLevel }); }
+		catch (error) {
+			if (!(error instanceof Error && error.name === "AbortError") && rt.communityHost === host && !rt.bookmarkClosing) {
+				this.setError(rt, causeMessage(error));
+				this.log.error("Extension thinking level handler failed", () => ({ error: causeMessage(error) }));
+			}
+		}
 	}
 
 	async refreshConfiguration(): Promise<void> {
@@ -3505,13 +3523,20 @@ export class ObsidianAgentService {
 	 * clamp with its session-log entry, the tool rebuild, the skill reload, and
 	 * the configuration rows the session file records.
 	 */
-	private async reconfigureRuntime(rt: SessionRuntime): Promise<void> {
+	private async reconfigureRuntime(rt: SessionRuntime, thinkingLevel?: ThinkingLevel): Promise<void> {
+		if (rt.configurationApplying) {
+			rt.pendingConfiguration = { ...rt.pendingConfiguration, modelId: this.getSettings().activeModelId,
+				...(thinkingLevel !== undefined ? { thinkingLevel } : {}) };
+			return;
+		}
+		rt.configurationApplying = true;
 		rt.sessionOperations += 1;
-		try { await this.applyRuntimeConfiguration(rt); }
-		finally { rt.sessionOperations -= 1; }
+		try { await this.applyRuntimeConfiguration(rt, thinkingLevel); }
+		finally { rt.sessionOperations -= 1; rt.configurationApplying = false; }
+		await this.flushPendingConfiguration(rt);
 	}
 
-	private async applyRuntimeConfiguration(rt: SessionRuntime): Promise<void> {
+	private async applyRuntimeConfiguration(rt: SessionRuntime, thinkingLevel?: ThinkingLevel): Promise<void> {
 		const agent = rt.agent;
 		if (!agent || !this.sessionManager.isLoaded(rt.sessionPath)) {
 			return;
@@ -3519,15 +3544,9 @@ export class ObsidianAgentService {
 		const defaults = this.getSessionDefaults();
 		const model = getSelectedModel(this.getSettings());
 		agent.state.model = model;
-		// The level belongs to the session and is left alone here. Only a model
-		// that can no longer express it forces a rewrite, and the session file is
-		// told — an agent state silently diverging from the recorded level would
-		// resurrect the old bug on the next reload.
-		const clamped = clampThinkingLevel(model, agent.state.thinkingLevel);
-		if (clamped !== agent.state.thinkingLevel) {
-			agent.state.thinkingLevel = clamped;
-			await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, clamped, rt.activeLane);
-		}
+		// Preserve the session's level unless a pending selection or the newly
+		// selected model changes it. One apply saves and announces that result.
+		await this.applyRuntimeThinkingLevel(rt, thinkingLevel ?? agent.state.thinkingLevel);
 		agent.state.tools = [
 			...this.buildTools(rt),
 			// Connect runs here, on the same settings-save path that rebuilt the
@@ -3552,7 +3571,7 @@ export class ObsidianAgentService {
 	}
 
 	/**
-	 * Whether anything this runtime owns is in flight. Five flags, not one: a
+	 * Whether anything this runtime owns is in flight. Streaming is not enough: a
 	 * between-turns compaction is a real LLM call, a retry's branch summary is
 	 * another, and `rt.compaction` is the single-flight promise those checks
 	 * resolve through. Every mid-run deferral and every flush guard reads this
@@ -3575,15 +3594,9 @@ export class ObsidianAgentService {
 	 * for the same settle) cannot double-apply, and a change made between the
 	 * take and the reconfigure simply becomes the next pending record.
 	 *
-	 * The level is written onto the agent state *before*
-	 * {@link reconfigureRuntime} runs: the reconfigure's existing clamp reads
-	 * `agent.state.thinkingLevel` against the model now in force, so an
-	 * unsupported level for the pending model is clamped and logged there.
-	 *
-	 * A level the clamp leaves alone is *not* logged by that path, and this method
-	 * does not repair it: the deferred write is the caller's to finish, which is
-	 * what {@link setRuntimeThinkingLevel}'s return value is for. Issue #252 owns
-	 * the panel selector's half of that.
+	 * The requested level goes through the same apply path as an idle selection,
+	 * after the model has been selected. This records and announces only the
+	 * final effective level, never a temporary unsupported value.
 	 *
 	 * Refuses while still busy rather than throwing: the flush runs from settle
 	 * paths, and a run that lands into another compaction (mid-run compact
@@ -3594,15 +3607,12 @@ export class ObsidianAgentService {
 		if (!rt.pendingConfiguration) {
 			return;
 		}
-		if (!rt.agent || this.isBusy(rt)) {
+		if (!rt.agent || this.isBusy(rt) || rt.configurationApplying) {
 			return;
 		}
 		const pending = rt.pendingConfiguration;
 		rt.pendingConfiguration = null;
-		if (pending.thinkingLevel !== undefined && rt.agent.state.thinkingLevel !== pending.thinkingLevel) {
-			rt.agent.state.thinkingLevel = pending.thinkingLevel;
-		}
-		await this.reconfigureRuntime(rt);
+		await this.reconfigureRuntime(rt, pending.thinkingLevel);
 	}
 
 	dispose(): void {
@@ -4320,6 +4330,9 @@ export class ObsidianAgentService {
 				const switched = await this.extensionModelSwitch.switch({
 					runtime: rt, agent, isCurrent: () => this.runtimes.get(rt.sessionPath) === rt,
 					refresh: () => this.refreshSessionInfo(rt),
+					thinkingLevelChanged: async (previousLevel, level) => {
+						if (isCurrentExtensionHost() && rt.agent === agent) await this.emitThinkingLevelChange(rt, previousLevel, level);
+					},
 				}, requestedModel);
 				if (switched) await community.syncModel();
 				return switched;
@@ -4346,30 +4359,7 @@ export class ObsidianAgentService {
 			 */
 			setThinkingLevel: async level => {
 				assertOwner();
-				const deferred = await this.setRuntimeThinkingLevel(rt, level);
-				assertOwner();
-				/*
-				 * The deferral is unavoidable here and the append is therefore ours.
-				 * An extension only runs inside its own conversation's turn or
-				 * command, so `extensionCommand`/`extensionBusy` — both part of
-				 * {@link isBusy} — are true by definition: this call *always* takes
-				 * the pending path, and the write the non-deferred path does is never
-				 * reached. Left at that, the live agent honours the level and the
-				 * session file never hears about it, so a reload replays the old one.
-				 *
-				 * Clamped against the model now in force, matching
-				 * {@link applyRuntimeConfiguration}, and appended only when the clamp
-				 * changes nothing — which is exactly the case that method's own append
-				 * skips. When the clamp *does* move the level, the settle's
-				 * reconfigure records the narrowed value itself, and writing here too
-				 * would put the same entry in the log twice.
-				 */
-				if (!deferred) return;
-				const clamped = clampThinkingLevel(getSelectedModel(this.getSettings()), level);
-				if (clamped !== level || !this.sessionManager.isLoaded(rt.sessionPath)) return;
-				rt.sessionOperations += 1;
-				try { await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, clamped, rt.activeLane); }
-				finally { rt.sessionOperations -= 1; }
+				await this.setRuntimeThinkingLevel(rt, level);
 				assertOwner();
 			},
 			setSessionName: async name => {

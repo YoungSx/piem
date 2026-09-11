@@ -11,7 +11,7 @@ export const SUPPORTED_EXTENSION_EVENTS = new Set([
 	// hooks rather than this class, because pi's runner gives them dedicated
 	// emitters that the generic emit() deliberately excludes.
 	"tool_call", "tool_result",
-	"input", "model_select", "session_tree", "session_compact_failed",
+	"input", "model_select", "thinking_level_select", "session_tree", "session_compact_failed",
 ]);
 
 /** The native agent emits fewer fields than Pi's extension-facing event types. */
