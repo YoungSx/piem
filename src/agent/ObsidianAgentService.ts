@@ -2576,11 +2576,12 @@ export class ObsidianAgentService {
 			return;
 		}
 		this.cancelSessionOpen();
+		const sequence = this.sessionOpenSequence;
 		// A session with no turns and nothing running is already the blank sheet
 		// a click is asking for: swapping in another one would abandon the sheet
 		// for nothing and spend a runtime on it. Double-clicks that outrun the
 		// first swap fall through to the in-flight latch above. A run in flight
-		// is *not* blank — "new session" mid-run still means abort-and-leave.
+		// is not blank; opening a fresh chat keeps that run in the background.
 		// `force` bypasses the blank check for the delete-the-last-session
 		// fallback, where the agent still shows the deleted session's state and
 		// must not count as content.
@@ -2595,6 +2596,8 @@ export class ObsidianAgentService {
 		}
 		this.newSessionInFlight = true;
 		try {
+			if (!await this.canChangeSession(previous, { type: "session_before_switch", reason: "new" })) return;
+			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) return;
 			// The session being left keeps its runtime and its run (issue #235):
 			// a new chat abandons it for the panel but does not tear it down.
 			// Suggestions belong to the conversation that prompted them; a fresh chat
@@ -2605,6 +2608,7 @@ export class ObsidianAgentService {
 			// start from a value they never chose. Clamped to the model the new
 			// session will run on, since the previous one may have run another.
 			const inherited = await this.sessionManager.readLastSessionThinkingLevel();
+			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) return;
 			const seed = clampThinkingLevel(getSelectedModel(this.getSettings()), inherited ?? DEFAULT_THINKING_LEVEL);
 			// The sheet is held in memory only: the first message is what makes a
 			// session durable (`beginRunOperation` materializes it), so a sheet
@@ -2617,11 +2621,13 @@ export class ObsidianAgentService {
 				provider: seedModel.provider,
 				modelId: seedModel.id,
 				thinkingLevel: seed,
-			});
-			this.currentPath = info.path;
+			}, false);
+			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) {
+				await this.sessionManager.deleteSession(info.path);
+				return;
+			}
 			const rt = this.runtimeFor(info.path);
 			rt.sessionInfo = info;
-			this.sessionInfo = info;
 			rt.messageEntryIds = new WeakMap<object, string>();
 			// A brand-new session has no ledger and no stranded reply; any offer the
 			// session just left was its own.
@@ -2633,13 +2639,40 @@ export class ObsidianAgentService {
 			// Pins and a dismissed follow belong to the conversation that collected them;
 			// a fresh runtime starts clean (the old `contextRefs.reset()`), while the
 			// workspace's active note is left alone because it describes the workspace.
-			await this.replaceAgent(rt, [], seed);
+			try { await this.replaceAgent(rt, [], seed); }
+			catch (error) {
+				this.removeRuntime(rt);
+				await this.sessionManager.deleteSession(info.path);
+				throw error;
+			}
+			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) {
+				this.removeRuntime(rt);
+				await this.sessionManager.deleteSession(info.path);
+				return;
+			}
+			this.sessionManager.focusSession(info.path);
+			this.currentPath = info.path;
+			this.sessionInfo = info;
 			rt.panelError = undefined;
 			rt.sessionRevision += 1;
 			this.notify();
 		} finally {
 			this.newSessionInFlight = false;
 		}
+	}
+
+	/** The outgoing runtime owns the veto, even if the panel moves while it awaits input. */
+	private async canChangeSession(rt: SessionRuntime | null, event: Parameters<CommunityHost["beforeSessionChange"]>[0]): Promise<boolean> {
+		const host = rt?.communityHost;
+		if (!rt || !host) return true;
+		const epoch = rt.stopEpoch;
+		try {
+			if (await host.beforeSessionChange(event)) return false;
+		} catch (error) {
+			if (!this.disposed && this.runtimes.get(rt.sessionPath) === rt && rt.stopEpoch === epoch) this.setError(rt, causeMessage(error));
+			return false;
+		}
+		return !this.disposed && !rt.bookmarkClosing && this.runtimes.get(rt.sessionPath) === rt && rt.communityHost === host && rt.stopEpoch === epoch;
 	}
 
 	/**
@@ -2654,7 +2687,7 @@ export class ObsidianAgentService {
 	 * session picks up exactly where this one shows, and continuing there
 	 * appends to the reply rather than redoing the question.
 	 *
-	 * Adoption reuses {@link openSession}'s sequence by calling it on the copy's
+	 * Adoption reuses {@link selectSession}'s sequence on the copy's
 	 * path: the copy is already hydrated, so the idempotent load branch just
 	 * moves focus, and every per-session rebuild — transcript, tool mapping,
 	 * compaction state, configuration, interrupted-run sweep — happens once, in
@@ -2669,7 +2702,7 @@ export class ObsidianAgentService {
 		if (this.pendingSessionOpen || this.disposed) return false;
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing) {
+		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing || rt.sessionOperations) {
 			return false;
 		}
 		const replyMessage = agent.state.messages[index];
@@ -2678,15 +2711,22 @@ export class ObsidianAgentService {
 			return false;
 		}
 		let forkedPath: string;
+		const sequence = this.sessionOpenSequence;
+		const epoch = rt.stopEpoch;
+		const isCurrent = () => !this.disposed && this.current() === rt && rt.agent === agent && rt.stopEpoch === epoch && this.sessionOpenSequence === sequence;
 		rt.sessionOperations += 1;
 		try {
+			if (!await this.canChangeSession(rt, { type: "session_before_fork", entryId: replyEntryId, position: "at" }) || !isCurrent()) return false;
 			forkedPath = (await this.sessionManager.forkSession(rt.sessionPath, replyEntryId)).path;
 		} catch (error) {
-			this.toast("chat.forkFailed", error);
+			if (isCurrent()) this.toast("chat.forkFailed", error);
 			return false;
 		} finally { rt.sessionOperations -= 1; }
-		await this.openSession(forkedPath);
-		return true;
+		if (!isCurrent()) return false;
+		// Pi forks use before_fork only: vetoing a later before_switch would leave
+		// an unwanted copied file behind after the operation was already approved.
+		await this.selectSession(forkedPath, false);
+		return this.currentPath === forkedPath;
 	}
 
 	/** Bookmark commands capture their owner before a modal or any other await can change focus. */
@@ -2895,6 +2935,10 @@ export class ObsidianAgentService {
 	 * switched away from and back to (issue #235).
 	 */
 	openSession(path: string): Promise<void> {
+		return this.selectSession(path, true);
+	}
+
+	private selectSession(path: string, beforeSwitch: boolean): Promise<void> {
 		if (this.disposed) return Promise.resolve();
 		if (this.pendingSessionOpen?.path === path) return this.pendingSessionOpen.promise;
 		if (this.currentPath === path && this.current()?.agent) {
@@ -2908,9 +2952,7 @@ export class ObsidianAgentService {
 		// Superseded requests are skipped before work and cannot move focus after it.
 		// A ready runtime needs no construction, so it must not wait behind an
 		// unrelated cold read that the user has just stopped waiting for.
-		const opening = (isWarm ? Promise.resolve() : this.sessionOpenQueue).then(() => this.openSessionRequest(path, sequence));
-		// A cleanup/listener failure must not poison later navigation requests.
-		if (!isWarm) this.sessionOpenQueue = opening.catch(() => undefined);
+		const opening = this.approveSessionOpen(path, sequence, this.current(), beforeSwitch, isWarm);
 		const hadPendingSelection = this.pendingSessionOpen !== null;
 		this.pendingSessionOpen = { path, promise: opening };
 		// Before the first await: the panel can announce the wait and stop sends
@@ -2920,6 +2962,26 @@ export class ObsidianAgentService {
 		// before the requested chat. Keep the send guard synchronous either way.
 		if (hadPendingSelection || !isWarm) this.notify();
 		return opening;
+	}
+
+	/** Keep extension dialogs outside the disk queue so a newer choice can supersede them. */
+	private async approveSessionOpen(path: string, sequence: number, previous: SessionRuntime | null, beforeSwitch: boolean, isWarm: boolean): Promise<void> {
+		const isCurrent = () => !this.disposed && this.sessionOpenSequence === sequence;
+		try {
+			if (beforeSwitch && !await this.canChangeSession(previous, { type: "session_before_switch", reason: "resume", targetSessionFile: path })) return;
+			if (!isCurrent() || this.current() !== previous) return;
+			const opening = (isWarm ? Promise.resolve() : this.sessionOpenQueue).then(() => this.openSessionRequest(path, sequence));
+			// Preserve the original serialization of cold runtime construction.
+			if (!isWarm) this.sessionOpenQueue = opening.catch(() => undefined);
+			await opening;
+		} catch (error) {
+			if (isCurrent()) this.toast("chat.sessionOpenFailed", error);
+		} finally {
+			if (isCurrent() && this.pendingSessionOpen) {
+				this.pendingSessionOpen = null;
+				this.notify();
+			}
+		}
 	}
 
 	private cancelSessionOpen(): void {
