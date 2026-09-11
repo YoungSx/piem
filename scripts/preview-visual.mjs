@@ -1286,7 +1286,7 @@ SCENARIOS["chat-ask"] = async () => {
 						{ label: "Merge them into a new note", description: "Both sets of highlights, neither original path." },
 					],
 				},
-			]);
+			], undefined, service.getSnapshot().session?.path);
 			await settle(() => document.querySelectorAll(".piem-ask-action").length >= 3);
 		},
 	});
@@ -1325,7 +1325,7 @@ SCENARIOS["chat-ask-multi"] = async () => {
 						{ label: "Backlinks", description: "Rewrites the six notes that point at the old path." },
 					],
 				},
-			]);
+			], undefined, service.getSnapshot().session?.path);
 			await settle(() => document.querySelectorAll(".piem-ask-option").length >= 5);
 		},
 	});

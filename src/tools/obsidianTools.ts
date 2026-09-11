@@ -71,6 +71,8 @@ export interface ObsidianToolDeps {
 	 * would block its own turn forever, which is worse than not offering it.
 	 */
 	askUserBroker?: AskUserBroker;
+	/** Originating conversation, bound when these tools are built. */
+	ownerId?: string;
 }
 
 export function createObsidianTools(
@@ -109,10 +111,10 @@ export function createObsidianTools(
 		 *
 		 * `ask_user` used to resolve the interface language here, because it owned a
 		 * dialog and therefore owned user-facing copy. It renders through the panel's
-		 * React tree now, which reads the language from its own context, so the only
-		 * thing it needs from this layer is somewhere to put the question.
+		 * React tree now, which reads the language from its own context. This layer
+		 * supplies the broker and the conversation the question belongs to.
 		 */
-		...(deps.askUserBroker ? [createAskUserTool(app, deps.askUserBroker)] : []),
+		...(deps.askUserBroker ? [createAskUserTool(app, deps.askUserBroker, deps.ownerId)] : []),
 		createWebFetchTool(),
 	];
 	if (deps.getSkills) {

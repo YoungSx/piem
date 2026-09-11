@@ -1549,7 +1549,7 @@ describe("MessageList ask_user", () => {
 	});
 
 	it("renders the pending question at the tail, and only with somewhere to send it", async () => {
-		const request = { id: "ask-0", shell: "panel" as const, questions: [{ question: "Where?", header: "Where to file", options: [{ label: "Inbox" }, { label: "Archive" }] }] };
+		const request = { id: "ask-0", ownerId: "chat-a", shell: "panel" as const, questions: [{ question: "Where?", header: "Where to file", options: [{ label: "Inbox" }, { label: "Archive" }] }] };
 
 		const unwired = renderMessages([userMessage("Tidy up")], { pendingQuestion: request });
 		await flushRender();
