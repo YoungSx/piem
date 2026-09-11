@@ -99,7 +99,8 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     so the bytes are the feature. No new dependency; the storage sits in the
  *     same module tree the durable session already pulls in.
  * 15. Generic scoped dependency graphs, provider/compaction events and bounded
- *     background resources measured 2,002,311 B including license notices.
+ *     background resources measured 2,002,780 B including license notices
+ *     after synchronizing the default branch.
  *     The ceiling follows to 1.91 MiB. No OTel extension or SDK is bundled;
  *     unused Buffer and crypto implementations remain tree-shaken out.
  *
