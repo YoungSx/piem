@@ -18,6 +18,7 @@ import {
 	type AgentEvent,
 	type AgentMessage,
 	type AgentTool,
+	type Entry,
 	type ExecutionEnv,
 	type OperationStartedRecord,
 	type ShouldStopAfterTurnContext,
@@ -40,7 +41,9 @@ import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
 import { hasClarifyMarker } from "../extensions/communityFactories.mjs";
-import type { StaticExtension } from "../extensions/extensionHost";
+import type { CommunityExtension } from "../extensions/communityHost";
+import { extensionCompactionEntry } from "../extensions/extensionEvents";
+import { createExtensionRequestPool } from "../extensions/extensionResources";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 import { extensionSessionView } from "./extensionSessionView";
 import { ContextSession } from "../extensions/contextSession";
@@ -645,7 +648,7 @@ export interface ObsidianAgentServiceOptions {
 	 */
 	credentials?: CredentialStore;
 	/** Statically supplied factories; production defaults to the bundled extensions. */
-	extensionFactories?: readonly StaticExtension[];
+	extensionFactories?: readonly CommunityExtension[];
 }
 
 interface CompactionRunOptions {
@@ -654,6 +657,9 @@ interface CompactionRunOptions {
 	/** Extension actions must release their request before cancelled observers acquire a fresh operation. */
 	waitForObservers?: boolean;
 }
+
+type SavedCompactionOutcome = Exclude<CompactionOutcome, { status: "compacted" }>
+	| (Extract<CompactionOutcome, { status: "compacted" }> & { entryId: string });
 
 export class ObsidianAgentService {
 	private readonly app: App;
@@ -671,7 +677,13 @@ export class ObsidianAgentService {
 	private readonly getMountedExternalToolsFn: (() => readonly AgentTool[]) | undefined;
 	/** See {@link ObsidianAgentServiceOptions.credentials}. */
 	private readonly credentials: CredentialStore | undefined;
-	private readonly extensionFactories: readonly StaticExtension[] | undefined;
+	private readonly extensionFactories: readonly CommunityExtension[] | undefined;
+	/** Shared across conversation replacements; late native IO retains its slot. */
+	private readonly extensionBackgroundFetch = (() => {
+		const fetch = createObsidianRequestUrlFetch();
+		const physicalRequestSignal = new AbortController().signal;
+		return createExtensionRequestPool((input, init) => fetch(input, { ...init, signal: physicalRequestSignal }));
+	})();
 	private readonly listeners = new Set<SnapshotListener>();
 	/**
 	 * Single vault execution env shared by the file tools and the prompt-template
@@ -4331,6 +4343,7 @@ export class ObsidianAgentService {
 			logger: this.log,
 			prepare: async () => { assertOwner(); await view.refresh(); await contextSession.refresh(); },
 			platform: {
+				backgroundFetch: this.extensionBackgroundFetch,
 				fetch: (input, init) => {
 					assertOwner();
 					// The platform owns cancellation and tracks the actual request promise.
@@ -4503,12 +4516,30 @@ export class ObsidianAgentService {
 			if (rt.communityHost === community) rt.communityHost = undefined;
 			throw error;
 		}
+		const stream = this.resolveStreamFn();
 		const agent: Agent = new Agent({
 			// The custom endpoint rides the same transport as builtin providers;
 			// only the provider registration differs. Resolved per request rather
 			// than captured here, so an endpoint configured after this agent was
 			// built is still reachable — see `resolveStreamFn`.
-			streamFn: withTurnRetry(this.resolveStreamFn(), {
+			streamFn: withTurnRetry((requestModel, context, options) => stream(requestModel, context, {
+				...options,
+				// Native provider callbacks, bound to this request's signal. A late
+				// callback must not adopt a new run's signal after Stop and resend.
+				// Only serialized body/response metadata cross into extensions.
+				onPayload: async payload => {
+					assertOwner();
+					if (options?.signal?.aborted) throw new DOMException("Provider request was cancelled.", "AbortError");
+					const replacement = await community.beforeProviderRequest(payload);
+					assertOwner();
+					if (options?.signal?.aborted) throw new DOMException("Provider request was cancelled.", "AbortError");
+					return replacement;
+				},
+				onResponse: async response => {
+					if (!isCurrentExtensionHost() || options?.signal?.aborted) return;
+					await community.afterProviderResponse(response);
+				},
+			}), {
 				// Live-read per call: the wrapper outlives any one settings revision,
 				// so a budget changed in the panel reaches the next turn rather than
 				// the next reload — the same contract `resolveStreamFn` holds itself to.
@@ -5225,7 +5256,7 @@ export class ObsidianAgentService {
 	 * set of success side effects.
 	 *
 	 * Failures are surfaced, not thrown. Observers run after this attempt releases
-	 * its single-flight slot, so a failure handler can retry without awaiting itself.
+	 * its single-flight slot, so a handler can compact again without awaiting itself.
 	 */
 	private async runExclusiveCompaction(rt: SessionRuntime, agent: Agent, options: CompactionRunOptions = {}): Promise<CompactionOutcome> {
 		if (!rt.compaction) {
@@ -5241,13 +5272,13 @@ export class ObsidianAgentService {
 			const attempt = { result, notified: Promise.resolve() };
 			rt.compaction = attempt;
 			attempt.notified = result.then(async outcome => {
-				if (outcome.status !== "failed") return;
+				if (outcome.status === "skipped") return;
 				// Stop retired the platform operation that launched ctx.compact.
 				// Its action promise awaits result only, so draining here cannot
 				// wait on this observer. Old callbacks stay cancelled; the event
 				// receives its own fresh scope after that operation has released.
 				if (controller.signal.aborted) await host?.drain();
-				if (rt.communityHost === host) await this.reportCompactionFailure(rt, agent, options.force === true, outcome.message, outcome.aborted);
+				if (rt.communityHost === host) await this.reportCompactionOutcome(rt, agent, options.force === true, outcome);
 			}).catch(error => { this.log.debug("Compaction observer did not settle", () => ({ error: causeMessage(error) })); });
 		}
 		const attempt = rt.compaction;
@@ -5256,13 +5287,13 @@ export class ObsidianAgentService {
 		return outcome;
 	}
 
-	private async trackCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<CompactionOutcome> {
+	private async trackCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<SavedCompactionOutcome> {
 		// The anchor is read here rather than in `performCompaction` because the row
 		// has to appear at the tail the reader is looking at *now* — a prompt's
 		// pre-flight tidy runs before the user's own message joins the transcript.
 		rt.compactionEvent = { state: "running", anchor: agent.state.messages.length };
 		try {
-			let outcome: CompactionOutcome;
+			let outcome: SavedCompactionOutcome;
 			try {
 				this.notify();
 				outcome = await this.performCompaction(rt, agent, signal, force);
@@ -5288,7 +5319,7 @@ export class ObsidianAgentService {
 		}
 	}
 
-	private async performCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<CompactionOutcome> {
+	private async performCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<SavedCompactionOutcome> {
 		const model = getSelectedModel(this.getSettings());
 		const outcome = await compactIfNeeded({
 			messages: agent.state.messages,
@@ -5324,6 +5355,7 @@ export class ObsidianAgentService {
 		}
 
 		if (outcome.status !== "compacted") return outcome;
+		if (signal.aborted) return { status: "failed", message: "Compaction was cancelled.", aborted: true };
 
 		// The meter is blind until the next reply records: every assistant usage the
 		// transcript now holds reports the pre-compaction total, so the turn
@@ -5331,29 +5363,39 @@ export class ObsidianAgentService {
 		// reply — which is exactly what the `"awaiting"` latch set above asks
 		// the hook to do.
 		this.recordOverheadUsage(rt, outcome.result.usage);
-		await this.sessionManager.appendCompactionFor(rt.sessionPath, outcome.result, rt.activeLane);
+		const entryId = await this.sessionManager.appendCompactionFor(rt.sessionPath, outcome.result, rt.activeLane);
 		if (rt.agent !== agent) return { status: "skipped" };
 		agent.state.messages = outcome.messages;
 		rt.lastCompaction = outcome.result;
 		await this.refreshSessionInfo(rt);
 		this.notify();
-		return outcome;
+		return { ...outcome, entryId };
 	}
 
 	/** A failed observer cannot turn a best-effort tidy into a failed prompt. */
-	private async reportCompactionFailure(rt: SessionRuntime, agent: Agent, force: boolean, message: string, aborted: boolean): Promise<void> {
+	private async reportCompactionOutcome(rt: SessionRuntime, agent: Agent, force: boolean, outcome: Exclude<SavedCompactionOutcome, { status: "skipped" }>): Promise<void> {
 		if (this.disposed || rt.agent !== agent || rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) return;
 		const host = rt.communityHost;
+		const aborted = outcome.status === "failed" && outcome.aborted;
 		try {
+			let entry: Extract<Entry, { type: "compaction" }> | undefined;
+			if (outcome.status === "compacted") {
+				const saved = await this.sessionManager.getSessionFor(rt.sessionPath).getEntry(outcome.entryId);
+				if (saved?.type !== "compaction") throw new Error("Saved compaction entry is missing.");
+				entry = saved;
+				if (this.disposed || rt.agent !== agent || rt.communityHost !== host || rt.bookmarkClosing) return;
+			}
 			await host?.emit({
-				type: "session_compact_failed", reason: force ? "manual" : "threshold", aborted,
-				...(aborted ? {} : { errorMessage: message }),
+				...(outcome.status === "compacted"
+					? { type: "session_compact" as const, compactionEntry: extensionCompactionEntry(entry!) }
+					: { type: "session_compact_failed" as const, aborted, ...(aborted ? {} : { errorMessage: outcome.message }) }),
+				reason: force ? "manual" : "threshold",
 				// Piem has no overflow-retry path or extension-supplied summary.
 				willRetry: false, fromExtension: false,
 			}, true);
 		} catch (error) {
 			if (rt.agent === agent && rt.communityHost === host && !aborted) this.setError(rt, causeMessage(error));
-			this.log.debug("Extension compaction failure handler failed", () => ({ error: causeMessage(error) }));
+			this.log.debug("Extension compaction handler failed", () => ({ error: causeMessage(error) }));
 		}
 	}
 

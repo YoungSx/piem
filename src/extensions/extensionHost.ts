@@ -1,5 +1,5 @@
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Model } from "@earendil-works/pi-ai";
+import type { ImageContent, Model, ProviderResponse } from "@earendil-works/pi-ai";
 import type { ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
@@ -11,7 +11,7 @@ import { unavailable } from "./node/unavailable";
 import { ExtensionLifetime, abortable, type ExtensionScope } from "./extensionLifetime";
 import { bindScopedContexts } from "./extensionContext";
 import { ExtensionAgentEvents, SUPPORTED_EXTENSION_EVENTS } from "./extensionEvents";
-import { createExtensionModels, type ExtensionComplete } from "./extensionModels";
+import { createExtensionModels, extensionModelSnapshot, type ExtensionComplete } from "./extensionModels";
 import { createExtensionSession } from "./extensionSession";
 import { commandInfoList, toolInfoList, type CommandEntry } from "./extensionRegistry";
 import { createNativeExtensionUI } from "./nativeExtensionUI";
@@ -29,6 +29,8 @@ export interface ExtensionEntry {
 export interface StaticExtension {
 	id: string;
 	factory: ExtensionFactory;
+	/** Release factory-owned resources immediately if loading or validation fails. */
+	onLoadFailure?: () => void;
 }
 export interface ExtensionHostCallbacks {
 	getEntries(): ExtensionEntry[];
@@ -137,7 +139,7 @@ export interface ExtensionLoadReport {
  *
  * - An unsupported **event** still skips the extension. A handler that never
  *   runs is a behavioural hole the extension cannot detect: it registered for
- *   `before_provider_request` because it intends to rewrite the request, and
+ *   `before_provider_headers` because it intends to rewrite the request, and
  *   silently not calling it makes the extension wrong rather than reduced.
  * - **Flags** keep Pi's registered defaults; an unknown flag returns undefined.
  *   Obsidian has no command-line arguments to override those defaults.
@@ -224,6 +226,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 	const lifetime = new ExtensionLifetime();
 	let disposed = false;
 	let uiAdapter: ExtensionUIAdapter | undefined;
+	const shutdownReads: Partial<ExtensionHostCallbacks> = {};
 	const assertActive = () => { lifetime.assertActive(); if (disposed) throw new Error("Extension host was disposed."); };
 	const requireCallback = <K extends keyof ExtensionHostCallbacks>(name: K): NonNullable<ExtensionHostCallbacks[K]> => {
 		assertActive();
@@ -233,7 +236,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 	};
 	const readCallback = <K extends keyof ExtensionHostCallbacks>(name: K): NonNullable<ExtensionHostCallbacks[K]> => {
 		lifetime.assertActive();
-		return callbacks[name] ?? unavailable(`host.${name}`);
+		return (disposed ? shutdownReads[name] : callbacks[name]) ?? unavailable(`host.${name}`);
 	};
 	try {
 		const extensions: Extension[] = [];
@@ -242,7 +245,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const commands = new Set<string>();
 		const tools = new Set<string>();
 		const shortcutKeys = new Set<string>();
-		for (const { id, factory } of factories) {
+		for (const { id, factory, onLoadFailure } of factories) {
 			// A duplicate id is a defect in *our* static list, not a collision
 			// between two independent packages: the ids are literals in
 			// `communityHost.ts`, one per audited factory. Skipping the second
@@ -295,11 +298,49 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				// The extension is out. Release everything it took so the host it
 				// is not part of cannot be affected by it.
 				claimed.release();
+				onLoadFailure?.();
 				reports.push({ id, error: error instanceof Error ? error : new Error(String(error)), ignored: [] });
 			}
 		}
+		const hasShutdown = extensions.some(extension => extension.handlers.has("session_shutdown"));
+		/**
+		 * The owning service closes before it dispatches shutdown. Remember only
+		 * safe metadata while it is still readable; never weaken owner checks or
+		 * retain auth headers. No history scan, and no work without a subscriber.
+		 */
+		const rememberShutdown = (): void => {
+			if (!hasShutdown || disposed) return;
+			const remember = <T>(read: (() => T) | undefined, previous: (() => T) | undefined, project: (value: T) => T = structuredClone): (() => T) | undefined => {
+				if (!read) return undefined;
+				try {
+					const value = project(read());
+					return () => structuredClone(value);
+				} catch {
+					// Optional metadata can be unavailable during startup/cancellation.
+					// Keep its last valid value; ordinary reads still expose any failure.
+					return previous;
+				}
+			};
+			Object.assign(shutdownReads, {
+				getSessionId: remember(callbacks.getSessionId?.bind(callbacks), shutdownReads.getSessionId),
+				getSessionFile: remember(callbacks.getSessionFile?.bind(callbacks), shutdownReads.getSessionFile),
+				getSessionName: remember(callbacks.getSessionName?.bind(callbacks), shutdownReads.getSessionName),
+				getModel: remember(callbacks.getModel?.bind(callbacks), shutdownReads.getModel, model => model && extensionModelSnapshot(model)),
+				getModels: remember(callbacks.getModels?.bind(callbacks), shutdownReads.getModels, models => models.map(extensionModelSnapshot)),
+				getThinkingLevel: remember(callbacks.getThinkingLevel?.bind(callbacks), shutdownReads.getThinkingLevel),
+				isIdle: remember(callbacks.isIdle?.bind(callbacks), shutdownReads.isIdle),
+				hasPendingMessages: remember(callbacks.hasPendingMessages?.bind(callbacks), shutdownReads.hasPendingMessages),
+				getContextUsage: remember(callbacks.getContextUsage?.bind(callbacks), shutdownReads.getContextUsage),
+				getSystemPrompt: remember(callbacks.getSystemPrompt?.bind(callbacks), shutdownReads.getSystemPrompt),
+			} satisfies Partial<ExtensionHostCallbacks>);
+		};
 		const session = limited({
-			...createExtensionSession(callbacks, lifetime.assertActive.bind(lifetime)),
+			...createExtensionSession({
+				...callbacks,
+				getSessionId: () => readCallback("getSessionId")(),
+				getSessionFile: () => readCallback("getSessionFile")(),
+				getSessionName: () => readCallback("getSessionName")(),
+			}, lifetime.assertActive.bind(lifetime)),
 			...(callbacks.session ? {
 				getEntries: () => callbacks.session!.getEntries(),
 				getBranch: (id?: string) => callbacks.session!.getBranch(id),
@@ -476,6 +517,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			assertActive();
 			if (refresh) await callbacks.refreshSession?.();
 			scope.assertActive();
+			if (refresh) rememberShutdown();
 			try { return await lifetime.withScope(scope, () => work(scope)); }
 			finally {
 				// start, context filters and parallel tool hooks also pass here;
@@ -483,6 +525,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				scope.assertActive();
 				await callbacks.session?.flush();
 				scope.assertActive();
+				if (refresh) rememberShutdown();
 			}
 		});
 		let started: Promise<void> | undefined;
@@ -491,6 +534,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		let closing: Promise<void> = Promise.resolve();
 		const start = (reason: SessionStartEvent["reason"] = "startup"): Promise<void> => {
 			assertActive();
+			if (!started) rememberShutdown();
 			// Stop may cancel a startup dialog. The event remains once-only, but
 			// its rejected promise must not permanently disable every command.
 			if (startCancelled) return Promise.resolve();
@@ -550,6 +594,24 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),
 			complete: models.complete,
 			hasBeforeAgentStart: runner.hasHandlers("before_agent_start"),
+			beforeProviderRequest: async (payload: unknown): Promise<unknown> => {
+				await start();
+				if (!runner.hasHandlers("before_provider_request")) return undefined;
+				return invoke(async scope => {
+					// Pi chains both replacements and in-place mutations. Detach the
+					// outgoing body at each boundary so a retained callback cannot
+					// change a request after its invocation has completed or stopped.
+					const result = await runner.emitBeforeProviderRequest(structuredClone(payload));
+					scope.assertActive();
+					return structuredClone(result);
+				});
+			},
+			afterProviderResponse: async (response: ProviderResponse): Promise<void> => {
+				await start();
+				if (!runner.hasHandlers("after_provider_response")) return;
+				// This is response metadata, never request options or auth headers.
+				await invoke(() => runner.emit({ type: "after_provider_response", status: response.status, headers: { ...response.headers } }));
+			},
 			commands: runner.getRegisteredCommands().map(command => ({ name: command.invocationName, description: command.description })),
 			tools: registeredTools,
 			run: async (name: string, args = ""): Promise<void> => {
@@ -624,7 +686,11 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			},
 			emitAgentEvent: async (event: AgentEvent, refresh = true): Promise<void> => {
 				await start();
-				if (!runner.hasHandlers(event.type)) { agentEvents.observe(event); return; }
+				if (!runner.hasHandlers(event.type)) {
+					agentEvents.observe(event);
+					if (event.type !== "message_update" && event.type !== "tool_execution_update") rememberShutdown();
+					return;
+				}
 				// Streaming updates do not change the stored branch; no Vault read
 				// per token. The service awaits this before persisting message_end.
 				await invoke(scope => agentEvents.emit(event, () => scope.assertActive()), refresh && event.type !== "message_update" && event.type !== "tool_execution_update");

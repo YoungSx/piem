@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import type { ExtensionUIAdapter } from "./extensionUI";
@@ -375,6 +375,64 @@ describe("native extension host", () => {
 		host.dispose();
 		await host.closed();
 		expect(modelRequests).toBe(0);
+	});
+
+	it("keeps the last safe metadata when its owner closes before shutdown", async () => {
+		let open = true;
+		let sessionName = "First name";
+		let thinking: "off" | "high" = "off";
+		let reads = 0;
+		const read = <T>(value: T): T => { reads++; if (!open) throw new Error("Owner closed"); return value; };
+		const model: Model<"openai-completions"> = {
+			id: "owner-model", name: "Model", provider: "test", api: "openai-completions", baseUrl: "https://example.test",
+			reasoning: true, input: ["text"], contextWindow: 1000, maxTokens: 100, headers: { Authorization: "secret" },
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		};
+		let old!: ExtensionContext;
+		let observed: unknown;
+		const host = await makeHost(pi => {
+			pi.on("session_start", (_event, ctx) => { old = ctx; });
+			pi.on("message_update", () => {});
+			pi.registerCommand("update", { handler: async () => { sessionName = "Latest name"; thinking = "high"; } });
+			pi.on("session_shutdown", (_event, ctx) => {
+				observed = { id: ctx.sessionManager.getSessionId(), file: ctx.sessionManager.getSessionFile(), name: ctx.sessionManager.getSessionName(),
+					model: ctx.model, models: ctx.modelRegistry.getAvailable(), thinking: ctx.thinkingLevel, system: ctx.getSystemPrompt() };
+				expect(() => old.sessionManager.getSessionId()).toThrow("cancelled");
+				expect(() => ctx.compact()).toThrow("disposed");
+			});
+		}, {
+			getSessionId: () => read("owner"), getSessionFile: () => read("owner.jsonl"), getSessionName: () => read(sessionName),
+			getModel: () => read(model), getModels: () => read([model]), getThinkingLevel: () => read(thinking), getSystemPrompt: () => read("System"),
+		});
+		try {
+			await host.start();
+			await host.run("update");
+			const before = reads;
+			const message: AssistantMessage = { role: "assistant", content: [{ type: "text", text: "body" }], timestamp: 0,
+				api: model.api, provider: model.provider, model: model.id, stopReason: "stop",
+				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+			// A subscribed token update must not rescan metadata or model choices.
+			await host.emitAgentEvent({ type: "message_update", message, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x", partial: message } });
+			expect(reads).toBe(before);
+			open = false;
+			host.dispose();
+			await host.closed();
+			expect(reads).toBe(before);
+			expect(observed).toMatchObject({ id: "owner", file: "owner.jsonl", name: "Latest name", thinking: "high", system: "System", model: { id: "owner-model" } });
+			expect(JSON.stringify(observed)).not.toContain("secret");
+			expect(model.headers).toEqual({ Authorization: "secret" });
+		} finally { host.dispose(); }
+	});
+
+	it("does not collect shutdown metadata when no extension subscribes", async () => {
+		let reads = 0;
+		const host = await makeHost(pi => { pi.on("session_start", () => {}); pi.on("agent_start", () => {}); }, {
+			getModel: () => { reads++; throw new Error("Not needed"); },
+			getModels: () => { reads++; throw new Error("Not needed"); },
+			getContextUsage: () => { reads++; throw new Error("Not needed"); },
+		});
+		try { await host.start(); await host.emitAgentEvent({ type: "agent_start" }); expect(reads).toBe(0); }
+		finally { host.dispose(); }
 	});
 
 	it("bounds unfinished shutdown cleanup to one second and revokes its retained reads", async () => {

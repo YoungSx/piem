@@ -24,7 +24,7 @@ Existing Quick actions keep their generation and click-to-send behavior.
 | Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth |
 | Messages | Operation-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 pending messages; private `/acm` stays inside the host |
 | UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete and shortcut actions; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
-| Node | Virtual path/URL/environment, EventEmitter, immutable UTF-8 package resources |
+| Node | Virtual path/URL/environment, EventEmitter, browser Buffer, Web Crypto randomness, synchronous SHA-256, immutable UTF-8 package resources |
 | Lifetime | One host per conversation; stop invalidates pending work, reload invalidates old APIs, and owned timers and requests are tracked to completion |
 
 `fs` does not access the Vault. Audited scoped factories can read, write and delete
@@ -137,7 +137,7 @@ Supported events are `session_start`, `session_shutdown`, `before_agent_start`,
 `agent_start`, `agent_end`, `agent_settled`, `turn_start`, `turn_end`,
 `message_start`, `message_update`, `message_end`, the three
 `tool_execution_*` events, `tool_call` and `tool_result`, plus `context`, `input`,
-`model_select`, `thinking_level_select`, `session_tree`, `session_compact_failed`,
+`model_select`, `thinking_level_select`, `before_provider_request`, `after_provider_response`, `session_tree`, `session_compact`, `session_compact_failed`,
 `session_before_fork` and `session_before_switch`. Startup happens once on first panel
 attachment or execution. The original Runner orders handlers and combines
 their results. A `before_agent_start` system prompt applies to that run; custom
@@ -150,6 +150,24 @@ after it is saved. A selection made during a run waits for that run to settle;
 choosing the original level again retracts the pending change. Model capability
 clamps use the same event, and a failed write or rolled-back model switch emits
 no success event. Events belong to their conversation, including background chats.
+
+`before_provider_request` runs at Pi's native serialized-body hook, and the
+Runner chains replacements and in-place changes before HTTP starts. The body is
+detached from retained extension references after dispatch. A failure or Stop
+prevents the request. `after_provider_response` carries the HTTP status and
+response headers when the response arrives, before its stream is consumed; it
+does not mean generation has finished. Neither event receives request headers
+or provider credentials. Callbacks keep their original request's cancellation
+signal across Stop and resend. These hooks cover normal Agent model requests;
+extra compaction and `ctx.modelRegistry.complete` calls are separate paths.
+
+`session_compact` fires after manual or threshold compaction has been saved.
+Its `compactionEntry` contains the real saved ID, summary, token count, ISO
+timestamp and Piem's `retainedTail`. Piem has no CLI `firstKeptEntryId` cursor:
+reading that member throws explicitly, while serializing the entry includes
+only real stored fields. An observer failure cannot undo a saved compaction.
+Both compaction outcomes dispatch after the single-flight slot is released, so
+an observer can start another compaction without waiting on itself.
 
 `session_compact_failed` covers failed or cancelled manual and threshold
 compactions. Cancellations set `aborted:true` without an error message. Piem has no
@@ -246,6 +264,57 @@ settles. No polling or permanent timers are added.
 
 ## Adding an extension
 
+### Static dependencies and background work
+
+A scoped audit declares `entry`, `version`, `virtualRoot` and the SHA-256 of
+each source file in `files`. Its optional `dependencies` map names exact npm
+packages with the same audit shape. Optional `exports` maps exact `./subpaths`
+to files already listed in that dependency's `files`; undeclared subpaths fail.
+Each dependency has an explicit entry;
+`package.json` main/browser/exports cannot select unaudited files. Choose a
+library's browser entry during its audit. Package versions, every listed source
+file and filesystem boundaries are checked before compilation.
+
+The compiler binds bare and supported explicit global references to fetch,
+process, Buffer and timers to the factory's own platform, including dependency
+code. It never replaces browser globals. Unknown imports, runtime loading and
+recognized indirect platform access fail the build. Other global state, including
+SDK registrations under `Symbol.for`, still needs source review and multi-host
+testing; the compiler does not isolate arbitrary JavaScript. This remains a
+reviewed static graph, not a sandbox for arbitrary packages.
+
+A host may register `{ id, createFactory }` for a reviewed background factory.
+It receives a private writable virtual environment and PID, not the operating
+system's environment or process identity. Environment data is bounded to 64
+keys, 4096 UTF-8 bytes per value and 16 KiB total. It can list only its own flat
+JSON configuration namespace. Buffer comes from the browser `buffer` package;
+crypto supports synchronous `randomBytes`, `randomUUID` and SHA-256 hashing.
+Other algorithms, asynchronous random-byte callbacks and crypto options fail
+explicitly; there is no native Node fallback.
+
+Background fetch and timers belong to the conversation rather than a chat
+operation, so they do not keep the composer busy and Stop does not destroy
+them. HTTP(S) requests use Obsidian `requestUrl`, have a 15-second caller
+deadline, and share at most four outstanding physical requests per agent
+service, including across replaced conversations. Aborted native IO retains
+its slot until it finishes; `requestUrl` cannot cancel physical IO.
+
+Each factory has at most 64 timer/pending-callback slots. Timeout and interval
+handles are numbers; Node timer-object methods such as `unref` are unsupported.
+Async interval callbacks run without overlap. `timers/promises.setTimeout`
+supports a cancellation signal and accepts `ref` without a process-liveness
+effect in a WebView. Shutdown stops intervals, allows the existing one-second
+cleanup window for a final request, then revokes remaining timers, delays,
+requests and environment access. A failed factory's resources are retired
+while other extensions remain available. This adds no telemetry extension or
+automatic outbound request to the release.
+
+During shutdown, session ID/file/name, model, thinking level and other safe
+metadata use the last valid snapshot. The service may already have retired the
+owning conversation; shutdown does not reopen it or expose credentials. Old
+contexts and all mutation capabilities remain invalid. History/tree reads are
+not retained as a second copy of the vault session.
+
 1. Audit its package source, transitive imports, registration, file paths, network,
    UI and lifetime. Choose a mobile-compatible factory with explicit licensing.
 2. Pin its npm version with Bun and add all compiled source hashes and a virtual
@@ -271,6 +340,11 @@ actions and imported model completion. Its local contract fixture lives in
 `scripts/fixtures/native-extension-contract.mjs`; the fixture is not registered
 as a production extension. These checks verify host contracts, not compatibility
 with every community package.
+
+`scripts/smoke-background-bridge-obsidian.mjs` adds a test-only static factory to
+a disposable vault's copy of the production bundle and restores it afterwards.
+It checks dependency imports, actual requestUrl traffic, two conversations,
+periodic work, provider hooks, final shutdown requests and resource retirement.
 
 The smoke uses a local deterministic model endpoint to exercise the real protocol,
 model switch and context. It is not a live-model quality evaluation. Mobile

@@ -3,7 +3,7 @@ import { builtinModules } from "node:module";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import esbuild from "esbuild";
-import { buildScopedFactory, SCOPED_FACTORIES, SCOPED_FACTORY_PREFIX } from "./pi-scoped-factories.mjs";
+import { buildScopedFactory, SCOPED_FACTORY_PREFIX } from "./pi-scoped-factories.mjs";
 
 /** Audited, unmodified upstream modules. A changed pin requires a fresh dependency review. */
 const AUDIT = JSON.parse(await readFile(new URL("./pi-extension-packages.json", import.meta.url), "utf8"));
@@ -58,7 +58,7 @@ export function piExtensionsPlugin(root = process.cwd()) {
 			});
 			build.onResolve({ filter: /^pi-scoped-factory:/ }, args => {
 				const name = args.path.slice(SCOPED_FACTORY_PREFIX.length);
-				if (!Object.hasOwn(SCOPED_FACTORIES, name)) throw new Error(`Unknown scoped extension: ${name}`);
+				if (!Object.hasOwn(AUDIT, name) || !AUDIT[name].entry) throw new Error(`Unknown scoped extension: ${name}`);
 				return { path: name, namespace: "pi-scoped-extension" };
 			});
 			build.onLoad({ filter: /.*/, namespace: "pi-scoped-extension" }, async args => ({

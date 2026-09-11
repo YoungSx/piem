@@ -22,7 +22,7 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 | 模型 | 已配凭据且标识唯一的模型；目录及 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调；已审核搜索/改写工厂另外可解析当前服务商凭据 |
 | 消息 | 操作内的 `sendMessage`，要求 `triggerTurn` 和 `followUp`，最多 16 条待发消息；内部 `/acm` 不发给模型 |
 | 界面 | Obsidian 原生弹窗、支持的组件工厂、草稿、组件及状态、补全和快捷操作；面板连接时为 `rpc`/`hasUI:true`，未连接时为 `print`/`false` |
-| Node | 虚拟路径、URL、环境、EventEmitter、不可变 UTF-8 包资源 |
+| Node | 虚拟路径、URL、环境、EventEmitter、浏览器 Buffer、Web Crypto 随机数、同步 SHA-256、不可变 UTF-8 包资源 |
 | 生命周期 | 每段聊天拥有独立宿主；停止使待执行工作失效，重载使旧接口失效，自有定时器和请求跟踪到结束 |
 
 `fs` 不访问 Vault。已审核的独立工厂可以读、写、删除 `/extensions/config` 下
@@ -113,7 +113,8 @@ Markdown 变换目前只注册、不实际渲染，扩展加载报告会记录�
 `agent_end`、`agent_settled`、`turn_start`、`turn_end`、`message_start`、
 `message_update`、`message_end`、三种 `tool_execution_*`、`tool_call` 和
 `tool_result`，以及 `context`、`input`、`model_select`、`thinking_level_select`、
-`session_tree`、`session_compact_failed`、`session_before_fork`、`session_before_switch`。
+`before_provider_request`、`after_provider_response`、`session_tree`、`session_compact`、
+`session_compact_failed`、`session_before_fork`、`session_before_switch`。
 首次连接面板或执行时启动一次。原版 Runner 负责处理器顺序和结果合并。
 `before_agent_start` 的系统提示只用于该轮；自定义消息和 `message_end` 改写
 走现有持久化流程。`agent_settled` 等排队续跑和自动整理完成后触发。流式增量
@@ -123,6 +124,20 @@ Markdown 变换目前只注册、不实际渲染，扩展加载报告会记录�
 的新档位等本轮结束后生效；再次选择原档位可撤回待应用的变更。模型能力引起的
 档位收敛走同一事件；保存失败或模型切换回滚时不发成功事件。事件始终属于
 发起变更的聊天，后台聊天也一样。
+
+`before_provider_request` 接在 Pi 原生的请求体序列化回调上，Runner 在发出 HTTP
+前按序应用替换和原地修改。处理结束后再复制请求体，保留的扩展引用无法迟到
+修改它。处理失败或停止会阻止请求。`after_provider_response` 在收到 HTTP
+响应、读取响应流之前提供状态码和响应头，不代表模型已经生成完毕。两种事件
+都不提供请求头或提供商密钥；停止后重发时，旧回调仍绑定旧请求的取消信号。
+这些回调覆盖普通 Agent 模型请求；压缩摘要和 `ctx.modelRegistry.complete`
+额外调用是独立路径。
+
+`session_compact` 在手动或达到阈值的整理成功保存后触发。`compactionEntry`
+包含真实保存的 ID、摘要、token 数、ISO 时间和 Piem 的 `retainedTail`。
+Piem 没有 CLI 的 `firstKeptEntryId` 游标：直接读取该成员会明确报错，序列化
+条目则只包含真实字段。观察者失败不能回滚已保存的整理。成功和失败事件都在
+释放单次整理占用后发出，观察者可以再次整理，不会等到自己卡住。
 
 `session_compact_failed` 覆盖手动和达到阈值的整理失败或取消。取消时
 `aborted:true`，不带错误文字。Piem 没有溢出恢复或扩展提供摘要的压缩路径，
@@ -198,6 +213,44 @@ Piem 内部。凭据绑定所属聊天、模型及捕获的回调作用域，经
 
 ## 接入新扩展
 
+### 静态依赖和后台工作
+
+独立工厂的审计记录声明 `entry`、`version`、`virtualRoot` 和 `files` 内每个
+源码文件的 SHA-256。可选 `dependencies` 映射使用相同结构，逐个列出确切
+npm 依赖。可选 `exports` 把确切的 `./子路径` 映射到同一依赖 `files` 中已审核
+的文件；未声明的子路径会被拒绝。每个依赖明确指定入口，`package.json` 的 main/browser/exports
+不能偷偷选中未审核文件；在审计时选择浏览器入口。构建前检查版本、全部登记
+源码和文件边界。
+
+编译器把裸引用和支持的显式全局引用中的 fetch、process、Buffer、定时器
+绑定到各自工厂的平台，依赖代码也一样，不改浏览器全局。未知导入、运行时
+加载、识别到的间接平台访问会使构建失败。其他全局状态，包括 SDK 通过
+`Symbol.for` 注册的对象，仍须审查源码并验证多个宿主；编译器不隔离任意
+JavaScript。这仍是审核过的静态源码图，不是任意 npm 包的沙箱。
+
+宿主可用 `{ id, createFactory }` 注册审核过的后台工厂。它有私有、可写的
+虚拟环境和 PID，不读取操作系统的环境或进程身份。环境最多 64 个键，单值
+最多 4096 UTF-8 字节，总计 16 KiB；只能列出自己的平面 JSON 配置空间。
+Buffer 复用浏览器 `buffer` 包；crypto 支持同步 `randomBytes`、`randomUUID`
+和 SHA-256。其他算法、异步随机字节回调和 crypto 选项明确拒绝，没有原生
+Node 回退。
+
+后台请求和定时器属于会话，不占用聊天操作，所以不会让输入框一直忙碌，
+停止当前回合也不会销毁它们。HTTP(S) 使用 Obsidian `requestUrl`，调用者
+最多等待 15 秒，每个代理服务最多四个实际在途请求，替换会话后仍共用上限。
+取消后物理 IO 仍占名额，直到真正结束；`requestUrl` 无法物理中断请求。
+
+每个工厂最多 64 个定时器或未完成回调占用。timeout/interval 句柄是数字，
+不支持 Node 定时器对象的 `unref` 等方法；异步 interval 回调不重叠执行。
+`timers/promises.setTimeout` 支持取消信号，接受 `ref`，但 WebView 没有
+对应的进程保活效果。关闭时先停 interval，保留原有一秒清理窗口供最后发送，
+之后撤销剩余定时器、延迟、请求和环境访问。坏工厂的资源会被清理，其他扩展
+仍能加载。发布包不会因此新增遥测扩展或自动外传请求。
+
+关闭时，会话 ID、文件名、名称、模型、思考级别等安全信息使用最后有效快照。
+此时服务可能已关闭所属会话；清理过程不会重新打开会话或提供密钥。旧上下文
+和所有修改能力仍已失效，不额外复制整份历史或会话树。
+
 1. 审核包源码、间接依赖、注册接口、文件路径、网络、界面和生命周期，选择
    手机可用、许可明确的工厂。
 2. 用 Bun 锁定 npm 版本；在 `scripts/pi-extension-packages.json` 登记全部会编译
@@ -217,6 +270,10 @@ Piem 内部。凭据绑定所属聊天、模型及捕获的回调作用域，经
 验证通用包导入、组件工厂、原生选择、取消、快捷操作及导入的模型 completion。
 它使用 `scripts/fixtures/native-extension-contract.mjs` 中的本地契约样例；样例
 不注册为生产扩展。这些检查验收宿主契约，不代表所有社区包都已兼容。
+
+`scripts/smoke-background-bridge-obsidian.mjs` 临时给测试 Vault 的生产包副本
+添加静态测试工厂，结束后还原。它验证依赖导入、真实 requestUrl 流量、两段
+聊天、周期工作、模型事件、最后一次关闭发送和资源失效。
 
 运行验收使用本地确定性模型端点，经过真实协议、模型切换和上下文处理，并非
 真实模型质量评测。官方手机模拟及始终没有 Node 的 VM 验证受限宿主契约；

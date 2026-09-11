@@ -1,11 +1,12 @@
 import type { AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent, ProviderResponse } from "@earendil-works/pi-ai";
 import type { SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
-import { createExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
+import { createExtensionPlatform, type BackgroundExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { createClarify, createContext, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMessage" | "sendUserMessage"> {
@@ -27,10 +28,15 @@ export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMe
 	logger?: LoggerLike;
 }
 
+/** A statically compiled factory; selecting its lifetime is an audited host decision. */
+export type CommunityExtension = StaticExtension | { id: string; createFactory(platform: BackgroundExtensionPlatform): ExtensionFactory };
+
 /** One conversation owns its factories, transport, pending actions and timers. */
 export class CommunityHost {
 	private host!: ExtensionHost;
 	private platform!: ReturnType<typeof createExtensionPlatform>;
+	private backgrounds = new Map<string, ReturnType<ReturnType<typeof createExtensionPlatform>["forBackgroundExtension"]>>();
+	private closing: Promise<void> = Promise.resolve();
 	private pending: AgentMessage[] = [];
 	private disposed = false;
 	private failure: { error?: Error } = {};
@@ -40,11 +46,11 @@ export class CommunityHost {
 	private needsContextReset = false;
 	private ui?: ExtensionUIAdapter;
 	private readonly log: LoggerLike;
-	private constructor(private readonly callbacks: CommunityCallbacks, private readonly extensions?: readonly StaticExtension[]) {
+	private constructor(private readonly callbacks: CommunityCallbacks, private readonly extensions?: readonly CommunityExtension[]) {
 		this.log = (callbacks.logger ?? NOOP_LOGGER).child("extensions");
 	}
 
-	static async create(callbacks: CommunityCallbacks, extensions?: readonly StaticExtension[]): Promise<CommunityHost> {
+	static async create(callbacks: CommunityCallbacks, extensions?: readonly CommunityExtension[]): Promise<CommunityHost> {
 		const owner = new CommunityHost(callbacks, extensions);
 		owner.platform = createExtensionPlatform({
 			...callbacks.platform,
@@ -57,8 +63,8 @@ export class CommunityHost {
 			beforeTimer: async () => { await callbacks.waitForIdle?.(); await callbacks.prepare(); },
 			afterTimer: async () => { await owner.flushWrites(); owner.deliver(); },
 		});
-		await owner.initialize();
-		return owner;
+		try { await owner.initialize(); return owner; }
+		catch (error) { owner.platform.dispose(); throw error; }
 	}
 
 	private async initialize(): Promise<void> {
@@ -67,7 +73,18 @@ export class CommunityHost {
 		// namespace it can address comes from construction, not from the path it
 		// asks for. Sharing one platform object would make them interchangeable.
 		const scoped = (owner: string) => this.platform.forExtension(owner);
-		this.host = await createExtensionHost(this.extensions ?? [
+		const factories = this.extensions?.map(extension => {
+			if ("factory" in extension) return extension;
+			if (this.backgrounds.has(extension.id)) throw new Error(`Duplicate background extension: ${extension.id}`);
+			const resources = this.platform.forBackgroundExtension(extension.id);
+			this.backgrounds.set(extension.id, resources);
+			return {
+				id: extension.id,
+				factory: (pi: Parameters<ExtensionFactory>[0]) => extension.createFactory(resources.platform)(pi),
+				onLoadFailure: () => { resources.dispose(); this.backgrounds.delete(extension.id); },
+			};
+		});
+		this.host = await createExtensionHost(factories ?? [
 			{ id: "pi-invisible-continue", factory: invisibleContinue },
 			{ id: "pi-assistant-provenance", factory: provenance },
 			{ id: "pi-model-switch", factory: modelSwitch },
@@ -188,6 +205,17 @@ export class CommunityHost {
 	beforeAgentStart(prompt: string, images: ImageContent[] | undefined, systemPrompt: string) {
 		return this.operate(() => this.host.beforeAgentStart(prompt, images, systemPrompt));
 	}
+	/** Provider hooks refresh once per request, not per streamed token. */
+	beforeProviderRequest(payload: unknown): Promise<unknown> {
+		if (!this.host.hasHandlers("before_provider_request")) return Promise.resolve(undefined);
+		this.assertActive();
+		return this.host.beforeProviderRequest(payload);
+	}
+	afterProviderResponse(response: ProviderResponse): Promise<void> {
+		if (!this.host.hasHandlers("after_provider_response")) return Promise.resolve();
+		this.assertActive();
+		return this.host.afterProviderResponse(response);
+	}
 	emitAgentEvent(event: AgentEvent): Promise<void> {
 		if (!this.host.hasHandlers(event.type)) return this.host.emitAgentEvent(event);
 		if (this.navigationDispatches && this.platform.busy) {
@@ -234,7 +262,7 @@ export class CommunityHost {
 		return this.host.settled();
 	}
 	cancelInvocation(): void { this.host.cancel(); }
-	async closed(): Promise<void> { await this.host.closed(); await this.callbacks.session?.settled(); }
+	async closed(): Promise<void> { await this.closing; await this.host.closed(); await this.callbacks.session?.settled(); }
 
 	/**
 	 * Persists everything this operation staged, before any success is reported.
@@ -291,9 +319,15 @@ export class CommunityHost {
 	dispose(reason?: SessionShutdownEvent["reason"]): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		this.platform.dispose();
+		this.platform.cancel();
+		for (const resources of this.backgrounds.values()) resources.beginShutdown();
 		this.callbacks.session?.dispose();
 		this.host.dispose(reason);
+		this.closing = this.host.closed().finally(() => {
+			this.platform.dispose();
+			this.backgrounds.clear();
+		});
+		void this.closing.catch(() => undefined);
 		this.pending = [];
 	}
 	private async operate<T>(work: () => Promise<T>, signal?: AbortSignal, refresh = true): Promise<T> {
