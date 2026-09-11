@@ -14,7 +14,7 @@ type ThinkingLevelSelectEvent = Extract<ExtensionEvent, { type: "thinking_level_
 
 describe("thinking level observations", () => {
 	function observe() {
-		const events: Array<ThinkingLevelSelectEvent & { path: string; applied: ThinkingLevel }> = [];
+		const events: Array<ThinkingLevelSelectEvent & { path: string; applied: ThinkingLevel | undefined }> = [];
 		const factory: ExtensionFactory = pi => {
 			pi.on("thinking_level_select", (event, ctx) => {
 				events.push({ ...event, path: ctx.sessionManager.getSessionFile()!, applied: ctx.thinkingLevel });

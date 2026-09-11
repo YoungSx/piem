@@ -66,15 +66,16 @@ describe("extension compaction failure observations", () => {
 		const seen: SessionCompactFailedEvent[] = [];
 		const errors: string[] = [];
 		const completed = Promise.withResolvers<void>();
+		const observed = Promise.withResolvers<void>();
 		const { service } = harness(pi => {
-			pi.on("session_compact_failed", event => { seen.push(event); });
+			pi.on("session_compact_failed", event => { seen.push(event); observed.resolve(); });
 			pi.registerCommand("tidy", { handler: async (_args, ctx) => { ctx.compact({ onError: error => { errors.push(error.message); completed.resolve(); } }); } });
 		});
 		try {
 			await service.sendPrompt("Hello");
 			requestUrlMock.mockResolvedValue({ status: 400, headers: {}, arrayBuffer: new TextEncoder().encode("summary rejected").buffer });
 			expect(await service.runExtensionCommand("tidy")).toBe(true);
-			await completed.promise;
+			await Promise.all([completed.promise, observed.promise]);
 			expect(seen).toHaveLength(1);
 			expect(seen[0]).toMatchObject({ type: "session_compact_failed", reason: "manual", aborted: false, willRetry: false, fromExtension: false });
 			expect(seen[0]?.errorMessage).toContain("summary rejected");
@@ -148,5 +149,76 @@ describe("extension compaction failure observations", () => {
 			expect(service.getSnapshot().messages[0]?.role).toBe("compactionSummary");
 			expect(seen).toHaveLength(0);
 		} finally { service.dispose(); }
+	});
+
+	it("lets a failure observer await a retry without waiting on its own attempt", async () => {
+		let failures = 0;
+		let retryError = "";
+		const { service } = harness(pi => {
+			pi.on("session_compact_failed", async (_event, ctx) => {
+				if (++failures === 1) await new Promise<void>(resolve => {
+					ctx.compact({ onError: error => { retryError = error.message; resolve(); } });
+				});
+			});
+		});
+		try {
+			await service.sendPrompt("Hello");
+			requestUrlMock.mockResolvedValue({ status: 400, headers: {}, arrayBuffer: new ArrayBuffer(0) });
+			await service.compactNow();
+			expect(retryError).not.toBe("");
+			expect(failures).toBe(2);
+		} finally { service.dispose(); }
+	});
+
+	it("delivers a failure observer's follow-up after its triggering command returned", async () => {
+		const entered = Promise.withResolvers<void>();
+		const response = Promise.withResolvers<{ status: number; headers: Record<string, string>; arrayBuffer: ArrayBuffer }>();
+		const continued = Promise.withResolvers<void>();
+		let failures = 0;
+		let replies = 0;
+		const { service, requests } = harness(pi => {
+			pi.registerCommand("tidy", { handler: async (_args, ctx) => { ctx.compact({ onError: () => {} }); } });
+			pi.on("session_compact_failed", () => {
+				if (++failures === 1) pi.sendUserMessage("Explain the failed summary", { deliverAs: "followUp" });
+			});
+			pi.on("message_end", event => { if (event.message.role === "assistant" && ++replies === 2) continued.resolve(); });
+		});
+		try {
+			await service.sendPrompt("Hello");
+			requestUrlMock.mockImplementation(() => { entered.resolve(); return response.promise; });
+			expect(await service.runExtensionCommand("tidy")).toBe(true);
+			await entered.promise;
+			response.resolve({ status: 400, headers: {}, arrayBuffer: new TextEncoder().encode("summary rejected").buffer });
+			await continued.promise;
+			expect(requests).toHaveLength(2);
+			expect(JSON.stringify(requests[1]?.messages)).toContain("Explain the failed summary");
+		} finally { response.resolve({ status: 400, headers: {}, arrayBuffer: new ArrayBuffer(0) }); service.dispose(); }
+	});
+
+	it("emits cancellation after a command's aborted operation releases, with old callbacks still revoked", async () => {
+		const entered = Promise.withResolvers<void>();
+		const response = Promise.withResolvers<never>();
+		const seen: SessionCompactFailedEvent[] = [];
+		let staleRead: (() => unknown) | undefined;
+		const { service } = harness(pi => {
+			pi.on("session_compact_failed", event => { seen.push(event); });
+			pi.registerCommand("tidy", { handler: async (_args, ctx) => {
+				staleRead = () => ctx.sessionManager.getBranch();
+				ctx.compact({ onError: () => {} });
+				await response.promise;
+			} });
+		});
+		try {
+			await service.sendPrompt("Hello");
+			requestUrlMock.mockImplementation(() => { entered.resolve(); return response.promise; });
+			const command = service.runExtensionCommand("tidy");
+			await entered.promise;
+			const joining = service.compactNow();
+			await service.abortSession(service.getActiveSessionPath()!);
+			response.reject(new DOMException("The request was aborted.", "AbortError"));
+			await Promise.all([joining, command]);
+			expect(seen).toEqual([{ type: "session_compact_failed", reason: "manual", aborted: true, willRetry: false, fromExtension: false }]);
+			expect(staleRead).toThrow();
+		} finally { response.reject(new DOMException("Cancelled", "AbortError")); service.dispose(); }
 	});
 });
