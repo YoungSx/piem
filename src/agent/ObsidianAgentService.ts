@@ -3011,7 +3011,23 @@ export class ObsidianAgentService {
 			this.setNotice(rt, this.t().t("bookmarks.saving"));
 			return;
 		}
+		await this.renameRuntimeSession(rt, name);
+	}
 
+	/**
+	 * {@link renameSession} for a caller that already owns its runtime.
+	 *
+	 * Split out for the extension bridge, which must address the conversation its
+	 * host belongs to rather than the one the panel happens to be showing — the
+	 * same reasoning that gave {@link reconfigureRuntime} its own entry point. The
+	 * focused-only `current()` lookup would let a background chat's extension
+	 * rename whatever the reader is looking at.
+	 *
+	 * The bookmark guard is the caller's, not this method's: the panel path turns
+	 * it into a notice, while the bridge owes the extension a thrown failure. A
+	 * rename that could not be written must never report success.
+	 */
+	private async renameRuntimeSession(rt: SessionRuntime, name: string): Promise<void> {
 		const trimmedName = name.trim();
 		rt.sessionOperations += 1;
 		try { await this.sessionManager.appendSessionInfoFor(rt.sessionPath, trimmedName || undefined); }
@@ -3389,8 +3405,27 @@ export class ObsidianAgentService {
 	 */
 	async setThinkingLevel(level: ThinkingLevel): Promise<void> {
 		const rt = this.current();
-		const agent = rt?.agent;
-		if (!rt || !agent || agent.state.thinkingLevel === level) {
+		if (!rt) {
+			return;
+		}
+		await this.setRuntimeThinkingLevel(rt, level);
+	}
+
+	/**
+	 * {@link setThinkingLevel} for a caller that already owns its runtime.
+	 *
+	 * Split out for the extension bridge for the reason
+	 * {@link renameRuntimeSession} documents: a background conversation's
+	 * extension must move its own level, never the focused chat's.
+	 *
+	 * Deliberately not a clamp site. The level asked for is stored as asked, and
+	 * the narrowing against model capability stays in
+	 * {@link applyRuntimeConfiguration}, so the bridge and the panel cannot
+	 * disagree about what "set high on a model without it" records.
+	 */
+	private async setRuntimeThinkingLevel(rt: SessionRuntime, level: ThinkingLevel): Promise<void> {
+		const agent = rt.agent;
+		if (!agent || agent.state.thinkingLevel === level) {
 			return;
 		}
 		if (this.isBusy(rt)) {
@@ -3671,28 +3706,46 @@ export class ObsidianAgentService {
 			sendShortcut: settings.sendShortcut,
 			contextRefs: this.contextRefList(rt),
 			isFollowingActiveNote: rt?.pinnedNotes.followActive ?? true,
-			availableCommands: [
-				{ name: "context", description: this.t().t("extensions.contextCommand"), kind: "extension" as const, invocation: "extension:context" },
-				...(rt?.communityHost?.commands ?? []).map(command => ({
-					name: command.name,
-				description: command.name === "continue" ? this.t().t("commands.continueTask") : command.name === "clarify" ? this.t().t("extensions.clarifyCommand") : command.description ?? "",
-					kind: "extension" as const,
-					invocation: findPromptTemplate(this.promptTemplates, command.name) || findSkill(rt?.skills ?? [], command.name) ? `extension:${command.name}` : command.name,
-				})),
-				...this.promptTemplates.map((template) => ({
-					name: template.name,
-					description: template.description ?? "",
-					kind: "template" as const,
-					invocation: template.name,
-				})),
-				...(rt && this.isBusy(rt) ? rt.skills : this.skills).map((skill) => ({
-					name: skill.name,
-					description: skill.description,
-					kind: "skill" as const,
-					invocation: findPromptTemplate(this.promptTemplates, skill.name) ? `skill:${skill.name}` : skill.name,
-				})),
-			],
+			availableCommands: this.commandList(rt),
 		};
+	}
+
+	/**
+	 * The slash commands one conversation offers: extension commands, then prompt
+	 * templates, then skills.
+	 *
+	 * Extracted from {@link getSnapshot} so the extension bridge's
+	 * `pi.getCommands()` answers from the same list the composer's autocomplete
+	 * shows. Two builders would drift, and an extension reading a command the
+	 * panel does not offer (or missing one it does) is the kind of disagreement
+	 * that is invisible until someone compares them by hand.
+	 *
+	 * Takes the runtime rather than reading `current()`, which is what lets the
+	 * bridge ask about its own conversation: skills are per-runtime while a run is
+	 * in flight, so a background chat's list is not the focused chat's.
+	 */
+	private commandList(rt: SessionRuntime | null): ChatSnapshot["availableCommands"] {
+		return [
+			{ name: "context", description: this.t().t("extensions.contextCommand"), kind: "extension" as const, invocation: "extension:context" },
+			...(rt?.communityHost?.commands ?? []).map(command => ({
+				name: command.name,
+				description: command.name === "continue" ? this.t().t("commands.continueTask") : command.name === "clarify" ? this.t().t("extensions.clarifyCommand") : command.description ?? "",
+				kind: "extension" as const,
+				invocation: findPromptTemplate(this.promptTemplates, command.name) || findSkill(rt?.skills ?? [], command.name) ? `extension:${command.name}` : command.name,
+			})),
+			...this.promptTemplates.map((template) => ({
+				name: template.name,
+				description: template.description ?? "",
+				kind: "template" as const,
+				invocation: template.name,
+			})),
+			...(rt && this.isBusy(rt) ? rt.skills : this.skills).map((skill) => ({
+				name: skill.name,
+				description: skill.description,
+				kind: "skill" as const,
+				invocation: findPromptTemplate(this.promptTemplates, skill.name) ? `skill:${skill.name}` : skill.name,
+			})),
+		];
 	}
 
 	/**
@@ -4239,6 +4292,50 @@ export class ObsidianAgentService {
 				return switched;
 			},
 			getThinkingLevel: () => { assertOwner(); return rt.agent?.state.thinkingLevel ?? thinkingLevel; },
+			/*
+			 * The four mutating capabilities below share one shape, and it is the
+			 * shape that makes them safe.
+			 *
+			 * Each targets `rt` — the runtime this host was built for — rather than
+			 * `this.current()`, which is the focused conversation. The service's
+			 * public `setThinkingLevel` / `renameSession` / `compactNow` all read
+			 * `current()`, so calling them here would let an extension in a
+			 * background chat move the level, the name or the transcript of whatever
+			 * the reader happens to be looking at. That is why each has a
+			 * `*Runtime*` sibling.
+			 *
+			 * `assertOwner()` runs before the write and again after it. Before,
+			 * because a host retired by Stop or a session switch must not begin a
+			 * Vault write; after, because the await is long enough for the
+			 * conversation to have moved on, and the host must not report success
+			 * for a write whose owner is gone. `ExtensionModelSwitch` above holds
+			 * the same contract for the same reason.
+			 */
+			setThinkingLevel: async level => {
+				assertOwner();
+				await this.setRuntimeThinkingLevel(rt, level);
+				assertOwner();
+			},
+			setSessionName: async name => {
+				assertOwner();
+				// The bookmark guard the panel path turns into a notice is a thrown
+				// refusal here: an extension gets its answer in its own call, and a
+				// rename that was not written must never look like one that was.
+				if (rt.bookmarkWork || rt.bookmarkClosing) throw new Error("The conversation is being saved; try again once it settles.");
+				await this.renameRuntimeSession(rt, name);
+				assertOwner();
+			},
+			compact: async () => {
+				assertOwner();
+				const compacted = await this.compactRuntimeNow(rt);
+				assertOwner();
+				return compacted;
+			},
+			// Live tools; `extensionRegistry` owns what an extension may see of
+			// them. Read from the agent rather than rebuilt, so this list and
+			// `getActiveTools` below describe the same set.
+			getAllTools: () => { assertOwner(); return rt.agent?.state.tools ?? []; },
+			getCommands: () => { assertOwner(); return this.commandList(rt); },
 			isIdle: () => { assertOwner(); return !rt.agent?.state.isStreaming; },
 			getSignal: () => { assertOwner(); return rt.agent?.signal; },
 			hasPendingMessages: () => { assertOwner(); return rt.promptQueue.size > 0 || rt.steeredPrompts.length > 0; },
@@ -4911,6 +5008,39 @@ export class ObsidianAgentService {
 	 */
 	private async compactContextIfNeeded(rt: SessionRuntime, agent: Agent): Promise<void> {
 		await this.runExclusiveCompaction(rt, agent);
+	}
+
+	/**
+	 * {@link compactNow} for a caller that already owns its runtime — the
+	 * extension bridge's `ctx.compact()`.
+	 *
+	 * Same three reasons the sibling `*Runtime*` methods exist: the bridge must
+	 * address its own conversation, not the focused one, and it owes the extension
+	 * a thrown failure where the panel gets a notice.
+	 *
+	 * `force` matches the command-palette path rather than the pre-prompt one: an
+	 * extension asking to compact is making the user's explicit request, not
+	 * sizing a context on the way to a send, so the threshold check is skipped for
+	 * the same reason it is there.
+	 *
+	 * Returns whether anything was compacted, and lets the guards refuse rather
+	 * than working around them: `runExclusiveCompaction`'s single-flight promise
+	 * already collapses a concurrent request onto the running one, so a second
+	 * call while `rt.isCompacting` awaits the first instead of starting a rival
+	 * summarization against the same transcript.
+	 */
+	private async compactRuntimeNow(rt: SessionRuntime): Promise<boolean> {
+		const agent = rt.agent;
+		// A failed start leaves no agent to compact, matching `compactNow`.
+		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
+			return false;
+		}
+		if (!this.hasApiKey()) {
+			// Thrown, not bannered: `compactNow` can point the user at settings, but
+			// an extension needs the refusal in its own call.
+			throw new Error("Compaction needs a configured model credential.");
+		}
+		return this.runExclusiveCompaction(rt, agent, { force: true });
 	}
 
 	/**

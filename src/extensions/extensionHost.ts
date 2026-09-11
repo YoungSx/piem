@@ -13,6 +13,7 @@ import { bindScopedContexts } from "./extensionContext";
 import { ExtensionAgentEvents, SUPPORTED_EXTENSION_EVENTS } from "./extensionEvents";
 import { createExtensionModels, type ExtensionComplete } from "./extensionModels";
 import { createExtensionSession } from "./extensionSession";
+import { commandInfoList, toolInfoList, type CommandEntry } from "./extensionRegistry";
 import { createNativeExtensionUI } from "./nativeExtensionUI";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { parseKey } from "./compat/keys";
@@ -46,6 +47,37 @@ export interface ExtensionHostCallbacks {
 	trackRequest?(settled: Promise<void>): void;
 	setModel?(model: Pick<Model<string>, "provider" | "id">): Promise<boolean>;
 	getThinkingLevel?(): ThinkingLevel;
+	/**
+	 * Applies a thinking level to the owning conversation.
+	 *
+	 * Pi's `setThinkingLevel` is synchronous `void`, and piem's write is not: it
+	 * clamps to model capability, appends to the session log, and defers behind
+	 * `pendingConfiguration` mid-run. The bridge resolves that seam by launching
+	 * the write and routing its failure to {@link ExtensionHostCallbacks.notify},
+	 * never by dropping it — see the `setThinkingLevel` action.
+	 */
+	setThinkingLevel?(level: ThinkingLevel): Promise<void>;
+	/** Renames the owning conversation; rejects rather than reporting a write that did not happen. */
+	setSessionName?(name: string): Promise<void>;
+	/**
+	 * Compacts the owning conversation, resolving to whether anything was summarized.
+	 *
+	 * Piem's own guards decide whether a compaction runs at all, and the promise
+	 * says which happened: `false` is "nothing needed tidying", a rejection is a
+	 * real failure. The bridge reports the first through `onComplete` and the
+	 * second through `onError`, and never awaits either — see the `compact` action.
+	 */
+	compact?(): Promise<boolean>;
+	/**
+	 * Every tool the owning conversation's agent is currently holding.
+	 *
+	 * Live {@link AgentTool} objects, because the host owns the projection: only
+	 * {@link ./extensionRegistry} decides what an extension may see, so an
+	 * executable cannot reach an extension by a caller forgetting to strip it.
+	 */
+	getAllTools?(): readonly AgentTool[];
+	/** Every slash command the owning conversation offers, projected the same way. */
+	getCommands?(): readonly CommandEntry[];
 	isIdle?(): boolean;
 	getSignal?(): AbortSignal | undefined;
 	abort?(): void;
@@ -306,14 +338,53 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const runner = candidate;
 		const deny = (): never => unavailable("this extension action");
 		const assertAction = () => callbacks.assertOperation ? callbacks.assertOperation() : lifetime.assertInvocation();
+		/**
+		 * Hands a fire-and-forget write to the host so its failure still surfaces.
+		 *
+		 * Pi types `setSessionName`, `setThinkingLevel` and `compact` as synchronous
+		 * `void`; every piem implementation behind them writes to the Vault. The
+		 * asymmetry is resolved by returning early — which is upstream's own
+		 * contract, `compact` says so in its doc comment — while keeping the promise
+		 * observable: `trackRequest` makes the owning operation await it, so the
+		 * service does not report a settled turn before the write lands, and a
+		 * rejection reaches the panel through the same `notify` channel every other
+		 * extension failure uses. A dropped `.catch` here would be a silent failed
+		 * write, which this repo does not allow.
+		 */
+		const settle = (work: Promise<unknown>): void => {
+			const observed = work.then(() => undefined, (error: unknown) => {
+				// Cancellation is not a failure worth a banner: the user stopped the
+				// run, and every other path in this host reports an abort the same way.
+				if (error instanceof DOMException && error.name === "AbortError") return;
+				if (lifetime.isDisposed()) return;
+				try { callbacks.notify(error instanceof Error ? error.message : String(error), "error"); }
+				catch { /* A retired notify sink must not raise an unhandled rejection. */ }
+			});
+			callbacks.trackRequest?.(observed);
+		};
 		const actions: ExtensionActions = {
 			sendMessage: (message, options) => { assertAction(); requireCallback("sendMessage")(message, options); },
-			sendUserMessage: (message, options) => { assertAction(); requireCallback("sendUserMessage")(message, options); }, appendEntry: deny, setSessionName: deny, getSessionName: () => requireCallback("getSessionName")(),
+			sendUserMessage: (message, options) => { assertAction(); requireCallback("sendUserMessage")(message, options); }, appendEntry: deny,
+			// Pi types both of these as synchronous `void` while the Vault writes
+			// behind them are asynchronous. `settle` is the whole seam: the write is
+			// started inside the caller's still-valid scope, then handed to the host's
+			// operation tracker so the service awaits it before reporting success and
+			// routes a rejection to `notify`. Returning before the write lands is
+			// upstream's contract; *losing* the failure would not be.
+			setSessionName: name => { assertAction(); settle(requireCallback("setSessionName")(name)); }, getSessionName: () => requireCallback("getSessionName")(),
 			setLabel: (id, label) => { assertAction(); requireCallback("setLabel")(id, label); },
 			getActiveTools: () => callbacks.getActiveTools?.() ?? [...tools],
-			getAllTools: deny, setActiveTools: names => { assertAction(); requireCallback("setActiveTools")(names); }, refreshTools: deny, getCommands: deny,
+			// Metadata only. `toolInfoList` rebuilds each entry from Pi's declared
+			// ToolInfo members rather than copying and stripping the AgentTool, so
+			// `execute` — and the conversation, agent state and transport it closes
+			// over — cannot reach an extension. Read, not an action: an extension may
+			// inspect the tool list after an await.
+			getAllTools: () => toolInfoList(readCallback("getAllTools")()),
+			setActiveTools: names => { assertAction(); requireCallback("setActiveTools")(names); }, refreshTools: deny,
+			getCommands: () => commandInfoList(readCallback("getCommands")()),
 			setModel: model => { assertAction(); return requireCallback("setModel")({ provider: model.provider, id: model.id }); },
-			getThinkingLevel: () => requireCallback("getThinkingLevel")(), setThinkingLevel: deny,
+			getThinkingLevel: () => requireCallback("getThinkingLevel")(),
+			setThinkingLevel: level => { assertAction(); settle(requireCallback("setThinkingLevel")(level)); },
 		};
 		const context: ExtensionContextActions = {
 			getModel: () => {
@@ -323,7 +394,49 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			isIdle: () => readCallback("isIdle")(), isProjectTrusted: () => true,
 			getSignal: () => (disposed ? undefined : callbacks.getSignal?.()) ?? lifetime.capture().signal,
 			abort: () => requireCallback("abort")(), hasPendingMessages: () => readCallback("hasPendingMessages")(), shutdown: deny,
-			getContextUsage: () => readCallback("getContextUsage")(), compact: deny, getSystemPrompt: () => readCallback("getSystemPrompt")(),
+			getContextUsage: () => readCallback("getContextUsage")(),
+			/*
+			 * "Trigger compaction without awaiting completion" is upstream's own
+			 * wording, so returning before the summary lands is the contract rather
+			 * than a compromise. `settle` keeps the promise observable so a failure
+			 * still reaches the panel.
+			 *
+			 * Two members of `CompactOptions` are refused rather than ignored, and
+			 * the refusals are the honest part of this wiring:
+			 *
+			 * - `customInstructions` has nowhere truthful to go. piem's pipeline
+			 *   passes `undefined` for pi's own `customInstructions` argument (see
+			 *   {@link ../agent/compaction.ts}), and the single-flight guard makes
+			 *   plumbing it through worse than absent: `runExclusiveCompaction`
+			 *   collapses a concurrent request onto the compaction already running,
+			 *   so a second caller's instructions would be silently replaced by the
+			 *   first caller's. Accepting the field would promise a summary written
+			 *   to an instruction that never reached the summarizer.
+			 * - `onComplete` receives pi's `CompactionResult`, which is keyed by
+			 *   `firstKeptEntryId` — a pointer to the session entry the cut kept.
+			 *   piem's compaction entry does not have one: it stores the retained
+			 *   messages on the entry itself (`retainedTail`), because the transcript
+			 *   is the agent's message list rather than a log cursor. There is no
+			 *   value for that field that is not invented, and a fabricated entry id
+			 *   is worse than a missing callback — an extension would resolve it
+			 *   against a session that never had it.
+			 *
+			 * `onError` is real and wired: a compaction that failed says so.
+			 */
+			compact: options => {
+				assertAction();
+				if (options?.customInstructions !== undefined) unavailable("extension compaction instructions");
+				if (options?.onComplete) unavailable("extension compaction result callbacks");
+				const request = requireCallback("compact");
+				settle(request().then(() => undefined, (error: unknown) => {
+					if (!options?.onError) throw error;
+					// The extension's own closure. Raised through `settle` so a throwing
+					// handler surfaces as an extension failure, never as an unhandled
+					// rejection, and cannot swallow the compaction's own error silently.
+					options.onError(error instanceof Error ? error : new Error(String(error)));
+				}));
+			},
+			getSystemPrompt: () => readCallback("getSystemPrompt")(),
 		};
 		runner.bindCore(actions, context, { registerProvider: deny, registerNativeProvider: deny, unregisterProvider: deny });
 		runner.bindCommandContext({ waitForIdle: () => requireCallback("waitForIdle")(), newSession: deny, fork: deny,

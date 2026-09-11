@@ -15,6 +15,18 @@ export class ExtensionLifetime {
 		if (this.disposed) throw new Error("Extension host was disposed.");
 	}
 
+	/**
+	 * Whether this host is retired, asked rather than asserted.
+	 *
+	 * For the one caller that is already handling a failure and must not raise a
+	 * second one: a fire-and-forget write rejecting after disposal has no panel
+	 * left to report to, and `assertActive`'s throw would surface as an unhandled
+	 * rejection instead of the failure it was called about.
+	 */
+	isDisposed(): boolean {
+		return this.disposed;
+	}
+
 	capture(): ExtensionScope {
 		this.assertActive();
 		if (this.currentScope) return this.currentScope;
