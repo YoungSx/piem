@@ -121,6 +121,30 @@ jobs:
                       dist/styles.css
                       dist/builtin-skills.json
 
+            # GitHub's own auto-detect picked the same ancient tag as the
+            # previous version for every release (it landed on 1.0.20 for all
+            # sixty-odd 1.0.x notes), so the generated "What's Changed" and the
+            # Full Changelog link were wrong for almost the entire series.
+            # Ask for the previous tag explicitly: the most recent release by
+            # creation time other than the one being published, then render the
+            # notes with the same engine the edit page uses.
+            - name: Generate release notes with the correct previous tag
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  TAG="${GITHUB_REF_NAME#v}"
+                  PREV=$(gh api "repos/${{ github.repository }}/releases?per_page=100" --paginate \
+                      --jq '.[] | select(.tag_name != "'"$GITHUB_REF_NAME"'") | .created_at + " " + .tag_name' \
+                      | sort | tail -1 | cut -d' ' -f2-)
+                  echo "Previous release tag: ${PREV:-none}"
+                  if [ -n "$PREV" ]; then
+                      gh api repos/${{ github.repository }}/releases/generate-notes \
+                          -f tag_name="$TAG" -f previous_tag_name="$PREV" --jq .body > release-notes.md
+                  else
+                      gh api repos/${{ github.repository }}/releases/generate-notes \
+                          -f tag_name="$TAG" --jq .body > release-notes.md
+                  fi
+
             - uses: softprops/action-gh-release@v2
               with:
                   files: |
@@ -128,4 +152,4 @@ jobs:
                       dist/manifest.json
                       dist/styles.css
                       dist/builtin-skills.json
-                  generate_release_notes: true
+                  body_path: release-notes.md
