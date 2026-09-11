@@ -79,11 +79,15 @@ export async function runResearchSmoke(root, endpoint, token, expectMobile, obse
 	const type = async text => {
 		if (!textarea()) document.querySelector(".piem-chat__composer-toggle")?.click();
 		await wait(textarea, "Composer textarea");
+		// Session creation resolves before React attaches the successor's editor.
+		// Wait for its real native adapter so a keystroke belongs to this chat.
+		await wait(() => plugin.agentService.runtimes.get(plugin.agentService.getActiveSessionPath())?.extensionUI, "Current conversation editor attached");
 		textarea().focus();
 		// Native setter bypasses React's value tracker, just like a real keystroke.
 		Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea(), text);
 		textarea().dispatchEvent(new Event("input", { bubbles: true }));
 		await wait(() => textarea()?.value === text, "Composer draft update");
+		await wait(() => plugin.agentService.runtimes.get(plugin.agentService.getActiveSessionPath())?.extensionUI?.getEditorText() === text, "Draft reached the current conversation");
 		await new Promise(resolve => requestAnimationFrame(resolve));
 	};
 	const submit = async text => {

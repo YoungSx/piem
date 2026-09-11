@@ -39,6 +39,7 @@ export interface ExtensionHostCallbacks {
 	getModel?(): Model<string> | undefined;
 	getModels?(): Model<string>[];
 	complete?: ExtensionComplete;
+	trackRequest?(settled: Promise<void>): void;
 	setModel?(model: Pick<Model<string>, "provider" | "id">): Promise<boolean>;
 	getThinkingLevel?(): ThinkingLevel;
 	isIdle?(): boolean;
@@ -145,6 +146,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			complete: (...args) => requireCallback("complete")(...args),
 			assertAvailable: lifetime.assertActive.bind(lifetime),
 			assertCanComplete: assertActive,
+			onRequest: settled => callbacks.trackRequest?.(settled),
 		});
 		const { snapshot: snapshotModel, revokeAuth, ...publicModelMembers } = modelMembers;
 		const models = limited({
@@ -251,7 +253,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			})));
 		};
 		return {
-			hasHandlers: (name: string) => runner.hasHandlers(name as Parameters<ExtensionRunner["hasHandlers"]>[0]),
+			hasHandlers: (name: string) => runner.hasHandlers(name),
 			emit: (event: Parameters<ExtensionRunner["emit"]>[0]) => invoke(() => runner.emit(event)),
 			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),
 			complete: models.complete,

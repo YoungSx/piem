@@ -49,7 +49,7 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		const result = f.service.getSnapshot().messages.find(message => message.role === "toolResult" && message.toolName === "web_search");
 		expect(textOf(result)).toContain("401");
 		if (result?.role !== "toolResult") throw new Error("Search did not return a tool result");
-		expect(result.isError || typeof result.details === "object" && result.details !== null && "error" in result.details).toBe(true);
+		expect(result.isError).toBe(true);
 		expect(textOf(result)).not.toContain(SOURCE.url);
 		expect(JSON.stringify(result)).not.toContain("research-fixture-key");
 		expect(f.requests.filter(request => request.kind === "search")).toHaveLength(1);
@@ -74,6 +74,8 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		await f.idle(path);
 		expect(f.service.isExtensionInput("/clarify")).toBe(true);
 		expect(f.service.isExtensionInput("Make these notes clearer -clarify")).toBe(true);
+		expect(f.service.isExtensionInput("Make these notes clearer -CLARIFY")).toBe(true);
+		expect(f.service.isExtensionInput("Make these notes clearer -clarify, keep the links")).toBe(true);
 		expect(await f.service.runExtensionCommand("clarify")).toBe(true);
 		await f.idle();
 		expect(draft).toBe(rewritten);
@@ -85,6 +87,12 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		await f.idle();
 		expect(JSON.stringify(f.requests.at(-1)!.body)).not.toContain("-clarify");
 		expect(f.service.getSnapshot().messages).toEqual([]);
+		for (const input of ["Summarize the agenda -CLARIFY", "Summarize the agenda -clarify, keep the links"]) {
+			expect(await f.service.sendPrompt(input)).toBe(true);
+			await f.idle();
+			expect(JSON.stringify(f.requests.at(-1)!.body).toLowerCase()).not.toContain("-clarify");
+			expect(f.service.getSnapshot().messages).toEqual([]);
+		}
 		expect(await f.service.runExtensionCommand("clarify", "model research beta")).toBe(true);
 		expect(f.plugin.settings.clarifyModelId).toBe("beta");
 		const saved = structuredClone(f.record.savedData.at(-1)) as PiemSettings;
@@ -169,6 +177,27 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		const result = f.service.getSnapshot().messages.find(message => message.role === "toolResult" && message.toolName === "context_checkpoint");
 		expect(textOf(result)).toContain("Created checkpoint 'after-stop'");
 		expect((await f.plugin.sessionManager.getSessionFor(path).getLog()).some(item => item.kind === "fact" && item.fact === "label" && item.label === "after-stop")).toBe(true);
+	});
+
+	it("retains the request slot after stop until the native rewrite request finishes", async () => {
+		const entered = deferred(), gate = deferred();
+		cleanup.push(gate.resolve);
+		const f = await researchFixture({ plan: { clarify: { text: "Late reply" } }, beforeResponse: async request => {
+			if (request.kind === "clarify") { entered.resolve(); await gate.promise; }
+		} }, cleanup);
+		const path = f.service.getActiveSessionPath();
+		cleanup.push(f.bindEditor(path, { read: () => "Keep this draft", replace: () => {} }));
+		await f.idle();
+		const rewrite = f.service.runExtensionCommand("clarify");
+		await entered.promise;
+		await f.service.abortSession(path);
+		expect(await rewrite).toBe(false);
+		await new Promise(resolve => setTimeout(resolve, 0));
+		expect(f.service.getSnapshot().isExtensionBusy).toBe(true);
+		expect(await f.service.runExtensionCommand("clarify")).toBe(false);
+		expect(f.requests.filter(request => request.kind === "clarify")).toHaveLength(1);
+		gate.resolve();
+		await f.idle();
 	});
 
 	it("persists checkpoints and timeline, then resumes a summary branch while retaining old history", async () => {

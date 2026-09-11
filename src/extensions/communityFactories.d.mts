@@ -6,3 +6,4 @@ export const invisibleContinue: ExtensionFactory;
 export function createWebSearch(platform: ExtensionPlatform): ExtensionFactory;
 export function createClarify(platform: ExtensionPlatform): ExtensionFactory;
 export function createContext(platform: ExtensionPlatform): ExtensionFactory;
+export function hasClarifyMarker(text: string): boolean;

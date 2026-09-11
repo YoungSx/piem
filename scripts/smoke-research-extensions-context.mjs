@@ -5,6 +5,11 @@ export async function contextScenarios(h) {
 	const summary = "已核对 Obsidian 官方插件文档。保留引用和事实；下一步：整理待办，不再重复搜索。";
 	const log = () => h.plugin.sessionManager.getSessionFor(path).getLog();
 	const facts = items => items.filter(item => item.kind === "fact" && item.fact === "label");
+	await h.submit("/context");
+	await h.wait(() => document.querySelector(".piem-chat__context-popover"), "Native context command opens readout");
+	h.record("context-command: native context readout opens", true);
+	document.querySelector(".piem-chat__context-gauge")?.click();
+	await h.idle(path);
 	await h.plan("context-seed", { chat: [{ text: "已核对资料，可以记录一个检查点。" }] });
 	h.record("context-seed: real conversation created", await h.service.sendPrompt("先核对资料，再保存这个阶段。")); await h.idle(path);
 	const checkpointResult = await h.tool("为已核对资料建立检查点。", "context_checkpoint", { name: checkpoint }, "context-checkpoint");

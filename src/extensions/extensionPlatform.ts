@@ -182,6 +182,12 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	};
 	return {
 		platform,
+		/** Retain physical IO without delaying the caller's timeout or abort. */
+		trackRequest: (settled: Promise<void>): void => {
+			const scope = requireScope();
+			scope.pending++;
+			void settled.then(() => release(scope), () => release(scope));
+		},
 		withOperation: <T>(work: (signal: AbortSignal) => Promise<T> | T, signal?: AbortSignal): Promise<T> => {
 			try {
 				assertActive();

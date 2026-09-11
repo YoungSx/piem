@@ -40,8 +40,10 @@ export async function clarifyScenarios(h) {
 	const cancelled = h.settle(h.service.runExtensionCommand("clarify", "要取消的改写"));
 	await h.held("clarify-cancel");
 	const stopping = h.settle(h.service.abortSession(path));
-	await h.type("取消后我重新写的草稿"); await h.release("clarify-cancel");
-	h.record("clarify-cancel: stop settles", !(await stopping).error); await cancelled; await h.idle(path);
+	h.record("clarify-cancel: stop settles", !(await stopping).error); await cancelled;
+	h.record("clarify-cancel: pending native request retains its slot", h.service.getSnapshot().isExtensionBusy === true);
+	h.record("clarify-cancel: another rewrite is refused until native IO settles", await h.service.runExtensionCommand("clarify", "不得叠加请求") === false && (await h.requests("clarify-cancel", "clarify")).length === 1);
+	await h.type("取消后我重新写的草稿"); await h.release("clarify-cancel"); await h.idle(path);
 	h.record("clarify-cancel: late result preserves new draft", h.textarea()?.value === "取消后我重新写的草稿");
 	h.record("clarify-cancel: no chat request", (await h.requests("clarify-cancel", "chat")).length === 0);
 
