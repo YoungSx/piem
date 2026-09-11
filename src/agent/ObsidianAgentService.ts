@@ -849,13 +849,14 @@ export class ObsidianAgentService {
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
-			createVaultTools: (getSkills) =>
+			createVaultTools: (getSkills, ownerId) =>
 				createObsidianTools(this.app, this.env, this.getSettings(), {
 					getSkills: getSkills ?? (() => this.toolRuntime?.skills ?? this.skills),
 					// A subagent gets the same question surface as its parent: the user
 					// has one attention, and the broker queues so two agents asking at
 					// once produce two cards in turn rather than two dialogs stacked.
 					askUserBroker: this.askUserBroker,
+					ownerId,
 				}),
 			getModel: () => getSelectedModel(this.getSettings()),
 			getStreamFn: () => this.resolveStreamFn(),
@@ -4190,7 +4191,7 @@ export class ObsidianAgentService {
 		// at spawn-execute time and must read the spawning session's state — a
 		// focused panel on session B must not leak B's thinking level or skills
 		// into a spawn started by session A.
-		return [...this.subagentExtension.createTools(() => rt.skills), ...(rt.communityHost?.tools ?? [])].map((tool) => {
+		return [...this.subagentExtension.createTools(() => rt.skills, rt.sessionPath), ...(rt.communityHost?.tools ?? [])].map((tool) => {
 			if (!tool.execute) {
 				return tool;
 			}

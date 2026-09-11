@@ -25,8 +25,8 @@ export interface SubagentModelChoice {
 }
 
 export interface SubagentHost {
-	/** The vault tool set a subagent runs with, before the extension adds delegation. */
-	createVaultTools(getSkills?: () => readonly Skill[]): AgentTool[];
+	/** Vault tools bound to the originating conversation, before delegation is added. */
+	createVaultTools(getSkills?: () => readonly Skill[], ownerId?: string): AgentTool[];
 	getModel(): Model<string>;
 	getStreamFn(): StreamFn;
 	getThinkingLevel(): ThinkingLevel;
@@ -113,7 +113,7 @@ export function createSubagentExtension(
 	host: SubagentHost,
 	options?: { waitPacing?: WaitPacing },
 ): {
-	createTools(getSkills?: () => readonly Skill[]): AgentTool[];
+	createTools(getSkills?: () => readonly Skill[], ownerId?: string): AgentTool[];
 	disposeAll(): void;
 	/**
 	 * The registry behind the tools, for read-only observers.
@@ -150,12 +150,12 @@ export function createSubagentExtension(
 
 	/**
 	 * @param ownerId The conversation this level's tools answer to, or undefined
-	 * at the top level, where each tool asks the host instead. A child level is
+	 * at the top level in hosts that resolve ownership at execution. A child level is
 	 * always given one, because the host can no longer name it by the time a
 	 * grandchild's tool runs.
 	 */
 	function buildTools(depth: number, ownerId?: string, getSkills: () => readonly Skill[] = () => host.getSkills()): AgentTool[] {
-		const tools = host.createVaultTools(getSkills);
+		const tools = host.createVaultTools(getSkills, ownerId);
 		const scopedContext = { ...context, getSkills };
 		if (depth < SUBAGENT_DEPTH_LIMIT) {
 			// The five travel together: a level that may spawn must also be able to
@@ -181,7 +181,7 @@ export function createSubagentExtension(
 	}
 
 	return {
-		createTools: (getSkills) => buildTools(0, undefined, getSkills),
+		createTools: (getSkills, ownerId) => buildTools(0, ownerId, getSkills),
 		disposeAll: () => registry.disposeAll(),
 		registry,
 	};

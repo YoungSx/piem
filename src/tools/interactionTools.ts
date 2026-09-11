@@ -85,7 +85,7 @@ export function createNotifyTool(app: App): AgentTool<typeof NotifyParameters> {
 	};
 }
 
-export function createAskUserTool(app: App, broker: AskUserBroker): AgentTool<typeof AskUserParameters> {
+export function createAskUserTool(app: App, broker: AskUserBroker, ownerId?: string): AgentTool<typeof AskUserParameters> {
 	return {
 		name: "ask_user",
 		label: "Ask user",
@@ -121,7 +121,7 @@ export function createAskUserTool(app: App, broker: AskUserBroker): AgentTool<ty
 				);
 			}
 
-			const answers = await broker.ask(params.questions as readonly AskUserQuestion[], signal);
+			const answers = await broker.ask(params.questions as readonly AskUserQuestion[], signal, ownerId);
 			if (answers === null) {
 				return textResult(
 					"The user handed the decision back without answering. Do not re-ask the same thing; make the most reasonable choice yourself and say that you did.",

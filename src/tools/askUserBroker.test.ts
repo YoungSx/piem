@@ -4,8 +4,8 @@ import type { AskUserQuestion } from "./askUserQuestion";
 
 /**
  * The broker is where two properties the old modal could not have now live: one
- * question on screen at a time, and a choice of surface per question. Both are
- * invisible in the UI when they work, so they are asserted here.
+ * question per conversation at a time, and a choice of surface per question.
+ * Both are invisible in the UI when they work, so they are asserted here.
  */
 describe("AskUserBroker", () => {
 	it("routes to the panel when the panel is on screen", () => {
@@ -80,6 +80,110 @@ describe("AskUserBroker", () => {
 		expect(broker.getPending()?.questions[0]?.question).toBe("Second?");
 		broker.dismiss(broker.getPending()?.id ?? "");
 		await second;
+	});
+
+	it("keeps each conversation's head and queue independent", async () => {
+		const escalated: AskUserRequest[] = [];
+		const broker = new AskUserBroker({ isPanelVisible: () => true, escalate: (request) => escalated.push(request) });
+		const firstA = broker.ask([question("A first?")], undefined, "chat-a");
+		const secondA = broker.ask([question("A second?")], undefined, "chat-a");
+		const firstB = broker.ask([question("B first?")], undefined, "chat-b");
+		try {
+			expect(broker.getPending("chat-a")?.questions[0]?.question).toBe("A first?");
+			expect(broker.getPending("chat-b")?.questions[0]?.question).toBe("B first?");
+			expect(broker.getPending()).toBeNull();
+			expect(broker.getQueuedCount("chat-a")).toBe(1);
+			expect(broker.getQueuedCount("chat-b")).toBe(0);
+			expect(escalated).toEqual([]);
+
+			const answers = [{ question: "B first?", header: "Where to file", selected: ["Inbox"] }];
+			broker.answer(broker.getPending("chat-b")?.id ?? "", answers);
+			expect(await firstB).toEqual(answers);
+			expect(broker.getPending("chat-b")).toBeNull();
+			expect(broker.getPending("chat-a")?.questions[0]?.question).toBe("A first?");
+
+			broker.dismiss(broker.getPending("chat-a")?.id ?? "");
+			expect(await firstA).toBeNull();
+			expect(broker.getPending("chat-a")?.questions[0]?.question).toBe("A second?");
+			expect(broker.getQueuedCount("chat-a")).toBe(0);
+		} finally {
+			broker.clear();
+			await Promise.all([firstA, secondA, firstB]);
+		}
+	});
+
+	it("serializes dialogs globally across conversation heads", async () => {
+		const escalated: AskUserRequest[] = [];
+		const retracted: string[] = [];
+		const broker = new AskUserBroker({
+			isPanelVisible: () => false,
+			escalate: (request) => escalated.push(request),
+			retract: (request) => { retracted.push(request.id); broker.dismiss(request.id); },
+		});
+		const firstA = broker.ask([question("A first?")], undefined, "chat-a");
+		const firstB = broker.ask([question("B first?")], undefined, "chat-b");
+		const secondA = broker.ask([question("A second?")], undefined, "chat-a");
+		try {
+			expect(escalated.map((request) => request.ownerId)).toEqual(["chat-a"]);
+			expect(broker.getPending("chat-a")).toBeNull();
+			expect(broker.getPending("chat-b")).toBeNull();
+			broker.dismiss(escalated[0]?.id ?? "");
+			expect(await firstA).toBeNull();
+			expect(escalated.map((request) => request.ownerId)).toEqual(["chat-a", "chat-b"]);
+			expect(retracted).toEqual([escalated[0]?.id ?? ""]);
+
+			broker.dismiss(escalated[1]?.id ?? "");
+			expect(await firstB).toBeNull();
+			expect(escalated.map((request) => request.questions[0]?.question)).toEqual(["A first?", "B first?", "A second?"]);
+		} finally {
+			broker.clear();
+			await Promise.all([firstA, firstB, secondA]);
+		}
+		expect(retracted).toEqual(escalated.map((request) => request.id));
+	});
+
+	it("leaves another conversation's dialog alone when a queued owner aborts", async () => {
+		const escalated: AskUserRequest[] = [];
+		const retracted: string[] = [];
+		const broker = new AskUserBroker({
+			isPanelVisible: () => false,
+			escalate: (request) => escalated.push(request),
+			retract: (request) => retracted.push(request.id),
+		});
+		const controller = new AbortController();
+		const first = broker.ask([question("A?")], undefined, "chat-a");
+		const aborted = broker.ask([question("B?")], controller.signal, "chat-b").catch((reason: unknown) => reason);
+		const next = broker.ask([question("B next?")], undefined, "chat-b");
+		try {
+			controller.abort();
+			expect(await aborted).toEqual(new Error("Operation aborted"));
+			expect(escalated).toHaveLength(1);
+			expect(retracted).toEqual([]);
+			expect(broker.getPending("chat-b")).toBeNull();
+			broker.dismiss(escalated[0]?.id ?? "");
+			expect(escalated.map((request) => request.questions[0]?.question)).toEqual(["A?", "B next?"]);
+		} finally {
+			broker.clear();
+			await Promise.all([first, aborted, next]);
+		}
+	});
+
+	it("can settle a dialog synchronously and present the next request", async () => {
+		const owners: string[] = [];
+		const broker = new AskUserBroker({
+			isPanelVisible: () => false,
+			escalate: (request) => { owners.push(request.ownerId); broker.dismiss(request.id); },
+		});
+		const first = broker.ask([question()], undefined, "chat-a");
+		const second = broker.ask([question()], undefined, "chat-b");
+		try {
+			expect(owners).toEqual(["chat-a", "chat-b"]);
+			expect(await first).toBeNull();
+			expect(await second).toBeNull();
+		} finally {
+			broker.clear();
+			await Promise.all([first, second]);
+		}
 	});
 
 	it("retracts an escalated dialog that something else settled", async () => {

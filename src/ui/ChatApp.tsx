@@ -181,6 +181,10 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	);
 	const hasActiveNote = activeNotePath !== null;
 	const [ask, setAsk] = useState<{ request: AskUserRequest | null; queued: number }>({ request: null, queued: 0 });
+	const ownerId = snapshot.session?.path;
+	// A session switch renders before its subscription effect runs. Never render
+	// the previous conversation's card in that intermediate frame.
+	const pendingQuestion = ownerId && ask.request?.ownerId === ownerId ? ask.request : null;
 
 	useEffect(() => {
 		const unsubscribe = service.subscribe(setSnapshot);
@@ -221,14 +225,15 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 * advanced would be a lie assembled from two reads.
 	 */
 	useEffect(() => {
-		if (!askUserBroker) {
+		if (!askUserBroker || !ownerId) {
+			setAsk({ request: null, queued: 0 });
 			return;
 		}
 		const resnapshot = (): void =>
-			setAsk({ request: askUserBroker.getPending(), queued: askUserBroker.getQueuedCount() });
+			setAsk({ request: askUserBroker.getPending(ownerId), queued: askUserBroker.getQueuedCount(ownerId) });
 		resnapshot();
 		return askUserBroker.subscribe(resnapshot);
-	}, [askUserBroker]);
+	}, [askUserBroker, ownerId]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -797,8 +802,8 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					contextWindow={snapshot.contextFill?.contextWindow}
 					onQuickAction={isExtensionBusy ? undefined : handleQuickAction}
 					suggestedActions={suggestedActions}
-					pendingQuestion={ask.request}
-					queuedQuestions={ask.queued}
+					pendingQuestion={pendingQuestion}
+					queuedQuestions={pendingQuestion ? ask.queued : 0}
 					onAnswerQuestion={askUserBroker ? (id, answers) => askUserBroker.answer(id, answers) : undefined}
 					onDismissQuestion={askUserBroker ? (id) => askUserBroker.dismiss(id) : undefined}
 				/>

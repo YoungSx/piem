@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, Component } from "obsidian";
-import type { Api, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ObsidianAgentService as ObsidianAgentServiceType } from "../agent/ObsidianAgentService";
@@ -9,6 +9,7 @@ import type { PiemSettings } from "../settings";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import type { StaticExtension } from "../extensions/extensionHost";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { VIEW_TYPE_PIEM_CHAT } from "../constants";
 import { flushRender, installDom } from "../testUtils/dom";
 
 installObsidianStub();
@@ -24,6 +25,7 @@ const { DraftStore } = await import("../session/DraftStore");
 const { DEFAULT_SESSION_RETENTION } = await import("../session/retention");
 const { DEFAULT_SESSION_DIR, getLegacySessionDir } = await import("../session/sessionDir");
 const { DEFAULT_SETTINGS } = await import("../settings");
+const { AskUserBroker } = await import("../tools/askUserBroker");
 const { createRoot } = await import("react-dom/client");
 
 // The default config folder is not spelled as one literal, matching
@@ -226,6 +228,7 @@ describe("ChatApp × real service (issue #168)", () => {
 	const roots: { unmount: () => void }[] = [];
 	const services: ObsidianAgentServiceType[] = [];
 	const drafts: InstanceType<typeof DraftStore>[] = [];
+	const brokers: InstanceType<typeof AskUserBroker>[] = [];
 	/**
 	 * What the panel's boundary caught, if anything.
 	 *
@@ -243,7 +246,7 @@ describe("ChatApp × real service (issue #168)", () => {
 
 	async function mountPanel(
 		scripted: { streamFn: StreamFn; prompts: string[] },
-		options: { yieldIO?: boolean; extensionFactories?: readonly StaticExtension[] } = {},
+		options: { yieldIO?: boolean; extensionFactories?: readonly StaticExtension[]; askUserBroker?: InstanceType<typeof AskUserBroker> } = {},
 	): Promise<{
 		service: ObsidianAgentServiceType;
 		prompts: string[];
@@ -301,6 +304,7 @@ describe("ChatApp × real service (issue #168)", () => {
 			workspace: {
 				getActiveViewOfType: () => null,
 				getActiveFile: () => activeFile,
+				getLeavesOfType: (type: string) => options.askUserBroker && type === VIEW_TYPE_PIEM_CHAT ? [{}] : [],
 			},
 		} as unknown as App;
 		const sessionManager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
@@ -308,6 +312,7 @@ describe("ChatApp × real service (issue #168)", () => {
 			streamFn: scripted.streamFn,
 			loadUserSkills: NO_USER_SKILLS,
 			extensionFactories: options.extensionFactories,
+			askUserBroker: options.askUserBroker,
 		});
 		services.push(service);
 
@@ -324,6 +329,7 @@ describe("ChatApp × real service (issue #168)", () => {
 					inputController={new ChatInputController()}
 					component={{} as Component}
 					draftStore={draftStore}
+					askUserBroker={options.askUserBroker}
 				/>
 			</PanelErrorBoundary>,
 		);
@@ -348,10 +354,98 @@ describe("ChatApp × real service (issue #168)", () => {
 		}
 		await flushRender();
 		for (const service of services.splice(0)) service.dispose();
+		for (const broker of brokers.splice(0)) broker.clear();
 		for (const store of drafts.splice(0)) { await store.flush(); store.dispose(); }
 		document.body.replaceChildren();
 		crashes.length = 0;
 	});
+
+	it.each(["before", "after"])("keeps ask_user in its own conversation when it arrives %s switching away", async (arrival) => {
+		const broker = new AskUserBroker();
+		brokers.push(broker);
+		const prompt = "Ask where session A should file this note";
+		const questions = [{ question: "Where should A's note go?", header: "Destination", options: [{ label: "Inbox" }, { label: "Archive" }] }];
+		let releaseAsk: (() => void) | undefined;
+		const streamFn: StreamFn = (model, context) => {
+			// Empty-screen suggestions and the seed turns must never issue tools.
+			if (!contextText(context).includes(prompt) || releaseAsk) return textReply(model, CHIPS_JSON);
+			const stream = createAssistantMessageEventStream();
+			const message: AssistantMessage = {
+				...assistantMessage(model, ""),
+				content: [{ type: "toolCall", id: "ask-a", name: "ask_user", arguments: { questions } }],
+				stopReason: "toolUse",
+			};
+			let released = false;
+			releaseAsk = () => {
+				if (released) return;
+				released = true;
+				stream.push({ type: "done", reason: "toolUse", message });
+				stream.end(message);
+			};
+			return stream;
+		};
+		const { service } = await mountPanel({ streamFn, prompts: [] }, { askUserBroker: broker });
+		await flushRender(() => service.getSnapshot().session !== undefined);
+		// Both chats need content: switching away retires an unused blank sheet.
+		await service.sendPrompt("Seed session A");
+		const first = service.getSnapshot().session!;
+		await service.newSession();
+		await service.sendPrompt("Seed session B");
+		const second = service.getSnapshot().session!;
+		expect(second.id).not.toBe(first.id);
+		await service.openSession(first.path);
+		await flushRender();
+
+		let queued = false;
+		const unsubscribe = broker.subscribe(() => { queued = true; });
+		let finished = false;
+		const run = service.sendPrompt(prompt).finally(() => { finished = true; });
+		try {
+			await flushRender(() => releaseAsk !== undefined);
+			if (arrival === "after") {
+				await service.openSession(second.path);
+				await flushRender();
+			}
+			releaseAsk?.();
+			await flushRender(() => queued);
+			if (arrival === "before") {
+				expect(document.querySelector(".piem-ask-card--pending")?.textContent).toContain(questions[0]!.question);
+				await service.openSession(second.path);
+				await flushRender();
+			}
+
+			// B cannot see or answer A's question, and leaving A must not settle it.
+			expect(service.getSnapshot().session?.id).toBe(second.id);
+			expect(document.querySelectorAll(".piem-ask-card--pending").length).toBe(0);
+			expect(document.querySelectorAll(".piem-ask-action").length).toBe(0);
+			expect(broker.getPending(second.path)).toBeNull();
+			expect(broker.getPending(first.path)?.questions).toEqual(questions);
+			expect(finished).toBe(false);
+
+			await service.openSession(first.path);
+			await flushRender();
+			expect(document.querySelector(".piem-ask-card--pending")?.textContent).toContain(questions[0]!.question);
+			document.querySelector<HTMLButtonElement>(".piem-ask-action")!.click();
+			await run;
+			await flushRender();
+			expect(broker.getPending(first.path)).toBeNull();
+			expect(document.querySelector(".piem-ask-card__picked")?.textContent).toBe("Inbox");
+			expect(service.getSnapshot().messages.some((message) => message.role === "toolResult" && message.toolName === "ask_user" && !message.isError)).toBe(true);
+
+			await service.openSession(second.path);
+			await flushRender();
+			expect(document.querySelectorAll(".piem-ask-card").length).toBe(0);
+			expect(service.getSnapshot().messages.some((message) => message.role === "toolResult" && message.toolName === "ask_user")).toBe(false);
+			expect(crashes).toHaveLength(0);
+		} finally {
+			// Also release the scripted provider on failure, before waiting for abort.
+			releaseAsk?.();
+			await service.abortSession(first.path);
+			broker.clear();
+			await run;
+			unsubscribe();
+		}
+	}, 15_000);
 
 	it("carries extension text through the live editor and keeps drafts in their own conversations", async () => {
 		const uiBySession = new Map<string, ExtensionUIContext>();

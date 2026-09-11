@@ -2220,6 +2220,57 @@ describe("subagent ownership across conversations", () => {
 		}
 	});
 
+	it("binds vault question tools to the root conversation at every depth", async () => {
+		let owner = "chat-a";
+		const questions = new Map<string, string | undefined>();
+		const childStream = scriptedStreamFn([
+			{ toolCall: { id: "child-question", name: "ask_user" } },
+			{ toolCall: { id: "child-spawn", name: "spawn_subagent", arguments: { task: "Ask deeper" } } },
+			{ text: "Child done." },
+		]);
+		const grandchildStream = scriptedStreamFn([
+			{ toolCall: { id: "grandchild-question", name: "ask_user" } },
+			{ text: "Grandchild done." },
+		]);
+		const streamFn: StreamFn = (model, context, options) =>
+			(context.tools ?? []).some((tool) => tool.name === "spawn_subagent")
+				? childStream(model, context, options)
+				: grandchildStream(model, context, options);
+		const extension = createSubagentExtension({
+			...makeOwnedHost(streamFn, () => owner),
+			createVaultTools: (_getSkills?: () => readonly Skill[], ownerId?: string) => [{
+				name: "ask_user",
+				label: "Ask user",
+				description: "Records which conversation receives the question.",
+				parameters: Type.Object({}),
+				execute: async (id) => {
+					questions.set(id, ownerId);
+					return { content: [{ type: "text", text: "Answered." }], details: {} };
+				},
+			}],
+		});
+		try {
+			const tools = extension.createTools(undefined, owner);
+			// A keeps running after the reader switches to B. Its own question and
+			// every descendant's question must still be routed to A's transcript.
+			owner = "chat-b";
+			await toolNamed(tools, "ask_user").execute("root-question", {}, undefined);
+			await toolNamed(tools, "spawn_subagent").execute("root-spawn", { task: "Ask the user" }, undefined);
+			await extension.registry.all()[0]!.promise;
+			await Promise.all(extension.registry.all().map((entry) => entry.promise));
+
+			expect(Object.fromEntries(questions)).toEqual({
+				"root-question": "chat-a",
+				"child-question": "chat-a",
+				"grandchild-question": "chat-a",
+			});
+			expect(extension.registry.forOwner("chat-a").map((entry) => entry.depth)).toEqual([1, 2]);
+			expect(extension.registry.forOwner("chat-b")).toEqual([]);
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
 	it("files a grandchild under the conversation that started the tree", async () => {
 		let owner = "chat-a";
 		// One stream closure per level: a fresh one per request would reset its

@@ -49,9 +49,13 @@ the agent can drive the editor, not just the file.
 
 `notify` — a Notice, for when something finished while you were elsewhere.
 
-`ask_user` — a dialog the agent opens mid-turn when it needs a decision from
-you. It is not a permission prompt; it is the agent admitting it does not know
-which of two notes you meant.
+`ask_user` — a question with clickable choices when the agent needs a decision,
+such as which of two notes you meant. It appears in the conversation that asked
+it, including questions from that conversation's subagents. Switching chats
+leaves the question waiting in its own chat; each chat has its own queue. When
+the chat panel exists but is hidden or collapsed, questions open in a dialog,
+one at a time across all chats. With no chat panel open, the agent must ask in
+the conversation text instead.
 
 ## Tasks
 
