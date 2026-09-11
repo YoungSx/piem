@@ -228,6 +228,10 @@ export class CommunityHost {
 	}
 	async input(text: string) { return this.operate(() => this.host.input(text)); }
 	async emit(event: Parameters<ExtensionHost["emit"]>[0]): Promise<void> {
+		if (!this.host.hasHandlers(event.type)) return;
+		// A host action can emit an observation while its command owns the
+		// platform. Its outer operation still owns flushing and delivery.
+		if (this.platform.busy) { await this.host.emit(event); return; }
 		await this.operate(async () => { await this.host.emit(event); });
 		this.deliver();
 	}

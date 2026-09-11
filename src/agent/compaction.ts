@@ -61,7 +61,7 @@ export interface CompactionEvent {
 export type CompactionOutcome =
 	| { status: "skipped" }
 	| { status: "compacted"; messages: AgentMessage[]; result: CompactResult }
-	| { status: "failed"; message: string };
+	| { status: "failed"; message: string; aborted: boolean };
 
 export interface CompactionRequest {
 	messages: AgentMessage[];
@@ -121,7 +121,7 @@ export async function compactIfNeeded(request: CompactionRequest): Promise<Compa
 
 	const prepared = prepareCompaction(toHarnessEntries(request.messages, request.previous), settings);
 	if (!prepared.ok) {
-		return { status: "failed", message: prepared.error.message };
+		return { status: "failed", message: prepared.error.message, aborted: prepared.error.code === "aborted" };
 	}
 	// `undefined` is a success meaning "nothing left to compact", not an error.
 	if (!prepared.value) {
@@ -142,11 +142,15 @@ export async function compactIfNeeded(request: CompactionRequest): Promise<Compa
 			request.retry ?? DEFAULT_COMPACTION_RETRY,
 		);
 	} catch (error) {
-		return { status: "failed", message: error instanceof Error ? error.message : String(error) };
+		return {
+			status: "failed", message: error instanceof Error ? error.message : String(error),
+			aborted: request.signal?.aborted === true || (error instanceof Error && error.name === "AbortError"),
+		};
 	}
 	if (!compacted.ok) {
-		return { status: "failed", message: compacted.error.message };
+		return { status: "failed", message: compacted.error.message, aborted: request.signal?.aborted === true || compacted.error.code === "aborted" };
 	}
+	if (request.signal?.aborted) return { status: "failed", message: "Compaction cancelled", aborted: true };
 
 	const result = { ...compacted.value, retainedTail: retainSkillContext(request.messages, compacted.value.retainedTail) };
 	return {

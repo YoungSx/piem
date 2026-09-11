@@ -139,11 +139,8 @@ export interface ExtensionLoadReport {
  *   runs is a behavioural hole the extension cannot detect: it registered for
  *   `before_provider_request` because it intends to rewrite the request, and
  *   silently not calling it makes the extension wrong rather than reduced.
- * - **Flags** are ignored with nothing recorded against the extension, because
- *   Pi's own contract for an unregistered flag is `getFlag(name) → undefined`
- *   (see the loader's `getFlag`), which every flag-reading extension already
- *   handles. There is no command line here to populate one from, so the value
- *   an extension would observe is the value Pi would have given it anyway.
+ * - **Flags** keep Pi's registered defaults; an unknown flag returns undefined.
+ *   Obsidian has no command-line arguments to override those defaults.
  * - **Renderers and markdown transformers** are ignored *and recorded*. Pi
  *   stores them and hands them back through `runner.getMessageRenderer` /
  *   `getEntryRenderer` / `getMarkdownTransformers`; this host never calls those,
@@ -156,8 +153,7 @@ function validateRegistration(extension: Extension): string[] {
 	for (const event of extension.handlers.keys()) {
 		if (!SUPPORTED_EXTENSION_EVENTS.has(event)) unavailable(`extension event ${event}`);
 	}
-	// Flags are deliberately absent from this list: ignoring one is invisible to
-	// the extension, so there is nothing to warn a reader about.
+	// Flags use the native loader's defaults, so there is no degraded capability.
 	const ignored: string[] = [];
 	// Ignored and the extension may misbehave: registration succeeds, nothing
 	// ever asks for the result.
@@ -440,7 +436,23 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		};
 		runner.bindCore(actions, context, { registerProvider: deny, registerNativeProvider: deny, unregisterProvider: deny });
 		runner.bindCommandContext({ waitForIdle: () => requireCallback("waitForIdle")(), newSession: deny, fork: deny,
-			navigateTree: (id, options) => callbacks.session ? callbacks.session.navigateTree(id, options) : deny(), switchSession: deny, reload: deny });
+			navigateTree: async (id, options) => {
+				const session = callbacks.session ?? deny();
+				const scope = lifetime.capture();
+				const oldLeafId = session.getLeafId();
+				const result = await session.navigateTree(id, options);
+				scope.assertActive();
+				if (!result.cancelled && runner.hasHandlers("session_tree")) {
+					const summaryEntry = session.getEntry(id);
+					// The navigation queue has finished before entering a handler,
+					// whose reads and writes can use this same ContextSession.
+					await invoke(() => runner.emit({
+						type: "session_tree", oldLeafId, newLeafId: session.getLeafId(), fromExtension: true,
+						...(summaryEntry?.type === "branch_summary" ? { summaryEntry } : {}),
+					}));
+				}
+				return result;
+			}, switchSession: deny, reload: deny });
 		const nativeUI = createNativeExtensionUI(lifetime, () => uiAdapter, (message, type) => requireCallback("notify")(message, type));
 		if (callbacks.getEditorText) nativeUI.ui.getEditorText = () => requireCallback("getEditorText")();
 		if (callbacks.setEditorText) nativeUI.ui.setEditorText = text => requireCallback("setEditorText")(text);

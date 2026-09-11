@@ -102,14 +102,19 @@ describe("static extension host contract", () => {
 		} finally { host.dispose(); }
 	});
 
-	it("says nothing about an ignored flag, which the extension cannot observe anyway", async () => {
+	it("preserves registered flag defaults without reporting a degraded capability", async () => {
+		let values: unknown[] = [];
 		const host = await createExtensionHost([{ id: "flagged", factory: pi => {
-			pi.registerFlag("verbose", { type: "boolean", default: false });
-			pi.registerCommand("flagged", { handler: async () => {} });
+			pi.registerFlag("verbose", { type: "boolean", default: true });
+			pi.registerFlag("mode", { type: "string", default: "review" });
+			pi.registerFlag("unset", { type: "boolean" });
+			pi.registerCommand("flagged", { handler: async () => { values = [pi.getFlag("verbose"), pi.getFlag("mode"), pi.getFlag("unset"), pi.getFlag("unknown")]; } });
 		} }], callbacks);
 		try {
 			expect(host.commands.map(command => command.name)).toEqual(["flagged"]);
 			expect(host.loadReports).toEqual([]);
+			await host.run("flagged");
+			expect(values).toEqual([true, "review", undefined, undefined]);
 		} finally { host.dispose(); }
 	});
 
