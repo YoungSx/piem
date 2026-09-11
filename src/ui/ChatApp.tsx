@@ -4,7 +4,7 @@ import type { Component } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
 import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
-import type { QuickAction } from "./quickActionSuggestions";
+import { continueAfterFailureQuickAction, lastReplyFailed, type QuickAction } from "./quickActionSuggestions";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type DraftStore } from "../session/DraftStore";
 import { snapshotSubagents, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
@@ -285,9 +285,22 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 	/*
 	 * Settled reply: clear whatever the previous reply suggested and fetch the
-	 * model's follow-ups. A failure resolves to null and stores `[]`, leaving the
-	 * row hidden — this placement has no fallback and wants none: a suggestion
-	 * after a reply is a nicety, and an empty row states that honestly.
+	 * model's follow-ups — unless the reply died mid-run, in which case no
+	 * request goes out at all and the preset "Continue" chip stands in. A
+	 * suggestion request against a provider that just failed the reply is a
+	 * request that mostly fails the same way, billed either way; and the one
+	 * thing a reader of a half-finished reply wants to do next is not something
+	 * the model needs to be asked about.
+	 *
+	 * `error` only, not `aborted`: a stop is the user's own choice and offering
+	 * to undo it reads as second-guessing. Configuration failures (missing key,
+	 * quota) are deliberately not carved out — the chip sends an ordinary
+	 * message, and whether spending another request on a provider that refuses
+	 * is worth it stays the user's call, not the panel's guess from wording.
+	 *
+	 * A successful parse still resolves to null and stores `[]`, leaving the row
+	 * hidden — this placement has no fallback and wants none: a suggestion after
+	 * a reply is a nicety, and an empty row states that honestly.
 	 */
 	useEffect(() => {
 		const wasStreaming = prevStreamingRef.current;
@@ -296,6 +309,10 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			return;
 		}
 		const request = ++suggestionRequestRef.current;
+		if (lastReplyFailed(snapshot.messages)) {
+			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: continueAfterFailureQuickAction(getT(snapshot.language)) });
+			return;
+		}
 		setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: [] });
 		void service.suggestQuickActions("reply").then((actions) => {
 			if (request !== suggestionRequestRef.current) {
@@ -303,7 +320,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			}
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: actions ?? [] });
 		});
-	}, [service, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, snapshot.pendingToolCalls.length, snapshot.messages.length, snapshot.sessionRevision]);
+	}, [service, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, snapshot.pendingToolCalls.length, snapshot.messages, snapshot.sessionRevision, snapshot.language]);
 
 	/*
 	 * The live placement's chips only: the same `actions` would leak a previous

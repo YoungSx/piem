@@ -781,7 +781,8 @@ describe("ChatApp model-suggested quick actions", () => {
 		return Array.from(host.querySelectorAll<HTMLButtonElement>(".piem-chat__quick-action"));
 	}
 
-	function assistantReply(text: string) {
+	/** `stopReason` defaults to a healthy reply; the failure cases pass their own. */
+	function assistantReply(text: string, stopReason: "stop" | "error" | "aborted" = "stop") {
 		return {
 			role: "assistant",
 			content: [{ type: "text", text }],
@@ -789,7 +790,7 @@ describe("ChatApp model-suggested quick actions", () => {
 			provider: "deepseek",
 			model: "deepseek-v4-pro",
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-			stopReason: "stop",
+			stopReason,
 			timestamp: Date.now(),
 		};
 	}
@@ -911,6 +912,45 @@ describe("ChatApp model-suggested quick actions", () => {
 
 		// No fallback here, by the placement's contract: a nicety that failed shows nothing.
 		expect(quickActionChips(host)).toHaveLength(0);
+	});
+
+	it("offers the preset Continue chip instead of a request when the reply died mid-run", async () => {
+		const { host, service } = await mountChat({ snapshot: { ...readySnapshot, isStreaming: true }, suggestionResults: [agentChips] });
+
+		service.emit({ isStreaming: false, messages: [assistantReply("A half sentence that never fini", "error")] as ChatSnapshot["messages"] });
+		await flushRender();
+
+		// No suggestion request went out — the provider just failed, and a
+		// suggestion against it mostly fails the same way, billed either way.
+		expect(service.suggestionRequests).toEqual([]);
+		// The preset chip is the whole row: one way forward, no padding.
+		expect(quickActionChips(host).map((chip) => chip.textContent)).toEqual(["Continue"]);
+	});
+
+	it("sends Continue as a real prompt when the chip is tapped", async () => {
+		const { host, service } = await mountChat({ snapshot: { ...readySnapshot, isStreaming: true }, suggestionResults: [agentChips] });
+
+		service.emit({ isStreaming: false, messages: [assistantReply("A half sentence that never fini", "error")] as ChatSnapshot["messages"] });
+		await flushRender(() => quickActionChips(host).some((chip) => chip.textContent === "Continue"));
+
+		quickActionChips(host)[0]?.click();
+		await flushRender();
+
+		// The tap is the send, and what it sends is a visible user message —
+		// the same path any other chip takes, no special mechanism.
+		expect(service.sentPrompts).toContain("Continue.");
+	});
+
+	it("does not offer the chip when the user stopped the reply themselves", async () => {
+		const { host, service } = await mountChat({ snapshot: { ...readySnapshot, isStreaming: true }, suggestionResults: [agentChips] });
+
+		service.emit({ isStreaming: false, messages: [assistantReply("Stop was the reader's own hand", "aborted")] as ChatSnapshot["messages"] });
+		await flushRender();
+
+		// A stop is the user's choice; offering to undo it reads as second-guessing.
+		// The ordinary nicety path takes over instead.
+		expect(service.suggestionRequests).toEqual(["reply"]);
+		expect(quickActionChips(host).some((chip) => chip.textContent === "Continue")).toBe(false);
 	});
 
 	it("does not fire a speculative request when opening an already-settled conversation", async () => {
