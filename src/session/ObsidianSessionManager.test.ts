@@ -228,6 +228,37 @@ describe("ObsidianSessionManager", () => {
 		// same as an explicit clear.
 		expect(await manager.readActiveSessionName()).toBeUndefined();
 	});
+
+	it("holds a blank session in memory and materializes it under the reserved path", async () => {
+		const adapter = new MemoryAdapter() as unknown as DataAdapter;
+		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+
+		const blank = await manager.createBlankSession(DEFAULTS);
+		expect(manager.isBlankSession(blank.path)).toBe(true);
+		// Nothing on the disk, nothing in history: the sheet is invisible to
+		// every consumer that reads files.
+		expect(await manager.listSessions()).toEqual([]);
+		// A rename is a memory fact while the sheet is blank.
+		await manager.appendSessionInfo("Named before the first word");
+		expect((await manager.getActiveSessionInfo()).name).toBe("Named before the first word");
+
+		const materialized = await manager.materializeIfBlank(blank.path, DEFAULTS);
+
+		// Same id, same reserved path, now a real file the history can see.
+		expect(materialized.id).toBe(blank.id);
+		expect(materialized.path).toBe(blank.path);
+		expect(manager.isBlankSession(blank.path)).toBe(false);
+		expect((await manager.listSessions()).map((session) => session.id)).toEqual([blank.id]);
+		// The memory fact survived the replay: the name reads back off the disk.
+		expect((await manager.getActiveSessionInfo()).name).toBe("Named before the first word");
+		// And the configuration the first run speaks is durable in the file.
+		const content = await adapter.read(blank.path);
+		expect(content).toContain('"type":"model_change"');
+		expect(content).toContain('"type":"thinking_level_change"');
+		// Appends after materialization land in the file directly.
+		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
+		expect(await adapter.read(blank.path)).toContain("Hello");
+	});
 });
 
 /**
