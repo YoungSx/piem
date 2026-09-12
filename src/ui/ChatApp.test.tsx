@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setSystemTime, spyOn } from "bun:test";
 import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { App, Component } from "obsidian";
 import { flushRender, installDom } from "../testUtils/dom";
@@ -206,6 +206,7 @@ class FakeAgentService {
 	}
 	async openSession(): Promise<void> {}
 	async newSession(): Promise<void> {}
+	async setComposerCollapsed(collapsed: boolean): Promise<void> { this.emit({ mobileComposerCollapsed: collapsed }); }
 	async renameSession(): Promise<void> {}
 	async deleteSession(): Promise<void> {}
 	pinContextRef(): void {}
@@ -506,6 +507,78 @@ describe("ChatApp external prefill", () => {
 		await mounted?.unmount();
 		mounted = undefined;
 		document.body.replaceChildren();
+	});
+
+	it("keeps a reference received before the first conversation and its saved draft are ready", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { session: undefined } });
+		await mounted.draftStore.set(SESSION_ID, "Saved thought");
+		const delivery = mounted.inputController.prefill("Regarding the chosen folder");
+		mounted.service.emit({ session: sessionInfo(), sessionRevision: 1 });
+		await flushRender();
+		await delivery;
+		expect(composer(mounted.host).value).toBe("Saved thought\n\nRegarding the chosen folder");
+	});
+
+	it("waits for a slow saved draft before appending, without resurrecting another conversation's reference", async () => {
+		mounted = await mountChat({ withDraftStore: true });
+		await typeDraft(composer(mounted.host), "A's draft");
+		let finish!: (text: string) => void;
+		const read = spyOn(mounted.draftStore, "get").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+		try {
+			mounted.service.emit({ session: { ...sessionInfo(), id: "b", path: "b.jsonl" } });
+			await flushRender();
+			const stale = mounted.inputController.prefill("A only", SESSION_ID);
+			const current = mounted.inputController.prefill("B reference", "b");
+			finish("B on disk");
+			await flushRender();
+			expect(await stale).toBe(false);
+			expect(await current).toBe(true);
+			expect(composer(mounted.host).value).toBe("B on disk\n\nB reference");
+			expect(await mounted.draftStore.get(SESSION_ID)).toBe("A's draft");
+		} finally { read.mockRestore(); }
+	});
+
+	it("keeps typing disabled until the saved draft has loaded", async () => {
+		mounted = await mountChat({ withDraftStore: true });
+		let finish!: (text: string) => void;
+		const read = spyOn(mounted.draftStore, "get").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+		try {
+			mounted.service.emit({ session: { ...sessionInfo(), id: "slow", path: "slow.jsonl" } });
+			await flushRender();
+			expect(composer(mounted.host).readOnly).toBe(true);
+			finish("Saved before opening");
+			await flushRender();
+			expect(composer(mounted.host).readOnly).toBe(false);
+			expect(composer(mounted.host).value).toBe("Saved before opening");
+		} finally { read.mockRestore(); }
+	});
+
+	it("expands the mobile composer when an external reference requests focus", async () => {
+		platformMock.isMobile = true;
+		try {
+			mounted = await mountChat({ snapshot: { mobileComposerCollapsed: true } });
+			expect(mounted.host.querySelector("textarea")).toBeNull();
+			await mounted.inputController.prefill("New folder reference", SESSION_ID);
+			mounted.inputController.focus();
+			await flushRender();
+			expect(composer(mounted.host).value).toBe("New folder reference");
+			expect(document.activeElement).toBe(composer(mounted.host));
+		} finally { platformMock.isMobile = false; }
+	});
+
+	it("preserves the draft and declines a reference beyond the persistence budget", async () => {
+		mounted = await mountChat({ withDraftStore: true });
+		await typeDraft(composer(mounted.host), "x".repeat(19_999));
+		expect(await mounted.inputController.prefill("too much", SESSION_ID)).toBe("reported");
+		expect(composer(mounted.host).value).toBe("x".repeat(19_999));
+	});
+
+	it("settles a pending reference when its panel closes", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { session: undefined } });
+		const pending = mounted.inputController.prefill("Never delivered", SESSION_ID);
+		await mounted.unmount();
+		mounted = undefined;
+		expect(await pending).toBe(false);
 	});
 
 	it("uses the initialized conversation's draft after mounting without a session", async () => {

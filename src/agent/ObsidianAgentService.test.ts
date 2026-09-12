@@ -1327,6 +1327,24 @@ describe("ObsidianAgentService", () => {
 		expect(sent).toContain(`Last modified: ${new Date(1).toISOString()}`);
 	});
 
+	it("includes the editor's unsaved text rather than the older vault copy", async () => {
+		const contexts: Context[] = [];
+		const service = createService(new MemoryAdapter(), {
+			streamFn: createCapturingStreamFn(contexts),
+			vaultFiles: { "Notes/draft.md": "OLDER SAVED TEXT" },
+			probeData: { activeEditor: { file: { path: "Notes/draft.md" }, editor: {
+				getSelection: () => "", getValue: () => "UNSAVED EDITOR TEXT",
+			} } },
+		});
+		try {
+			service.setActiveNotePath("Notes/draft.md");
+			await service.sendPrompt("Review this latest edit");
+			const sent = JSON.stringify(contexts[0]?.messages);
+			expect(sent).toContain("UNSAVED EDITOR TEXT");
+			expect(sent).not.toContain("OLDER SAVED TEXT");
+		} finally { service.dispose(); }
+	});
+
 	it("keeps a giant active note inside the content budget", async () => {
 		const contexts: Context[] = [];
 		const service = createService(new MemoryAdapter(), {
@@ -4702,7 +4720,7 @@ interface ProbeData {
 	/** Path to the cache entry `getFileCache` returns. */
 	caches?: Record<string, unknown>;
 	/** Stands in for `workspace.activeEditor`, whose `file` the selection probe checks. */
-	activeEditor?: { file: { path: string } | null; editor: { getSelection: () => string } } | null;
+	activeEditor?: { file: { path: string } | null; editor: { getSelection: () => string; getValue?: () => string } } | null;
 	/** Paths of the open markdown leaves, as `getLeavesOfType("markdown")` would yield. */
 	openLeaves?: string[];
 	/** Paths `workspace.getLastOpenFiles()` reports, unfiltered — the probe prunes. */
@@ -4819,7 +4837,10 @@ function createFakeApp(
 					: [];
 			},
 			getLastOpenFiles: () => probeData.recentFiles ?? [],
-			activeEditor: probeData.activeEditor ?? null,
+			activeEditor: probeData.activeEditor ? { ...probeData.activeEditor, editor: {
+				getValue: () => vaultFiles[probeData.activeEditor?.file?.path ?? ""] ?? "",
+				...probeData.activeEditor.editor,
+			} } : null,
 		},
 	} as unknown as App;
 }

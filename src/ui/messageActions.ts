@@ -1,4 +1,5 @@
-import { MarkdownView, Notice, type App, type Editor } from "obsidian";
+import { Notice, type App } from "obsidian";
+import { resolveWorkingEditor } from "../vault/noteEditor";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
@@ -73,41 +74,6 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * The editor belonging to the note the user was working in before opening the
- * chat controls.
- *
- * A click in the chat sidebar makes that sidebar the focused view, so
- * `getActiveViewOfType(MarkdownView)` returns null at action time. Obsidian's
- * `getActiveFile()` deliberately remembers the most recent file in this case.
- * Match that file back to its open Markdown view so edits still use the editor
- * and therefore remain part of the note's undo history.
- */
-function resolveWorkingEditor(app: App): Editor | null {
-	const file = app.workspace.getActiveFile();
-	if (!file || file.extension !== "md") {
-		return null;
-	}
-
-	const activeEditor = app.workspace.activeEditor;
-	if (activeEditor?.editor && activeEditor.file?.path === file.path) {
-		return activeEditor.editor;
-	}
-
-	const recentView = app.workspace.getMostRecentLeaf()?.view;
-	if (recentView instanceof MarkdownView && recentView.file?.path === file.path) {
-		return recentView.editor;
-	}
-
-	for (const leaf of app.workspace.getLeavesOfType("markdown")) {
-		const view = leaf.view;
-		if (view instanceof MarkdownView && view.file?.path === file.path) {
-			return view.editor;
-		}
-	}
-	return null;
 }
 
 /**

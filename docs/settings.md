@@ -139,10 +139,38 @@ Everything Piem adds to the command palette, shown as *Piem: …*:
 | Stop response | Aborts the turn in flight |
 | Tidy earlier thoughts | Compacts the conversation by hand |
 | Focus chat input | Jumps the cursor into the composer |
-| Ask about selection | Sends your selection as the question |
-| Ask about this note | Sends the current note as the question |
+| Ask about selection | Adds the selected text and note path to your draft |
+| Ask about this note | Adds the current note's path to your draft |
 
 All of them are bindable to your own hotkeys under **Settings → Hotkeys**.
+
+### Ask from a context menu
+
+Use **Ask about this file** in a file's context menu to keep it in the conversation's
+context. A folder offers **Ask about this folder**, which adds its path to the
+draft; Piem can list and search that folder when you send your question. Selecting
+several files or folders in the file explorer offers **Ask about these items**.
+
+Up to eight files can stay pinned in one conversation. Additional files are
+listed in the draft, alongside any selected folders. A notice reports what was
+pinned, already present, added to the draft, or unavailable. Existing draft text
+is preserved. If the combined draft would exceed its 20,000-character storage
+limit, the addition is refused with an explanation; send or shorten the draft
+and add those references again.
+
+The input stays read-only while its saved draft loads. On mobile, adding a
+reference opens a folded input and brings the end of the draft into view.
+
+In the editor, the menu offers **Ask about selection** when text is selected,
+and **Ask about this note** otherwise. An external HTTP or HTTPS link offers
+**Ask about this link**, which adds the URL to the draft. These actions prepare
+your question; you still choose what to ask and select **Send**. Opening a link's
+menu does not fetch it. After sending, `web_fetch` can request the page, subject
+to the site's access restrictions and the tool's text response limits.
+
+The active note's open editor supplies its latest text, including unsaved edits;
+closed notes use the vault's saved copy. Menu availability follows Obsidian's
+own context menus, so not every custom view or mobile gesture provides every entry.
 
 ## Storage
 

@@ -25,7 +25,8 @@ import { BookmarkDialogs } from "./ui/bookmarkDialogs";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
 import { requestNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
-import { addAskPiemFileMenuEntry, askPiemFileMenuOptions } from "./ui/fileMenuEntry";
+import { registerContextMenus } from "./ui/fileMenuEntry";
+import { deliverContextRequest, type ContextRequest } from "./ui/contextRequest";
 import { openSessionDeleteConfirm, openSessionPicker } from "./ui/sessionDialogs";
 import { BRAND_ICON_ID, registerBrandIcon } from "./brandIcon";
 import { registerVendorIcons } from "./net/vendorIcons";
@@ -497,36 +498,7 @@ export default class PiemPlugin extends Plugin {
 		this.addRibbonIcon(BRAND_ICON_ID, t.t("commands.ribbonOpenChat"), () => {
 			void this.activateChatView();
 		});
-		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor, info) => {
-				const path = info.file?.path;
-				if (!path || !editor.getSelection().trim()) {
-					return;
-				}
-				menu.addItem((item) =>
-					item
-						.setTitle(t.t("commands.menuAskAboutSelection"))
-						.setIcon(BRAND_ICON_ID)
-						.onClick(() => {
-							void this.askPiemAboutSelection(editor, path);
-						}),
-				);
-			}),
-		);
-		// The explorer's and the search results' right-click menu. Folders get no
-		// row — `addAskPiemFileMenuEntry` decides — because a pinned context ref
-		// names a single file, and a folder row would be an affordance that could
-		// only mislead.
-		this.registerEvent(
-			this.app.workspace.on("file-menu", (menu, file) => {
-				addAskPiemFileMenuEntry(menu, file, {
-					...askPiemFileMenuOptions(t),
-					onAsk: (target) => {
-						void this.askPiemAboutFile(target.path);
-					},
-				});
-			}),
-		);
+		registerContextMenus(this, t, request => { void this.deliverContext(request); });
 		const installer = this.builtinSkillInstaller;
 		if (installer) {
 			this.app.workspace.onLayoutReady(() => {
@@ -722,45 +694,17 @@ export default class PiemPlugin extends Plugin {
 		new Notice(this.t().t("commands.noActiveNote"));
 	}
 
-	/**
-	 * Opens the panel and pins the file the user acted on.
-	 *
-	 * The file menu hands over a path only — no editor, no selection — so unlike
-	 * `askPiemAboutSelection` there is nothing to prefill: the pin is the whole
-	 * offer, and the composer stays empty for the user's question.
-	 *
-	 * The pin lands on the agent service, and before the panel opens. That order
-	 * is what makes the timing a non-issue: the service exists from `onload`
-	 * onward and holds the context refs itself, while a freshly mounting panel
-	 * reads its first snapshot on subscribe (and a re-render on every later
-	 * notify), so the pinned chip is there the moment the panel appears whether
-	 * it was open or not. There is no session to wait for — pins are scoped to
-	 * the service's in-memory context, not to a loaded conversation.
-	 *
-	 * A missing service means `onload` never got as far as building one, in which
-	 * case the panel cannot be created either (its view factory requires the same
-	 * service), so this reports the panel could not open and stops. Reaching for
-	 * the shared "could not open" copy rather than a pin-specific leaf: the user
-	 * asked for the panel, and the panel is what they did not get.
-	 */
-	private async askPiemAboutFile(path: string): Promise<void> {
-		const service = this.agentService;
-		if (!service) {
-			new Notice(this.t().t("commands.couldNotOpenChat"));
-			return;
-		}
-		service.pinContextRef(path);
-		await this.activateChatView();
-		this.findChatView()?.focusInput();
+	private async deliverReference(text: string): Promise<void> {
+		await this.deliverContext({ text });
 	}
 
-	private async deliverReference(text: string): Promise<void> {
-		await this.activateChatView();
-		const view = this.findChatView();
-		// Prefill first, then focus: the composer places the caret at the end of
-		// its draft, so the user can type the question straight away.
-		view?.prefillComposer(text);
-		view?.focusInput();
+	private async deliverContext(request: ContextRequest): Promise<void> {
+		const service = this.agentService;
+		if (!service) { new Notice(this.t().t("commands.couldNotOpenChat")); return; }
+		await deliverContextRequest(request, this.app, service, async () => {
+			await this.activateChatView();
+			return this.findChatView();
+		}, this.t());
 	}
 
 	/**

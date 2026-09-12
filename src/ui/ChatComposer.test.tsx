@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { flushRender, installDom } from "../testUtils/dom";
-import { installObsidianStub, platformMock, setTooltipMock } from "../testUtils/obsidianStub";
+import { installObsidianStub, platformMock, setTooltipMock, resetNotices, shownNotices } from "../testUtils/obsidianStub";
 
 installObsidianStub();
 const document = installDom();
@@ -159,6 +159,34 @@ describe("ChatComposer send button", () => {
 		expect(host.querySelector(".piem-chat__stop-button")?.getAttribute("aria-label")).toBe("Stop");
 		expect(host.querySelectorAll(".piem-chat__send-button, .piem-chat__stop-button")).toHaveLength(1);
 		expect(host.querySelector(".piem-chat__queue-button")).toBeNull();
+	});
+});
+
+describe("ChatComposer drop handling", () => {
+	it("leaves text drops to the textarea instead of swallowing them", async () => {
+		const host = await renderComposer();
+		try {
+			const event = new window.Event("drop", { bubbles: true, cancelable: true });
+			Object.defineProperty(event, "dataTransfer", { value: { files: [], getData: () => "A note link" } });
+			host.querySelector("textarea")!.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(false);
+		} finally { roots.get(host)?.unmount(); host.remove(); }
+	});
+
+	it("stages images but explains rejected files without browser navigation", async () => {
+		resetNotices();
+		const images: File[] = [];
+		const host = await renderComposer({ onAddImages: files => { images.push(...files); } });
+		try {
+			const picture = new window.File(["image"], "photo.png", { type: "image/png" });
+			const note = new window.File(["text"], "note.md", { type: "text/markdown" });
+			const event = new window.Event("drop", { bubbles: true, cancelable: true });
+			Object.defineProperty(event, "dataTransfer", { value: { files: [picture, note] } });
+			host.querySelector("textarea")!.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(images).toEqual([picture]);
+			expect(shownNotices).toHaveLength(1);
+		} finally { roots.get(host)?.unmount(); host.remove(); resetNotices(); }
 	});
 });
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Platform } from "obsidian";
+import { Notice, Platform } from "obsidian";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
 import { isSendShortcut, resolveSendShortcut, sendShortcutAria, type SendShortcut } from "./keyboard";
 import { sendButtonTitle, sendShortcutLabel } from "./chatStatus";
@@ -14,6 +14,7 @@ import { ExtensionCompletionMenu } from "./ExtensionCompletionMenu";
 
 interface ChatComposerProps {
 	input: string;
+	readOnly?: boolean;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	/**
@@ -163,6 +164,7 @@ interface ChatComposerProps {
  */
 export function ChatComposer({
 	input,
+	readOnly = false,
 	isEditing = false,
 	onCancelEdit,
 	isStreaming,
@@ -206,6 +208,9 @@ export function ChatComposer({
 	const canFold = Platform.isMobile && onToggleCollapsed !== undefined;
 	const collapsed = canFold && collapsedProp;
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const focusAfterExpand = useRef(false);
+	const foldRef = useRef({ collapsed, onToggleCollapsed });
+	foldRef.current = { collapsed, onToggleCollapsed };
 	const onSendRef = useRef<() => void>(onSend);
 	const isBusy = isStreaming || isCompacting || isRewinding;
 	/*
@@ -277,8 +282,8 @@ export function ChatComposer({
 	/*
 	 * Image paste/drop staging.
 	 *
-	 * Only image files are pulled from the transfer; a text paste or a dropped
-	 * note falls through to the textarea's native handling. The actual byte read
+	 * Only image files are pulled from the transfer; text uses native handling.
+	 * Other files are declined visibly, without navigating away. The actual byte read
 	 * and base64 encoding happen in the parent (via `fileToPendingImage`), so
 	 * this component stays free of encoding logic and the staged list is the
 	 * single source the parent owns.
@@ -298,9 +303,12 @@ export function ChatComposer({
 	};
 
 	const handleDrop = (event: React.DragEvent<HTMLTextAreaElement>): void => {
+		const files = event.dataTransfer?.files;
+		if (!files?.length) return;
 		// Prevent the browser from navigating to or previewing the dropped file.
 		event.preventDefault();
-		handleImageTransfer(event.dataTransfer?.files);
+		handleImageTransfer(files);
+		if (Array.from(files).some(file => !file.type.startsWith("image/"))) new Notice(t.t("noteReference.dropFiles"));
 	};
 
 	const handleDragOver = (event: React.DragEvent<HTMLTextAreaElement>): void => {
@@ -378,16 +386,31 @@ export function ChatComposer({
 		onFocusRequested(() => {
 			const textarea = textareaRef.current;
 			if (!textarea) {
+				if (foldRef.current.collapsed) {
+					focusAfterExpand.current = true;
+					foldRef.current.onToggleCollapsed?.();
+				}
 				return;
 			}
 			textarea.focus();
 			const end = textarea.value.length;
 			textarea.setSelectionRange(end, end);
+			textarea.scrollTop = textarea.scrollHeight;
 		});
 		return () => {
 			onFocusRequested(null);
 		};
 	}, [onFocusRequested]);
+
+	useEffect(() => {
+		const textarea = textareaRef.current;
+		if (!collapsed && focusAfterExpand.current && textarea) {
+			focusAfterExpand.current = false;
+			textarea.focus();
+			textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+			textarea.scrollTop = textarea.scrollHeight;
+		}
+	}, [collapsed]);
 
 	useEffect(() => {
 		// `undefined` while folded: the textarea the link points at is not in the
@@ -525,6 +548,7 @@ export function ChatComposer({
 						ref={textareaRef}
 						id={anchorId}
 						value={input}
+						readOnly={readOnly}
 						onChange={(event) => {
 							const value = event.currentTarget.value;
 							onInputChange(value);

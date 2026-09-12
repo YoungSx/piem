@@ -105,12 +105,11 @@ export const MAX_SELECTION_CHARS = 4_000;
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
 /**
- * The active note's current text, read off the vault for this turn.
+ * The active note's current text, read from its open editor or the vault.
  *
  * The service supplies the raw payload; this module decides how much of it the
- * model sees. `modifiedAt` is the file stat's `mtime` in epoch milliseconds —
- * the renderer renders it, it is not formatted here, so the raw number stays
- * comparable and testable.
+ * model sees. `modifiedAt` is the file stat's `mtime` in epoch milliseconds;
+ * it is null for an editor buffer, whose unsaved text has no file timestamp.
  */
 export interface InjectedNote {
 	path: string;
@@ -367,9 +366,9 @@ export function renderContextBlock(input: InjectedContext): string {
  * nothing is open. That is a fact it has no use for, and stating it would make
  * the prompt churn every time the user clicked away from a note.
  *
- * The appended message is `role: "user"` because this project hands pi's own
- * `convertToLlm` to the agent, and that keeps only `user`, `assistant`, and
- * `toolResult`. Any other role would be dropped silently, with no error.
+ * This transient projection uses `role: "user"` directly. Pi also supports
+ * `CustomMessage` and converts its content to a user message; its `details`
+ * remain application metadata. No transcript entry is created by this projection.
  */
 export function injectContext(messages: AgentMessage[], input: InjectedContext): AgentMessage[] {
 	const content = renderContextBlock(input);

@@ -35,6 +35,9 @@ export const en = {
 		ribbonOpenChat: "Open Piem assistant",
 		menuAskAboutSelection: "Ask about selection",
 		menuAskAboutFile: "Ask about this file",
+		menuAskAboutFolder: "Ask about this folder",
+		menuAskAboutFiles: "Ask about these items",
+		menuAskAboutUrl: "Ask about this link",
 		noActiveNote: "No active note to ask about.",
 		couldNotOpenChat: "Could not open the chat view.",
 		openLogs: "Open log view",
@@ -732,6 +735,17 @@ export const en = {
 	/** Note-reference command. */
 	noteReference: {
 		truncated: "The selected text was long; only its beginning was quoted.",
+		folder: "Regarding the vault folder {path}:\n\n",
+		url: "Regarding the external webpage {url}:\n\n",
+		file: "Regarding the vault file {path}:\n\n",
+		selectionChanged: "The conversation changed. Select the items again to add them here.",
+		unavailable: "Could not add the reference. Open the chat and try again.",
+		draftFull: "The draft would exceed {limit} characters. Send or shorten it, then add the reference again.",
+		batchResult: "Pinned: {added}. Already pinned: {existing}. Added to draft: {drafted}. Unavailable: {missing}.",
+		pinLimit: "Up to {limit} files can stay pinned. Additional files are listed in the draft.",
+		pinFull: "Up to {limit} files can stay pinned. Unpin one to add another.",
+		missing: "The selected item is no longer in the vault.",
+		dropFiles: "Drop images here. For vault files or folders, use Ask in their context menu.",
 	},
 
 	/** The agent's structured question, behind the ask_user tool. */
