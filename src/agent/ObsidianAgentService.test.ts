@@ -4248,7 +4248,7 @@ describe("memory through ordinary skills and file tools", () => {
 			expect(contexts[0]?.systemPrompt).toContain("<name>vault-memory</name>");
 			expect(contexts[0]?.systemPrompt).toContain("Piem/builtin-skills/vault-memory/SKILL.md");
 			for (const context of contexts) {
-				expect(context.systemPrompt).not.toContain("## Save when useful");
+				expect(context.systemPrompt).not.toContain("## Save proactively");
 				expect(context.systemPrompt).not.toContain("release notes in Chinese");
 				for (const name of ["read_memory", "update_memory", "session_search"]) {
 					expect(context.tools?.map((tool) => tool.name)).not.toContain(name);
@@ -4259,7 +4259,7 @@ describe("memory through ordinary skills and file tools", () => {
 			expect(JSON.stringify(finalContext.messages)).not.toContain("Correction: Atlas release notes should be in Chinese.");
 			const results = finalContext.messages.filter((message) => message.role === "toolResult");
 			expect(results.map((result) => result.toolName)).toEqual(["read_skill", "grep", "read"]);
-			expect(JSON.stringify(results[0]?.content)).toContain("## Save when useful");
+			expect(JSON.stringify(results[0]?.content)).toContain("## Save proactively");
 			expect(JSON.stringify(results.at(-1)?.content)).toContain("release notes in Chinese");
 			expect(JSON.stringify(results.at(-1)?.content)).toContain("link source notes in summaries");
 			expect(JSON.stringify(finalContext.messages)).not.toContain("release notes in English");

@@ -20,20 +20,6 @@ and `edit` tools. The skill owns the memory workflow; files remain user-editable
 
 Otherwise, read `Piem/memory/MEMORY.md` before starting work.
 
-- User mentions a past decision, preference, or lesson
-- Task involves code or notes you worked on before
-- User says "like last time", "as we discussed", "remember when"
-- Fixing a bug (past attempts may be logged)
-- Any multi-step task (preferences may apply)
-- User asks "what do you know about X"
-
-Skip recall ONLY for:
-
-- One-off questions with no project context ("what's the time complexity of quicksort?")
-- User explicitly says "ignore memory" or "fresh start"
-
-When in doubt, recall.
-
 ## How to recall
 
 **Step 1**: Always read `Piem/memory/MEMORY.md` first, even if you expect it to be empty.
