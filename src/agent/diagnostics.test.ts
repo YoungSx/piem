@@ -49,6 +49,16 @@ function fixture(beforeReply?: (sequence: number) => Promise<void>) {
 	const pending: Promise<void>[] = [];
 	const receipts: Array<{ url: string; body: string }> = [];
 	let nextTimer = 0, listeners = 0, sequence = 0, visibilityState = "visible";
+	const lifecycle = {
+		get visibilityState() { return visibilityState; },
+		addEventListener: (...args: Parameters<EventTarget["addEventListener"]>) => { listeners++; target.addEventListener(...args); },
+		removeEventListener: (...args: Parameters<EventTarget["removeEventListener"]>) => { listeners--; target.removeEventListener(...args); },
+	};
+	// React work from earlier tests can still need the real happy-dom document.
+	// Override only lifecycle methods, leaving its DOM/cache internals intact.
+	const nativeDocument = typeof window === "undefined" ? undefined : window.document;
+	const descriptors = new Map(Object.keys(lifecycle).map(key => [key, nativeDocument && Object.getOwnPropertyDescriptor(nativeDocument, key)]));
+	if (nativeDocument) Object.defineProperties(nativeDocument, Object.getOwnPropertyDescriptors(lifecycle));
 	const restore = stubWindowMembers({
 		crypto: webcrypto, performance,
 		setTimeout: (callback: (...args: unknown[]) => void, delay = 0, ...args: unknown[]) => {
@@ -62,11 +72,7 @@ function fixture(beforeReply?: (sequence: number) => Promise<void>) {
 			if (timer !== undefined) nativeClearTimeout(timer);
 			timers.delete(id);
 		},
-		document: {
-			get visibilityState() { return visibilityState; },
-			addEventListener: (...args: Parameters<EventTarget["addEventListener"]>) => { listeners++; target.addEventListener(...args); },
-			removeEventListener: (...args: Parameters<EventTarget["removeEventListener"]>) => { listeners--; target.removeEventListener(...args); },
-		},
+		...(!nativeDocument ? { document: lifecycle } : {}),
 	});
 	requestUrlMock.mockImplementation(async params => {
 		const request = params as RequestUrlParam;
@@ -96,7 +102,12 @@ function fixture(beforeReply?: (sequence: number) => Promise<void>) {
 			services.forEach(service => service.dispose());
 			await Promise.all(pending);
 			await until(() => timers.size === 0 && listeners === 0);
-		} finally { timers.forEach(timer => nativeClearTimeout(timer)); timers.clear(); restore(); }
+		} finally {
+			timers.forEach(timer => nativeClearTimeout(timer)); timers.clear(); restore();
+			if (nativeDocument) for (const [key, descriptor] of descriptors) {
+				if (descriptor) Object.defineProperty(nativeDocument, key, descriptor); else Reflect.deleteProperty(nativeDocument, key);
+			}
+		}
 	});
 	return {
 		settings, receipts,
