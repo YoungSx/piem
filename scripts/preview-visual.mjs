@@ -2192,6 +2192,7 @@ const TOKENS = `
 	--layer-menu: 65;
 	--scrollbar-thumb-bg: #555;
 	--line-height-tight: 1.3;
+	--line-height-normal: 1.5;
 	--input-radius: 5px;
 	--modal-background: #1e1e1e;
 	--modal-radius: 12px;

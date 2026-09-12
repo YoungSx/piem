@@ -103,6 +103,8 @@ describe("MarkdownText", () => {
 		expect(call.app).toBe(app);
 		expect(call.component).toBe(component);
 		expect(host.querySelector(".stub-rendered")).not.toBeNull();
+		// The API appends content; the caller supplies the native reading styles.
+		expect(host.querySelector(".stub-rendered")?.closest(".markdown-rendered")).not.toBeNull();
 	});
 
 	it("keeps a streaming assistant block plain and skips the renderer", async () => {

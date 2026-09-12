@@ -133,5 +133,5 @@ function MarkdownContainer({ markdown, faceClass, app, component, sourcePath }: 
 		};
 	}, [app, component, markdown]);
 
-	return <div className={`piem-chat__markdown ${faceClass}`} ref={ref} />;
+	return <div className={`piem-chat__markdown markdown-rendered ${faceClass}`} ref={ref} />;
 }

@@ -947,9 +947,8 @@ describe("focus rings survive their scroll container (issue #219)", () => {
  * reason a line works where a hue would not: the dash is a shape, so it survives
  * a reader who cannot separate the two colours at all.
  *
- * The rule is also the state's only styling. The reading view's own
- * `.markdown-rendered .internal-link.is-unresolved` wants an ancestor this panel
- * does not have, so nothing here can be left to inherit.
+ * The native reading class supplies link styling; its unresolved-opacity token
+ * must stay at full strength in the chat so this mark does not dim the text.
  */
 describe("an unresolved link marks itself with a line, not with less contrast (WCAG 1.4.1 / 1.4.3)", () => {
 	const unresolved = declarations(ruleBody(".piem-chat__markdown a.internal-link.is-unresolved"));
@@ -962,7 +961,7 @@ describe("an unresolved link marks itself with a line, not with less contrast (W
 		// `color:` matched loosely would also hit `text-decoration-color`, which is a
 		// legitimate thing to add later; only a bare `color` is forbidden.
 		expect(unresolved).not.toMatch(/(?:^|[\s;])color\s*:/);
-		expect(unresolved).not.toContain("opacity");
+		expect(unresolved).toContain("--link-unresolved-opacity: 1");
 	});
 
 	it("states the line rather than inheriting one a theme may have switched off", () => {

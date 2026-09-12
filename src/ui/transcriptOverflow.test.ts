@@ -170,14 +170,10 @@ describe("prose wraps where machine output scrolls", () => {
 		expect(declarations(ruleBody(".piem-chat__markdown pre"))).toContain("white-space: pre;");
 	});
 
-	it("leaves the inner code element to inherit, so a theme can still soft-wrap", () => {
-		/*
-		 * An explicit `white-space` on `pre code` was in an earlier cut and measured
-		 * redundant — `white-space` inherits. Removing it also hands the choice back
-		 * to the theme: a theme declaring `pre-wrap` on `code` gets it, and the
-		 * `<pre>`'s own scroll still keeps the content inside the column.
-		 */
-		expect(styles).not.toContain(".piem-chat__markdown pre code");
+	it("keeps highlighted code on the enclosing block's whitespace policy", () => {
+		// Obsidian explicitly sets pre-wrap on language-* code. Native smoke found
+		// two source lines rendered as fifteen despite the parent declaring pre.
+		expect(declarations(ruleBody(".piem-chat__markdown pre > code"))).toContain("white-space: inherit");
 	});
 });
 
