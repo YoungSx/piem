@@ -1,0 +1,555 @@
+{
+  "host": "New tab - vault - Obsidian 1.13.7",
+  "baselineChecks": 29,
+  "checks": 128,
+  "passed": true,
+  "artifacts": {
+    "main.js": {
+      "sha256": "f12d5db3f81a8311762a6aa49626af7d11b9b4cdf60e0da10d916ea3ecc4434c",
+      "checkoutSha256": "f12d5db3f81a8311762a6aa49626af7d11b9b4cdf60e0da10d916ea3ecc4434c",
+      "bytes": 2003327
+    },
+    "manifest.json": {
+      "sha256": "789c12801a71a3ae6378a5d789539529ea464dea7f5c87095b3c3ae88d25dfe4",
+      "checkoutSha256": "789c12801a71a3ae6378a5d789539529ea464dea7f5c87095b3c3ae88d25dfe4",
+      "bytes": 232
+    },
+    "styles.css": {
+      "sha256": "2fa10ed6007cc416102d5961d9236108ab503f60632d7d452f6dddc409bc0c72",
+      "checkoutSha256": "2fa10ed6007cc416102d5961d9236108ab503f60632d7d452f6dddc409bc0c72",
+      "bytes": 225017
+    }
+  },
+  "scenarios": [
+    {
+      "name": "300-light",
+      "panelWidth": 300,
+      "columnWidth": 272,
+      "scrollWidth": 272,
+      "fontSize": 15,
+      "lineHeight": 22.5,
+      "paragraphGap": 16,
+      "listItemPadding": 1.125,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1686,
+      "tableReachableScroll": 823
+    },
+    {
+      "name": "300-dark",
+      "panelWidth": 300,
+      "columnWidth": 272,
+      "scrollWidth": 272,
+      "fontSize": 15,
+      "lineHeight": 22.5,
+      "paragraphGap": 16,
+      "listItemPadding": 1.125,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1686,
+      "tableReachableScroll": 823
+    },
+    {
+      "name": "390-light",
+      "panelWidth": 390,
+      "columnWidth": 362,
+      "scrollWidth": 363,
+      "fontSize": 15,
+      "lineHeight": 22.5,
+      "paragraphGap": 16,
+      "listItemPadding": 1.125,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1596,
+      "tableReachableScroll": 733
+    },
+    {
+      "name": "390-dark",
+      "panelWidth": 390,
+      "columnWidth": 362,
+      "scrollWidth": 363,
+      "fontSize": 15,
+      "lineHeight": 22.5,
+      "paragraphGap": 16,
+      "listItemPadding": 1.125,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1596,
+      "tableReachableScroll": 733
+    },
+    {
+      "name": "560-light",
+      "panelWidth": 560,
+      "columnWidth": 532,
+      "scrollWidth": 532,
+      "fontSize": 15,
+      "lineHeight": 22.5,
+      "paragraphGap": 16,
+      "listItemPadding": 1.125,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1426,
+      "tableReachableScroll": 563
+    },
+    {
+      "name": "560-dark",
+      "panelWidth": 560,
+      "columnWidth": 532,
+      "scrollWidth": 532,
+      "fontSize": 15,
+      "lineHeight": 22.5,
+      "paragraphGap": 16,
+      "listItemPadding": 1.125,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1426,
+      "tableReachableScroll": 563
+    },
+    {
+      "name": "390-light-text-200",
+      "panelWidth": 390,
+      "columnWidth": 362,
+      "scrollWidth": 363,
+      "fontSize": 30,
+      "lineHeight": 45,
+      "paragraphGap": 16,
+      "listItemPadding": 2.25,
+      "inlineCodeSize": 26.25,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 3527,
+      "tableReachableScroll": 733
+    },
+    {
+      "name": "390-dark-native-tokens",
+      "panelWidth": 390,
+      "columnWidth": 362,
+      "scrollWidth": 362,
+      "fontSize": 15,
+      "lineHeight": 28.5,
+      "paragraphGap": 24,
+      "listItemPadding": 6.75,
+      "inlineCodeSize": 13.125,
+      "rhythm": [
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "pill",
+          "acrossMessage": true,
+          "gap": 4
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "prose",
+          "to": "pill",
+          "acrossMessage": false,
+          "gap": 8
+        },
+        {
+          "from": "pill",
+          "to": "prose",
+          "acrossMessage": true,
+          "gap": 8
+        }
+      ],
+      "codeSourceLines": 2,
+      "codeRenderedLines": 2,
+      "codeReachableScroll": 1590,
+      "tableReachableScroll": 733
+    }
+  ],
+  "mobile": {
+    "mobile": true,
+    "bodyClasses": "mod-linux is-frameless is-hidden-frameless obsidian-app emulate-mobile is-mobile styled-scrollbars theme-light show-inline-title is-floating-nav auto-full-screen show-ribbon show-view-header is-focused is-phone",
+    "viewport": [
+      390,
+      844
+    ],
+    "panel": {
+      "x": 74.40625,
+      "y": 63,
+      "width": 303.59375,
+      "height": 589.4375,
+      "top": 63,
+      "right": 378,
+      "bottom": 652.4375,
+      "left": 74.40625
+    },
+    "messages": {
+      "clientWidth": 276,
+      "scrollWidth": 276
+    },
+    "body": {
+      "fontSize": "16px",
+      "lineHeight": "24px"
+    },
+    "code": {
+      "font": "\"??\", \"??\", ui-monospace, SFMono-Regular, \"Cascadia Mono\", \"Roboto Mono\", \"DejaVu Sans Mono\", \"Liberation Mono\", Menlo, Monaco, Consolas, \"Source Code Pro\", monospace",
+      "size": "14px"
+    }
+  },
+  "mobileParagraphs": {
+    "mobile": true,
+    "gaps": [
+      {
+        "gap": 16,
+        "across": false
+      },
+      {
+        "gap": 16,
+        "across": true
+      }
+    ],
+    "paragraphToken": "1rem"
+  },
+  "cleanup": {
+    "ownedPids": [
+      910611,
+      910614
+    ],
+    "adoptedPids": [
+      910616,
+      910617,
+      910643,
+      910664,
+      913255
+    ],
+    "allExited": true
+  }
+}

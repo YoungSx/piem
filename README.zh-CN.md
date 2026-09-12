@@ -28,11 +28,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshots/errand-desktop.webp" alt="Obsidian 左边开着一篇剪藏，右边是 Piem 的聊天面板，正基于这篇笔记给出硬件表、购买建议和几个推荐的后续操作。">
+  <img src="assets/screenshots/errand-desktop.webp" alt="Obsidian 左边开着示例笔记，右边是 Piem 的聊天面板，展示硬件表、购买建议和上手步骤。">
 </p>
 
 <p align="center">
-  <sub>你的笔记在左边，代理在右边。</sub>
+  <sub>你的笔记在左边，代理在右边。示例按旧演示重建，文件操作由真实插件执行。</sub>
 </p>
 
 ---
@@ -44,15 +44,14 @@
 > **基于笔记内容，推荐一套适合初学者的硬件清单和购买建议。**
 
 <p align="center">
-  <img src="assets/screenshots/errand-trace.webp" width="620" alt="Piem 的对话记录：一次写入笔记的工具调用、写入 1835 字节的确认、一次编辑原笔记的工具调用、+4 -0 的改动，然后是它对自己做了什么的交代。">
+  <img src="assets/screenshots/errand-trace.webp" width="620" alt="Piem 的对话记录：真实写入和编辑工具的回执，以及新硬件清单与原笔记的链接。">
 </p>
 
 它读了那篇笔记，在旁边新建了一条——硬件表、价格、购买建议、上手步骤都在
 里面。然后回头给原笔记补了一个指向新笔记的 `[[双向链接]]`，让图谱知道这
 两条是一伙的。
 
-动了两个文件。**写入 1,835 字节，原笔记 +4 −0。** 接着它交代了笔记存在哪个
-文件夹、为什么选那儿，并递上三个下一步。
+动了两个文件：**保存硬件清单，补上双向链接。** 接着它交代了去哪里找这两条笔记。
 
 你一个文件都没打开。你只是看了一眼收据，然后接着过自己的日子。
 
@@ -110,11 +109,11 @@ Piem 免费、MIT 许可，而且会一直这样。它是一个人晚上和周�
 <p align="center">
   <img src="assets/screenshots/mobile-empty.webp" width="290" alt="手机上的 Piem 空面板：三个推荐的起步操作、活跃笔记芯片和输入框。">
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="assets/screenshots/mobile-done.webp" width="290" alt="同一台手机上委托做完的样子：它创建了什么、补了哪条双向链接的清单，下面是回复操作。">
+  <img src="assets/screenshots/mobile-done.webp" width="290" alt="Obsidian 官方手机模拟中的重建演示：已保存的硬件清单和双向链接。">
 </p>
 
 <p align="center">
-  <sub>同一次委托，在手机上。什么都没缺。</sub>
+  <sub>左：早前的手机实机截图。右：更新后的演示，使用 Obsidian 官方手机模拟。</sub>
 </p>
 
 Piem 的 `isDesktopOnly` 是 `false`，而且是当真的。工具、子代理、技能、图片
