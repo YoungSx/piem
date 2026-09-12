@@ -26,7 +26,7 @@ const environment = {
 	OTEL_METRIC_EXPORT_INTERVAL: "100",
 	OTEL_EXPORTER_OTLP_TIMEOUT: "5000",
 };
-interface Receipt { url: string; body: string; signal: AbortSignal | null | undefined }
+interface Receipt { url: string; body: string; signal: AbortSignal | null | undefined; settled: boolean }
 
 function fixture(shortShutdown = false) {
 	const target = new EventTarget();
@@ -79,11 +79,16 @@ function fixture(shortShutdown = false) {
 					fetch: async () => { throw new Error("Unexpected foreground request"); },
 					backgroundFetch: async (input, init) => {
 						const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-						receipts.push({ url, body: await new Response(init?.body).text(), signal: init?.signal });
+						const receipt = { url, body: await new Response(init?.body).text(), signal: init?.signal, settled: false };
+						receipts.push(receipt);
 						if (block) return await new Promise<Response>((_resolve, reject) => {
 							const abort = () => { init?.signal?.removeEventListener("abort", abort); reject(new DOMException("Stopped fixture request", "AbortError")); };
 							if (init?.signal?.aborted) abort(); else init?.signal?.addEventListener("abort", abort, { once: true });
 						});
+						// A completed request releases its parent abort listener, so its
+						// receipt's signal legitimately stays live after disposal; only
+						// pending waits are expected to read as aborted.
+						receipt.settled = true;
 						return new Response("{}", { headers: { "content-type": "application/json" } });
 					},
 					config: createExtensionConfigStore({ getData: () => undefined, setData: () => {}, persist: async () => {}, queue: work => work() }),
@@ -191,7 +196,7 @@ describe("original OTel in the default community host", () => {
 		f.hide();
 		await until(() => one.receipts.length > 0 && two.receipts.length > 0);
 		one.host.disableOtel();
-		expect(one.receipts.every(receipt => receipt.signal?.aborted)).toBe(true);
+		expect(one.receipts.every(receipt => receipt.settled || receipt.signal?.aborted)).toBe(true);
 		expect(two.receipts.every(receipt => !receipt.signal?.aborted)).toBe(true);
 		expect(f.listenerCount).toBe(4);
 		const sent = one.receipts.length;
