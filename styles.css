@@ -1781,6 +1781,8 @@ button.piem-chat__context-open {
 	font-size: var(--font-ui-smaller);
 }
 
+.piem-chat__attachment-kind { flex-shrink: 0; white-space: nowrap; }
+
 .piem-chat__attachment-chevron { transition: transform 120ms ease; }
 .piem-chat__attachment-details[open] .piem-chat__attachment-chevron { transform: rotate(180deg); }
 .piem-chat__attachment-remove { flex: none; }

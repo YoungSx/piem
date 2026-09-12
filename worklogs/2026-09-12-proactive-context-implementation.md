@@ -92,3 +92,8 @@ Bun 使用与 CI 相同的 1.4.0，路径 `/tmp/piem-context-runtime-20260912/pa
 - 桌面和 390px 官方移动端模拟、深浅主题中，技能与引用都在同一个文字输入框内；仅一个输入边界，问题区没有第二条 border/shadow，无横向溢出（`desktop-report.json`、`mobile-report.json` 及对应 PNG）。截图已查看。
 - 从该草稿点击实际发送按钮，本地 HTTP 恰好收到一个 native `<skill>` wrapper 和四类引用，用户可见问题对应同一份 stored prompt，卡片 renderer details 不发给模型，发送后材料和问题清空（`http-result.json`、`model-request.json`）。
 - 实体手机键盘与读屏未测；这轮监管时限到达后宿主退出，进程全部回收、端口关闭，未把退出后调用的 unload 探针算作成功。最后光标修正及同步上游后成品另记，不混称同一 SHA。
+
+
+最终收尾：已同步至上游 `5a4f26d`（原生字体与共享思考/工具折叠均保留），`npm run verify` 为 **3,858 pass / 0 fail，258 文件**，build、全部门禁及 lint 通过。最终 JavaScript **1,962,247 B**、SHA-256 `bcd38c44716a543d97ecd91921c8df61de7394b250b54b8d13951fe53807bd32`。最后 CSS 只补了共享类型标签不换行，真实手机验证“技能／文件”均保持单行。
+
+README 中受输入框变化影响的桌面总览和手机图已用当前插件、原有硬件示例真实重拍；图片来源说明和中英文 caption 同步。手机左图现在展示发送前技能＋引用卡片，旧 mobile-empty 文件名保留；不再把它称为旧实机图。`/tmp/piem-skills-final-20260912/final-draft-check.json` 与 `final-unload.json` 确认卡片正文可读、卸载 runtime=0；监管进程在完成后回收。

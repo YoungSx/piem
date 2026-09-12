@@ -11,8 +11,11 @@ DualSense example: *"based on this note, recommend a beginner's hardware list
 with buying advice."* The prose was a fixture, not a new model response; the
 installed plugin's real read, write and edit tools created the notes and their
 receipts, loaded through the native session manager and ChatApp. The model picker
-labels that reconstruction. The desktop overview and finished phone image retain
-those captures; the empty state remains the earlier phone capture.
+labels that reconstruction. The desktop overview and finished phone image were
+retaken again after the shared input-frame change, using the same scripted
+example and real tool receipts. `mobile-empty.webp` now shows the draft before
+sending: a skill card and the source note reference inside that input frame.
+Its historical filename is retained so existing documentation links keep working.
 
 `errand-trace.webp` was replaced later on 2026-09-12 with a separate example in
 an isolated demo vault using the current plugin's mixed activity groups. Its
@@ -27,7 +30,7 @@ the original note's `+4 −0` edit. Both READMEs disclose the source beside the 
 | --- | --- | --- |
 | `errand-desktop.webp` | Full window: the reconstructed note on the left, hardware table and buying advice on the right | 1400px wide, light theme |
 | `errand-trace.webp` | The transcript: two open groups combining thinking with read/write/edit calls, the `+4 −0` diff, and the reply | 754px wide, light theme |
-| `mobile-empty.webp` | Phone, empty panel: quick actions shaped by the open note | 640px wide, light theme |
+| `mobile-empty.webp` | Before sending: a skill card and note reference inside the text input | 390px viewport, light theme |
 | `mobile-done.webp` | Reconstructed errand finished, in Obsidian's official phone emulation | 390px viewport, light theme |
 
 The phone emulation is desktop Obsidian in its native mobile mode, not an

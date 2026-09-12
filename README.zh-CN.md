@@ -110,13 +110,13 @@ Piem 免费、MIT 许可，而且会一直这样。它是一个人晚上和周�
 ## 📱 手机也算一台真电脑
 
 <p align="center">
-  <img src="assets/screenshots/mobile-empty.webp" width="290" alt="手机上的 Piem 空面板：三个推荐的起步操作、活跃笔记芯片和输入框。">
+  <img src="assets/screenshots/mobile-empty.webp" width="290" alt="Obsidian 官方手机模拟中的发送前草稿：技能卡片与笔记引用同在文字输入框内。">
   &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="assets/screenshots/mobile-done.webp" width="290" alt="Obsidian 官方手机模拟中的重建演示：已保存的硬件清单和双向链接。">
 </p>
 
 <p align="center">
-  <sub>左：早前的手机实机截图。右：更新后的演示，使用 Obsidian 官方手机模拟。</sub>
+  <sub>发送前与完成后：左边是输入框内的技能和笔记引用，右边是完成的示例。两图均使用 Obsidian 官方手机模拟。</sub>
 </p>
 
 Piem 的 `isDesktopOnly` 是 `false`，而且是当真的。工具、子代理、技能、图片
