@@ -55,6 +55,7 @@ import { clarifyModelProjection } from "../extensions/clarifyConfig";
 import { ExtensionModelSwitch } from "../extensions/modelSwitch";
 import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
+import { resolveNoteEditor } from "../vault/noteEditor";
 import type { AskUserBroker } from "../tools/askUserBroker";
 import { fetchQuickActionSuggestions, lastAssistantText, type SuggestionScope } from "./quickActionSuggestionRequest";
 import { QuickActionSuggestionCache, type SuggestionCacheKey, workspaceKeyPart } from "./quickActionSuggestionCache";
@@ -3909,14 +3910,40 @@ export class ObsidianAgentService {
 		this.notify();
 	}
 
+	/** Initialize the selected conversation without retargeting an action during a switch. */
+	async prepareContextTarget(): Promise<string | null> {
+		const sequence = this.sessionOpenSequence;
+		const selected = this.pendingSessionOpen;
+		if (this.disposed || this.newSessionInFlight) return null;
+		if (selected) await selected.promise;
+		await this.initialize();
+		if (this.disposed || this.newSessionInFlight || sequence !== this.sessionOpenSequence || this.pendingSessionOpen) return null;
+		if (selected && this.currentPath !== selected.path) return null;
+		return this.current()?.agent ? this.currentPath : null;
+	}
+
+	/** Batch once so many selected files cause one context update, with no silent overflow. */
+	pinContextRefs(paths: readonly string[], sessionPath: string): { added: string[]; existing: string[]; overflow: string[] } | null {
+		const rt = this.current();
+		if (this.disposed || this.newSessionInFlight || this.pendingSessionOpen || !rt || rt.sessionPath !== sessionPath) return null;
+		const result = { added: [] as string[], existing: [] as string[], overflow: [] as string[] };
+		for (const path of new Set(paths)) {
+			if (!path) continue;
+			if (rt.pinnedNotes.pinned.includes(path)) result.existing.push(path);
+			else if (rt.pinnedNotes.pinned.length + result.added.length < MAX_PINNED_REFS) result.added.push(path);
+			else result.overflow.push(path);
+		}
+		if (result.added.length) {
+			rt.pinnedNotes.pinned = [...rt.pinnedNotes.pinned, ...result.added];
+			this.notify();
+		}
+		return result;
+	}
+
 	/** Keeps naming `path` even after the user navigates away. */
 	pinContextRef(path: string): void {
-		const rt = this.current();
-		if (!rt || !path || rt.pinnedNotes.pinned.includes(path) || rt.pinnedNotes.pinned.length >= MAX_PINNED_REFS) {
-			return;
-		}
-		rt.pinnedNotes.pinned = [...rt.pinnedNotes.pinned, path];
-		this.notify();
+		const result = this.currentPath ? this.pinContextRefs([path], this.currentPath) : null;
+		if (result?.overflow.length) new Notice(this.t().t("noteReference.pinFull", { limit: MAX_PINNED_REFS }));
 	}
 
 	/** Drops a pinned note. */
@@ -4121,9 +4148,8 @@ export class ObsidianAgentService {
 	/**
 	 * Reads the active note's current text for the context block.
 	 *
-	 * Obsidian's own `cachedRead` — the same call the vault tools use — because
-	 * it serves from the metadata cache the editor keeps warm and never blocks on
-	 * disk. A read that fails (the file vanished mid-run, a fake vault in a test
+	 * The open editor includes unsaved changes; closed notes use `cachedRead`.
+	 * A read that fails (the file vanished mid-run, a fake vault in a test
 	 * that never registered it) degrades to `null`, which renders the path-only
 	 * block; a missing note must not fail the whole request.
 	 */
@@ -4135,7 +4161,8 @@ export class ObsidianAgentService {
 			if (!(abstract instanceof TFile) || abstract.extension !== "md") {
 				return null;
 			}
-			return { path, content: await this.app.vault.cachedRead(abstract), modifiedAt: abstract.stat.mtime };
+			const editor = resolveNoteEditor(this.app, path);
+			return { path, content: editor ? editor.getValue() : await this.app.vault.cachedRead(abstract), modifiedAt: editor ? null : abstract.stat.mtime };
 		} catch (error) {
 			// Degrades to the path-only block; debug level because the common case
 			// (note closed mid-run) is routine, not a fault worth warning about.

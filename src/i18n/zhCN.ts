@@ -30,6 +30,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		ribbonOpenChat: "打开 Piem 助手",
 		menuAskAboutSelection: "询问所选内容",
 		menuAskAboutFile: "询问此文件",
+		menuAskAboutFolder: "询问此文件夹",
+		menuAskAboutFiles: "询问所选项目",
+		menuAskAboutUrl: "询问此链接",
 		noActiveNote: "没有可询问的当前笔记。",
 		couldNotOpenChat: "无法打开对话视图。",
 		openLogs: "打开日志视图",
@@ -385,6 +388,17 @@ export const zhCN: DeepPartial<EnCopy> = {
 
 	noteReference: {
 		truncated: "所选文本较长，仅引用了其开头部分。",
+		folder: "关于笔记库文件夹 {path}：\n\n",
+		url: "关于外部网页 {url}：\n\n",
+		file: "关于笔记库文件 {path}：\n\n",
+		selectionChanged: "对话已切换。请重新选择要加入此对话的项目。",
+		unavailable: "未能加入引用。请打开对话后重试。",
+		draftFull: "草稿将超过 {limit} 个字符。请先发送或缩短草稿，再加入引用。",
+		batchResult: "新固定 {added} 项，已固定 {existing} 项，加入草稿 {drafted} 项，不可用 {missing} 项。",
+		pinLimit: "最多固定 {limit} 个文件，其余文件已列入草稿。",
+		pinFull: "最多固定 {limit} 个文件，请先取消一个固定项。",
+		missing: "所选项目已不在笔记库中。",
+		dropFiles: "这里可拖入图片。笔记库文件或文件夹，请使用其菜单中的询问操作。",
 	},
 
 	askUser: {

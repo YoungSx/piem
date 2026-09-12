@@ -1,12 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import type { Component } from "obsidian";
+import { Notice, type Component } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
 import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import { continueAfterFailureQuickAction, lastReplyFailed, type QuickAction } from "./quickActionSuggestions";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
-import { type DraftStore } from "../session/DraftStore";
+import { MAX_DRAFT_LENGTH, type DraftStore } from "../session/DraftStore";
 import { snapshotSubagents, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
 import type { ChatInputController } from "./ChatInputController";
 import { getActiveNotePath } from "./activeNotePath";
@@ -699,22 +699,40 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		};
 	}, [inputController]);
 
+	useLayoutEffect(() => {
+		// Retire the old draft handler before a menu can deliver into a new render.
+		inputController?.suspendPrefill();
+		return () => inputController?.suspendPrefill();
+	}, [inputController, setInput, draftReady, snapshot.session?.path]);
+
+	useEffect(() => () => inputController?.setPrefillHandler(null), [inputController]);
+
 	useEffect(() => {
 		if (!inputController) {
 			return undefined;
 		}
-		inputController.setPrefillHandler((text) => {
-			// Appends to the current draft instead of replacing it, so a prefill that
-			// lands mid-typing never wipes the user's text.
-			flushSync(() => {
-				setInput(appendToDraft(inputRef.current, text));
-			});
-			inputController.notifyPrefillCommitted();
+		if (!draftScope || !draftReady) return undefined;
+		let cancelled = false;
+		// A queued prefill can flush React; drain it after the registration effect.
+		queueMicrotask(() => {
+			if (cancelled) return;
+			inputController.setPrefillHandler((text) => {
+				if (service.getSnapshot().session?.id !== draftScope) return false;
+				const next = appendToDraft(inputRef.current, text);
+				if (next.length > MAX_DRAFT_LENGTH) {
+					new Notice(getT(snapshot.language).t("noteReference.draftFull", { limit: MAX_DRAFT_LENGTH }));
+					return "reported";
+				}
+				flushSync(() => { setInput(next); });
+				inputController.notifyPrefillCommitted();
+				return true;
+			}, draftScope);
 		});
 		return () => {
-			inputController.setPrefillHandler(null);
+			cancelled = true;
+			inputController.suspendPrefill();
 		};
-	}, [inputController, setInput]);
+	}, [inputController, setInput, draftScope, draftReady, service, snapshot.language]);
 
 	return (
 		<TranslatorProvider language={snapshot.language}>
@@ -818,6 +836,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 				<ChatComposer
 					input={input}
+					readOnly={!draftScope || !draftReady}
 					isEditing={activeEdit !== null}
 					onCancelEdit={handleCancelEdit}
 					isStreaming={snapshot.isStreaming}
@@ -826,7 +845,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					isInitializing={isInitializing}
 					isConfigured={snapshot.isConfigured ?? false}
 					sendShortcut={snapshot.sendShortcut}
-					onInputChange={setInput}
+					onInputChange={(text) => { if (draftScope && draftReady) setInput(text); }}
 					onSend={() => void sendPrompt()}
 					onAbort={() => service.abort()}
 					onFocusRequested={handleFocusRequested}

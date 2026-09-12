@@ -1,11 +1,13 @@
 type SubmitHandler = () => void;
 type FocusHandler = () => void;
-type PrefillHandler = (text: string) => void;
+export type PrefillResult = boolean | "reported";
+type PrefillHandler = (text: string) => PrefillResult | void;
 
 export class ChatInputController {
 	private submitHandler: SubmitHandler | null = null;
 	private focusHandler: FocusHandler | null = null;
 	private prefillHandler: PrefillHandler | null = null;
+	private prefillSession: string | undefined;
 	private focusPending = false;
 	/**
 	 * A queued focus must not fire before queued prefills land, or the caret
@@ -13,7 +15,7 @@ export class ChatInputController {
 	 */
 	private focusWaitingForPrefill = false;
 	/** Queued prefill texts, replayed in order once the composer registers. */
-	private prefillQueue: string[] = [];
+	private prefillQueue: { text: string; session?: string; resolve: (accepted: PrefillResult) => void }[] = [];
 
 	setSubmitHandler(handler: SubmitHandler | null): void {
 		this.submitHandler = handler;
@@ -40,20 +42,26 @@ export class ChatInputController {
 		handler();
 	}
 
-	setPrefillHandler(handler: PrefillHandler | null): void {
+	setPrefillHandler(handler: PrefillHandler | null, session?: string): void {
 		this.prefillHandler = handler;
+		this.prefillSession = session;
 		if (!handler) {
 			// Same reasoning as the focus queue: never deliver into an unmounted composer.
-			this.prefillQueue = [];
+			for (const request of this.prefillQueue.splice(0)) request.resolve(false);
 			this.focusWaitingForPrefill = false;
 			return;
 		}
 		while (this.prefillQueue.length > 0) {
-			const text = this.prefillQueue.shift();
-			if (text !== undefined) {
-				handler(text);
+			const request = this.prefillQueue.shift();
+			if (request) {
+				request.resolve(!request.session || request.session === session ? handler(request.text) ?? true : false);
 			}
 		}
+	}
+
+	/** Wait for this conversation's draft to load without losing queued references. */
+	suspendPrefill(): void {
+		this.prefillHandler = null;
 	}
 
 	submit(): void {
@@ -76,12 +84,11 @@ export class ChatInputController {
 	 * {@link focus}. Delivery appends rather than overwrites: the user may have
 	 * typed a draft already.
 	 */
-	prefill(text: string): void {
+	prefill(text: string, session?: string): Promise<PrefillResult> {
 		if (!this.prefillHandler) {
-			this.prefillQueue.push(text);
-			return;
+			return new Promise(resolve => this.prefillQueue.push({ text, session, resolve }));
 		}
-		this.prefillHandler(text);
+		return Promise.resolve(!session || session === this.prefillSession ? this.prefillHandler(text) ?? true : false);
 	}
 
 	/**

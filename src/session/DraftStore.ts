@@ -44,7 +44,7 @@ const WRITE_DEBOUNCE_MS = 700;
  * is convenience state, not a document store; the composer keeps the full text
  * in memory either way.
  */
-const MAX_DRAFT_LENGTH = 20_000;
+export const MAX_DRAFT_LENGTH = 20_000;
 
 export class DraftStore {
 	private readonly adapter: DataAdapter;
