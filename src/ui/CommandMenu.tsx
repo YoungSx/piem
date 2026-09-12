@@ -5,15 +5,8 @@ import type { SearchResult } from "obsidian";
 import { useT } from "./TranslatorContext";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 import { isComposing } from "./keyboard";
-
-/** A `/name`-command entry surfaced for autocomplete. */
-export interface CommandEntry {
-	name: string;
-	description: string;
-	kind: "template" | "skill" | "extension";
-	/** Text inserted after `/`; differs only for a shadowed skill. */
-	invocation: string;
-}
+import type { CommandEntry } from "../agent/promptTemplates";
+export type { CommandEntry } from "../agent/promptTemplates";
 
 interface CommandMenuProps {
 	/** All available prompt templates and skills, in service-defined order. */

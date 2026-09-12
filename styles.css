@@ -2909,6 +2909,18 @@ button.piem-chat__latest--asking {
 	border-color: var(--background-modifier-border-focus);
 }
 
+/* All attached material shares one budget, so the question stays reachable. */
+.piem-chat__composer-attachments {
+	display: grid;
+	gap: var(--size-4-1);
+	max-height: min(240px, 30vh);
+	min-width: 0;
+	overflow-y: auto;
+}
+
+.piem-chat__composer-attachments:empty { display: none; }
+.piem-chat__composer-attachments .piem-chat__references { max-height: none; overflow: visible; }
+
 /* Keep Obsidian's textarea control shadow from framing the text separately. */
 .piem-chat__composer-input textarea,
 .piem-chat__composer-input textarea:focus,

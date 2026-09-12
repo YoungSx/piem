@@ -5,6 +5,7 @@ import {
 	type ExecutionEnv,
 	type PromptTemplate,
 	type PromptTemplateDiagnostic,
+	type Skill,
 } from "@earendil-works/pi-agent-core";
 
 /**
@@ -40,6 +41,16 @@ import {
  * vault can be relying on one.
  */
 export const VAULT_PROMPT_TEMPLATES_DIR = "/Piem/prompts";
+
+/** One command catalog serves dispatch, completion, and draft skill previews. */
+export interface CommandEntry {
+	name: string;
+	description: string;
+	kind: "template" | "skill" | "extension";
+	invocation: string;
+	/** The already-loaded skill used by dispatch; no second body cache. */
+	skill?: Skill;
+}
 
 /** Templates plus the diagnostics their loading produced. */
 export interface LoadedTemplates {
@@ -81,18 +92,15 @@ export interface ParsedPromptCommand {
  * list; whether that is worth acting on is the caller's call, not the parser's.
  */
 export function parsePromptCommand(input: string): ParsedPromptCommand | null {
-	const trimmed = input.trimStart();
-	if (!trimmed.startsWith("/")) {
-		return null;
-	}
-	const withoutSlash = trimmed.slice(1);
-	const firstSpace = withoutSlash.search(/\s/);
-	if (firstSpace === -1) {
-		return { name: withoutSlash, args: [], additionalInstructions: "" };
-	}
-	const name = withoutSlash.slice(0, firstSpace);
-	const rest = withoutSlash.slice(firstSpace + 1).trimStart();
-	return { name, args: parseCommandArgs(rest), additionalInstructions: rest };
+	const parts = splitPromptCommand(input);
+	const text = parts?.text.trimStart() ?? "";
+	return parts ? { name: parts.name, args: parseCommandArgs(text), additionalInstructions: text } : null;
+}
+
+/** Lossless prefix/text split, shared by dispatch and the composer projection. */
+export function splitPromptCommand(input: string): { name: string; prefix: string; text: string } | null {
+	const match = /^(\s*\/([^\s]*)(?:\s|$))/.exec(input);
+	return match ? { name: match[2]!, prefix: match[1]!, text: input.slice(match[1]!.length) } : null;
 }
 
 /**

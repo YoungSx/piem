@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Notice, Platform } from "obsidian";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
 import { isSendShortcut, resolveSendShortcut, sendShortcutAria, type SendShortcut } from "./keyboard";
@@ -11,6 +11,8 @@ import type { PendingImage } from "./pendingImages";
 import type { QueuedPrompt } from "../agent/promptQueue";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { ExtensionCompletionMenu } from "./ExtensionCompletionMenu";
+import { AttachmentCard } from "./AttachmentCard";
+import { projectComposerDraft, syncComposerEditor, withComposerText } from "./composerDraft";
 
 interface ChatComposerProps {
 	input: string;
@@ -202,6 +204,7 @@ export function ChatComposer({
 	onToggleCollapsed,
 }: ChatComposerProps): React.JSX.Element {
 	const t = useT();
+	const draft = useMemo(() => projectComposerDraft(input, commands), [input, commands]);
 	/*
 	 * One predicate decides whether this composer can fold at all: the toggle
 	 * must be renderable. The state clamps to it rather than re-judging the
@@ -231,7 +234,7 @@ export function ChatComposer({
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [completionOpen, setCompletionOpen] = useState(false);
 	const [completionRequest, setCompletionRequest] = useState(0);
-	const [cursor, setCursor] = useState(input.length);
+	const [cursor, setCursor] = useState(draft.text.length);
 	const blurTimer = useRef<number | undefined>(undefined);
 	// Per-instance rather than a constant: Obsidian allows several leaves of one
 	// view type, so two open chat panels would otherwise share one id and the
@@ -261,27 +264,44 @@ export function ChatComposer({
 	 * Multiline drafts never open it: a `/` on the second line is prose.
 	 */
 	const commandQuery = useMemo(() => {
-		if (!input.startsWith("/") || input.includes(" ") || input.includes("\n")) {
+		if (draft.skill || !input.startsWith("/") || input.includes(" ") || input.includes("\n")) {
 			return null;
 		}
 		return input.slice(1).toLowerCase();
-	}, [input]);
+	}, [input, draft.skill]);
 	// Folded, the menu cannot stand: its anchor — the textarea — is not mounted,
 	// and reopening unfolded should not resurrect a list the user never saw.
 	const showMenu = !extensionAutocomplete && !collapsed && menuOpen && commandQuery !== null && commands.length > 0;
 
 	const selectCommand = (command: CommandEntry): void => {
-		onInputChange(`/${command.invocation} `);
+		const value = `/${command.invocation} `;
+		onInputChange(value);
 		setMenuOpen(false);
 		// Keep the caret after the trailing space so the user types arguments next,
 		// not back into the name.
+		if (textareaRef.current) {
+			syncComposerEditor(textareaRef.current, value, commands);
+			textareaRef.current.focus();
+		}
+	};
+	const removeSkill = (): void => {
+		onInputChange(draft.text);
 		textareaRef.current?.focus();
 	};
+	const previousPrefix = useRef(draft.prefix);
+	useLayoutEffect(() => {
+		const editor = textareaRef.current;
+		if (editor && previousPrefix.current !== draft.prefix) {
+			setCursor(editor.selectionStart);
+			setMenuOpen(false);
+		}
+		previousPrefix.current = draft.prefix;
+	}, [draft.prefix]);
 
 	// The textarea's own rows: `2` when it is on screen, `0` folded — read by the
 	// autosize floor (`lineHeight * minRows`), which would otherwise reserve an
 	// empty two-row box the fold just removed.
-	useAutosize(textareaRef, input, { minRows: collapsed ? 0 : 2 });
+	useAutosize(textareaRef, draft.text, { minRows: collapsed ? 0 : 2 });
 
 	/*
 	 * Image paste/drop staging.
@@ -530,38 +550,45 @@ export function ChatComposer({
 				) : null}
 				{!collapsed ? (
 					<div className="piem-chat__composer-input">
-						{references}
-						{pendingImages && pendingImages.length > 0 ? (
-							<ul className="piem-chat__pending-images">
-								{pendingImages.map((image, index) => (
-									<li key={image.id} className="piem-chat__pending-image">
-										<img
-											src={`data:${image.mimeType};base64,${image.data}`}
-											alt={t.t("chat.imageThumbAlt", { mimeType: image.mimeType })}
-											className="piem-chat__pending-image-thumb"
-										/>
-										<IconButton
-											icon="x"
-											label={t.t("chat.removeImage", { index: index + 1 })}
-											onClick={() => onRemoveImage?.(image.id)}
-											className="piem-chat__pending-image-remove"
-										/>
-									</li>
-								))}
-							</ul>
-						) : null}
+						<div className="piem-chat__composer-attachments">
+							{draft.skill ? <AttachmentCard icon="book-open" label={draft.skill.name}
+								kind={t.t("chat.commandKindSkill")} title={draft.skill.location || undefined} className="piem-chat__skill-pill"
+								removal={readOnly ? undefined : { label: t.t("noteReference.remove", { name: draft.skill.name }), onClick: removeSkill }}>
+								<pre>{draft.skill.body}</pre>
+							</AttachmentCard> : null}
+							{references}
+							{pendingImages && pendingImages.length > 0 ? (
+								<ul className="piem-chat__pending-images">
+									{pendingImages.map((image, index) => (
+										<li key={image.id} className="piem-chat__pending-image">
+											<img
+												src={`data:${image.mimeType};base64,${image.data}`}
+												alt={t.t("chat.imageThumbAlt", { mimeType: image.mimeType })}
+												className="piem-chat__pending-image-thumb"
+											/>
+											<IconButton
+												icon="x"
+												label={t.t("chat.removeImage", { index: index + 1 })}
+												onClick={() => onRemoveImage?.(image.id)}
+												className="piem-chat__pending-image-remove"
+											/>
+										</li>
+									))}
+								</ul>
+							) : null}
+						</div>
 						<textarea
 							ref={textareaRef}
 							id={anchorId}
-							value={input}
+							value={draft.text}
 							readOnly={readOnly}
 							onChange={(event) => {
 								const value = event.currentTarget.value;
-								onInputChange(value);
+								onInputChange(withComposerText(draft, value));
 								// Open the command menu the moment the draft becomes a lone `/`,
 								// close it the moment it stops being one. Kept here rather than in an
 								// effect so the menu tracks the keystroke, not a render behind it.
-								setMenuOpen(value.startsWith("/"));
+								setMenuOpen(!draft.skill && value.startsWith("/"));
 								setCompletionOpen(true);
 								setCompletionRequest(0);
 								setCursor(event.currentTarget.selectionStart);
@@ -616,7 +643,7 @@ export function ChatComposer({
 					/>
 				) : null}
 				{extensionAutocomplete && !collapsed && completionOpen ? (
-					<ExtensionCompletionMenu provider={extensionAutocomplete} input={input} cursor={cursor}
+					<ExtensionCompletionMenu provider={extensionAutocomplete} input={input} cursor={cursor + draft.prefix.length} commands={commands}
 						force={completionRequest > 0} request={completionRequest}
 						menuId={menuId} anchorRef={textareaRef} onInputChange={onInputChange}
 						onActiveChange={setActiveOptionId} onClose={() => setCompletionOpen(false)} />

@@ -1463,7 +1463,7 @@ function UserTextBlock({ text, isStreaming, context }: { text: string; isStreami
 function SkillInvocationPill({ invocation, context }: { invocation: SkillInvocation; context: MessageContext }): React.JSX.Element {
 	const { t } = context;
 	const pill = (
-		<AttachmentCard icon="book-open" label={t.t("chat.skillPillLabel", { name: invocation.name })}
+		<AttachmentCard icon="book-open" label={invocation.name} kind={t.t("chat.commandKindSkill")}
 			title={invocation.location} className="piem-chat__skill-pill">
 			<MarkdownText text={invocation.body} kind="user" isStreaming={false} app={context.app} component={context.component} sourcePath={context.sourcePath} />
 		</AttachmentCard>

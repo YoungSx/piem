@@ -29,6 +29,8 @@ export interface SkillInvocation {
 	 * `plus this` visible as ordinary prose, never folded into the pill.
 	 */
 	trailing: string;
+	/** Start of the editable question in the original expanded message. */
+	promptOffset: number;
 }
 
 const OPENER = /^<skill name="([^"]*)" location="([^"]*)">\n/;
@@ -74,6 +76,7 @@ export function parseSkillInvocation(text: string): SkillInvocation | null {
 		location,
 		body: rest.slice(0, cut).trim(),
 		trailing: rest.slice(cut + CLOSER.length).trim(),
+		promptOffset: opener[0].length + cut + CLOSER.length + (rest.slice(cut + CLOSER.length).startsWith("\n\n") ? 2 : 0),
 	};
 }
 

@@ -658,6 +658,23 @@ describe("ChatComposer command menu wiring", () => {
 		expect(host.querySelector(`[id="${activeId}"]`)?.getAttribute("role")).toBe("option");
 	});
 
+	it("turns a selected skill into the shared removable card while typing only its question", async () => {
+		const host = await renderWired();
+		const editor = textareaEl(host)!;
+		await typeDraft(editor, "/sum");
+		host.querySelector<HTMLButtonElement>('[role="option"] button')!.click();
+		await flushRender();
+		expect(editor.value).toBe("");
+		expect(host.querySelector(".piem-chat__composer-input .piem-chat__skill-pill .piem-chat__attachment-summary")?.textContent).toContain("summarize");
+		await typeDraft(editor, "Summarize these notes");
+		expect(editor.value).toBe("Summarize these notes");
+		expect(host.querySelector(".piem-chat__skill-pill")).not.toBeNull();
+		host.querySelector<HTMLButtonElement>('[aria-label="Remove reference: summarize"]')!.click();
+		await flushRender();
+		expect(editor.value).toBe("Summarize these notes");
+		expect(host.querySelector(".piem-chat__skill-pill")).toBeNull();
+	});
+
 	it("moves aria-activedescendant with the keyboard highlight", async () => {
 		const host = await renderWired();
 		const textarea = textareaEl(host);

@@ -4,6 +4,7 @@ import { getT, type Language } from "../i18n";
 import type { CommandEntry } from "./CommandMenu";
 import { createComposerAutocomplete } from "./extensionAutocomplete";
 import { EMPTY_EXTENSION_UI, ObsidianExtensionUI } from "./ObsidianExtensionUI";
+import { projectComposerDraft, syncComposerEditor, withComposerText } from "./composerDraft";
 
 const subscribeEmpty = (): (() => void) => () => {};
 const getEmpty = () => EMPTY_EXTENSION_UI;
@@ -43,20 +44,20 @@ export function useExtensionUI(
 				write(text);
 				const textarea = textareaRef.current;
 				if (textarea) {
-					textarea.value = text;
-					textarea.setSelectionRange(text.length, text.length);
+					syncComposerEditor(textarea, text, current.current.commands);
 				}
 			},
 			paste: (text) => {
 				const input = current.current.inputRef.current;
 				const textarea = textareaRef.current;
-				const start = textarea?.selectionStart ?? input.length;
+				const draft = projectComposerDraft(input, current.current.commands);
+				const start = textarea?.selectionStart ?? draft.text.length;
 				const end = textarea?.selectionEnd ?? start;
-				const next = input.slice(0, start) + text + input.slice(end);
+				const visible = draft.text.slice(0, start) + text + draft.text.slice(end);
+				const next = withComposerText(draft, visible);
 				write(next);
 				if (textarea) {
-					textarea.value = next;
-					textarea.setSelectionRange(start + text.length, start + text.length);
+					syncComposerEditor(textarea, next, current.current.commands, next.length - visible.length + start + text.length);
 				}
 			},
 		}, createComposerAutocomplete(() => current.current.commands));
