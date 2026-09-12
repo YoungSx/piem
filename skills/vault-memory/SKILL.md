@@ -31,8 +31,7 @@ Skip recall ONLY for:
 - One-off questions with no project context ("what's the time complexity of quicksort?")
 - User explicitly says "ignore memory" or "fresh start"
 
-When in doubt, recall. The cost of reading an empty directory is one tool call;
-the cost of missing a critical preference is redoing the entire task wrong.
+When in doubt, recall.
 
 ## How to recall
 
