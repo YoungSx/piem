@@ -8,6 +8,8 @@ const document = installDom();
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
 const { ChatComposer } = await import("./ChatComposer");
 const { createRoot } = await import("react-dom/client");
+const { ReferenceCards } = await import("./ReferenceCards");
+const { getT } = await import("../i18n");
 
 type Props = Parameters<typeof ChatComposer>[0];
 
@@ -55,6 +57,32 @@ async function renderComposer(overrides: Partial<Props> = {}): Promise<HTMLEleme
 function sendButton(host: HTMLElement): HTMLButtonElement | null {
 	return host.querySelector<HTMLButtonElement>(".piem-chat__send-button");
 }
+
+describe("ChatComposer input attachments", () => {
+	it("keeps references and text in one input surface without remounting the editor", async () => {
+		const host = await renderComposer({ input: "/skill:review My question" });
+		try {
+			const editor = host.querySelector("textarea")!;
+			editor.focus();
+			editor.setSelectionRange(14, 16);
+			const references = <ReferenceCards references={[{ kind: "folder", path: "Projects" }]}
+				app={{} as import("obsidian").App} t={getT("en")} />;
+			await renderInto(host, baseProps({ input: editor.value, references }));
+			const surface = host.querySelector(".piem-chat__composer-input");
+			expect(surface?.contains(editor)).toBe(true);
+			expect(surface?.querySelector(".piem-chat__reference-details")).not.toBeNull();
+			expect(surface?.querySelector(".piem-chat__composer-bar")).toBeNull();
+			expect(host.querySelector("textarea")).toBe(editor);
+			expect(editor.selectionStart).toBe(14);
+			expect(editor.selectionEnd).toBe(16);
+			const summary = surface!.querySelector("summary")!;
+			expect(press(host, summary, "touch")).toBe(false);
+			await renderInto(host, baseProps({ input: editor.value }));
+			expect(host.querySelector("textarea")).toBe(editor);
+			expect(editor.value).toBe("/skill:review My question");
+		} finally { roots.get(host)?.unmount(); host.remove(); }
+	});
+});
 
 describe("ChatComposer send button", () => {
 	beforeEach(() => {

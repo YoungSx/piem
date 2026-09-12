@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import { messageReferences, type ContextReference } from "../agent/contextReference";
 import { ReferenceCards } from "./ReferenceCards";
+import { AttachmentCard } from "./AttachmentCard";
 import type { AgentMessage, CustomMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { AssistantMessage, ImageContent, ThinkingContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
@@ -1462,16 +1463,10 @@ function UserTextBlock({ text, isStreaming, context }: { text: string; isStreami
 function SkillInvocationPill({ invocation, context }: { invocation: SkillInvocation; context: MessageContext }): React.JSX.Element {
 	const { t } = context;
 	const pill = (
-		<details className="piem-chat__skill-pill">
-			<summary className="piem-chat__skill-pill-summary" title={invocation.location}>
-				<ObsidianIcon name="book-open" className="piem-chat__skill-pill-icon" />
-				<span className="piem-chat__skill-pill-name">{t.t("chat.skillPillLabel", { name: invocation.name })}</span>
-				<ObsidianIcon name="chevron-down" className="piem-chat__skill-pill-chevron" />
-			</summary>
-			<div className="piem-chat__skill-pill-body">
-				<MarkdownText text={invocation.body} kind="user" isStreaming={false} app={context.app} component={context.component} sourcePath={context.sourcePath} />
-			</div>
-		</details>
+		<AttachmentCard icon="book-open" label={t.t("chat.skillPillLabel", { name: invocation.name })}
+			title={invocation.location} className="piem-chat__skill-pill">
+			<MarkdownText text={invocation.body} kind="user" isStreaming={false} app={context.app} component={context.component} sourcePath={context.sourcePath} />
+		</AttachmentCard>
 	);
 	if (invocation.trailing === "") {
 		return pill;
