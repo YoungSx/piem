@@ -1,0 +1,285 @@
+{
+  "productCommit": "51a0c61d7bfc2dea6729256e40d8296453599a6d",
+  "base": "5a4f26d",
+  "endpoint": "https://otlp.piem.shangxin.me",
+  "defaultSharing": true,
+  "collectorEditable": false,
+  "gatewayCheck": {
+    "endpoint": "https://otlp.piem.shangxin.me",
+    "dnsResolved": true,
+    "result": "TLS handshake failure before HTTP",
+    "clients": [
+      "Python urllib/OpenSSL",
+      "curl/OpenSSL TLS 1.2 and TLS 1.3",
+      "Node fetch",
+      "Obsidian renderer fetch"
+    ],
+    "sent": "empty JSON only; no real notes or credentials",
+    "confirmedCollectorReceipt": false
+  },
+  "bundleBytes": 2205041,
+  "bundleSha256": "c8a877d95dac0896247b9313adab1a30c2320af3e39ac3d6e09077a0acb53796",
+  "verify": {
+    "passed": true,
+    "tests": 3813,
+    "files": 258,
+    "assertions": 13356
+  },
+  "standalone": [
+    {
+      "file": "src/agent/diagnostics.test.ts",
+      "exitCode": 0,
+      "seconds": 1.96
+    },
+    {
+      "file": "src/extensions/communityOtelHost.test.ts",
+      "exitCode": 0,
+      "seconds": 1.86
+    },
+    {
+      "file": "src/extensions/extensionHost.test.ts",
+      "exitCode": 0,
+      "seconds": 0.52
+    },
+    {
+      "file": "src/settings.test.ts",
+      "exitCode": 0,
+      "seconds": 0.18
+    },
+    {
+      "file": "src/ui/settings/controlKeys.test.ts",
+      "exitCode": 0,
+      "seconds": 0.03
+    },
+    {
+      "file": "src/ui/settings/extensionsDefinitions.test.ts",
+      "exitCode": 0,
+      "seconds": 0.35
+    }
+  ],
+  "smoke": {
+    "desktop": {
+      "passed": true,
+      "checks": [
+        "disposable vault",
+        "official device mode",
+        "single smoke owner",
+        "omitted preference loads enabled",
+        "native default-on toggle",
+        "no collector text control",
+        "old collector control cannot write settings",
+        "real native toggle rendered enabled",
+        "normal chat completes: FIRST",
+        "original default factory uses fixed HTTPS gateway",
+        "manifest and minute metrics configured",
+        "fixed destination sent through controlled host transport",
+        "ordinary shutdown exports metrics",
+        "normal chat completes: SECOND",
+        "two separate active reporting factories",
+        "queued report work exists before opt-out",
+        "save revokes all reporting before first await",
+        "opt-out immediately clears SDK page listeners",
+        "opt-out immediately clears background timers",
+        "opt-out does not call final flush",
+        "explicit false persisted",
+        "in-progress model answer continues after opt-out",
+        "normal chat completes: AFTER_OFF",
+        "normal chat completes: OTHER_CHAT_OFF",
+        "Stop still records an aborted turn",
+        "normal chat completes: AFTER_STOP",
+        "normal chat completes: NEW_CHAT_OFF",
+        "no reports after opt-out across chats Stop and new chat",
+        "normal chat completes: PENDING_ENABLE",
+        "normal chat completes: NEW_PENDING_ENABLE",
+        "re-enable waits for reload even in new chats",
+        "normal chat completes: ENABLED_AGAIN",
+        "normal reload resumes reporting",
+        "saved opt-out survives reload",
+        "normal chat completes: PERSISTED_OFF",
+        "saved opt-out sends nothing after reload",
+        "no renderer errors or unhandled rejections"
+      ],
+      "durationMs": 9659,
+      "renderedToggle": {
+        "name": "Share error reports and performance data",
+        "description": "On by default. Sends model and tool names, usage, timing and errors to Piem's maintainers. Content capture is off, but error messages may include note text. Turning off takes effect immediately; reload Piem after turning back on.",
+        "enabled": true
+      },
+      "immediateOptOut": {
+        "listeners": 0,
+        "backgroundTimers": [],
+        "otherPluginTimers": [
+          {
+            "kind": "timeout",
+            "delay": 500,
+            "background": false
+          },
+          {
+            "kind": "interval",
+            "delay": 1000
+          }
+        ],
+        "requestsStarted": 0
+      },
+      "cleanupEvidence": {
+        "observedTimers": 98,
+        "observedListeners": 28,
+        "activePluginTimers": 0,
+        "activeListeners": 0,
+        "pendingRequests": 0,
+        "retainedFactories": 7,
+        "allFactoriesRetired": true
+      },
+      "productionLoads": 4,
+      "transport": "Controlled Obsidian requestUrl proxy to a temporary local HTTP receiver; public HTTPS destination preserved and recorded, public gateway and real Collector NOT tested.",
+      "signals": [
+        "/v1/logs",
+        "/v1/metrics",
+        "/v1/traces"
+      ],
+      "contentCaptureOff": true,
+      "serverClosed": true,
+      "productionFileUnchanged": true,
+      "blockedExternal": [],
+      "errors": [],
+      "cleanupErrors": [],
+      "serverErrors": [],
+      "packetCount": 12
+    },
+    "mobile": {
+      "passed": true,
+      "checks": [
+        "disposable vault",
+        "official device mode",
+        "official phone emulation",
+        "single smoke owner",
+        "omitted preference loads enabled",
+        "native default-on toggle",
+        "no collector text control",
+        "old collector control cannot write settings",
+        "real native toggle rendered enabled",
+        "normal chat completes: FIRST",
+        "original default factory uses fixed HTTPS gateway",
+        "manifest and minute metrics configured",
+        "fixed destination sent through controlled host transport",
+        "ordinary shutdown exports metrics",
+        "normal chat completes: SECOND",
+        "two separate active reporting factories",
+        "queued report work exists before opt-out",
+        "save revokes all reporting before first await",
+        "opt-out immediately clears SDK page listeners",
+        "opt-out immediately clears background timers",
+        "opt-out does not call final flush",
+        "explicit false persisted",
+        "in-progress model answer continues after opt-out",
+        "saved opt-out survives reload",
+        "normal chat completes: PERSISTED_OFF",
+        "saved opt-out sends nothing after reload",
+        "mobile negative Node controls refused",
+        "production loader requests only Obsidian",
+        "every production load audited",
+        "loader exposes mobile platform",
+        "no renderer errors or unhandled rejections"
+      ],
+      "durationMs": 3513,
+      "renderedToggle": {
+        "name": "Share error reports and performance data",
+        "description": "On by default. Sends model and tool names, usage, timing and errors to Piem's maintainers. Content capture is off, but error messages may include note text. Turning off takes effect immediately; reload Piem after turning back on.",
+        "enabled": true
+      },
+      "immediateOptOut": {
+        "listeners": 0,
+        "backgroundTimers": [],
+        "otherPluginTimers": [
+          {
+            "kind": "timeout",
+            "delay": 500,
+            "background": false
+          },
+          {
+            "kind": "interval",
+            "delay": 1000
+          }
+        ],
+        "requestsStarted": 0
+      },
+      "cleanupEvidence": {
+        "observedTimers": 58,
+        "observedListeners": 20,
+        "activePluginTimers": 0,
+        "activeListeners": 0,
+        "pendingRequests": 0,
+        "retainedFactories": 5,
+        "allFactoriesRetired": true
+      },
+      "productionLoads": 3,
+      "transport": "Controlled Obsidian requestUrl proxy to a temporary local HTTP receiver; public HTTPS destination preserved and recorded, public gateway and real Collector NOT tested.",
+      "signals": [
+        "/v1/logs",
+        "/v1/metrics",
+        "/v1/traces"
+      ],
+      "contentCaptureOff": true,
+      "serverClosed": true,
+      "productionFileUnchanged": true,
+      "blockedExternal": [],
+      "errors": [],
+      "cleanupErrors": [],
+      "serverErrors": [],
+      "packetCount": 7,
+      "nodeAccess": {
+        "evaluations": 3,
+        "controls": [
+          {
+            "id": "fs",
+            "provided": false
+          },
+          {
+            "id": "node:fs",
+            "provided": false
+          },
+          {
+            "id": "node:fs/promises",
+            "provided": false
+          },
+          {
+            "id": "child_process",
+            "provided": false
+          },
+          {
+            "id": "node:module",
+            "provided": false
+          },
+          {
+            "id": "electron",
+            "provided": false
+          }
+        ],
+        "requestedModules": [
+          "obsidian"
+        ]
+      }
+    }
+  },
+  "obsidianCleanup": {
+    "ownedPids": [
+      1025424,
+      1025431
+    ],
+    "adoptedPids": [
+      1025437,
+      1025438,
+      1025499,
+      1025534,
+      1026983
+    ],
+    "allExited": true
+  },
+  "cleanup": {
+    "ownedProcessesExited": true,
+    "temporaryVaultDeleted": true,
+    "temporaryProfileDeleted": true,
+    "cdpPortClosed": 50207,
+    "temporaryModelAndReceiverClosed": true
+  }
+}
