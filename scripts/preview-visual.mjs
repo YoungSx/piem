@@ -1083,7 +1083,7 @@ SCENARIOS["chat-skill-pill"] = async () => {
 			await settle(() => document.querySelectorAll(".piem-chat__skill-pill").length >= 2);
 			// Open the second pill — its trailing instruction must stay outside the
 			// fold, in ordinary prose. One folded, one open, both on the page.
-			const open = [...document.querySelectorAll(".piem-chat__skill-pill-summary")][1];
+			const open = [...document.querySelectorAll(".piem-chat__skill-pill > .piem-chat__attachment-summary")][1];
 			if (!open) {
 				throw new Error("second skill pill not found");
 			}

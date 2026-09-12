@@ -64,9 +64,9 @@ describe("MessageList native reference cards", () => {
 		expect(host.querySelectorAll(".piem-chat__message--user .piem-chat__bubble .piem-chat__reference-details")).toHaveLength(2);
 		expect(host.querySelectorAll(".piem-chat__reference-details")).toHaveLength(2);
 		expect(host.querySelector(".piem-chat__reference-details")?.hasAttribute("open")).toBe(false);
-		expect(host.querySelector(".piem-chat__reference-body pre")?.textContent).toBe("<script>unsafe()</script>");
+		expect(host.querySelector(".piem-chat__attachment-body pre")?.textContent).toBe("<script>unsafe()</script>");
 		expect(host.querySelector("script")).toBeNull();
-		expect(host.querySelector(".piem-chat__reference-remove")).toBeNull();
+		expect(host.querySelector(".piem-chat__attachment-remove")).toBeNull();
 	});
 
 	it("keeps each question's references in its own bubble alongside a parsed skill", async () => {
@@ -77,6 +77,7 @@ describe("MessageList native reference cards", () => {
 		const bubbles = host.querySelectorAll(".piem-chat__message--user .piem-chat__bubble");
 		expect(bubbles).toHaveLength(2);
 		expect(bubbles[0]?.querySelector(".piem-chat__skill-pill")).not.toBeNull();
+		expect(bubbles[0]?.querySelectorAll(".piem-chat__attachment-summary")).toHaveLength(2);
 		expect(bubbles[0]?.querySelector(".piem-chat__reference")?.textContent).toContain("A.md");
 		expect(bubbles[0]?.textContent).not.toContain("Projects");
 		expect(bubbles[1]?.querySelector(".piem-chat__reference")?.textContent).toContain("Projects");

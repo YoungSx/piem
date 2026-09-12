@@ -335,13 +335,13 @@ export function ChatComposer({
 	 * be cancelled. Nothing breaks when it does — the row is always rendered, so
 	 * the pressed control is never out of the layout when the tap resolves.
 	 *
-	 * Two exemptions. A press on the textarea passes through, because focusing
-	 * it — and placing the caret — is precisely what that press is for. A mouse
+	 * Presses inside the input pass through: text selection, attachment scrolling
+	 * and native disclosures need their default touch actions. A mouse
 	 * press passes through because native focus movement is what a desktop
 	 * keyboard user's tab order expects.
 	 */
 	const keepFocusOnPress = (event: React.PointerEvent<HTMLDivElement>): void => {
-		if (event.pointerType === "mouse" || event.target === textareaRef.current) {
+		if (event.pointerType === "mouse" || (event.target as Element).closest(".piem-chat__composer-input")) {
 			return;
 		}
 		event.preventDefault();
@@ -528,79 +528,81 @@ export function ChatComposer({
 						))}
 					</ul>
 				) : null}
-				{!collapsed ? references : null}
-				{pendingImages && pendingImages.length > 0 && !collapsed ? (
-					<ul className="piem-chat__pending-images">
-						{pendingImages.map((image, index) => (
-							<li key={image.id} className="piem-chat__pending-image">
-								<img
-									src={`data:${image.mimeType};base64,${image.data}`}
-									alt={t.t("chat.imageThumbAlt", { mimeType: image.mimeType })}
-									className="piem-chat__pending-image-thumb"
-								/>
-								<IconButton
-									icon="x"
-									label={t.t("chat.removeImage", { index: index + 1 })}
-									onClick={() => onRemoveImage?.(image.id)}
-									className="piem-chat__pending-image-remove"
-								/>
-							</li>
-						))}
-					</ul>
-				) : null}
 				{!collapsed ? (
-					<textarea
-						ref={textareaRef}
-						id={anchorId}
-						value={input}
-						readOnly={readOnly}
-						onChange={(event) => {
-							const value = event.currentTarget.value;
-							onInputChange(value);
-							// Open the command menu the moment the draft becomes a lone `/`,
-							// close it the moment it stops being one. Kept here rather than in an
-							// effect so the menu tracks the keystroke, not a render behind it.
-							setMenuOpen(value.startsWith("/"));
-							setCompletionOpen(true);
-							setCompletionRequest(0);
-							setCursor(event.currentTarget.selectionStart);
-						}}
-						onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
-						onFocus={() => {
-							if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
-						}}
-						onBlur={() => {
-							// Defer so a click on a menu item fires before the menu unmounts.
-							if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
-							blurTimer.current = window.setTimeout(() => {
-								setMenuOpen(false);
-								setCompletionOpen(false);
-								blurTimer.current = undefined;
-							}, 0);
-						}}
-						onPaste={handlePaste}
-						onDrop={handleDrop}
-						onDragOver={handleDragOver}
-						placeholder={t.t("chat.placeholder")}
-						aria-label={t.t("chat.composerAria")}
-						onMouseOver={suppressOwnTooltip}
-						aria-keyshortcuts={sendShortcutAria(shortcut)}
-						/*
-						 * The ARIA combobox half of the command menu. The draft is where
-						 * focus lives while the user types `/`, so the textarea carries the
-						 * combobox role and quotes the menu — its listbox — and the
-						 * highlighted option by id. All three attributes key off the one
-						 * `activeOptionId` the menu reports, so `aria-expanded`,
-						 * `aria-controls` and `aria-activedescendant` open, close and move
-						 * together: with no matches the menu renders nothing and none of
-						 * the three advertise it.
-						 */
-						role="combobox"
-						aria-expanded={activeOptionId !== null}
-						aria-controls={activeOptionId !== null ? menuId : undefined}
-						aria-activedescendant={activeOptionId ?? undefined}
-						rows={2}
-					/>
+					<div className="piem-chat__composer-input">
+						{references}
+						{pendingImages && pendingImages.length > 0 ? (
+							<ul className="piem-chat__pending-images">
+								{pendingImages.map((image, index) => (
+									<li key={image.id} className="piem-chat__pending-image">
+										<img
+											src={`data:${image.mimeType};base64,${image.data}`}
+											alt={t.t("chat.imageThumbAlt", { mimeType: image.mimeType })}
+											className="piem-chat__pending-image-thumb"
+										/>
+										<IconButton
+											icon="x"
+											label={t.t("chat.removeImage", { index: index + 1 })}
+											onClick={() => onRemoveImage?.(image.id)}
+											className="piem-chat__pending-image-remove"
+										/>
+									</li>
+								))}
+							</ul>
+						) : null}
+						<textarea
+							ref={textareaRef}
+							id={anchorId}
+							value={input}
+							readOnly={readOnly}
+							onChange={(event) => {
+								const value = event.currentTarget.value;
+								onInputChange(value);
+								// Open the command menu the moment the draft becomes a lone `/`,
+								// close it the moment it stops being one. Kept here rather than in an
+								// effect so the menu tracks the keystroke, not a render behind it.
+								setMenuOpen(value.startsWith("/"));
+								setCompletionOpen(true);
+								setCompletionRequest(0);
+								setCursor(event.currentTarget.selectionStart);
+							}}
+							onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+							onFocus={() => {
+								if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
+							}}
+							onBlur={() => {
+								// Defer so a click on a menu item fires before the menu unmounts.
+								if (blurTimer.current !== undefined) window.clearTimeout(blurTimer.current);
+								blurTimer.current = window.setTimeout(() => {
+									setMenuOpen(false);
+									setCompletionOpen(false);
+									blurTimer.current = undefined;
+								}, 0);
+							}}
+							onPaste={handlePaste}
+							onDrop={handleDrop}
+							onDragOver={handleDragOver}
+							placeholder={t.t("chat.placeholder")}
+							aria-label={t.t("chat.composerAria")}
+							onMouseOver={suppressOwnTooltip}
+							aria-keyshortcuts={sendShortcutAria(shortcut)}
+							/*
+							 * The ARIA combobox half of the command menu. The draft is where
+							 * focus lives while the user types `/`, so the textarea carries the
+							 * combobox role and quotes the menu — its listbox — and the
+							 * highlighted option by id. All three attributes key off the one
+							 * `activeOptionId` the menu reports, so `aria-expanded`,
+							 * `aria-controls` and `aria-activedescendant` open, close and move
+							 * together: with no matches the menu renders nothing and none of
+							 * the three advertise it.
+							 */
+							role="combobox"
+							aria-expanded={activeOptionId !== null}
+							aria-controls={activeOptionId !== null ? menuId : undefined}
+							aria-activedescendant={activeOptionId ?? undefined}
+							rows={2}
+						/>
+					</div>
 				) : null}
 				{showMenu ? (
 					<CommandMenu

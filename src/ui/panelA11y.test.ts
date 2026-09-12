@@ -782,9 +782,9 @@ describe("scanner compatibility: hiding layers and the composer ring (issue #204
 	 * comments: the scanner reads the raw text, so even a comment that names it
 	 * would count as a hit.
 	 */
-	it("the composer ring keys on :focus-within, and the stylesheet has no :has anywhere", () => {
-		expect(ruleBody(".piem-chat__composer-shell:focus-within")).toContain(
-			"box-shadow: 0 0 0 1px var(--background-modifier-border-focus)",
+	it("the input frame keys on :focus-within, and the stylesheet has no :has anywhere", () => {
+		expect(ruleBody(".piem-chat__composer-input:focus-within")).toContain(
+			"border-color: var(--background-modifier-border-focus)",
 		);
 		expect(styles).not.toMatch(/:has\(/);
 	});
@@ -820,9 +820,9 @@ describe("scanner compatibility: hiding layers and the composer ring (issue #204
 	 * comments: the scanner reads the raw text, so even a comment that names it
 	 * would count as a hit.
 	 */
-	it("the composer ring keys on :focus-within, and the stylesheet has no :has anywhere", () => {
-		expect(ruleBody(".piem-chat__composer-shell:focus-within")).toContain(
-			"box-shadow: 0 0 0 1px var(--background-modifier-border-focus)",
+	it("the input frame keys on :focus-within, and the stylesheet has no :has anywhere", () => {
+		expect(ruleBody(".piem-chat__composer-input:focus-within")).toContain(
+			"border-color: var(--background-modifier-border-focus)",
 		);
 		expect(styles).not.toMatch(/:has\(/);
 	});
