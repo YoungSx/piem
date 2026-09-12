@@ -105,6 +105,21 @@ async function settle(): Promise<void> {
 }
 
 describe("extensionsDefinitions", () => {
+	it.each(["en", "zh-cn"] as const)("offers a blank native collector field with inline validation in %s", async language => {
+		const t = getT(language);
+		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
+		const row = definitions.find(item => "control" in item && item.control?.key === "otelEndpoint");
+		expect(row).toBeDefined();
+		if (!row || !("control" in row) || row.control?.type !== "text") throw new Error("Collector text control missing");
+		expect(row.name).toBe(t.t("extensions.otelEndpoint"));
+		expect(row.desc).toBe(t.t("extensions.otelEndpointDesc"));
+		expect(row.control.defaultValue).toBe("");
+		expect(row.control.validate?.("")).toBeUndefined();
+		expect(row.control.validate?.("https://collector.example/base")).toBeUndefined();
+		expect(row.control.validate?.("https://collector.example?token=secret")).toBe(t.t("extensions.otelEndpointInvalid"));
+		await settle();
+	});
+
 	it("declares both sections as lists, so their rows are indexed and mutable", async () => {
 		const definitions = extensionsDefinitions(stubHost(), new SettingsPanelState());
 		await settle();

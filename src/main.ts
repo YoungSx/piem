@@ -342,6 +342,7 @@ export default class PiemPlugin extends Plugin {
 			});
 		}
 		this.agentService = new ObsidianAgentService(this.app, () => this.settings, sessionManager, {
+			pluginVersion: this.manifest.version,
 			builtinSkills: {
 				names: BUILTIN_SKILL_ASSET?.names ?? [],
 				report: () => this.builtinSkillInstaller?.getReport() ?? emptyBuiltinSkillReport(),

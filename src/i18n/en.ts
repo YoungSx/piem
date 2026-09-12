@@ -56,6 +56,10 @@ export const en = {
 		noConversation: "Start a conversation before continuing it.",
 		included: "Built-in Pi extensions",
 		description: "Bookmarks, model handoff notes, model switching, continuation, web search, draft rewriting and context checkpoints are active. Search sends queries and supplied URLs to the current provider; rewriting sends the draft to its chosen model. Search needs a supported endpoint and may cost extra. Saved summaries preserve old history and start a new model request.",
+		otelEndpoint: "OpenTelemetry collector URL",
+		otelEndpointDesc: "Sends traces, metrics and logs to your HTTP(S) collector base URL, without /v1/traces. Leave blank to stop. Reload Piem after any change. Content capture is off; error messages may still contain note text. Piem provides no collector.",
+		otelEndpointPlaceholder: "http://127.0.0.1:4318",
+		otelEndpointInvalid: "Enter an HTTP(S) base URL of up to 2,048 characters, without credentials, query or fragment. Leave blank to stop exporting.",
 	},
 	bookmarks: {
 		excerpt: "Showing the first 4,000 characters. The full reply remains in the conversation.",
@@ -1073,7 +1077,7 @@ export const en = {
 		cacheRetentionNone: "Off — for endpoints that refuse cache markers",
 		whatLeavesVault: "What leaves this vault",
 		whatLeavesVaultDesc:
-			"Prompts, vault content read by tools, and tool results are sent to the provider serving the default model. Nothing is sent anywhere else.",
+			"Prompts, notes and tool results go to the selected model provider. MCP tools and web requests reach their named services. An OpenTelemetry collector, when configured, also receives diagnostics; error messages may include note text. Piem operates no backend.",
 		chatLogsInVault:
 			"Chat logs are files in your vault, so they sync and back up with your notes. They hold the conversation and whatever note text was read while answering it.",
 		apiKeysHeading: "API keys",

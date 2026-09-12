@@ -2,6 +2,7 @@ import { Notice, TFile, type App, type ButtonComponent, type ExtraButtonComponen
 import type { SkillDiagnostic } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../../i18n";
 import type { SkillCatalogEntry } from "../../agent/skillLoader";
+import { normalizeOtelEndpoint } from "../../extensions/otelConfig";
 import { builtinSkillsDefinitions } from "./builtinSkillsDefinitions";
 import type { SkillRow } from "../../skills/skillManager";
 import { type SettingsPanelState, type SkillsSnapshot } from "./panelState";
@@ -162,6 +163,18 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
 		{ name: host.t.t("extensions.included"), desc: host.t.t("extensions.description"), render: () => undefined },
+		{
+			name: host.t.t("extensions.otelEndpoint"),
+			desc: host.t.t("extensions.otelEndpointDesc"),
+			control: {
+				type: "text", key: "otelEndpoint", defaultValue: "",
+				placeholder: host.t.t("extensions.otelEndpointPlaceholder"),
+				validate: value => {
+					if (value.trim() && !normalizeOtelEndpoint(value)) return host.t.t("extensions.otelEndpointInvalid");
+					return undefined;
+				},
+			},
+		},
 		mcpList(host),
 	];
 }

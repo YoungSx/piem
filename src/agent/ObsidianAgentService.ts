@@ -52,6 +52,7 @@ import { navigateExtensionSummary } from "../session/extensionNavigation";
 import { configuredModels } from "../extensions/configuredModels";
 import { createExtensionConfigStore } from "../extensions/extensionConfigStore";
 import { clarifyModelProjection } from "../extensions/clarifyConfig";
+import { otelEnvironment } from "../extensions/otelConfig";
 import { ExtensionModelSwitch } from "../extensions/modelSwitch";
 import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
@@ -649,6 +650,8 @@ export interface ObsidianAgentServiceOptions {
 	credentials?: CredentialStore;
 	/** Statically supplied factories; production defaults to the bundled extensions. */
 	extensionFactories?: readonly CommunityExtension[];
+	/** Supplied by the plugin manifest for the original OTel resource attributes. */
+	pluginVersion?: string;
 }
 
 interface CompactionRunOptions {
@@ -678,6 +681,8 @@ export class ObsidianAgentService {
 	/** See {@link ObsidianAgentServiceOptions.credentials}. */
 	private readonly credentials: CredentialStore | undefined;
 	private readonly extensionFactories: readonly CommunityExtension[] | undefined;
+	/** Upstream reads once at factory load; all chats keep one configuration until reload. */
+	private readonly telemetryEnvironment: Readonly<Record<string, string>>;
 	/** Shared across conversation replacements; late native IO retains its slot. */
 	private readonly extensionBackgroundFetch = (() => {
 		const fetch = createObsidianRequestUrlFetch();
@@ -858,6 +863,7 @@ export class ObsidianAgentService {
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
 		this.credentials = options.credentials;
 		this.extensionFactories = options.extensionFactories;
+		this.telemetryEnvironment = otelEnvironment(getSettings().otelEndpoint, options.pluginVersion);
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
@@ -4340,6 +4346,7 @@ export class ObsidianAgentService {
 		});
 		const community = await CommunityHost.create({
 			session: contextSession,
+			otelEnvironment: () => this.telemetryEnvironment,
 			logger: this.log,
 			prepare: async () => { assertOwner(); await view.refresh(); await contextSession.refresh(); },
 			platform: {

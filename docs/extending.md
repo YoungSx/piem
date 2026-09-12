@@ -200,7 +200,8 @@ entries backwards; it does not use the time at which a label was assigned.
 Synchronizing simultaneous edits to the same label follows the existing session
 merge rule: the arriving file wins. Sync is not a cross-device transaction.
 
-Bookmarks work offline. Six community extensions are also included and enabled:
+Bookmarks work offline. Seven community extensions are also bundled. The first
+six are active by default; telemetry exports only after you configure a collector:
 
 | Extension | What it does | How to use it |
 | --- | --- | --- |
@@ -210,6 +211,7 @@ Bookmarks work offline. Six community extensions are also included and enabled:
 | `pi-web-search` | Searches with the current provider and returns source links | Ask the agent to use `web_search` |
 | `pi-clarify` | Rewrites a rough request into an editable draft | `/clarify <idea>`, or **Piem: Rewrite a draft before sending** |
 | `pi-context` | Saves checkpoints, inspects the timeline and continues from a summary branch | Ask the agent to use `context_checkpoint`, `context_timeline` or `context_compact` |
+| [`b1tank/pi-otel`](https://github.com/b1tank/pi-otel) | Exports traces, metrics and logs to your collector | Set **OpenTelemetry collector URL** in **Extensions**, then reload Piem |
 
 Switching is limited to unambiguous configured models with API keys. It changes the
 next model request in that conversation and saves the default choice. The newly
@@ -256,6 +258,14 @@ replacing the upstream terminal-only screen.
 
 If a skill or template shares an extension command's name, it keeps the short name;
 use `/extension:clarify` or `/extension:context` to select the extension explicitly.
+
+`b1tank/pi-otel` is installed from its pinned Git commit and bundled through the
+same reviewed factory loader as the other extensions. Its source is not copied or
+ported into Piem, and it is not the npm package with the same name. Configure its
+collector in [Settings](settings.md#extensions); there is no Piem-hosted backend.
+It exports OTLP/HTTP JSON. Content capture is off, though model error messages can
+contain note text; see [Security and privacy](security.md#opentelemetry-export).
+Its events cover the main conversation, not every internal subagent model call.
 
 These extensions ship in `main.js` and change only with a normal plugin release.
 Piem does not download or execute JS/TS extensions from the vault or a URL. Upstream

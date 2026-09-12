@@ -43,6 +43,7 @@ describe("isControlKey", () => {
 		expect(isControlKey("showAgentDetails")).toBe(true);
 		expect(isControlKey("language")).toBe(true);
 		expect(isControlKey("networkTransport")).toBe(true);
+		expect(isControlKey("otelEndpoint")).toBe(true);
 	});
 
 	it("refuses a setting whose row owns its own write rules", () => {
@@ -74,6 +75,18 @@ describe("readControlValue", () => {
 });
 
 describe("writeControlValue", () => {
+	it("keeps the collector destination on invalid input and removes it when cleared", () => {
+		const stored = settings();
+		expect(writeControlValue(stored, "otelEndpoint", " https://collector.example/base/// ")).toBe(true);
+		expect(readControlValue(stored, "otelEndpoint")).toBe("https://collector.example/base");
+		for (const value of [42, "file:///vault", "https://user:secret@collector.example", "https://collector.example?key=secret", "https://collector.example#fragment"]) {
+			expect(writeControlValue(stored, "otelEndpoint", value)).toBe(false);
+			expect(stored.otelEndpoint).toBe("https://collector.example/base");
+		}
+		expect(writeControlValue(stored, "otelEndpoint", " ")).toBe(true);
+		expect(Object.prototype.hasOwnProperty.call(stored, "otelEndpoint")).toBe(false);
+	});
+
 	it("writes a value of the expected type and reports the write landed", () => {
 		const stored = settings();
 

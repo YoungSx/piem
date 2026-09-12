@@ -1,5 +1,5 @@
-// The explicit package path avoids Node's builtin and never installs a global Buffer.
-import { Buffer } from "buffer/index.js";
+// A file path keeps the browser package bundled even when Node's buffer is external.
+import { Buffer } from "../../../node_modules/buffer/index.js";
 
 export { Buffer };
 export default { Buffer };

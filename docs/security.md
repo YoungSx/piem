@@ -51,11 +51,42 @@ Stop cancels pending extension actions and ignores late results. Obsidian's
 may finish or remain billable. Pending transport work stays accounted for until it
 settles; it cannot write a late draft, switch another chat or resume a stopped task.
 
-There is no telemetry, analytics, crash reporter or Piem-operated backend.
+OpenTelemetry export is available only to a collector you configure, as described
+below. Piem operates no telemetry, analytics or crash-reporting backend.
 
 The practical consequence: **point Piem at a vault you are willing to send to
 your model provider.** A search that touches a file lists that file, and the
 model sees the listing.
+
+## OpenTelemetry export
+
+The bundled original `b1tank/pi-otel` extension sends traces, metrics and lifecycle
+logs to **OpenTelemetry collector URL** under **Settings → Piem → Extensions**.
+There is no default destination. Setting, changing or clearing the address takes
+effect when you reload Piem; clear it and reload to stop exports. Piem provides no
+collector or hosted account. The destination receives the device's IP and ordinary
+HTTP metadata as well as the exported data.
+
+Exports include session IDs, model and tool names, timing, token usage, reported
+cost and success or failure status. Prompt, response, system instruction, tool
+argument/result, session path and provider payload/header capture remain off.
+**Model error messages still enter span status and exception events**, so an error
+that includes note text can send that text despite content capture being off.
+Treat the collector as a destination for sensitive diagnostics.
+
+Piem sends OTLP/HTTP JSON to the base address plus `/v1/traces`, `/v1/metrics` and
+`/v1/logs`, through the managed background `requestUrl` transport. The address is
+saved in plugin data and may travel with vault sync. Only the base URL is
+configurable here; embedded credentials, query parameters and fragments are
+rejected. Provider keys and the computer's environment variables are not passed to
+the extension.
+
+Metrics run every 60 seconds; traces and logs use their own batches. Closing a
+conversation or unloading Piem stops owned timers and allows a bounded final flush.
+An unavailable or slow collector can lose that final batch. Stop ends the current
+answer but leaves that conversation's telemetry active. Native requests already
+sent may finish after the host stops waiting. This integration does not trace every
+internal subagent call.
 
 ## There is no confirmation step
 
@@ -129,10 +160,11 @@ obfuscated payload.
 
 **Network requests.** Roughly twenty call sites, all through one transport layer:
 model provider streams, the connection test, the models.dev catalog suggestion,
-remote MCP servers, skill imports, built-in skill preparation, and the `web_fetch` tool. Your
+remote MCP servers, skill imports, built-in skill preparation, the `web_fetch` tool,
+and the OpenTelemetry collector when configured. Your
 `requestUrl`-vs-`fetch` choice steers the requests where streaming matters —
 model streams and the connection test; the catalog, skill imports, built-in
-skill preparation, and `web_fetch` always ride `requestUrl`, because they fetch whole responses and
+skill preparation, `web_fetch` and telemetry always ride `requestUrl`, because they fetch whole responses and
 must reach hosts that send no CORS headers. Egress stays inspectable in one
 place rather than scattered across the codebase.
 

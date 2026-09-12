@@ -6,8 +6,9 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 沿用现有代理和由 Vault 保存的会话。它是可复用的扩展宿主，支持明确列出的
 接口；不是完整 Node 环境，也不是任意代码的沙箱。
 
-这次通用兼容层只增加宿主能力，不安装 `pi-suggest` 或其他新社区扩展，也不
-增加默认模型请求。现有 Quick actions 的生成方式和点击即发送行为保持原样。
+内置扩展包括原版 `b1tank/pi-otel` Git 包。它的后台工厂经过同一个静态兼容桥，
+只在用户配置 Collector 后发送。兼容桥不增加默认模型请求；现有 Quick actions
+的生成方式和点击即发送行为保持原样。
 
 ## 支持范围
 
@@ -258,15 +259,37 @@ Node 回退。
 `timers/promises.setTimeout` 支持取消信号，接受 `ref`，但 WebView 没有
 对应的进程保活效果。关闭时先停 interval，保留原有一秒清理窗口供最后发送，
 之后撤销剩余定时器、延迟、请求和环境访问。坏工厂的资源会被清理，其他扩展
-仍能加载。发布包不会因此新增遥测扩展或自动外传请求。
+仍能加载。已注册的 `pi-otel` 工厂在未配置 Collector 时不启用发送。
 
 关闭时，会话 ID、文件名、名称、模型、思考级别等安全信息使用最后有效快照。
 此时服务可能已关闭所属会话；清理过程不会重新打开会话或提供密钥。旧上下文
 和所有修改能力仍已失效，不额外复制整份历史或会话树。
 
+### 内置 OpenTelemetry 工厂
+
+`pi-otel` 是未经修改的 [b1tank Git 包](https://github.com/b1tank/pi-otel)，不是
+npm 上的同名包。`package.json` 固定完整 Git 提交，`bun.lock` 锁定其官方 OTel
+依赖。原版入口经 `pi-scoped-factory:pi-otel` 编译，并作为后台 `createFactory`
+注册。Piem 源码没有复制上游埋点或导出器。
+
+`otelConfig.ts` 校验可选插件设置 `otelEndpoint`，再把
+`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_SERVICE_NAME=piem`、来自 manifest 的插件
+版本 `PI_OTEL_SERVICE_VERSION`，以及 `OTEL_METRIC_EXPORT_INTERVAL=60000`
+投影到这个工厂的私有环境。它不继承宿主环境变量或服务商凭据。无地址就不
+发送；上游在工厂加载时读配置，所以任何更改都需重载插件。地址须为 HTTP(S)
+基地址，不带信号路径后缀、账号密码、查询参数或片段。
+
+浏览器导出器向 `/v1/traces`、`/v1/metrics`、`/v1/logs` 发送 OTLP/HTTP JSON。
+正文开关沿用上游默认关闭，但模型原始错误文字仍可能进入追踪状态和异常事件。
+扩展接收主对话支持的事件，没有完整子代理埋点。关闭沿用已有一秒清理窗口，
+无法保证慢网或不可用 Collector 上的最后发送。参见[设置](settings.zh-CN.md#extensions)
+和[数据披露](security.zh-CN.md#opentelemetry-发送)。
+
+### 接入清单
+
 1. 审核包源码、间接依赖、注册接口、文件路径、网络、界面和生命周期，选择
    手机可用、许可明确的工厂。
-2. 用 Bun 锁定 npm 版本；在 `scripts/pi-extension-packages.json` 登记全部会编译
+2. 用 Bun 锁定 npm 版本或完整 Git 提交；在 `scripts/pi-extension-packages.json` 登记全部会编译
    的源码摘要和虚拟根目录。构建拒绝注册包内未审核的文件，以及包引入的未知依赖。
 3. 在 `communityFactories.mjs` 和声明文件引入原版入口，在 `communityHost.ts`
    注册。新增宿主能力必须配真实适配；不支持的操作明确拒绝。浏览器依赖按
