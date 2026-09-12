@@ -20,8 +20,8 @@
  * into messages. A turn arrives as prose in an assistant message, a tool result as
  * a row of its own, the next sentence in another message — and `MessageRow` wraps
  * the first and third in `article.piem-chat__message` while returning the second
- * as a bare trace row. Every boundary between them still has to read as one 8px
- * gap, and the blocks inside one message as 4px.
+ * as a bare trace row. The same visible pair must have the same gap inside
+ * and across messages: process rows 4px, prose transitions 8px, paragraphs 16px.
  *
  * This half is here because its faults are invisible in a declaration. What
  * shipped was an 8px block padding on the article — spacing between rows, spent
@@ -44,10 +44,12 @@ const PAGE = resolve(process.env.PREVIEW_DIR ?? ".preview", "transcript.html");
 
 readFileSync(PAGE, "utf8"); // Fail loudly if the preview was never generated.
 
-const dom = execFileSync(
+// A real Electron/Obsidian renderer may export the same document after loading
+// this page when standalone Chromium is unavailable (e.g. snap confinement).
+const dom = process.env.TRANSCRIPT_DOM ? readFileSync(process.env.TRANSCRIPT_DOM, "utf8") : execFileSync(
 	CHROME,
 	["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--virtual-time-budget=3000", "--dump-dom", `file://${PAGE}`],
-	{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 },
+	{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024, timeout: 45000 },
 );
 
 const payload = dom.match(/<pre[^>]*id="results"[^>]*>([\s\S]*?)<\/pre>/)?.[1];
@@ -72,22 +74,11 @@ const panels = JSON.parse(payload.replace(/&quot;/g, '"').replace(/&amp;/g, "&")
  */
 const NARROW_ENOUGH_TO_OVERFLOW = 400;
 
-/*
- * The whole of the transcript's vertical vocabulary. Two numbers, and one question
- * decides which: does the conversation change footing across this boundary?
- *
- * 4px is a turn's own rhythm, and it is one number reached two ways on purpose —
- * a message hands its blocks a margin (`.piem-chat__message-content` is block
- * flow, which has no gap to give), the column hands its rows a `gap`, and they
- * agree because a reader must not be able to tell which boundary is which. `pi`
- * decides where a turn splits into messages; that decision is not information.
- *
- * 16px is that gap plus the 12px a question or a tidying seam adds on both
- * faces — the two boundaries in this column that mark meaning rather than
- * delivery. A third number means something has started spending spacing of its
- * own again.
- */
-const WITHIN_TURN = 4;
+/* Process groups use one step, prose transitions two, and paragraphs follow
+ * the host's default paragraph rhythm. Splitting a message changes none of them. */
+const PROCESS_STEP = 4;
+const PROSE_STEP = 8;
+const PARAGRAPH_STEP = 16;
 const ACROSS_SPEAKERS = 16;
 
 /*
@@ -112,10 +103,9 @@ for (const panel of panels) {
 		const kind = step.speakerChange
 			? { want: ACROSS_SPEAKERS, name: "a boundary where the speaker changes" }
 			: {
-					want: WITHIN_TURN,
-					// Named for which boundary it is so a failure says whether the message
-					// margin or the column gap drifted, even though both owe the same 4px.
-					name: step.withinMessage ? "two blocks of one message" : "two rows of one turn",
+					want: step.fromKind === "trace" && step.toKind === "trace" ? PROCESS_STEP
+						: step.fromKind === "prose" && step.toKind === "prose" ? PARAGRAPH_STEP : PROSE_STEP,
+					name: `${step.fromKind} to ${step.toKind} ${step.withinMessage ? "inside" : "across"} messages`,
 				};
 		if (Math.abs(step.gap - kind.want) > 0.5) {
 			failures.push(`${panel.panel}: ${step.from} → ${step.to} sits ${step.gap}px apart, but ${kind.name} is ${kind.want}px`);
@@ -251,6 +241,6 @@ if (failures.length > 0) {
 }
 console.log(
 	`\nall ${panels.length} panel widths hold their column still, every wide construct stays reachable inside its own scroller,` +
-		` the gaps are ${WITHIN_TURN}px everywhere inside a turn, ${ACROSS_SPEAKERS}px where the speaker changes,` +
+		` process gaps are ${PROCESS_STEP}px, prose transitions ${PROSE_STEP}px, paragraphs ${PARAGRAPH_STEP}px, and speaker changes ${ACROSS_SPEAKERS}px,` +
 		` and long machine traffic clips at ${BOUNDED_BODY_PX}px while a live think stays free to grow`,
 );

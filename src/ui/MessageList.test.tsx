@@ -272,6 +272,9 @@ describe("MessageList message chrome", () => {
 		expect(host.querySelector(".piem-chat__message-role")).toBeNull();
 		const names = Array.from(host.querySelectorAll("article.piem-chat__message"), (el) => el.getAttribute("aria-label"));
 		expect(names).toEqual(["You", "Piem"]);
+		const question = host.querySelector("article.piem-chat__message--user");
+		expect(question?.hasAttribute("data-first-block")).toBe(false);
+		expect(question?.hasAttribute("data-last-block")).toBe(false);
 	});
 
 	it("gives card chrome to conversation only, so a tool result never nests inside one", async () => {
@@ -290,6 +293,7 @@ describe("MessageList message chrome", () => {
 		await flushRender();
 
 		expect(host.querySelector(".piem-chat__interrupted")?.textContent).toContain("You stopped this reply.");
+		expect(host.querySelector("article.piem-chat__message--assistant")?.hasAttribute("data-last-block")).toBe(false);
 	});
 
 	it("leaves a settled assistant turn unmarked", async () => {
@@ -313,6 +317,87 @@ describe("MessageList message chrome", () => {
 		await flushRender();
 		expect(host.textContent).not.toContain("PRESERVED_SKILL");
 		expect(host.querySelector("details.piem-chat__trace--harness")).toBeNull();
+	});
+});
+
+describe("MessageList visible block edges", () => {
+	it.each([
+		["prose", "prose"],
+		["prose", "trace"],
+		["trace", "prose"],
+		["trace", "trace"],
+	])("marks %s to %s from the blocks drawn in the row", async (first, last) => {
+		const content = [first, last].map((kind): AssistantMessage["content"][number] => kind === "prose"
+			? { type: "text", text: "A reply paragraph." }
+			: { type: "thinking", thinking: "Checking the source." });
+		const host = renderMessages([{ ...assistantBase(), content }], { isStreaming: true });
+		await flushRender();
+
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.getAttribute("data-first-block")).toBe(first);
+		expect(row?.getAttribute("data-last-block")).toBe(last);
+	});
+
+	it("keeps blank text and hidden questions from claiming either edge", async () => {
+		const content: AssistantMessage["content"] = [
+			{ type: "text", text: " \n " },
+			...assistantToolCall("ask_user", { questions: [] }).content,
+			...assistantThinking("Checking the source.").content,
+			...assistantToolCall("ask_user", { questions: [] }).content,
+			{ type: "text", text: "" },
+		];
+		const host = renderMessages([{ ...assistantBase(), content }]);
+		await flushRender();
+
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.getAttribute("data-first-block")).toBe("trace");
+		expect(row?.getAttribute("data-last-block")).toBe("trace");
+		expect(row?.querySelector(".piem-chat__message-content")?.children).toHaveLength(1);
+		expect(row?.querySelector(".piem-chat__message-actions")).toBeNull();
+	});
+
+	it("uses a fold head as an edge and skips its hidden members across messages", async () => {
+		const first = assistantToolCalls("read", "grep");
+		first.content.unshift({ type: "text", text: "Looking up the sources." });
+		const last = assistantToolCalls("write");
+		last.content.push({ type: "text", text: "Written back to the note." });
+		const host = renderMessages([first, toolResultFor("read"), toolResultFor("grep"), last], { isStreaming: true });
+		await flushRender();
+
+		const rows = host.querySelectorAll("article.piem-chat__message--assistant");
+		expect(rows).toHaveLength(2);
+		expect(rows[0]?.getAttribute("data-first-block")).toBe("prose");
+		expect(rows[0]?.getAttribute("data-last-block")).toBe("trace");
+		expect(rows[1]?.getAttribute("data-first-block")).toBe("prose");
+		expect(rows[1]?.getAttribute("data-last-block")).toBe("prose");
+		expect(rows[1]?.querySelector(".piem-chat__message-content")?.children).toHaveLength(1);
+		expect(host.querySelectorAll(".piem-chat__trace--fold")).toHaveLength(1);
+		expect(scrollerOf(host).children).toHaveLength(2);
+	});
+
+	it("keeps the live empty caret without treating it as a prose boundary", async () => {
+		const message = assistantThinking("Checking the source.");
+		message.content.push({ type: "text", text: "" });
+		const host = renderMessages([message], { isStreaming: true });
+		await flushRender();
+
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.querySelector(".piem-chat__block--live")).not.toBeNull();
+		expect(row?.getAttribute("data-first-block")).toBe("trace");
+		expect(row?.getAttribute("data-last-block")).toBe("trace");
+		expect(host.querySelector(".piem-chat__message--pending")).toBeNull();
+	});
+
+	it("does not advertise a prose tail past an unsaved warning", async () => {
+		const reply = assistantMessage("Written back to the note.");
+		const host = renderMessages([reply], { isStreaming: true, unpersistedMessages: [reply] });
+		await flushRender();
+
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.getAttribute("data-first-block")).toBe("prose");
+		expect(row?.hasAttribute("data-last-block")).toBe(false);
+		expect(row?.querySelector(".piem-chat__interrupted--unsaved")).not.toBeNull();
+		expect(row?.querySelector(".piem-chat__message-actions")).toBeNull();
 	});
 });
 
@@ -421,6 +506,7 @@ describe("MessageList pending reply", () => {
 		await flushRender();
 
 		expect(host.querySelector(".piem-chat__message--pending")).not.toBeNull();
+		expect(host.querySelectorAll("article.piem-chat__message--assistant .piem-chat__message-content")).toHaveLength(0);
 	});
 
 	it("stands down while a tool runs, since the line above already reports it", async () => {
@@ -448,6 +534,9 @@ describe("MessageList reply actions", () => {
 		expect(group?.getAttribute("role")).toBe("group");
 		const labels = Array.from(group?.querySelectorAll("button") ?? [], (button) => button.getAttribute("aria-label"));
 		expect(labels).toEqual(["Copy reply", "Insert at cursor", "Append to note", "Regenerate reply"]);
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.getAttribute("data-first-block")).toBe("prose");
+		expect(row?.hasAttribute("data-last-block")).toBe(false);
 	});
 
 	it("hides regenerate while a turn is in flight, rather than queueing a second run", async () => {
@@ -1518,6 +1607,9 @@ describe("MessageList ask_user", () => {
 		await flushRender();
 
 		expect(host.querySelector(".piem-chat__trace")).not.toBeNull();
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.getAttribute("data-first-block")).toBe("trace");
+		expect(row?.getAttribute("data-last-block")).toBe("trace");
 	});
 
 	it("renders the answer as a record rather than a collapsed row", async () => {
@@ -1714,6 +1806,7 @@ describe("MessageList provider failure, reported where it happened", () => {
 		expect(pill?.querySelector(".piem-chat__trace-name")?.textContent).toBe("The provider did not answer in time.");
 		// The modifier is what tints the glyph, and only the glyph.
 		expect(pill?.className).toContain("piem-chat__trace--failed");
+		expect(host.querySelector("article.piem-chat__message--assistant")?.hasAttribute("data-last-block")).toBe(false);
 	});
 
 	it("reports a failed turn as one pill, opened onto the provider's own words", async () => {

@@ -1036,6 +1036,10 @@ function MessageRow({
 		return <HarnessTrace message={message} context={renderContext} />;
 	}
 	const cutoff = replyCutoff(message, renderContext);
+	const args = { index, isStreaming, renderContext };
+	const assistantContent = message.role === "assistant" ? renderAssistantMessage(message, args) : undefined;
+	const replyText = message.role === "assistant" ? assistantText(message) : "";
+	const showReplyActions = message.role === "assistant" && settled && turnCloses !== false;
 	/*
 	 * An assistant turn with nothing left to draw draws nothing at all. Rendering
 	 * it anyway left an empty bubble — above the question card, when the turn was
@@ -1044,7 +1048,7 @@ function MessageRow({
 	 * came with a copy/insert actions row offering to copy no text at all. A stop
 	 * notice still earns the row, because that is content of its own.
 	 */
-	if (message.role === "assistant" && !cutoff && hasNothingToDraw(message, index, renderContext)) {
+	if (message.role === "assistant" && message.content.length > 0 && !cutoff && !assistantContent?.firstBlock) {
 		return null;
 	}
 	return (
@@ -1064,6 +1068,8 @@ function MessageRow({
 			 */
 			<article
 				className={`piem-chat__message piem-chat__message--${message.role}`}
+				data-first-block={assistantContent?.firstBlock}
+				data-last-block={cutoff || notPersisted || (showReplyActions && replyText) ? undefined : assistantContent?.lastBlock}
 				aria-busy={isStreaming}
 				aria-label={renderContext.t.t(message.role === "user" ? "chat.you" : "chat.agent")}
 				/*
@@ -1075,7 +1081,7 @@ function MessageRow({
 				onMouseOver={suppressOwnTooltip}
 			>
 				<div className="piem-chat__bubble">
-					<div className="piem-chat__message-content">{renderMessageContent(message, { index, isStreaming, renderContext })}</div>
+					<div className="piem-chat__message-content">{message.role === "assistant" ? assistantContent?.nodes : renderUserMessage(message, args)}</div>
 					{cutoff ? (
 						cutoff.raw !== undefined ? (
 							/*
@@ -1148,10 +1154,10 @@ function MessageRow({
 				 * row while the run is very much alive — the gap that once let the
 				 * actions row surface mid-run.
 				 */}
-				{message.role === "assistant" && settled && turnCloses !== false ? (
+				{showReplyActions ? (
 					<ReplyActions
 						app={renderContext.app}
-						text={assistantText(message)}
+						text={replyText}
 						durationMs={replyTiming?.durationMs}
 						startedAt={replyTiming?.startedAt}
 						onRetry={onRetry}
@@ -1181,31 +1187,6 @@ function MessageRow({
 				) : null}
 			</article>
 	);
-}
-
-/**
- * Whether every block in this turn renders nothing.
- *
- * Two ways a block disappears. It is the `ask_user` call the transcript draws
- * as a question card instead, which {@link blockIsVisible} answers; or it was
- * swallowed by a fold whose summary stands somewhere above. A turn made
- * entirely of either is an empty card, and an empty card is a gap in the
- * transcript the reader cannot account for.
- *
- * Non-empty check first: a message with no content at all is not "nothing left
- * to draw", and `every` on an empty array would call it that.
- */
-function hasNothingToDraw(message: AssistantMessage, index: number, context: MessageContext): boolean {
-	if (message.content.length === 0) {
-		return false;
-	}
-	return message.content.every((block, blockIndex) => {
-		if (!blockIsVisible(block, context.showAgentDetails)) {
-			return true;
-		}
-		const slot = traceFoldSlot(context.foldPlan, index, blockIndex);
-		return slot !== null && !slot.head;
-	});
 }
 
 /**
@@ -1371,13 +1352,6 @@ interface MessageContext {
 	t: Translator;
 }
 
-function renderMessageContent(message: UserMessage | AssistantMessage, args: RenderArgs): React.ReactNode {
-	if (message.role === "user") {
-		return renderUserMessage(message, args);
-	}
-	return renderAssistantMessage(message, args);
-}
-
 /**
  * Draws an image content block as the picture it is.
  *
@@ -1501,10 +1475,33 @@ function isLiveBlock(context: MessageContext, index: number, blockIndex: number)
 	return context.liveRow?.message === index && context.liveRow.block === blockIndex;
 }
 
-function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): React.ReactNode {
+interface RenderedAssistantMessage {
+	nodes: React.ReactNode;
+	firstBlock?: "prose" | "trace";
+	lastBlock?: "prose" | "trace";
+}
+
+/** Keep row edges tied to the blocks this render actually draws, after folding. */
+function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): RenderedAssistantMessage {
 	const context = args.renderContext;
-	return message.content.map((content, blockIndex) => {
+	let firstBlock: RenderedAssistantMessage["firstBlock"];
+	let lastBlock: RenderedAssistantMessage["lastBlock"];
+	const nodes = message.content.map((content, blockIndex) => {
 		const live = isLiveBlock(context, args.index, blockIndex);
+		const visible = blockIsVisible(content, context.showAgentDetails);
+		// Keep the live caret after an existing block, but a blank placeholder
+		// must not claim a prose edge or replace the first-token pending state.
+		if (!visible && !(content.type === "text" && live)) {
+			return null;
+		}
+		const slot = content.type === "toolCall" ? traceFoldSlot(context.foldPlan, args.index, blockIndex) : null;
+		if (slot && !slot.head) {
+			return null;
+		}
+		if (visible) {
+			lastBlock = content.type === "text" ? "prose" : "trace";
+			firstBlock ??= lastBlock;
+		}
 		if (content.type === "text") {
 			// The block the model is still writing carries a caret: with no marker,
 			// a streaming reply and a finished one differed only by the actions row
@@ -1529,29 +1526,12 @@ function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): Re
 				</Trace>
 			);
 		}
-		/*
-		 * `ask_user` draws no call row.
-		 *
-		 * The question is rendered in full at the tail while it is open, and as a
-		 * receipt once it is answered, so a trace row naming the same call would put
-		 * one question in the transcript twice — the second time as machine traffic,
-		 * which is the vocabulary this whole change moves it out of. Under
-		 * `showAgentDetails` the row comes back, because that mode exists to show the
-		 * raw payload behind every call and this one has arguments worth reading.
-		 *
-		 * The rule lives in `traceFold.ts` because the fold planner needs the same
-		 * answer: a call that draws nothing must not interrupt a run either, or a
-		 * suppressed question would split one fold into two.
-		 */
-		if (!blockIsVisible(content, context.showAgentDetails)) {
-			return null;
-		}
-		const slot = traceFoldSlot(context.foldPlan, args.index, blockIndex);
 		if (slot) {
-			return slot.head ? <FoldedTrace key={blockIndex} group={slot.group} context={context} /> : null;
+			return <FoldedTrace key={blockIndex} group={slot.group} context={context} />;
 		}
 		return <ToolCallTrace key={blockIndex} call={content} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} index={args.index} blockIndex={blockIndex} />;
 	});
+	return { nodes, firstBlock, lastBlock };
 }
 
 

@@ -87,6 +87,8 @@ const TOKENS = `
 	--font-ui-small: 13px;
 	--font-ui-medium: 15px;
 	--font-text-size: 16px;
+	--line-height-normal: 1.5;
+	--p-spacing: 1rem;
 	--font-semibold: 600;
 	--font-medium: 500;
 	--font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -185,7 +187,7 @@ function messageRow(role, name, inner) {
 
 /** The rendered-Markdown face. */
 function markdownBlock(html) {
-	return `<div class="piem-chat__markdown piem-chat__text--prose">${html}</div>`;
+	return `<div class="piem-chat__markdown markdown-rendered piem-chat__text--prose">${html}</div>`;
 }
 
 /** The plain `<pre>` face, used for streaming prose and machine output. */
@@ -242,7 +244,7 @@ function traceRow(variant, name, detail, body) {
 function thinkingRow(state, body) {
 	const running = state === "live" ? " piem-chat__trace--running" : "";
 	const inner = state === "settled-markdown"
-		? `<div class="piem-chat__markdown piem-chat__text--prose">${body
+		? `<div class="piem-chat__markdown markdown-rendered piem-chat__text--prose">${body
 				.split("\n")
 				.map((line) => `<p>${line}</p>`)
 				.join("")}</div>`
@@ -260,8 +262,8 @@ function thinkingRow(state, body) {
  * has to be built by hand rather than out of `messageRow` because the shape that
  * misrendered is specifically a message whose first and last children are trace
  * rows, followed by a bare trace row, followed by another such message. Three
- * boundaries, each between a different pair of row kinds, and every one of them
- * has to come out at the same 8px.
+ * boundaries, each between a different pair of row kinds. Their spacing follows
+ * the visible content: process rows stay close, prose has a larger pause.
  *
  * `data-rhythm` marks the blocks whose spacing is asserted; the page's script
  * reads consecutive pairs of them and reports each gap along with whether the
@@ -273,8 +275,8 @@ function rhythmTurn() {
 		<summary class="piem-chat__trace-summary"><span class="piem-chat__trace-name piem-chat__trace-name--label">Thought it through</span></summary>
 		<div class="piem-chat__trace-body"><pre>weighing two endpoints</pre></div>
 	</details>`;
-	const said = (mark, text) => `<div class="piem-chat__markdown piem-chat__text--prose" data-rhythm="${mark}"><p>${text}</p></div>`;
-	const asked = (mark, text) => `<div class="piem-chat__markdown piem-chat__text--prose" data-rhythm="${mark}"><p>${text}</p></div>`;
+	const said = (mark, text) => `<div class="piem-chat__markdown markdown-rendered piem-chat__text--prose" data-rhythm="${mark}"><p>${text}</p></div>`;
+	const asked = (mark, text) => `<div class="piem-chat__markdown markdown-rendered piem-chat__text--prose" data-rhythm="${mark}"><p>${text}</p></div>`;
 	const fold = (mark) => `<details class="piem-chat__trace piem-chat__trace--fold" data-rhythm="${mark}">
 		<summary class="piem-chat__trace-summary"><span class="piem-chat__trace-name piem-chat__trace-name--label">Fetched 3 pages</span></summary>
 		<div class="piem-chat__trace-body"><div class="piem-chat__trace piem-chat__trace--flat"><span class="piem-chat__trace-name piem-chat__trace-name--identifier">web_fetch</span></div></div>
@@ -285,7 +287,7 @@ function rhythmTurn() {
 		<div class="piem-chat__message-content">${asked("asks", "Which endpoint does Cline use?")}</div>
 	</div>
 </article>`,
-		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/opens" aria-label="assistant">
+		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/opens" data-first-block="trace" data-last-block="trace" aria-label="assistant">
 	<div class="piem-chat__bubble">
 		<div class="piem-chat__message-content">${thinking("opens/thinking")}${said("opens/prose", "Looking up the endpoint now.")}${fold("opens/fold")}</div>
 	</div>
@@ -294,10 +296,19 @@ function rhythmTurn() {
 	<summary class="piem-chat__trace-summary"><span class="piem-chat__trace-name piem-chat__trace-name--label">Edited a note</span><span class="piem-chat__trace-detail">+8 -0</span></summary>
 	<div class="piem-chat__trace-body"><pre>@@ -1 +1 @@</pre></div>
 </details>`,
-		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/closes" aria-label="assistant">
+		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/closes" data-first-block="trace" data-last-block="prose" aria-label="assistant">
 	<div class="piem-chat__bubble">
 		<div class="piem-chat__message-content">${thinking("closes/thinking")}${said("closes/prose", "Written back to the note.")}</div>
 	</div>
+</article>`,
+		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/prose-edge" data-first-block="prose" data-last-block="trace" aria-label="assistant">
+	<div class="piem-chat__bubble"><div class="piem-chat__message-content">${said("edge/prose", "The two sources agree.")}${said("edge/paragraph", "The original notes are preserved.")}${thinking("edge/thinking")}</div></div>
+</article>`,
+		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/trace-to-prose" data-first-block="prose" data-last-block="prose" aria-label="assistant">
+	<div class="piem-chat__bubble"><div class="piem-chat__message-content">${said("edge/answer", "Ready to review.")}</div></div>
+</article>`,
+		`<article class="piem-chat__message piem-chat__message--assistant" data-case="rhythm/prose-to-trace" data-first-block="trace" data-last-block="trace" aria-label="assistant">
+	<div class="piem-chat__bubble"><div class="piem-chat__message-content">${thinking("edge/check")}${fold("edge/fold")}</div></div>
 </article>`,
 	];
 }
@@ -561,10 +572,8 @@ for (const leaf of document.querySelectorAll(".harness-leaf")) {
 	}
 	/*
 	 * The vertical half. Consecutive data-rhythm blocks, with the gap the engine
-	 * left between them and whether the pair shares a message — which is the only
-	 * thing that should change the answer. Everything else about a boundary (which
-	 * row kinds meet at it, whether either side is wrapped in an article, how pi
-	 * chose to split the turn) must not.
+	 * left between them and whether the pair shares a message. The visible kinds
+	 * determine the rhythm; message wrappers must not change it.
 	 *
 	 * Read off border boxes rather than text boxes on purpose: a trace row is
 	 * padded to a touch target on coarse pointers, and asserting text-to-text
@@ -599,6 +608,8 @@ for (const leaf of document.querySelectorAll(".harness-leaf")) {
 			to: b.dataset.rhythm,
 			speakerChange: asksIn(a) !== asksIn(b),
 			withinMessage: within,
+			fromKind: a.classList.contains("piem-chat__trace") ? "trace" : "prose",
+			toKind: b.classList.contains("piem-chat__trace") ? "trace" : "prose",
 			gap: Math.round((boxB.getBoundingClientRect().top - boxA.getBoundingClientRect().bottom) * 10) / 10,
 		});
 	}

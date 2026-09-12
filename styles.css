@@ -729,23 +729,8 @@ button.piem-chat__context-open {
 	display: flex;
 	flex: 1 1 auto;
 	flex-direction: column;
-	/*
-	 * The rhythm of a turn, and the same 4px a message spends between its own
-	 * blocks (`.piem-chat__message-content`) — deliberately the same number,
-	 * because they are the same kind of boundary.
-	 *
-	 * `pi` delivers one turn as several messages: the reply's prose, the tool call
-	 * inside it, the result as a row of its own, the next sentence as another
-	 * message. Only the first of those boundaries falls inside a message, so any
-	 * gap here wider than the message's own margin draws a line exactly where the
-	 * transport happened to split — and the pair it separates most is a call and
-	 * its own result, which is the pair that belongs together most. At 8px the
-	 * reader could see `pi`'s seams and read them as grouping.
-	 *
-	 * What does deserve a line asks for one itself: `--user` adds a margin, and so
-	 * does the tidying seam. Everything else in this column is one turn
-	 * unfolding, and reads as one column of 4px steps.
-	 */
+	/* Base step for adjacent process rows. Prose boundaries below add one step;
+	 * the visible edge roles keep the same rhythm across message wrappers. */
 	gap: var(--size-4-1);
 	/*
 	 * The invariant, stated rather than left to the cascade: this column never
@@ -933,40 +918,24 @@ button.piem-chat__context-open {
 
 /* --- messages --- */
 
-/*
- * A transcript row is `article.piem-chat__message`: the bubble (`.piem-chat__bubble`)
- * plus, for the conversational roles, the actions row underneath. Card chrome
- * belongs to the two conversational roles only — tool calls, tool results and
- * harness output render as flat trace rows (below), so a bordered card never
- * contains a second bordered box.
- *
- * The row carries no padding at all, and that absence is load-bearing: vertical
- * spacing between rows belongs to `.piem-chat__messages`' `gap`, and horizontal
- * placement to the panel's own inset (`.piem-chat`). Neither role needs an inset
- * of its own — the user's turn hands its padding to the bubble, which is the box
- * with a fill to hold it off, and the assistant reads as the page.
- *
- * It used to declare `padding: var(--size-4-2)`, which was a margin wearing a
- * padding's name. Both conversational roles already stripped the inline half, so
- * the only thing the declaration ever did was add 8px above and below an
- * assistant reply — spacing between rows, spent inside one. That is invisible
- * until you notice a tool result and a folded run are not wrapped in this article
- * at all: `MessageRow` returns them as bare `.piem-chat__trace` children of the
- * column. One turn's rows were then spaced by three different sums — 4px inside
- * a message, 8+8 from a message to a bare trace row, 8+8+8 from a message to the
- * next message — so a fold pill closing a turn sat 4px under the prose it
- * belonged to and 32px above the reply that followed, and the reader saw the
- * seams of `pi`'s message split rather than the shape of the turn.
- *
- * With the padding gone every boundary in the column is one `gap`, whatever the
- * two rows on either side of it happen to be — and the column sets that gap to the
- * same 4px a message spends between its own blocks, so a turn reads as one run of
- * rows whether or not `pi` split it. What deserves more asks for it: the user's
- * turn and the tidying seam each carry a margin.
- *
- * Two spacings in the whole transcript, then, and neither is about markup: 4px
- * everywhere inside a turn, 16px where the conversation changes footing.
- */
+/* Message wrappers add no padding: visible block roles, rather than the
+ * transport's message boundaries, determine spacing. Reply actions remain
+ * part of their article and never masquerade as a prose or process edge. */
+
+/* The column already contributes one process step. These boundaries add the
+ * second step between prose and a process row, regardless of which message
+ * contains either side. A prose-to-prose boundary follows native paragraph
+ * spacing instead. User turns and compaction seams keep their own separation. */
+.piem-chat__messages > [data-last-block="trace"] + [data-first-block="prose"],
+.piem-chat__messages > .piem-chat__trace:not(.piem-chat__trace--seam) + [data-first-block="prose"],
+.piem-chat__messages > [data-last-block="prose"] + [data-first-block="trace"],
+.piem-chat__messages > [data-last-block="prose"] + .piem-chat__trace:not(.piem-chat__trace--seam) {
+	margin-block-start: var(--size-4-1);
+}
+
+.piem-chat__messages > [data-last-block="prose"] + [data-first-block="prose"] {
+	margin-block-start: max(0px, calc(var(--p-spacing) - var(--size-4-1)));
+}
 
 /*
  * The user's own turn is the filled one. The leaf background is already
@@ -979,23 +948,7 @@ button.piem-chat__context-open {
  * of the message rather than as a control for it. So the row sheds its chrome
  * and hands it to the inner wrapper.
  */
-/*
- * The margin is the only spacing in the column that marks meaning rather than
- * mechanism, which is why it sits on this role and nowhere else.
- *
- * Every other boundary separates rows of one turn — a reply, the tool it called,
- * the sentence after — and those are seams in how `pi` delivered the turn, so the
- * reader is better off not seeing them: they get the column's bare `gap`. A
- * question is the one place the conversation actually changes hands, and 8px of
- * seam does not say so; the reply's own heading ended up looking like a caption on
- * the bubble above it.
- *
- * 12px on both faces, added to the 4px `gap` either side, is the 16px the two
- * roles stood apart before any of this — the reader's landmark has not moved,
- * while every seam inside a turn has closed to 4px. Both faces rather than
- * `margin-block-start` alone because the turn *after* a question has the same
- * claim on being findable as the question does.
- */
+/* A question changes the speaker. Its margin adds to the column's base gap. */
 .piem-chat__message--user {
 	align-self: flex-end;
 	margin-block: var(--size-4-3);
@@ -1050,36 +1003,26 @@ button.piem-chat__context-open {
 	font-size: var(--font-ui-medium);
 }
 
-/*
- * 4px between a trace row and whatever sits beside it, inside a message.
- *
- * The row itself carries no margin (see `.piem-chat__trace`); this container is
- * block flow, which has no `gap` to hand it one, so a margin is the only spacing
- * available here. `margin-block` rather than `margin-top`: a pill followed by
- * prose sat 0px below itself — the Markdown wrapper strips its children's edge
- * margins — and 4px above, the crowding reported in #225. Adjacent margins fold
- * to one 4px gap whichever way the pair faces.
- *
- * Placed above the two edge rules, and `:where()`d, for one reason each.
- *
- * Written plainly this selector is (0,2,0) — two classes — and so is
- * `.piem-chat__message-content > :first-child`, because a pseudo-class counts
- * where a class does. Two rules at (0,2,0) are settled by source order, and this
- * one used to sit 500 lines *below* the edge rules, in the trace section where it
- * looks like it belongs. So it won, the edge rules were dead text, every message
- * spent 4px above its first row and below its last, and a fold pill closing a turn
- * stood 32px clear of the reply that followed it while sitting 4px under its own
- * prose. Moving it here is the fix.
- *
- * `:where()` is what keeps the fix from depending on that move. It contributes no
- * specificity, dropping this rule to (0,1,0) and putting it *below* the edge rules
- * outright — which is the standing the three of them should have had all along: a
- * default the container's edge overrides, not a declaration the container has to
- * out-rank. Ablate it and the spacing still measures correctly today, on order
- * alone; ablate it and move this rule back down and the 32px returns.
- */
+/* Prompt/reply prose uses reading leading, including its streaming <pre>.
+ * Keep it off the shared container: trace rows use compact interface leading. */
+.piem-chat__message-content > .piem-chat__text--prose {
+	line-height: var(--line-height-normal);
+}
+
+/* Internal blocks share the column's process step. Adjacent margins collapse
+ * in block flow; prose boundaries below take one larger step. Keep defaults
+ * weak so the first/last-child rules can remove the outer margins. */
 .piem-chat__message-content :where(.piem-chat__trace) {
 	margin-block: var(--size-4-1);
+}
+
+.piem-chat__message-content > .piem-chat__trace + .piem-chat__text--prose,
+.piem-chat__message-content > .piem-chat__text--prose + .piem-chat__trace {
+	margin-block-start: var(--size-4-2);
+}
+
+.piem-chat__message-content > .piem-chat__text--prose + .piem-chat__text--prose {
+	margin-block-start: var(--p-spacing);
 }
 
 /*
@@ -1480,8 +1423,8 @@ button.piem-chat__context-open {
 	font-family: var(--font-monospace);
 }
 
-/* Rendered Markdown (assistant/user text). Obsidian's renderer emits its own
-   block elements; keep them tight so messages stay scannable. */
+/* `markdown-rendered` supplies Obsidian's paragraph, list and code typography.
+ * Only the block's outer spacing belongs to the surrounding conversation. */
 .piem-chat__markdown > :first-child {
 	margin-top: 0;
 }
@@ -1549,6 +1492,12 @@ button.piem-chat__context-open {
 	white-space: pre;
 }
 
+/* Syntax-highlighted code has its own native pre-wrap rule. Keep the whole
+ * fenced block on the same whitespace policy so source lines stay intact. */
+.piem-chat__markdown pre > code {
+	white-space: inherit;
+}
+
 /*
  * Tables get the treatment twice, because which element scrolls depends on the
  * renderer's output: Obsidian wraps a Markdown table in `.table-wrapper` in its
@@ -1588,13 +1537,6 @@ button.piem-chat__context-open {
 	max-width: 100%;
 }
 
-.piem-chat__markdown p,
-.piem-chat__markdown ul,
-.piem-chat__markdown ol,
-.piem-chat__markdown blockquote {
-	margin-block: 0.4em;
-}
-
 /*
  * A link the model wrote to a note that does not exist yet.
  *
@@ -1608,10 +1550,8 @@ button.piem-chat__context-open {
  * note the *model* named that does not exist is the most important word in the
  * sentence.
  *
- * The reading view's own `.markdown-rendered .internal-link.is-unresolved` rule
- * never reaches this container — that selector wants an ancestor this panel does
- * not have — so measured in a real 1.13.7 the class carried no styling at all
- * until this rule. Nothing here can be left to inheritance for the same reason.
+ * The native reading class now reaches this container. Keep its unresolved-link
+ * opacity at full strength so restoring native typography does not dim the mark.
  *
  * Both stated values earn their line, and each is the difference between a mark
  * and a defect:
@@ -1629,6 +1569,10 @@ button.piem-chat__context-open {
  * style, so the dash survives hover without a rule of its own — verified.
  */
 .piem-chat__markdown a.internal-link.is-unresolved {
+	--link-unresolved-opacity: 1;
+	--link-unresolved-decoration-color: currentColor;
+	--link-unresolved-filter: none;
+	--link-decoration-hover: underline;
 	text-decoration-line: underline;
 	text-decoration-style: dashed;
 	text-decoration-thickness: 1px;
