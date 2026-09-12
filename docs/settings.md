@@ -159,13 +159,16 @@ question is ready. Opening a menu or adding a card does not fetch a webpage or
 start a model request.
 
 Cards belong to the draft and survive closing the panel or switching chats.
-The first reference saves a new chat's identity, so its unsent draft is also
+The first skill or reference card saves a new chat's identity, so its unsent draft is also
 reachable after restarting Obsidian. Opening an untouched blank chat saves nothing.
 They travel with queued questions, return when you take a queued question back,
 and appear inside the sent question's bubble, using the same disclosure style as
-skill content. Before sending, a skill remains its `/skill:name` command in the
-text input; its expandable card appears in the sent question. This grouping
-survives reloading the conversation. Pi's native
+skill content. Selecting a skill, or completing a known `/skill:name` command
+with a space, turns it into the same expandable card inside the text input.
+The text area then holds only your question. Removing the skill card removes the
+invocation and keeps the question and other references. The saved draft remains
+the source of truth for the card and the skill that is sent; this grouping survives
+reloading the conversation. Pi's native
 custom messages store the reference text for the model and separate metadata for
 the cards. File and folder cards name paths; they do not claim their full contents
 have already been read. Selection cards keep the passage as it was when selected.

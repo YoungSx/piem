@@ -124,6 +124,7 @@ import {
 	findPromptTemplate,
 	loadVaultPromptTemplates,
 	parsePromptCommand,
+	type CommandEntry,
 } from "./promptTemplates";
 
 /** A tool call in flight, with whatever progress it has reported. */
@@ -422,16 +423,10 @@ export interface ChatSnapshot {
 	/**
 	 * Prompt templates and skills available as `/name` commands, for autocomplete.
 	 *
-	 * Full instruction bodies never reach the UI. Templates are listed first, then
-	 * skills; `kind` supplies the source label, and `invocation` carries the
-	 * disambiguated `/skill:name` form when a template owns the short name.
+	 * `skill` points to the loaded instruction used by dispatch, so the draft
+	 * preview does not build a separate catalog or read a second body.
 	 */
-	availableCommands: {
-		name: string;
-		description: string;
-		kind: "template" | "skill" | "extension";
-		invocation: string;
-	}[];
+	availableCommands: CommandEntry[];
 }
 
 /**
@@ -3924,6 +3919,7 @@ export class ObsidianAgentService {
 				description: skill.description,
 				kind: "skill" as const,
 				invocation: findPromptTemplate(this.promptTemplates, skill.name) ? `skill:${skill.name}` : skill.name,
+				skill,
 			})),
 		];
 	}

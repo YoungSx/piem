@@ -85,6 +85,8 @@ class FakeAgentService {
 	private readonly listeners = new Set<(snapshot: ChatSnapshot) => void>();
 	extensionSend?: () => Promise<boolean>;
 	abortCalls = 0;
+	readonly persistedDraftSessions: string[] = [];
+	async persistContextDraft(path: string): Promise<void> { this.persistedDraftSessions.push(path); }
 
 
 	isExtensionInput(prompt: string): boolean {
@@ -530,6 +532,40 @@ describe("ChatApp external prefill", () => {
 		await mounted?.unmount();
 		mounted = undefined;
 		document.body.replaceChildren();
+	});
+
+	it("stores, restores, removes and sends a skill from the same prompt as its visible card", async () => {
+		const command = { name: "review", invocation: "skill:review", kind: "skill" as const, description: "Review notes" };
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true, availableCommands: [command] } });
+		const refs: ContextReference[] = [{ kind: "folder", path: "Projects" }];
+		await mounted.inputController.prefill("/skill:review Question", SESSION_ID, refs);
+		expect(mounted.service.persistedDraftSessions).toContain(sessionInfo().path);
+		expect(composer(mounted.host).value).toBe("Question");
+		expect(mounted.host.querySelectorAll(".piem-chat__composer-input .piem-chat__attachment")).toHaveLength(2);
+		await typeDraft(composer(mounted.host), "Edited question");
+		expect(await mounted.draftStore.get(SESSION_ID)).toBe("/skill:review Edited question");
+		mounted.service.emit({ session: { ...sessionInfo(), id: "b", path: "b.jsonl" } }); await flushRender();
+		mounted.service.emit({ session: sessionInfo() }); await flushRender();
+		expect(composer(mounted.host).value).toBe("Edited question");
+		expect(mounted.host.querySelector(".piem-chat__composer-input .piem-chat__skill-pill")).not.toBeNull();
+		mounted.host.querySelector<HTMLButtonElement>('[aria-label="Remove reference: review"]')!.click(); await flushRender();
+		expect(await mounted.draftStore.getDraft(SESSION_ID)).toEqual({ text: "Edited question", references: refs });
+		await typeDraft(composer(mounted.host), "/skill:review Send this");
+		mounted.inputController.submit(); await flushRender();
+		expect(mounted.service.sentPrompts).toEqual(["/skill:review Send this"]);
+		expect(mounted.service.sentReferences).toEqual([refs]);
+		expect(mounted.host.querySelector(".piem-chat__composer-input .piem-chat__skill-pill")).toBeNull();
+	});
+
+	it("edits an expanded skill as the same card without discarding its captured instructions", async () => {
+		const wrapper = '<skill name="old" location="/old/SKILL.md">\nOriginal instructions.\n</skill>';
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		await mounted.inputController.prefill(wrapper + "\n\nFirst question", SESSION_ID);
+		expect(composer(mounted.host).value).toBe("First question");
+		expect(mounted.host.querySelector(".piem-chat__skill-pill")?.textContent).toContain("Original instructions.");
+		await typeDraft(composer(mounted.host), "Edited question");
+		mounted.inputController.submit(); await flushRender();
+		expect(mounted.service.sentPrompts).toEqual([wrapper + "\n\nEdited question"]);
 	});
 
 	it("stages removable cards beside the unchanged draft and sends only the survivors", async () => {

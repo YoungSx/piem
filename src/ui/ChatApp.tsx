@@ -34,6 +34,7 @@ import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
 import { useExtensionUI } from "./useExtensionUI";
 import { ExtensionSurfaces } from "./ExtensionSurfaces";
 import { ReferenceCards } from "./ReferenceCards";
+import { projectComposerDraft } from "./composerDraft";
 import { MAX_CONTEXT_REFERENCES, mergeContextReferences, promptReferences, referenceKey, type ContextReference } from "../agent/contextReference";
 
 interface ChatAppProps {
@@ -72,6 +73,13 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// in, not to whatever is on screen when the reader comes back.
 	const draftScope = snapshot.session?.id;
 	const { draft: input, references, ready: draftReady, setDraft: setInput, setReferences, clearDraft, consumeDraft } = useSessionDraft(draftStore, draftScope);
+	const hasDraftSkill = !!projectComposerDraft(input, snapshot.availableCommands).skill;
+	useEffect(() => {
+		const path = snapshot.session?.path;
+		if (path && draftReady && hasDraftSkill) {
+			void service.persistContextDraft(path).catch(() => new Notice(getT(snapshot.language).t("noteReference.unavailable")));
+		}
+	}, [service, snapshot.session?.path, snapshot.language, draftReady, hasDraftSkill]);
 	// Hold each chat's submission only until Pi owns it; a running answer can
 	// still accept another queued question, including after switching chats.
 	const pendingSubmissions = useRef(new Set<string>());

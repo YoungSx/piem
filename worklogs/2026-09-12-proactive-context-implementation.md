@@ -72,3 +72,23 @@ Bun 使用与 CI 相同的 1.4.0，路径 `/tmp/piem-context-runtime-20260912/pa
 ## 同步上游与 PR
 
 已 rebase 至 `67b9c74`，仅打包预算记录有冲突，完整采用上游 `scripts/check-bundle.mjs`（本 PR 不提高门槛）。最终统一实现的 `npm run verify`：**3,819 pass / 0 fail，256 个测试文件**，build、所有门禁与 lint 通过；日志 `/tmp/piem-unified-reference-verify.log`。本分支修改的 9 个测试文件已各自单独运行通过，记录 `/tmp/piem-final-independent.json`。PR CI 在交付时补记。
+
+
+## 发送前技能卡片与逻辑 SSOT
+
+用户进一步明确：技能也在发送前的文字输入框内渲染为同款卡片，并保证逻辑单一来源。
+
+- `AttachmentCard` 统一技能与引用在发送前后的图标、名称、类型、展开、正文、移除结构与样式。卡片和原生 textarea 放在同一 `composer-input` 框内，工具栏在框外；textarea 不再绘制第二条边框。
+- 技能卡片从唯一草稿字符串推导。菜单选择或完成的技能命令成为卡片，textarea 仅编辑问题；`projectComposerDraft`、`withComposerText`、`syncComposerEditor` 统一显示投影、写回与光标。未增加 selectedSkill 状态、第二份草稿或正文缓存。
+- 命令目录类型由模型命令模块统一定义，技能项引用服务已加载的 Pi Skill 对象；预览与发送读同一来源。与模板同名时保留原命令优先级。发送仍由 Pi 原生 formatter 包装技能。
+- 扩展 setText/paste 和异步 completion 使用同一投影与 raw/visible 光标换算；编辑已发送技能时保留原包装和捕获的正文。移除卡片只移除技能，原问题和引用保留。
+- 第一张技能卡片会保存新会话身份；技能草稿能够跨切换和重载恢复。所有输入材料共用有界滚动区域，不把问题挤出视野。
+
+这一阶段初始完整验证：`npm run verify` **3,829 pass / 0 fail，257 文件**。最后只读需求复核发现“扩展在问题开头粘贴技能命令后光标跳到末尾”，已用 `Tail` 光标 0 的回归复现（错误为 4），修为按粘贴前原始坐标再投影；单文件 7 项通过，复核通过。8 个修改测试文件也各自运行通过。
+
+真实 Obsidian 证据在 `/tmp/piem-draft-skills-20260912`；此阶段成品 **1,961,541 B**、SHA-256 `cee3bde81f5dd1229102f5e0436d2559d3f602acf93cf5555470098e130d89c2`：
+
+- 实际选中技能 completion、读取已加载指令、问题单独输入、移除技能、显式技能命令折叠、加入四类引用、切换与恢复均通过（`staged.json`）。
+- 桌面和 390px 官方移动端模拟、深浅主题中，技能与引用都在同一个文字输入框内；仅一个输入边界，问题区没有第二条 border/shadow，无横向溢出（`desktop-report.json`、`mobile-report.json` 及对应 PNG）。截图已查看。
+- 从该草稿点击实际发送按钮，本地 HTTP 恰好收到一个 native `<skill>` wrapper 和四类引用，用户可见问题对应同一份 stored prompt，卡片 renderer details 不发给模型，发送后材料和问题清空（`http-result.json`、`model-request.json`）。
+- 实体手机键盘与读屏未测；这轮监管时限到达后宿主退出，进程全部回收、端口关闭，未把退出后调用的 unload 探针算作成功。最后光标修正及同步上游后成品另记，不混称同一 SHA。

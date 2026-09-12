@@ -3,10 +3,13 @@ import type { AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions } 
 import { editorOffset, editorPosition } from "./extensionAutocomplete";
 import { isComposing } from "./keyboard";
 import { useT } from "./TranslatorContext";
+import { projectComposerDraft, syncComposerEditor } from "./composerDraft";
+import type { CommandEntry } from "../agent/promptTemplates";
 
 interface Props {
 	provider: AutocompleteProvider;
 	input: string;
+	commands: readonly CommandEntry[];
 	cursor: number;
 	force: boolean;
 	request: number;
@@ -18,7 +21,7 @@ interface Props {
 }
 
 /** Async Pi completion data rendered through the composer's native listbox pattern. */
-export function ExtensionCompletionMenu({ provider, input, cursor, force, request, menuId, anchorRef, onInputChange, onActiveChange, onClose }: Props): React.JSX.Element | null {
+export function ExtensionCompletionMenu({ provider, input, commands, cursor, force, request, menuId, anchorRef, onInputChange, onActiveChange, onClose }: Props): React.JSX.Element | null {
 	const t = useT();
 	const [result, setResult] = useState<{ input: string; cursor: number; provider: AutocompleteProvider; request: number; suggestions: AutocompleteSuggestions }>();
 	const [index, setIndex] = useState(0);
@@ -58,16 +61,16 @@ export function ExtensionCompletionMenu({ provider, input, cursor, force, reques
 
 	const apply = (item: AutocompleteItem): void => {
 		const anchor = anchorRef.current;
-		if (!suggestions || !anchor || anchor.value !== input || anchor.selectionStart !== cursor || anchor.selectionEnd !== cursor) return;
+		const draft = projectComposerDraft(input, commands);
+		if (!suggestions || !anchor || anchor.value !== draft.text || anchor.selectionStart + draft.prefix.length !== cursor || anchor.selectionEnd + draft.prefix.length !== cursor) return;
 		const position = editorPosition(input, cursor);
 		try {
 			const completion = provider.applyCompletion(position.lines, position.cursorLine, position.cursorCol, item, suggestions.prefix);
 			const value = completion.lines.join("\n");
 			const offset = editorOffset(completion.lines, completion.cursorLine, completion.cursorCol);
 			onInputChange(value);
-			anchor.value = value;
+			syncComposerEditor(anchor, value, commands, offset);
 			anchor.focus();
-			anchor.setSelectionRange(offset, offset);
 		} catch {
 			// A failing third-party provider must leave the draft usable.
 		} finally {

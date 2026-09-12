@@ -10,6 +10,8 @@ installObsidianStub();
 const document = installDom();
 const { createRoot } = await import("react-dom/client");
 const { useExtensionUI } = await import("./useExtensionUI");
+const { projectComposerDraft, withComposerText } = await import("./composerDraft");
+const skillCommands = [{ name: "review", invocation: "skill:review", kind: "skill" as const, description: "Review notes" }];
 const cleanups: (() => void)[] = [];
 
 afterEach(async () => {
@@ -34,8 +36,9 @@ async function mount(options: { ready?: boolean; strict?: boolean } = {}) {
 		const [input, setInput] = useState("Draft");
 		const inputRef = useRef(input);
 		inputRef.current = input;
-		const ui = useExtensionUI(service, path, "en", [], inputRef, setInput, ready);
-		return <textarea ref={ui.bindEditor} value={input} onChange={(event) => setInput(event.currentTarget.value)} />;
+		const ui = useExtensionUI(service, path, "en", skillCommands, inputRef, setInput, ready);
+		const draft = projectComposerDraft(input, skillCommands);
+		return <textarea ref={ui.bindEditor} value={draft.text} onChange={(event) => setInput(withComposerText(draft, event.currentTarget.value))} />;
 	}
 	const host = document.createElement("div");
 	document.body.appendChild(host);
@@ -101,6 +104,38 @@ describe("native extension UI attachment", () => {
 		await flushRender();
 		expect(editor.value).toBe("One\nNew\nTail");
 		expect(editor.selectionEnd).toBe(7);
+	});
+
+	it("maps extension replacements and pastes through the skill card's visible question", async () => {
+		const panel = await mount();
+		const ui = panel.latest();
+		ui.setEditorText("/skill:review One Replace Tail");
+		await flushRender();
+		const editor = panel.host.querySelector("textarea")!;
+		expect(editor.value).toBe("One Replace Tail");
+		editor.setSelectionRange(4, 11);
+		ui.pasteToEditor("New");
+		await flushRender();
+		expect(ui.getEditorText()).toBe("/skill:review One New Tail");
+		expect(editor.value).toBe("One New Tail");
+		expect(editor.selectionStart).toBe(7);
+		ui.setEditorText("Plain replacement");
+		await flushRender();
+		expect(ui.getEditorText()).toBe("Plain replacement");
+		expect(editor.value).toBe("Plain replacement");
+	});
+
+	it("leaves the caret before the question when an extension pastes a new skill prefix", async () => {
+		const panel = await mount();
+		const ui = panel.latest();
+		ui.setEditorText("Tail"); await flushRender();
+		const editor = panel.host.querySelector("textarea")!;
+		editor.setSelectionRange(0, 0);
+		ui.pasteToEditor("/skill:review "); await flushRender();
+		expect(ui.getEditorText()).toBe("/skill:review Tail");
+		expect(editor.value).toBe("Tail");
+		expect(editor.selectionStart).toBe(0);
+		expect(editor.selectionEnd).toBe(0);
 	});
 
 	it("cancels dialogs and invalidates every departed adapter on switch or unmount", async () => {

@@ -3866,6 +3866,22 @@ describe("prompt commands", () => {
 		expect(explicit).toContain("focus on risks");
 	});
 
+	it("uses the same loaded skill in its command preview and the actual request", async () => {
+		const contexts: Context[] = [];
+		const service = createService(new MemoryAdapter(), {
+			streamFn: createCapturingStreamFn(contexts),
+			vaultFiles: { "Piem/skills/review/SKILL.md": "---\nname: review\ndescription: Review notes\n---\nReview the chosen materials." },
+		});
+		await service.initialize();
+		const command = service.getSnapshot().availableCommands.find(entry => entry.kind === "skill" && entry.name === "review");
+		expect(command?.skill?.content).toBe("Review the chosen materials.");
+		await service.sendPrompt("/skill:review Find gaps");
+		expect(lastUserContent(contexts.at(-1))).toContain(command!.skill!.content);
+		expect(lastUserMessage(contexts.at(-1))).toMatchObject({ content: [
+			{ type: "text", text: expect.stringContaining('name="review"') },
+		] });
+	});
+
 	it("leaves an ordinary message that merely contains a slash alone", async () => {
 		const contexts: Context[] = [];
 		const service = createService(new MemoryAdapter(), { streamFn: createCapturingStreamFn(contexts), loadUserSkills: NO_USER_SKILLS });

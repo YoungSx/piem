@@ -16,7 +16,7 @@ afterEach(async () => {
 	document.body.replaceChildren();
 });
 
-async function mount(provider: AutocompleteProvider) {
+async function mount(provider: AutocompleteProvider, commands: Parameters<typeof ChatComposer>[0]["commands"] = []) {
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	const root = createRoot(host);
@@ -25,7 +25,7 @@ async function mount(provider: AutocompleteProvider) {
 	let unmounted = false;
 	const unmount = (): void => { if (!unmounted) { unmounted = true; root.unmount(); } };
 	cleanups.push(unmount);
-	const render = (): void => root.render(<ChatComposer input={input} commands={[]}
+	const render = (): void => root.render(<ChatComposer input={input} commands={commands}
 		isStreaming={false} isCompacting={false} isRewinding={false} isInitializing={false} isConfigured
 		sendShortcut="enter" extensionAutocomplete={provider}
 		onInputChange={(value) => { input = value; render(); }} onSend={() => { sends++; }} onAbort={() => undefined} />);
@@ -55,6 +55,39 @@ async function mount(provider: AutocompleteProvider) {
 const base = () => createComposerAutocomplete(() => []);
 
 describe("native composer extension completions", () => {
+	it("projects a completed skill and keeps subsequent provider offsets in the stored prompt", async () => {
+		const commands = [{ name: "review", invocation: "skill:review", kind: "skill" as const, description: "Review notes" }];
+		const provider = createComposerAutocomplete(() => commands);
+		const panel = await mount(provider, commands);
+		await panel.type("/rev");
+		await panel.key("Tab");
+		expect(panel.input()).toBe("/skill:review ");
+		expect(panel.textarea.value).toBe("");
+		expect(panel.textarea.selectionStart).toBe(0);
+		await panel.type("Question");
+		expect(panel.input()).toBe("/skill:review Question");
+		expect(panel.textarea.value).toBe("Question");
+		panel.host.querySelector<HTMLButtonElement>('[aria-label="Remove reference: review"]')!.click();
+		await flushRender();
+		expect(panel.input()).toBe("Question");
+	});
+
+	it("applies argument completion without overwriting the hidden skill prefix", async () => {
+		const commands = [{ name: "review", invocation: "skill:review", kind: "skill" as const, description: "Review notes" }];
+		let observed = "";
+		const provider = createComposerAutocomplete(() => commands);
+		const panel = await mount({ ...provider, getSuggestions: async (lines, line, col) => {
+			observed = lines.join("\n").slice(0, col);
+			return lines[0]?.endsWith("Quest") ? { prefix: "Quest", items: [{ value: "Question", label: "Question" }] } : null;
+		} }, commands);
+		await panel.type("/skill:review Quest");
+		await panel.show();
+		expect(observed).toBe("/skill:review Quest");
+		await panel.key("Tab");
+		expect(panel.input()).toBe("/skill:review Question");
+		expect(panel.textarea.value).toBe("Question");
+		expect(panel.textarea.selectionStart).toBe("Question".length);
+	});
 	it("shows empty-draft suggestions on demand and leaves ordinary Tab navigation intact", async () => {
 		let forced = false;
 		const panel = await mount({ ...base(), getSuggestions: async (lines, _line, _col, options) => {
