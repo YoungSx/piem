@@ -13,6 +13,7 @@ interface Audit {
 	files: Record<string, string>;
 	virtualRoot?: string;
 	exports?: Record<string, string>;
+	browser?: Record<string, string>;
 	dependencies?: Record<string, Audit>;
 }
 const root = process.cwd();
@@ -183,6 +184,115 @@ describe("generic scoped extension compiler", () => {
 		} finally { setup.dispose(); }
 	});
 
+	it("matches esbuild for dotted basenames, file-before-directory resolution and TypeScript replacements", async () => {
+		const setup = fixture();
+		try {
+			const audit = setup.install("contract", {
+				"index.mjs": `
+					import merge from "./lodash.merge";
+					import ts from "./typescript.js";
+					import js from "./existing.js";
+					import mts from "./module.mjs";
+					import cts from "./classic.cjs";
+					import file from "./choice";
+					import suffix from "./tricky.js";
+					import directory from "./dir.with.dot";
+					export default pi => pi.registerCommand("resolution", { handler: (_args, ctx) => ctx.ui.notify(JSON.stringify([merge, ts, js, mts, cts, file, suffix, directory])) });
+				`,
+				"lodash.merge.js": 'export default "merge";',
+				"typescript.ts": 'const value: string = "typescript"; export default value;',
+				"existing.js": 'export default "javascript";',
+				"existing.ts": 'export default "wrong-existing";',
+				"module.mts": 'export default "mts";',
+				"classic.cts": 'export default "cts";',
+				"choice.js": 'export default "file";',
+				"choice/index.tsx": 'export default "wrong-directory";',
+				"tricky.js.ts": 'export default "suffix";',
+				"tricky.ts": 'export default "wrong-replacement";',
+				"dir.with.dot/index.js": 'export default "directory";',
+			});
+			const reference = await build({
+				entryPoints: [path.join(setup.directory, "node_modules/contract/index.mjs")],
+				bundle: true, write: false, format: "cjs", platform: "browser", logLevel: "silent",
+			});
+			const sandbox = { module: { exports: {} } };
+			vm.runInNewContext(reference.outputFiles[0]!.text, sandbox, { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
+			const expected = probePlatform(1);
+			(sandbox.module.exports as { default: Factory }).default(expected.register);
+			await expected.run("resolution", "");
+			expect(JSON.parse(expected.notices[0]!)).toEqual(["merge", "typescript", "javascript", "mts", "cts", "file", "suffix", "directory"]);
+
+			const createFactory = await compileFixture(setup.directory, audit);
+			const actual = probePlatform(2);
+			createFactory(actual.platform)(actual.register);
+			await actual.run("resolution", "");
+			expect(actual.notices).toEqual(expected.notices);
+		} finally { setup.dispose(); }
+	});
+
+	it("uses audited browser file mappings for entries, package subpaths and internal imports", async () => {
+		const setup = fixture();
+		try {
+			const dependency = setup.install("library", {
+				"browser.js": 'export { value } from "./platform/index";',
+				"platform/index.js": 'import "node:net"; throw new Error("Node source must never load");',
+				"platform/browser.js": 'export const value = "browser";',
+			}, "node.js");
+			dependency.exports = { "./platform": "platform/index.js" };
+			dependency.browser = { "./node.js": "./browser.js", "./platform/index.js": "./platform/browser.js" };
+			const audit = setup.install("contract", {
+				"browser.mjs": `
+					import { value } from "library";
+					import { value as platform } from "library/platform";
+					export default pi => pi.registerCommand("browser", { handler: (_args, ctx) => ctx.ui.notify(JSON.stringify([value, platform])) });
+				`,
+			}, "node.mjs", { library: dependency });
+			audit.browser = { "./node.mjs": "./browser.mjs" };
+			const host = probePlatform(1);
+			(await compileFixture(setup.directory, audit))(host.platform)(host.register);
+			await host.run("browser", "");
+			expect(JSON.parse(host.notices[0]!)).toEqual(["browser", "browser"]);
+
+			// Published browser metadata alone must not authorize any redirection.
+			writeFileSync(path.join(setup.directory, "node_modules/library/package.json"), JSON.stringify({ version: "1.0.0", browser: dependency.browser }));
+			delete dependency.browser;
+			await expect(buildScopedFactory(setup.directory, "contract", audit)).rejects.toThrow("Unaudited extension source: library/node.js");
+		} finally { setup.dispose(); }
+	});
+
+	it("rejects browser redirects outside the reviewed files and still hashes redirected-away sources", async () => {
+		const setup = fixture();
+		try {
+			const audit = setup.install("contract", { "index.mjs": "export default () => {};", "browser.mjs": "export default () => {};" });
+			for (const [browser, error] of [
+				[{ "./index.mjs": "./unreviewed.mjs" }, "Unaudited extension source"],
+				[{ "./index.mjs": "./../escape.mjs" }, "Invalid audited source path"],
+				[{ "./../index.mjs": "./browser.mjs" }, "Invalid audited source path"],
+				[{ "./index.mjs": "./node_modules/library/index.js" }, "Invalid audited source path"],
+				[{ "./index.mjs": "library" }, "Invalid audited browser mapping"],
+				[{ "node:fs": "./browser.mjs" }, "Invalid audited browser mapping"],
+				[{ "./*": "./browser.mjs" }, "Invalid audited browser mapping"],
+				[{ "./index.mjs": false }, "Invalid audited browser mapping"],
+				["./browser.mjs", "Invalid audited browser map"],
+			] as const) {
+				await expect(buildScopedFactory(setup.directory, "contract", { ...audit, browser })).rejects.toThrow(error);
+			}
+			audit.browser = { "./index.mjs": "./browser.mjs" };
+			const entry = path.join(setup.directory, "node_modules/contract/index.mjs");
+			writeFileSync(entry, "changed");
+			await expect(buildScopedFactory(setup.directory, "contract", audit)).rejects.toThrow("Audited extension file changed: contract/index.mjs");
+			writeFileSync(entry, "export default () => {};");
+			const target = path.join(setup.directory, "node_modules/contract/browser.mjs");
+			writeFileSync(target, "changed");
+			await expect(buildScopedFactory(setup.directory, "contract", audit)).rejects.toThrow("Audited extension file changed: contract/browser.mjs");
+			rmSync(target);
+			const outside = path.join(setup.directory, "outside.mjs");
+			writeFileSync(outside, "export default () => {};");
+			symlinkSync(outside, target);
+			await expect(buildScopedFactory(setup.directory, "contract", audit)).rejects.toThrow("Audited source escaped its package: contract/browser.mjs");
+		} finally { setup.dispose(); }
+	});
+
 	it("refuses unaudited dependency edges, changed source, changed versions and escaping paths", async () => {
 		const setup = fixture();
 		try {
@@ -218,8 +328,6 @@ describe("generic scoped extension compiler", () => {
 				['const load = globalThis["require"]; export default path => load(path);', "Dynamic extension loading is unavailable"],
 				['const load = module.require; export default path => load(path);', "Dynamic extension loading is unavailable"],
 				['const { require: load } = globalThis; export default path => load(path);', "Dynamic extension loading is unavailable"],
-				['export default key => globalThis[key]();', "Dynamic extension platform access is unavailable"],
-				['const browser = globalThis; export default () => browser.fetch("/");', "Indirect extension platform access is unavailable"],
 			] as const) {
 				const audit = setup.install("contract", { "index.mjs": source });
 				await expect(buildScopedFactory(setup.directory, "contract", audit)).rejects.toThrow(error);

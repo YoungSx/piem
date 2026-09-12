@@ -33,6 +33,7 @@ interface Timer {
  */
 export function createExtensionResources(options: { fetch: FetchFn; onError(error: unknown): void }) {
 	const lifetime = new AbortController();
+	const shutdown = new AbortController();
 	const timers = new Map<number, Timer>();
 	const tasks = new Set<Promise<unknown>>();
 	let requests = 0;
@@ -123,6 +124,8 @@ export function createExtensionResources(options: { fetch: FetchFn; onError(erro
 		});
 	};
 	return {
+		signal: lifetime.signal,
+		shutdownSignal: shutdown.signal,
 		assertActive,
 		fetch,
 		setTimeout: (callback: (...args: unknown[]) => unknown, ms?: number, ...args: unknown[]) => addTimer(false, callback, ms, args),
@@ -133,10 +136,12 @@ export function createExtensionResources(options: { fetch: FetchFn; onError(erro
 		timersPromises: Object.freeze({ setTimeout: delay }),
 		beginShutdown(): void {
 			closing = true;
+			shutdown.abort();
 			for (const [id, timer] of timers) if (timer.interval) clear(id);
 		},
 		dispose(): void {
 			if (lifetime.signal.aborted) return;
+			shutdown.abort();
 			lifetime.abort();
 			for (const id of timers.keys()) clear(id);
 		},

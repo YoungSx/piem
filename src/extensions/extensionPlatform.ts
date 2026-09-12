@@ -41,6 +41,9 @@ export interface ExtensionPlatform {
 }
 
 export interface BackgroundExtensionPlatform extends Omit<ExtensionPlatform, "process"> {
+	readonly backgroundSignal: AbortSignal;
+	readonly backgroundShutdownSignal: AbortSignal;
+	reportBackgroundError(error: unknown): void;
 	process: ReturnType<typeof createScopedProcess>;
 	setInterval(callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]): number;
 	clearInterval(id?: number): void;
@@ -280,6 +283,9 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 			};
 			const result: BackgroundExtensionPlatform = {
 				...platform,
+				get backgroundSignal() { return resources.signal; },
+				get backgroundShutdownSignal() { return resources.shutdownSignal; },
+				reportBackgroundError: report,
 				complete: (model, context, options) => { resources.assertActive(); return platform.complete(model, context, options); },
 				getAgentDir: () => { resources.assertActive(); return platform.getAgentDir(); },
 				fetch: resources.fetch,
