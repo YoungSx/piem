@@ -1,0 +1,388 @@
+{
+  "base": "516a036",
+  "sourceCommit": "337d1390571dacc4b07e6500ecbadabf585c19d9",
+  "pluginVersion": "1.0.72",
+  "bundleBytes": 2204000,
+  "bundleSha256": "b337aaf935a3571716b7821f040bed162c6694a13be2a40371a17b5506b504b8",
+  "localVerify": {
+    "passed": true,
+    "tests": 3781,
+    "files": 256,
+    "assertions": 13174
+  },
+  "collector": {
+    "name": "otelcol_0.160.0_linux_arm64.tar.gz",
+    "size": 33118304,
+    "digest": "sha256:a8d4f0fe0701ab0e20d7c198381a80552d5d58d25ca43e074d542d31b454738d",
+    "browser_download_url": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.160.0/otelcol_0.160.0_linux_arm64.tar.gz",
+    "release": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/tag/v0.160.0",
+    "tag": "v0.160.0",
+    "binary_sha256": "34b8c2cb4b847a9af6dd4f5cb484a456448feff337b61ca14dbaccd143786a3d",
+    "archive_checksum_verified": true,
+    "configuration_sources": [
+      "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector/v0.160.0/receiver/otlpreceiver/README.md",
+      "https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-contrib/v0.160.0/exporter/fileexporter/README.md",
+      "https://opentelemetry.io/docs/collector/internal-telemetry/"
+    ]
+  },
+  "collectorValidation": {
+    "passed": true,
+    "collectorVersion": "0.160.0",
+    "checks": [
+      {
+        "mode": "desktop",
+        "sessions": [
+          "01a09562-1e5b-76cd-8da5-4a74796909e8",
+          "01a09562-1fc2-7c94-ada8-1111dab1ddb9"
+        ],
+        "spans": 14,
+        "spanNames": {
+          "chat otel-model": 7,
+          "invoke_agent pi": 6,
+          "execute_tool read": 1
+        },
+        "traceCount": 6,
+        "logRecords": 56,
+        "metricNames": [
+          "gen_ai.client.operation.duration",
+          "gen_ai.client.token.usage",
+          "gen_ai.execute_tool.duration",
+          "gen_ai.invoke_agent.duration",
+          "gen_ai.invoke_agent.inference_calls",
+          "gen_ai.invoke_agent.tool_calls",
+          "pi.gen_ai.cost.usage",
+          "pi.session.count",
+          "pi.tool.execution.count"
+        ],
+        "providerErrorSpans": 2,
+        "stopObservedAs": "session_shutdown",
+        "relationshipsValid": true,
+        "privateFixtureTextAbsent": true
+      },
+      {
+        "mode": "mobile",
+        "sessions": [
+          "01a09563-83d4-711e-9f69-d46cb2e7fd65",
+          "01a09563-8486-71df-93d9-2ffd3a89f069"
+        ],
+        "spans": 14,
+        "spanNames": {
+          "chat otel-model": 7,
+          "invoke_agent pi": 6,
+          "execute_tool read": 1
+        },
+        "traceCount": 6,
+        "logRecords": 56,
+        "metricNames": [
+          "gen_ai.client.operation.duration",
+          "gen_ai.client.token.usage",
+          "gen_ai.execute_tool.duration",
+          "gen_ai.invoke_agent.duration",
+          "gen_ai.invoke_agent.inference_calls",
+          "gen_ai.invoke_agent.tool_calls",
+          "pi.gen_ai.cost.usage",
+          "pi.session.count",
+          "pi.tool.execution.count"
+        ],
+        "providerErrorSpans": 2,
+        "stopObservedAs": "session_shutdown",
+        "relationshipsValid": true,
+        "privateFixtureTextAbsent": true
+      }
+    ],
+    "files": {
+      "logs.jsonl": {
+        "bytes": 255567,
+        "sha256": "ebc26532a1f7db7e85300b9e922e34fdc6f06e0f8ab990131a0ac2bccb493d30"
+      },
+      "metrics.jsonl": {
+        "bytes": 108510,
+        "sha256": "fbcb3edc1635ac833718bbd5a6dca95177d4e97c8965e11e7ecf000d59109887"
+      },
+      "traces.jsonl": {
+        "bytes": 216164,
+        "sha256": "2af111a3f91a45aa957921c2df252b6d822849d601e11aca9814f4b8037e3e93"
+      }
+    }
+  },
+  "standalone": [
+    {
+      "file": "scripts/check-bundle.test.ts",
+      "exitCode": 0,
+      "seconds": 2.5
+    },
+    {
+      "file": "src/extensions/communityOtelHost.test.ts",
+      "exitCode": 0,
+      "seconds": 4.24
+    },
+    {
+      "file": "src/extensions/otelConfig.test.ts",
+      "exitCode": 0,
+      "seconds": 0.03
+    },
+    {
+      "file": "src/extensions/node/cryptoBuffer.test.ts",
+      "exitCode": 0,
+      "seconds": 0.15
+    },
+    {
+      "file": "src/ui/settings/controlKeys.test.ts",
+      "exitCode": 0,
+      "seconds": 0.04
+    },
+    {
+      "file": "src/ui/settings/extensionsDefinitions.test.ts",
+      "exitCode": 0,
+      "seconds": 0.47
+    }
+  ],
+  "collectorCleanup": {
+    "stoppedPids": [
+      945579,
+      945581
+    ],
+    "remainingOwnedProcesses": [],
+    "deleted": true
+  },
+  "obsidianCleanup": {
+    "ownedPids": [
+      942943,
+      942946
+    ],
+    "adoptedPids": [
+      942948,
+      942949,
+      942973,
+      942999,
+      948301
+    ],
+    "allExited": true,
+    "temporaryVaultDeleted": true,
+    "temporaryProfileDeleted": true,
+    "portsClosed": [
+      39889,
+      45749
+    ]
+  },
+  "smoke": {
+    "desktop": {
+      "passed": true,
+      "checks": [
+        "disposable vault",
+        "official device mode",
+        "single smoke owner",
+        "unload releases service runtimes",
+        "native declarative Collector control",
+        "native inline validator rejects credentials",
+        "native field persists normalized Collector URL",
+        "invalid settings write preserves destination",
+        "native Collector input rendered in Obsidian settings window",
+        "unload releases service runtimes",
+        "Collector setting survives production reload",
+        "first real prompt with read tool completes",
+        "production default OTel factory registered",
+        "read tool result persisted",
+        "manifest version projected",
+        "minute metric period projected",
+        "second real prompt completes",
+        "production default OTel factory registered",
+        "two independent conversation factories",
+        "owned SDK listeners observed",
+        "Stop records aborted model turn",
+        "prompt after Stop completes",
+        "production default OTel factory registered",
+        "telemetry available after Stop and retry",
+        "provider failure reaches original event pipeline",
+        "production default OTel factory registered",
+        "deleting first retires only its factory",
+        "deletion removes owned page listeners",
+        "other conversation continues after deletion",
+        "clearing native field removes destination",
+        "unload releases service runtimes",
+        "normal chat remains available with telemetry off",
+        "production default OTel factory registered",
+        "disabled factory has no export environment",
+        "cleared setting emits no Collector data after reload",
+        "unload releases service runtimes",
+        "all retained background lifetimes closed",
+        "all SDK page listeners removed",
+        "observed native timers retired",
+        "no Collector writes after unload",
+        "no held model requests",
+        "no renderer error or rejection"
+      ],
+      "nativeInputRendered": true,
+      "durationMs": 5632,
+      "cleanupEvidence": {
+        "observedTimers": 58,
+        "observedListeners": 12,
+        "activeTimers": 0,
+        "activeListeners": 0,
+        "retainedFactories": 6,
+        "collector": {
+          "files": {
+            "logs.jsonl": {
+              "bytes": 205937,
+              "lines": 19
+            },
+            "metrics.jsonl": {
+              "bytes": 88008,
+              "lines": 13
+            },
+            "traces.jsonl": {
+              "bytes": 174227,
+              "lines": 13
+            }
+          },
+          "bytes": 468172,
+          "lines": 45
+        }
+      },
+      "sessions": {
+        "first": {
+          "path": "Piem/chats/--piem--/2026-09-12T11-30-30-619Z_01a09562-1e5b-76cd-8da5-4a74796909e8.jsonl",
+          "id": "01a09562-1e5b-76cd-8da5-4a74796909e8"
+        },
+        "second": {
+          "path": "Piem/chats/--piem--/2026-09-12T11-30-30-978Z_01a09562-1fc2-7c94-ada8-1111dab1ddb9.jsonl",
+          "id": "01a09562-1fc2-7c94-ada8-1111dab1ddb9"
+        }
+      },
+      "productionFileUnchanged": true,
+      "productionSha256": "b337aaf935a3571716b7821f040bed162c6694a13be2a40371a17b5506b504b8",
+      "errors": [],
+      "cleanupErrors": [],
+      "serverErrors": [],
+      "mockServerClosed": true
+    },
+    "mobile": {
+      "passed": true,
+      "checks": [
+        "disposable vault",
+        "official device mode",
+        "official phone emulation",
+        "single smoke owner",
+        "unload releases service runtimes",
+        "native declarative Collector control",
+        "native inline validator rejects credentials",
+        "native field persists normalized Collector URL",
+        "invalid settings write preserves destination",
+        "native Collector input rendered in Obsidian settings window",
+        "unload releases service runtimes",
+        "Collector setting survives production reload",
+        "first real prompt with read tool completes",
+        "production default OTel factory registered",
+        "read tool result persisted",
+        "manifest version projected",
+        "minute metric period projected",
+        "second real prompt completes",
+        "production default OTel factory registered",
+        "two independent conversation factories",
+        "owned SDK listeners observed",
+        "Stop records aborted model turn",
+        "prompt after Stop completes",
+        "production default OTel factory registered",
+        "telemetry available after Stop and retry",
+        "provider failure reaches original event pipeline",
+        "production default OTel factory registered",
+        "deleting first retires only its factory",
+        "deletion removes owned page listeners",
+        "other conversation continues after deletion",
+        "clearing native field removes destination",
+        "unload releases service runtimes",
+        "normal chat remains available with telemetry off",
+        "production default OTel factory registered",
+        "disabled factory has no export environment",
+        "cleared setting emits no Collector data after reload",
+        "unload releases service runtimes",
+        "all retained background lifetimes closed",
+        "all SDK page listeners removed",
+        "observed native timers retired",
+        "no Collector writes after unload",
+        "no held model requests",
+        "no renderer error or rejection",
+        "mobile Node and Electron controls refused",
+        "production plugin requests only Obsidian",
+        "all production reloads audited",
+        "loader exposes mobile platform"
+      ],
+      "nativeInputRendered": true,
+      "durationMs": 5179,
+      "cleanupEvidence": {
+        "observedTimers": 58,
+        "observedListeners": 12,
+        "activeTimers": 0,
+        "activeListeners": 0,
+        "retainedFactories": 6,
+        "collector": {
+          "files": {
+            "logs.jsonl": {
+              "bytes": 255567,
+              "lines": 24
+            },
+            "metrics.jsonl": {
+              "bytes": 108510,
+              "lines": 16
+            },
+            "traces.jsonl": {
+              "bytes": 216164,
+              "lines": 16
+            }
+          },
+          "bytes": 580241,
+          "lines": 56
+        }
+      },
+      "sessions": {
+        "first": {
+          "path": "Piem/chats/--piem--/2026-09-12T11-32-02-132Z_01a09563-83d4-711e-9f69-d46cb2e7fd65.jsonl",
+          "id": "01a09563-83d4-711e-9f69-d46cb2e7fd65"
+        },
+        "second": {
+          "path": "Piem/chats/--piem--/2026-09-12T11-32-02-310Z_01a09563-8486-71df-93d9-2ffd3a89f069.jsonl",
+          "id": "01a09563-8486-71df-93d9-2ffd3a89f069"
+        }
+      },
+      "productionFileUnchanged": true,
+      "productionSha256": "b337aaf935a3571716b7821f040bed162c6694a13be2a40371a17b5506b504b8",
+      "errors": [],
+      "cleanupErrors": [],
+      "serverErrors": [],
+      "mockServerClosed": true,
+      "nodeAccess": {
+        "evaluations": 3,
+        "controls": [
+          {
+            "id": "fs",
+            "provided": false
+          },
+          {
+            "id": "node:fs",
+            "provided": false
+          },
+          {
+            "id": "node:fs/promises",
+            "provided": false
+          },
+          {
+            "id": "child_process",
+            "provided": false
+          },
+          {
+            "id": "node:module",
+            "provided": false
+          },
+          {
+            "id": "electron",
+            "provided": false
+          }
+        ],
+        "requestedModules": [
+          "obsidian"
+        ],
+        "unexpectedConsoleErrors": []
+      }
+    }
+  }
+}
