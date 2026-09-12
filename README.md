@@ -117,13 +117,13 @@ commands.
 ## 📱 Your phone counts as a real computer
 
 <p align="center">
-  <img src="assets/screenshots/mobile-empty.webp" width="290" alt="Piem on a phone, empty panel: three suggested first actions and the composer, with the active note chip above it.">
+  <img src="assets/screenshots/mobile-empty.webp" width="290" alt="Piem before sending in Obsidian phone emulation: a skill and note reference share the text input frame.">
   &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="assets/screenshots/mobile-done.webp" width="290" alt="Piem in Obsidian's official phone emulation after the reconstructed errand, showing the saved checklist and backlinks.">
 </p>
 
 <p align="center">
-  <sub>Left: an earlier capture on a phone. Right: the updated demo in Obsidian's official phone emulation.</sub>
+  <sub>Before and after: a skill and note reference in the input, then the completed example. Both captures use Obsidian's official phone emulation.</sub>
 </p>
 
 Piem ships with `isDesktopOnly: false` and means it. Tools, subagents, skills,
