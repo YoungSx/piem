@@ -263,6 +263,7 @@ describe("ChatApp × real service (issue #168)", () => {
 		drafts.push(draftStore);
 		const settings: PiemSettings = {
 			...DEFAULT_SETTINGS,
+			shareDiagnostics: false,
 			providers: [
 				{
 						id: "p-test",

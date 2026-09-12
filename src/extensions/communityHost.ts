@@ -41,6 +41,7 @@ export class CommunityHost {
 	private closing: Promise<void> = Promise.resolve();
 	private pending: AgentMessage[] = [];
 	private disposed = false;
+	private otelDisabled = false;
 	private failure: { error?: Error } = {};
 	private activeTools?: Set<string>;
 	private navigationDispatches = 0;
@@ -84,7 +85,7 @@ export class CommunityHost {
 			{ id: "pi-clarify", factory: createClarify(scoped("pi-clarify")) },
 			{ id: "pi-context", factory: createContext(scoped("pi-context")) },
 			{ id: "pi-otel", createFactory: platform => {
-				Object.assign(platform.process.env, callbacks.otelEnvironment?.() ?? {});
+				Object.assign(platform.process.env, this.otelDisabled ? {} : callbacks.otelEnvironment?.() ?? {});
 				return createOtel(platform);
 			} },
 		];
@@ -127,6 +128,9 @@ export class CommunityHost {
 				this.pending.push({ role: "user", content, timestamp: Date.now() });
 			},
 		});
+		// A settings change may have retired the previous host while this one
+		// awaited factory loading. Apply that decision to its replacement too.
+		if (this.otelDisabled) this.disableOtel();
 		// The host's own doc comment refuses a silent no-op, and a report nobody
 		// reads is exactly that. Warn for an extension that is not running: it is
 		// gone, nothing else in the UI says so, and a missing tool or command is
@@ -315,6 +319,14 @@ export class CommunityHost {
 		this.deliver();
 	}
 	transformContext(messages: AgentMessage[]): Promise<AgentMessage[]> { return this.host.transformContext(messages); }
+
+	/** Stop reporting now; discard the queued data instead of a final shutdown export. */
+	disableOtel(): void {
+		this.otelDisabled = true;
+		this.backgrounds.get("pi-otel")?.dispose();
+		this.backgrounds.delete("pi-otel");
+		this.host?.removeObserver("pi-otel");
+	}
 
 	cancel(): void {
 		this.host.cancel();

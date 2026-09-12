@@ -146,6 +146,7 @@ describe("repro 253: send with staged image clears the cards", () => {
 		const adapter = memoryAdapter();
 		const settings: PiemSettings = {
 			...(await import("../settings")).DEFAULT_SETTINGS as PiemSettings,
+			shareDiagnostics: false,
 			providers: [
 				{
 					id: "prov",

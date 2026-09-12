@@ -51,8 +51,8 @@ Stop cancels pending extension actions and ignores late results. Obsidian's
 may finish or remain billable. Pending transport work stays accounted for until it
 settles; it cannot write a late draft, switch another chat or resume a stopped task.
 
-OpenTelemetry export is available only to a collector you configure, as described
-below. Piem operates no telemetry, analytics or crash-reporting backend.
+Error reports and performance data go to Piem's maintainers by default. You can
+turn sharing off under **Settings → Piem → Extensions**, as described below.
 
 The practical consequence: **point Piem at a vault you are willing to send to
 your model provider.** A search that touches a file lists that file, and the
@@ -61,11 +61,12 @@ model sees the listing.
 ## OpenTelemetry export
 
 The bundled original `b1tank/pi-otel` extension sends traces, metrics and lifecycle
-logs to **OpenTelemetry collector URL** under **Settings → Piem → Extensions**.
-There is no default destination. Setting, changing or clearing the address takes
-effect when you reload Piem; clear it and reload to stop exports. Piem provides no
-collector or hosted account. The destination receives the device's IP and ordinary
-HTTP metadata as well as the exported data.
+logs to Piem's maintainers at `https://otlp.piem.shangxin.me`. **Share error reports
+and performance data** under **Settings → Piem → Extensions** is on by default.
+Turning it off stops new reports immediately and discards unsent data; requests
+already sent cannot be recalled. Turning it back on requires a Piem reload to
+resume sharing. The destination receives the device's IP and ordinary HTTP
+metadata as well as the exported data. These reports are not anonymous.
 
 Exports include session IDs, model and tool names, timing, token usage, reported
 cost and success or failure status. Prompt, response, system instruction, tool
@@ -74,12 +75,12 @@ argument/result, session path and provider payload/header capture remain off.
 that includes note text can send that text despite content capture being off.
 Treat the collector as a destination for sensitive diagnostics.
 
-Piem sends OTLP/HTTP JSON to the base address plus `/v1/traces`, `/v1/metrics` and
-`/v1/logs`, through the managed background `requestUrl` transport. The address is
-saved in plugin data and may travel with vault sync. Only the base URL is
-configurable here; embedded credentials, query parameters and fragments are
-rejected. Provider keys and the computer's environment variables are not passed to
-the extension.
+Piem sends OTLP/HTTP JSON to the fixed address plus `/v1/traces`, `/v1/metrics` and
+`/v1/logs`, through the managed background `requestUrl` transport. The destination
+cannot be edited in settings; legacy custom addresses are not used. Authentication
+is handled at the gateway without collector credentials in the plugin. Provider
+keys and the computer's environment variables are not passed to the extension.
+Your sharing preference is saved in plugin data and may travel with vault sync.
 
 Metrics run every 60 seconds; traces and logs use their own batches. Closing a
 conversation or unloading Piem stops owned timers and allows a bounded final flush.
@@ -161,7 +162,7 @@ obfuscated payload.
 **Network requests.** Roughly twenty call sites, all through one transport layer:
 model provider streams, the connection test, the models.dev catalog suggestion,
 remote MCP servers, skill imports, built-in skill preparation, the `web_fetch` tool,
-and the OpenTelemetry collector when configured. Your
+and Piem's OpenTelemetry collector while diagnostic sharing is on. Your
 `requestUrl`-vs-`fetch` choice steers the requests where streaming matters —
 model streams and the connection test; the catalog, skill imports, built-in
 skill preparation, `web_fetch` and telemetry always ride `requestUrl`, because they fetch whole responses and

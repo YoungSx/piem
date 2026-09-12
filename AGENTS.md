@@ -238,7 +238,9 @@ restrict the agent's usefulness:
   outside of normal releases.
 - Stay inside the vault. Obsidian's Vault API is the address space; do not reach
   around it to the filesystem.
-- No hidden telemetry. Nothing about the user's vault is collected for us.
+- Disclose diagnostic sharing in settings and docs. It defaults on for the fixed
+  Piem reporting gateway; the user can stop it immediately. Keep ordinary content
+  capture off and disclose that error text may contain note content.
 - Clearly disclose external services used, data sent, and risks.
 - Avoid deceptive patterns, ads, or spammy notifications.
 - Register and clean up all DOM, app, and interval listeners using the provided
@@ -301,7 +303,8 @@ gating.
 - Add a setting whose only effect is to withhold a working capability from the
   agent. Disclose it instead — see **Agent capability**.
 - Introduce network calls without an obvious user-facing reason and documentation.
-- Store or transmit vault contents beyond the provider serving the active model.
+- Add vault-content exports beyond the disclosed model, tool and diagnostic
+  flows in `docs/security.md`.
 
 ## Common tasks
 

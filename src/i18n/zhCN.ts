@@ -50,10 +50,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		noConversation: "先开始一段对话，再继续任务。",
 		included: "内置 Pi 扩展",
 		description: "书签、模型交接标注、模型切换、继续任务、联网搜索、草稿改写和会话检查点均可用。搜索把查询和指定网址发给当前服务商；改写把草稿发给选定模型。搜索需接口支持，可能额外计费。保存摘要会保留旧历史，并发起新一轮模型请求。",
-		otelEndpoint: "OpenTelemetry 收集地址",
-		otelEndpointDesc: "向你的 HTTP(S) Collector 发送追踪、指标和日志。填基地址，不加 /v1/traces。留空停止；更改后都需重载 Piem。正文采集关闭，但错误文字仍可能包含笔记内容。Piem 不提供 Collector。",
-		otelEndpointPlaceholder: "http://127.0.0.1:4318",
-		otelEndpointInvalid: "请输入不超过 2048 个字符的 HTTP(S) 基地址，不含账号密码、查询参数或片段。留空可停止发送。",
+		shareDiagnostics: "分享错误报告与性能数据",
+		shareDiagnosticsDesc: "默认向 Piem 维护者分享模型与工具名称、用量、耗时和错误。正文采集关闭，但错误文字可能包含笔记内容。关闭立即生效；重新开启后需重载 Piem。",
 	},
 	bookmarks: {
 		excerpt: "这里显示前 4000 个字符，完整回复仍保留在对话中。",
@@ -611,7 +609,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		cacheRetentionNone: "关闭——端点不认缓存标记",
 		whatLeavesVault: "什么会离开笔记库",
 		whatLeavesVaultDesc:
-			"提示词、笔记和工具结果发给选定的模型服务商。MCP 工具与网页请求会访问对应服务。配置 OpenTelemetry Collector 后，它还会收到诊断数据；错误文字可能包含笔记内容。Piem 没有自营后端。",
+			"提示词、笔记和工具结果发给选定的模型服务商。MCP 工具与网页请求会访问对应服务。错误报告与性能数据默认发给 Piem 维护者，可在扩展能力中关闭分享。正文采集关闭，但错误文字可能包含笔记内容。",
 		chatLogsInVault:
 			"聊天记录是笔记库里的文件，会随你的笔记一起同步和备份。它们包含对话内容，以及回答过程中读取的笔记原文。",
 		apiKeysHeading: "API 密钥",

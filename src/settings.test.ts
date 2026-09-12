@@ -58,6 +58,20 @@ describe("normalizeSettings drops the retired legacy layer", () => {
 	});
 });
 
+describe("diagnostic sharing preference", () => {
+	it("defaults on and preserves an explicit opt-out across saves", () => {
+		expect(DEFAULT_SETTINGS.shareDiagnostics).toBe(true);
+		expect(normalizeSettings({}).shareDiagnostics).toBe(true);
+		expect(normalizeSettings(normalizeSettings({ shareDiagnostics: false })).shareDiagnostics).toBe(false);
+	});
+
+	it("ignores a legacy user-supplied Collector address", () => {
+		const settings = normalizeSettings({ otelEndpoint: "https://legacy.example/" } as Partial<PiemSettings>);
+		expect(settings).not.toHaveProperty("otelEndpoint");
+		expect(settings.shareDiagnostics).toBe(true);
+	});
+});
+
 describe("normalizeSettings with disabledSkills", () => {
 	it("defaults to an empty list when data.json says nothing", () => {
 		expect(normalizeSettings({}).disabledSkills).toEqual([]);

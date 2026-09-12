@@ -187,22 +187,27 @@ function claim(events: EventBusController, runtime: ReturnType<typeof createExte
 	const flagsBefore = new Set(runtime.flagValues.keys());
 	const providersBefore = runtime.pendingProviderRegistrations.length;
 	const nativeProvidersBefore = runtime.pendingNativeProviderRegistrations.length;
+	const releaseEvents = (): void => { for (const unsubscribe of unsubscribes.splice(0)) unsubscribe(); };
 	return {
 		// Only `on` is wrapped. `emit` is shared by design — that is how two
 		// cooperating extensions talk — and wrapping it would change delivery.
 		events: {
 			emit: (channel: string, data: unknown) => { events.emit(channel, data); },
 			on: (channel: string, handler: (data: unknown) => void) => {
-				const unsubscribe = events.on(channel, handler);
-				unsubscribes.push(unsubscribe);
-				return unsubscribe;
+				let unsubscribe: (() => void) | undefined = events.on(channel, handler);
+				// Pi retains its own unsubscribe wrapper until the host closes. Release
+				// the actual handler here so that wrapper cannot retain a retired SDK.
+				const release = (): void => { unsubscribe?.(); unsubscribe = undefined; };
+				unsubscribes.push(release);
+				return release;
 			},
 		},
 		registeredProvider: (): boolean =>
 			runtime.pendingProviderRegistrations.length !== providersBefore
 			|| runtime.pendingNativeProviderRegistrations.length !== nativeProvidersBefore,
+		releaseEvents,
 		release: (): void => {
-			for (const unsubscribe of unsubscribes) unsubscribe();
+			releaseEvents();
 			for (const name of runtime.flagValues.keys()) if (!flagsBefore.has(name)) runtime.flagValues.delete(name);
 			runtime.pendingProviderRegistrations.length = providersBefore;
 			runtime.pendingNativeProviderRegistrations.length = nativeProvidersBefore;
@@ -240,6 +245,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 	};
 	try {
 		const extensions: Extension[] = [];
+		const loaded = new Map<string, { extension: Extension; releaseEvents(): void }>();
 		const reports: ExtensionLoadReport[] = [];
 		const ids = new Set<string>();
 		const commands = new Set<string>();
@@ -293,6 +299,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				for (const [names, name] of claimedNames) names.add(name);
 				for (const key of keys) shortcutKeys.add(key);
 				extensions.push(extension);
+				loaded.set(id, { extension, releaseEvents: claimed.releaseEvents });
 				if (ignored.length) reports.push({ id, ignored });
 			} catch (error) {
 				// The extension is out. Release everything it took so the host it
@@ -588,12 +595,28 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			 * that nothing reports is the silent no-op this file exists to refuse.
 			 */
 			loadReports: reports as readonly ExtensionLoadReport[],
+			/** Retire a reviewed event-only factory without flushing or cancelling its peers. */
+			removeObserver: (id: string): void => {
+				const entry = loaded.get(id);
+				if (!entry) return;
+				const { extension } = entry;
+				if (extension.tools.size || extension.commands.size || extension.shortcuts.size || extension.flags.size
+					|| extension.messageRenderers.size || extension.entryRenderers?.size || extension.markdownTransformer) {
+					throw new Error(`Only event-only extensions may be retired: ${id}`);
+				}
+				// Runner may be awaiting a handler while iterating these arrays. Keep
+				// extension positions stable, and empty captured arrays before the map.
+				for (const handlers of extension.handlers.values()) handlers.length = 0;
+				extension.handlers.clear();
+				entry.releaseEvents();
+				loaded.delete(id);
+			},
 			get isStarting() { return starting; },
 			hasHandlers: (name: string) => runner.hasHandlers(name),
 			emit: <T extends Parameters<ExtensionRunner["emit"]>[0]>(event: T, refresh = true) => invoke(() => runner.emit(event), refresh),
 			input: (text: string, images?: ImageContent[]) => invoke(() => runner.emitInput(text, images, "interactive")),
 			complete: models.complete,
-			hasBeforeAgentStart: runner.hasHandlers("before_agent_start"),
+			get hasBeforeAgentStart() { return runner.hasHandlers("before_agent_start"); },
 			beforeProviderRequest: async (payload: unknown): Promise<unknown> => {
 				await start();
 				if (!runner.hasHandlers("before_provider_request")) return undefined;

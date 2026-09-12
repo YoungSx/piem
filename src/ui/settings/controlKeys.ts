@@ -5,7 +5,6 @@ import { isCacheRetentionSetting } from "../../net/cacheRetention";
 import { isTraceExpandSetting } from "../traceExpand";
 import type { NetworkTransport } from "../../net/obsidianFetch";
 import { isPromptQueueStrategy } from "../../agent/queueStrategy";
-import { normalizeOtelEndpoint } from "../../extensions/otelConfig";
 import type { SettingsPanelSettings } from "./panelHost";
 
 /**
@@ -57,7 +56,7 @@ const CONTROL_KEYS = [
 	"networkTransport",
 	"cacheRetention",
 	"activeModelId",
-	"otelEndpoint",
+	"shareDiagnostics",
 ] as const satisfies readonly (keyof SettingsPanelSettings)[];
 
 /**
@@ -131,14 +130,10 @@ export function writeControlValue(settings: SettingsPanelSettings, key: ControlK
 			if (typeof value !== "string") return false;
 			settings.activeModelId = value;
 			return true;
-		case "otelEndpoint": {
-			if (typeof value !== "string") return false;
-			const endpoint = normalizeOtelEndpoint(value);
-			if (value.trim() && !endpoint) return false;
-			if (endpoint) settings.otelEndpoint = endpoint;
-			else delete settings.otelEndpoint;
+		case "shareDiagnostics":
+			if (typeof value !== "boolean") return false;
+			settings.shareDiagnostics = value;
 			return true;
-		}
 		default:
 			// Exhaustiveness, not a runtime fallback: a key added to `ControlKey`
 			// without a case here fails to compile at this assignment, which is the

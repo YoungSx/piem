@@ -33,7 +33,7 @@ function fixture(shortShutdown = false) {
 	const timers = new Map<number, ReturnType<typeof nativeSetTimeout>>();
 	const listeners = { added: 0, removed: 0 };
 	const hosts: CommunityHost[] = [];
-	const errors: unknown[] = [], warnings: string[] = [];
+	const errors: unknown[] = [], warnings: string[] = [], notices: string[] = [];
 	let nextTimer = 0, visibilityState = "visible", block = false;
 	const restore = stubWindowMembers({
 		crypto: webcrypto, performance,
@@ -60,7 +60,7 @@ function fixture(shortShutdown = false) {
 		finally { for (const timer of timers.values()) nativeClearTimeout(timer); timers.clear(); restore(); }
 	});
 	return {
-		timers, errors, warnings,
+		timers, errors, warnings, notices,
 		get listenerCount() { return listeners.added - listeners.removed; },
 		set block(value: boolean) { block = value; },
 		hide() { visibilityState = "hidden"; target.dispatchEvent(new Event("visibilitychange")); },
@@ -71,7 +71,7 @@ function fixture(shortShutdown = false) {
 			const host = await CommunityHost.create({
 				getEntries: () => [], getBranch: () => [], getSessionId: () => id, getSessionFile: () => `Piem/${id}.jsonl`,
 				getModel: () => model, getModels: () => [model], getThinkingLevel: () => "off", isIdle: () => true,
-				notify: (text, type) => { if (type === "error") errors.push(text); },
+				notify: (text, type) => { if (type === "error") errors.push(text); else notices.push(text); },
 				prepare: async () => {}, deliver: () => {},
 				logger: new Logger({ level: () => "debug", sinks: [record => { if (record.level === "warn") warnings.push(record.message); }] }),
 				otelEnvironment: () => { environmentReads++; return values; },
@@ -159,6 +159,72 @@ describe("original OTel in the default community host", () => {
 			expect(content).toContain("pi.session.shutdown");
 			expect(content).not.toContain("private prompt"); expect(content).not.toContain("private note contents");
 		}
+		expect(f.errors).toEqual([]); expect(f.warnings).toEqual([]);
+	});
+
+	it("discards queued telemetry on opt-out while existing commands and future turns keep working", async () => {
+		const f = fixture();
+		const current = await f.host("opt-out", { ...environment, OTEL_METRIC_EXPORT_INTERVAL: "60000" });
+		await round(current.host);
+		expect(f.listenerCount).toBe(4);
+		const sent = current.receipts.length;
+		current.host.disableOtel(); current.host.disableOtel();
+		expect(f.listenerCount).toBe(0); expect(f.timers.size).toBe(0);
+		f.hide();
+		await round(current.host);
+		await current.host.run("continue", "status");
+		expect(f.notices.some(notice => notice.startsWith("pi-invisible-continue status:"))).toBe(true);
+		current.host.cancel();
+		await round(current.host);
+		current.host.dispose(); await current.host.closed();
+		expect(current.environmentReads).toBe(1);
+		expect(current.receipts).toHaveLength(sent);
+		expect(f.listenerCount).toBe(0); expect(f.timers.size).toBe(0);
+		expect(f.errors).toEqual([]); expect(f.warnings).toEqual([]);
+	});
+
+	it("aborts exporter waits on opt-out without a final flush or affecting another conversation", async () => {
+		const f = fixture();
+		const one = await f.host("opt-out", environment), two = await f.host("continues", environment);
+		await round(one.host); await round(two.host);
+		f.block = true;
+		f.hide();
+		await until(() => one.receipts.length > 0 && two.receipts.length > 0);
+		one.host.disableOtel();
+		expect(one.receipts.every(receipt => receipt.signal?.aborted)).toBe(true);
+		expect(two.receipts.every(receipt => !receipt.signal?.aborted)).toBe(true);
+		expect(f.listenerCount).toBe(4);
+		const sent = one.receipts.length;
+		f.block = false;
+		await round(one.host);
+		two.host.disableOtel();
+		one.host.dispose(); two.host.dispose();
+		await Promise.all([one.host.closed(), two.host.closed()]);
+		expect(one.receipts).toHaveLength(sent);
+		expect(f.listenerCount).toBe(0); expect(f.timers.size).toBe(0);
+		expect(f.errors).toEqual([]); expect(f.warnings).toEqual([]);
+	});
+
+	it("keeps telemetry disabled when opt-out races replacement factory loading", async () => {
+		const f = fixture();
+		let reads = 0;
+		const current = await f.host("opt-out-during-reload", {
+			...environment,
+			get OTEL_EXPORTER_OTLP_ENDPOINT() {
+				if (++reads === 2) queueMicrotask(() => current.host.disableOtel());
+				return environment.OTEL_EXPORTER_OTLP_ENDPOINT;
+			},
+		});
+		await round(current.host);
+		current.host.cancel();
+		await current.host.input("reload factories");
+		const sent = current.receipts.length;
+		await round(current.host);
+		f.hide();
+		current.host.dispose(); await current.host.closed();
+		expect(reads).toBe(2);
+		expect(current.receipts).toHaveLength(sent);
+		expect(f.listenerCount).toBe(0); expect(f.timers.size).toBe(0);
 		expect(f.errors).toEqual([]); expect(f.warnings).toEqual([]);
 	});
 

@@ -131,8 +131,9 @@ truthfully copy today:
    Piem does should be something a reader could verify in a transcript.
 2. **Mobile is not a degraded mode.** A capability that cannot exist on mobile
    is refused for everyone rather than shipped as a desktop-only surprise.
-3. **The user's endpoint, the user's key, the user's vault.** Nothing is hosted
-   here and nothing phones home; every egress is nameable.
+3. **Name every destination.** Models use the user's endpoint and key. Error and
+   performance reports go to Piem's fixed gateway by default, with an immediate
+   off switch and the data disclosure in `docs/security.md`.
 4. **Say the sharp part out loud.** No approval gate, vault enumeration, and
    plaintext keys on mobile are disclosed in the product's own voice rather
    than left for a reviewer to find.
