@@ -339,6 +339,12 @@ export class CommunityHost {
 	dispose(reason?: SessionShutdownEvent["reason"]): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		// A reload still racing with this dispose must not surface its own
+		// disposed rejection as an unhandled error after the owner is gone.
+		void this.contextReset?.catch(() => undefined);
+		// A reload still racing with this dispose must not surface its own
+		// disposed rejection as an unhandled error after the owner is gone.
+		void this.contextReset?.catch(() => undefined);
 		this.platform.cancel();
 		for (const resources of this.backgrounds.values()) resources.beginShutdown();
 		this.callbacks.session?.dispose();
