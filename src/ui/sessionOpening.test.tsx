@@ -50,6 +50,7 @@ async function fixture(language: "en" | "zh-cn" = "en") {
 	const adapter = memory as unknown as DataAdapter;
 	const settings = {
 		...DEFAULT_SETTINGS,
+		shareDiagnostics: false,
 		providers: [{ id: "test", name: "Test", baseUrl: "https://example.invalid", protocol: "openai-completions" as const, apiKey: "fixture", secretRef: "", source: "user" as const, oauthFlow: "" }],
 		models: [{ id: "test", providerId: "test", modelApiId: "test", displayName: "Test", reasoning: false, supportsImages: false }],
 		activeModelId: "test", sessionDir: "Sessions", userSkillsDir: "", language,

@@ -8,9 +8,10 @@ agent and Vault-backed session store. It is a reusable host for supported
 contracts, not a full Node environment or a sandbox for arbitrary code.
 
 The bundled extensions include the original `b1tank/pi-otel` Git package. Its
-background factory uses the same static bridge and exports only when the user
-configures a collector. The bridge adds no default model requests; existing
-Quick actions keep their generation and click-to-send behavior.
+background factory uses the same static bridge and shares diagnostics with Piem's
+maintainers by default, with an off switch in settings. The bridge adds no default
+model requests; existing Quick actions keep their generation and click-to-send
+behavior.
 
 ## Contracts
 
@@ -326,8 +327,8 @@ supports a cancellation signal and accepts `ref` without a process-liveness
 effect in a WebView. Shutdown stops intervals, allows the existing one-second
 cleanup window for a final request, then revokes remaining timers, delays,
 requests and environment access. A failed factory's resources are retired
-while other extensions remain available. The registered `pi-otel` factory remains
-inactive without a configured collector.
+while other extensions remain available. The registered `pi-otel` factory exports
+only while diagnostic sharing is on.
 
 During shutdown, session ID/file/name, model, thinking level and other safe
 metadata use the last valid snapshot. The service may already have retired the
@@ -343,13 +344,17 @@ not the npm package sharing its name. `package.json` pins the full Git commit;
 through `pi-scoped-factory:pi-otel` and registered as a background `createFactory`.
 No upstream instrumentation or exporter is copied into Piem source.
 
-`otelConfig.ts` validates the plugin's optional `otelEndpoint`, then projects
+`otelConfig.ts` reads the plugin's `shareDiagnostics` preference, which defaults
+to on. It projects the fixed `https://otlp.piem.shangxin.me` destination as
 `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME=piem`, the plugin manifest version
 as `PI_OTEL_SERVICE_VERSION`, and `OTEL_METRIC_EXPORT_INTERVAL=60000` into that
 factory's private environment. It does not inherit host environment variables or
-provider credentials. No endpoint means no export; all changes require a plugin
-reload because the upstream factory reads its configuration on load. The address
-is an HTTP(S) base URL, without signal suffixes, credentials, query or fragment.
+provider credentials. Gateway authentication requires no plugin-side collector
+credentials. The destination is not editable, and legacy `otelEndpoint` values
+are ignored. Turning sharing off stops new reports immediately and discards
+unsent data; already-sent native requests cannot be recalled. Turning it back on
+requires a plugin reload because the original factory reads its configuration on
+load.
 
 The browser exporters send OTLP/HTTP JSON at `/v1/traces`, `/v1/metrics` and
 `/v1/logs`. Content flags retain upstream's off defaults, but raw model error

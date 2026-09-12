@@ -612,6 +612,8 @@ export default class PiemPlugin extends Plugin {
 	 * writes through, so a reload cannot resurrect the old choice.
 	 */
 	async saveSettings(options?: { reconfigure?: boolean }): Promise<void> {
+		// Opt-out revokes pending reports before waiting for disk or an active chat.
+		this.agentService?.refreshDiagnostics();
 		// Snapshot inside the queue: a concurrent installer save must include the
 		// user's latest settings, and an older write must never finish last.
 		const write = (this.settingsWrite ?? Promise.resolve()).catch(() => undefined)

@@ -27,6 +27,7 @@ interface Plugin {
 	settings: PiemSettings;
 	saveSettings(options?: { reconfigure?: boolean }): Promise<void>;
 	saveData(data: unknown): Promise<void>;
+	loadData(): Promise<unknown>;
 	agentService: Service;
 	sessionManager: {
 		buildSessionContextFor(path: string): Promise<{ messages: AgentMessage[]; model?: { provider: string; modelId: string } }>;
@@ -61,6 +62,8 @@ async function fixture(options: { memory?: MemoryAdapter; settings?: PiemSetting
 	app.vault.adapter = memory;
 	const plugin = new PluginClass(app, { id: "piem", version: "smoke" });
 	cleanups.push(() => plugin.onunload());
+	// Keep unrelated bundle scenarios offline; diagnostics has its own coverage.
+	plugin.loadData = async () => ({ shareDiagnostics: false });
 	await plugin.onload();
 	if (options.settings) Object.assign(plugin.settings, structuredClone(options.settings));
 	else Object.assign(plugin.settings, {

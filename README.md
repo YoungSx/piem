@@ -165,7 +165,9 @@ is better than implying otherwise. Release builds carry
 [signed provenance](https://github.com/YoungSx/piem/attestations), so the bytes
 you downloaded can be traced back to this repo.
 
-The long version, in the same plain language: [Security and privacy](docs/security.md).
+Error reports and performance data go to Piem's maintainers by default; you can
+turn sharing off in **Extensions**. Content capture is off, but error messages may
+include note text. [Security and privacy](docs/security.md) explains what is sent.
 
 ## 📚 Go deeper
 

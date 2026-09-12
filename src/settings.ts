@@ -19,7 +19,6 @@ import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compac
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
 import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
 import { normalizeExtensionConfig, type ExtensionConfigData } from "./extensions/extensionConfigStore";
-import { normalizeOtelEndpoint } from "./extensions/otelConfig";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
 import { DEFAULT_LOG_LEVEL, readLogLevel, type LogLevelSetting } from "./logging/logLevel";
@@ -204,8 +203,8 @@ export interface PiemSettings {
 	 * Extension-supplied, therefore bounded on load rather than trusted.
 	 */
 	extensionConfig?: ExtensionConfigData;
-	/** User-owned Collector; absent keeps the original telemetry extension inactive. */
-	otelEndpoint?: string;
+	/** Project diagnostics are on by default; only an explicit false disables sharing. */
+	shareDiagnostics?: boolean;
 }
 
 export const DEFAULT_SETTINGS: PiemSettings = {
@@ -225,6 +224,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	userSkillsDir: "",
 	disabledSkills: [],
 	logLevel: DEFAULT_LOG_LEVEL,
+	shareDiagnostics: true,
 	mcpServers: [],
 };
 
@@ -319,6 +319,7 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
 		mcpServers: normalizeMcpServers(data?.mcpServers),
+		shareDiagnostics: data?.shareDiagnostics !== false,
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
 	// and a vault written before the field existed stays byte-identical on load.
@@ -349,8 +350,6 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	if (builtinSkillState) settings.builtinSkillState = builtinSkillState;
 	const extensionConfig = normalizeExtensionConfig(data?.extensionConfig);
 	if (extensionConfig) settings.extensionConfig = extensionConfig;
-	const otelEndpoint = normalizeOtelEndpoint(data?.otelEndpoint);
-	if (otelEndpoint) settings.otelEndpoint = otelEndpoint;
 	return settings;
 }
 

@@ -113,16 +113,13 @@ preparation** retries a failed download; **Restore missing files** restores dele
 built-in entries without overwriting edits. **Reload** rereads local skills.
 See [Extending Piem](extending.md) for paths, priority, and update rules.
 
-**OpenTelemetry collector URL** sends traces, metrics and logs to a collector you
-provide. Enter its HTTP(S) base URL, such as `http://127.0.0.1:4318`, without
-`/v1/traces`. A base path is allowed; credentials, query parameters and fragments
-are not. The address is limited to 2,048 characters. Piem has no built-in reporting
-destination. Leave the field blank to stop exporting.
-
-**Reload Piem after setting, changing or clearing the address** — turn it off and
-back on under **Settings → Community plugins**. Existing chats keep their export
-configuration until reload. On a phone, `127.0.0.1` means that phone; use an address
-the phone can reach for a collector running elsewhere.
+**Share error reports and performance data** is on by default. It sends model and
+tool names, usage, timing and errors to Piem's maintainers at
+`https://otlp.piem.shangxin.me`. Turn it off to stop new reports immediately and
+discard unsent data; requests already sent cannot be recalled. After turning it
+back on, **reload Piem** under **Settings → Community plugins** to resume sharing.
+The destination is fixed and cannot be edited in settings. Gateway authentication
+is already configured, so no account or collector credentials are needed.
 
 The bundled original [b1tank/pi-otel](https://github.com/b1tank/pi-otel) extension
 uses OTLP/HTTP JSON at `/v1/traces`, `/v1/metrics` and `/v1/logs`. Metrics export

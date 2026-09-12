@@ -114,6 +114,7 @@ async function settleTick(): Promise<void> {
 function defaultTestSettings(): PiemSettings {
 	return {
 		...DEFAULT_SETTINGS,
+		shareDiagnostics: false,
 		providers: [
 			{
 				id: "p-test",

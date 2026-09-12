@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { createExtensionHost } from "./extensionHost";
 
 const callbacks = { getEntries: () => [], notify: () => {} };
@@ -84,6 +85,68 @@ describe("static extension host contract", () => {
 			// Pi's contract for an unregistered flag, which is what the survivor must see.
 			expect(survivor!.getFlag("verbose")).toBeUndefined();
 		} finally { host.dispose(); }
+	});
+
+	it("retires one observer without skipping peers in an event already being dispatched", async () => {
+		let enter!: () => void, release!: () => void;
+		const entered = new Promise<void>(resolve => { enter = resolve; });
+		const gate = new Promise<void>(resolve => { release = resolve; });
+		const seen: string[] = [];
+		let retiredEvents = 0, peerEvents = 0, peer: ExtensionAPI | undefined;
+		const host = await createExtensionHost([
+			{ id: "observer", factory: pi => {
+				pi.events.on("tick", () => { retiredEvents++; });
+				pi.on("before_agent_start", () => {});
+				pi.on("agent_start", async () => { seen.push("observer"); enter(); await gate; });
+				pi.on("agent_start", () => { seen.push("retired second handler"); });
+			} },
+			{ id: "peer", factory: pi => {
+				peer = pi;
+				pi.registerFlag("later", { type: "boolean", default: true });
+				pi.events.on("tick", () => { peerEvents++; });
+				pi.on("agent_start", () => { seen.push("peer"); });
+				pi.registerCommand("still-running", { handler: async () => { seen.push("command"); } });
+			} },
+		], callbacks);
+		try {
+			expect(host.hasBeforeAgentStart).toBe(true);
+			peer!.events.emit("tick", undefined);
+			const dispatch = host.emitAgentEvent({ type: "agent_start" });
+			await entered;
+			host.removeObserver("observer"); host.removeObserver("observer");
+			expect(host.hasBeforeAgentStart).toBe(false);
+			release(); await dispatch;
+			await host.emitAgentEvent({ type: "agent_start" });
+			await host.run("still-running");
+			peer!.events.emit("tick", undefined);
+			expect(seen).toEqual(["observer", "peer", "peer", "command"]);
+			expect(retiredEvents).toBe(1); expect(peerEvents).toBe(2);
+			expect(peer!.getFlag("later")).toBe(true);
+		} finally { release(); host.dispose(); }
+	});
+
+	it("refuses observer retirement for every non-event registration surface", async () => {
+		const registrations: ExtensionFactory[] = [
+			pi => pi.registerCommand("command", { handler: async () => {} }),
+			pi => pi.registerTool({ name: "tool", label: "Tool", description: "Fixture", parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }),
+			pi => pi.registerShortcut("ctrl+k", { handler: () => {} }),
+			pi => pi.registerFlag("flag", { type: "boolean", default: true }),
+			pi => pi.registerMessageRenderer("message", () => undefined),
+			pi => pi.registerEntryRenderer("entry", () => undefined),
+			pi => pi.registerMarkdownTransformer(markdown => markdown),
+		];
+		for (const register of registrations) {
+			let observed = 0;
+			const host = await createExtensionHost([{ id: "mixed", factory: async pi => {
+				await register(pi); pi.on("agent_start", () => { observed++; });
+			} }], callbacks);
+			try {
+				expect(host.loadReports.every(report => !report.error)).toBe(true);
+				expect(() => host.removeObserver("mixed")).toThrow("Only event-only extensions");
+				await host.emitAgentEvent({ type: "agent_start" });
+				expect(observed).toBe(1);
+			} finally { host.dispose(); }
+		}
 	});
 
 	it("loads an extension registering renderers and records what is never consulted", async () => {

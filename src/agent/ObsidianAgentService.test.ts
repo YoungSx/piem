@@ -4406,6 +4406,7 @@ function defaultTestSettings(): PiemSettings {
 	};
 	return {
 		...DEFAULT_SETTINGS,
+		shareDiagnostics: false,
 		providers: [row],
 		models: [{ id: "m-test", providerId: row.id, modelApiId: "test-model", displayName: "Test Model", reasoning: false, supportsImages: false }],
 		activeModelId: "m-test",
@@ -4496,6 +4497,7 @@ function createServiceWithMultimodalModel(
 			},
 		],
 		activeModelId: "m-multimodal",
+		shareDiagnostics: false,
 		provider: "anthropic",
 		modelId: "claude-opus-5",
 		networkTransport: "requestUrl",

@@ -153,7 +153,9 @@ Piem 的 `isDesktopOnly` 是 `false`，而且是当真的。工具、子代理�
 [签名溯源](https://github.com/YoungSx/piem/attestations)，你下载的那串字节
 能追回这个仓库。
 
-长版本，同样是这种大白话：[安全与隐私](docs/security.zh-CN.md)。
+错误报告与性能数据默认发给 Piem 维护者，可在 **扩展能力** 中关闭分享。
+正文采集关闭，但错误文字可能包含笔记内容。发送范围详见
+[安全与隐私](docs/security.zh-CN.md)。
 
 ## 📚 想深挖
 

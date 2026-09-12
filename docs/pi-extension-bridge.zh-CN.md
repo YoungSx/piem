@@ -7,8 +7,8 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 接口；不是完整 Node 环境，也不是任意代码的沙箱。
 
 内置扩展包括原版 `b1tank/pi-otel` Git 包。它的后台工厂经过同一个静态兼容桥，
-只在用户配置 Collector 后发送。兼容桥不增加默认模型请求；现有 Quick actions
-的生成方式和点击即发送行为保持原样。
+默认向 Piem 维护者分享诊断数据，可在设置中关闭。兼容桥不增加默认模型请求；
+现有 Quick actions 的生成方式和点击即发送行为保持原样。
 
 ## 支持范围
 
@@ -259,7 +259,7 @@ Node 回退。
 `timers/promises.setTimeout` 支持取消信号，接受 `ref`，但 WebView 没有
 对应的进程保活效果。关闭时先停 interval，保留原有一秒清理窗口供最后发送，
 之后撤销剩余定时器、延迟、请求和环境访问。坏工厂的资源会被清理，其他扩展
-仍能加载。已注册的 `pi-otel` 工厂在未配置 Collector 时不启用发送。
+仍能加载。已注册的 `pi-otel` 工厂只在诊断分享开启时发送。
 
 关闭时，会话 ID、文件名、名称、模型、思考级别等安全信息使用最后有效快照。
 此时服务可能已关闭所属会话；清理过程不会重新打开会话或提供密钥。旧上下文
@@ -272,12 +272,14 @@ npm 上的同名包。`package.json` 固定完整 Git 提交，`bun.lock` 锁定
 依赖。原版入口经 `pi-scoped-factory:pi-otel` 编译，并作为后台 `createFactory`
 注册。Piem 源码没有复制上游埋点或导出器。
 
-`otelConfig.ts` 校验可选插件设置 `otelEndpoint`，再把
-`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_SERVICE_NAME=piem`、来自 manifest 的插件
-版本 `PI_OTEL_SERVICE_VERSION`，以及 `OTEL_METRIC_EXPORT_INTERVAL=60000`
-投影到这个工厂的私有环境。它不继承宿主环境变量或服务商凭据。无地址就不
-发送；上游在工厂加载时读配置，所以任何更改都需重载插件。地址须为 HTTP(S)
-基地址，不带信号路径后缀、账号密码、查询参数或片段。
+`otelConfig.ts` 读取默认开启的 `shareDiagnostics` 插件设置，把固定地址
+`https://otlp.piem.shangxin.me` 作为 `OTEL_EXPORTER_OTLP_ENDPOINT`，与
+`OTEL_SERVICE_NAME=piem`、来自 manifest 的插件版本 `PI_OTEL_SERVICE_VERSION`，
+以及 `OTEL_METRIC_EXPORT_INTERVAL=60000` 一起
+投影到这个工厂的私有环境。它不继承宿主环境变量或服务商凭据。鉴权由网关
+处理，插件无需收集服务凭据。地址不可编辑，旧的 `otelEndpoint` 值不再使用。
+关闭分享会立即停止后续报告并丢弃未发送数据；已经发出的原生请求无法撤回。
+原版工厂在加载时读取配置，因此重新开启后需重载插件。
 
 浏览器导出器向 `/v1/traces`、`/v1/metrics`、`/v1/logs` 发送 OTLP/HTTP JSON。
 正文开关沿用上游默认关闭，但模型原始错误文字仍可能进入追踪状态和异常事件。

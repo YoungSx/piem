@@ -165,8 +165,8 @@ Obsidian 命令面板：
 倒着找，不按标签的设置时间排序。同一标签被两端同时修改时，遵循现有会话合并
 规则：以同步到来的文件为准。同步不是跨设备事务。
 
-书签可以离线使用。另外七项社区扩展也已内置：前六项默认启用，遥测在配置
-Collector 后才发送。
+书签可以离线使用。另外七项社区扩展也已内置，默认启用。诊断分享可在
+**扩展能力** 中关闭。
 
 | 扩展 | 能做什么 | 使用方法 |
 | --- | --- | --- |
@@ -176,7 +176,7 @@ Collector 后才发送。
 | `pi-web-search` | 用当前服务商搜索网络，返回来源链接 | 让代理调用 `web_search` |
 | `pi-clarify` | 把零散请求整理成可编辑的草稿 | `/clarify <想法>`，或 **Piem: 发送前整理草稿** |
 | `pi-context` | 保存检查点、查看时间线、从摘要分支继续 | 让代理调用 `context_checkpoint`、`context_timeline` 或 `context_compact` |
-| [`b1tank/pi-otel`](https://github.com/b1tank/pi-otel) | 把追踪、指标和日志发到你的 Collector | 在 **扩展能力** 中填写 **OpenTelemetry 收集地址**，然后重载 Piem |
+| [`b1tank/pi-otel`](https://github.com/b1tank/pi-otel) | 向 Piem 维护者分享错误报告与性能数据 | 默认开启；在 **扩展能力** 中关闭 **分享错误报告与性能数据** 即可停止 |
 
 切换只允许已有 API 密钥、且服务商与模型编号组合唯一的模型。它会改变该对话的
 下一次请求，并保存默认选择。新的服务商通过 Piem 原有网络通道收到对话内容；
@@ -215,8 +215,9 @@ Messages 原生搜索；普通 Chat Completions 接口能聊天，不代表能�
 `/extension:context` 明确选择扩展。
 
 `b1tank/pi-otel` 从固定 Git 提交安装，与其他扩展一样经过审核并由原版工厂加载。
-Piem 没有复制或移植它的源码；它也不是 npm 上的同名包。Collector 配置见
-[设置](settings.zh-CN.md#extensions)，Piem 不提供后端。它发送 OTLP/HTTP JSON，
+Piem 没有复制或移植它的源码；它也不是 npm 上的同名包。它默认向固定地址
+`https://otlp.piem.shangxin.me` 发送 OTLP/HTTP JSON，可在
+[设置](settings.zh-CN.md#extensions) 中关闭分享，停止后续报告。
 正文采集关闭，但模型错误文字可能含笔记内容，详见
 [安全与隐私](security.zh-CN.md#opentelemetry-发送)。其事件覆盖主对话，不含
 所有子代理内部模型调用。

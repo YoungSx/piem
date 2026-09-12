@@ -682,7 +682,8 @@ export class ObsidianAgentService {
 	/** See {@link ObsidianAgentServiceOptions.credentials}. */
 	private readonly credentials: CredentialStore | undefined;
 	private readonly extensionFactories: readonly CommunityExtension[] | undefined;
-	/** Upstream reads once at factory load; all chats keep one configuration until reload. */
+	/** Turning off is immediate and latched for this service; re-enabling needs reload. */
+	private diagnosticsDisabled: boolean;
 	private readonly telemetryEnvironment: Readonly<Record<string, string>>;
 	/** Shared across conversation replacements; late native IO retains its slot. */
 	private readonly extensionBackgroundFetch = (() => {
@@ -864,7 +865,8 @@ export class ObsidianAgentService {
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
 		this.credentials = options.credentials;
 		this.extensionFactories = options.extensionFactories;
-		this.telemetryEnvironment = otelEnvironment(getSettings().otelEndpoint, options.pluginVersion);
+		this.diagnosticsDisabled = getSettings().shareDiagnostics === false;
+		this.telemetryEnvironment = otelEnvironment(!this.diagnosticsDisabled, options.pluginVersion);
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
@@ -3625,7 +3627,15 @@ export class ObsidianAgentService {
 		}
 	}
 
+	/** Disable only the diagnostics observer; model calls and other extensions keep running. */
+	refreshDiagnostics(): void {
+		if (this.getSettings().shareDiagnostics === false) this.diagnosticsDisabled = true;
+		if (!this.diagnosticsDisabled) return;
+		for (const runtime of this.runtimes.values()) runtime.communityHost?.disableOtel();
+	}
+
 	async refreshConfiguration(): Promise<void> {
+		this.refreshDiagnostics();
 		// A just-trashed session leaves nothing to append to; the session adopted in
 		// its place runs `ensureConfiguration` itself. Subscribers are still told:
 		// the snapshot is derived from live settings, so a setting the panel renders
@@ -4421,7 +4431,7 @@ export class ObsidianAgentService {
 		});
 		const community = await CommunityHost.create({
 			session: contextSession,
-			otelEnvironment: () => this.telemetryEnvironment,
+			otelEnvironment: () => this.diagnosticsDisabled ? {} : this.telemetryEnvironment,
 			logger: this.log,
 			prepare: async () => { assertOwner(); await view.refresh(); await contextSession.refresh(); },
 			platform: {
@@ -4589,6 +4599,7 @@ export class ObsidianAgentService {
 			throw new Error("Extension session is no longer available.");
 		}
 		rt.communityHost = community;
+		this.refreshDiagnostics();
 		let tools: AgentTool[];
 		try {
 			tools = [...(await this.buildToolsAsync(rt)), ...(await this.fetchExternalTools())];

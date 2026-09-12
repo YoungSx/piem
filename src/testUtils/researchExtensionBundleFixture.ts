@@ -100,6 +100,7 @@ export async function researchFixture(options: {
 	app.vault.adapter = memory;
 	const plugin = new Plugin(app, { id: "piem", version: "smoke" });
 	plugin.loadData = async () => options.settings ? structuredClone(options.settings) : {
+		shareDiagnostics: false,
 		language: "en", networkTransport: "requestUrl",
 		providers: [{ id: "research", name: "Research", baseUrl: "https://research.test/v1", protocol: options.protocol ?? "openai-responses", apiKey: "research-fixture-key", secretRef: "", source: "user", oauthFlow: "" }],
 		models: [

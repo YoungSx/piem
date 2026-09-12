@@ -105,18 +105,16 @@ async function settle(): Promise<void> {
 }
 
 describe("extensionsDefinitions", () => {
-	it.each(["en", "zh-cn"] as const)("offers a blank native collector field with inline validation in %s", async language => {
+	it.each(["en", "zh-cn"] as const)("offers a default-on native diagnostics toggle without a collector field in %s", async language => {
 		const t = getT(language);
 		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
-		const row = definitions.find(item => "control" in item && item.control?.key === "otelEndpoint");
+		const row = definitions.find(item => "control" in item && item.control?.key === "shareDiagnostics");
 		expect(row).toBeDefined();
-		if (!row || !("control" in row) || row.control?.type !== "text") throw new Error("Collector text control missing");
-		expect(row.name).toBe(t.t("extensions.otelEndpoint"));
-		expect(row.desc).toBe(t.t("extensions.otelEndpointDesc"));
-		expect(row.control.defaultValue).toBe("");
-		expect(row.control.validate?.("")).toBeUndefined();
-		expect(row.control.validate?.("https://collector.example/base")).toBeUndefined();
-		expect(row.control.validate?.("https://collector.example?token=secret")).toBe(t.t("extensions.otelEndpointInvalid"));
+		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Diagnostics toggle missing");
+		expect(row.name).toBe(t.t("extensions.shareDiagnostics"));
+		expect(row.desc).toBe(t.t("extensions.shareDiagnosticsDesc"));
+		expect(row.control.defaultValue).toBe(true);
+		expect(definitions.some(item => "control" in item && item.control?.key === "otelEndpoint")).toBe(false);
 		await settle();
 	});
 
