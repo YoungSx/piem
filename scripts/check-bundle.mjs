@@ -110,6 +110,9 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     setting, browser Buffer and required notices measured 2,204,000 B
  *     (+200,854 B). The ceiling follows to 2.11 MiB. The graph uses HTTP JSON
  *     without Node or gRPC runtimes.
+ * 18. The vault-memory skill's recall-strengthened guidance (stronger read cues,
+ *     write-timing rules, and examples) measured 2,163,022 B (+~12 KiB over
+ *     the lazy-deletion branch baseline). The ceiling follows to 2.07 MiB.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -124,7 +127,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.11 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.07 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
