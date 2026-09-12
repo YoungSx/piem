@@ -19,7 +19,7 @@ export function ReferenceCards({ references, app, t, onRemove }: {
 			return <li className="piem-chat__reference" key={referenceKey(reference)}>
 				<details className="piem-chat__reference-details">
 					<summary title={path}>
-						<ObsidianIcon name={icon} />
+						<ObsidianIcon name={icon} className="piem-chat__reference-icon" />
 						<span className="piem-chat__reference-name">{label}</span>
 						<span className="piem-chat__reference-kind">{t.t(`noteReference.kind.${reference.kind}`)}</span>
 						<ObsidianIcon name="chevron-down" className="piem-chat__reference-chevron" />

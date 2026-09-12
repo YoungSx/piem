@@ -61,11 +61,44 @@ describe("MessageList native reference cards", () => {
 			{ kind: "url", url: "https://example.org/page" },
 		])]);
 		await flushRender();
+		expect(host.querySelectorAll(".piem-chat__message--user .piem-chat__bubble .piem-chat__reference-details")).toHaveLength(2);
 		expect(host.querySelectorAll(".piem-chat__reference-details")).toHaveLength(2);
 		expect(host.querySelector(".piem-chat__reference-details")?.hasAttribute("open")).toBe(false);
 		expect(host.querySelector(".piem-chat__reference-body pre")?.textContent).toBe("<script>unsafe()</script>");
 		expect(host.querySelector("script")).toBeNull();
 		expect(host.querySelector(".piem-chat__reference-remove")).toBeNull();
+	});
+
+	it("keeps each question's references in its own bubble alongside a parsed skill", async () => {
+		const first = userMessage('<skill name="review" location="Piem/skills/review/SKILL.md">\nReview the note.\n</skill>\n\nReview this');
+		const host = renderMessages([first, createReferenceMessage([{ kind: "file", path: "A.md" }]),
+			assistantMessage("First reply"), userMessage("Next question"), createReferenceMessage([{ kind: "folder", path: "Projects" }])]);
+		await flushRender();
+		const bubbles = host.querySelectorAll(".piem-chat__message--user .piem-chat__bubble");
+		expect(bubbles).toHaveLength(2);
+		expect(bubbles[0]?.querySelector(".piem-chat__skill-pill")).not.toBeNull();
+		expect(bubbles[0]?.querySelector(".piem-chat__reference")?.textContent).toContain("A.md");
+		expect(bubbles[0]?.textContent).not.toContain("Projects");
+		expect(bubbles[1]?.querySelector(".piem-chat__reference")?.textContent).toContain("Projects");
+		expect(host.querySelectorAll(".piem-chat__message--references")).toHaveLength(0);
+	});
+
+	it("never attaches hidden, mismatched or orphan reference data to a question", async () => {
+		const hidden = { ...createReferenceMessage([{ kind: "file", path: "Hidden.md" }]), display: false };
+		const mismatched = { ...createReferenceMessage([{ kind: "file", path: "Wrong.md" }]), content: "Different model text" };
+		const host = renderMessages([createReferenceMessage([{ kind: "file", path: "Orphan.md" }]),
+			userMessage("First"), hidden, userMessage("Second"), mismatched]);
+		await flushRender();
+		expect(host.querySelectorAll(".piem-chat__message--user .piem-chat__reference")).toHaveLength(0);
+		expect(host.querySelectorAll(".piem-chat__reference")).toHaveLength(0);
+		expect(host.querySelectorAll(".piem-chat__trace--harness")).toHaveLength(2);
+	});
+
+	it("keeps an unsaved reference warning with its owning question", async () => {
+		const reference = createReferenceMessage([{ kind: "file", path: "A.md" }]);
+		const host = renderMessages([userMessage("Question"), reference], { unpersistedMessages: [reference] });
+		await flushRender();
+		expect(host.querySelector(".piem-chat__message--user .piem-chat__interrupted--unsaved")).not.toBeNull();
 	});
 });
 

@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from "react";
-import { messageReferences } from "../agent/contextReference";
+import { messageReferences, type ContextReference } from "../agent/contextReference";
 import { ReferenceCards } from "./ReferenceCards";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, CustomMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { AssistantMessage, ImageContent, ThinkingContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { App, Component, IconName } from "obsidian";
@@ -795,16 +795,26 @@ const MessageHistory = memo(function MessageHistory({
 	};
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
+	// Native storage keeps a separate custom message. Visually it belongs to
+	// the question immediately before it, just like an expanded skill does.
+	const questionReferences = new Map<number, MessageReference>();
+	for (let index = 1; index < messages.length; index++) {
+		const message = messages[index]!;
+		if (messages[index - 1]?.role !== "user" || message.role !== "custom" || !message.display || compactionDrawsMessage(compactionPlan, index - 1)) continue;
+		const references = messageReferences(message);
+		if (references) questionReferences.set(index - 1, { message, references });
+	}
 	return (
 		<>
 			{messages.map((message, index) => (
 				<React.Fragment key={index}>
 					{/* The tidy appears where it happened, rather than at Pi's summary index. */}
 					{seamRows(compactionPlan, index, context)}
-					{compactionDrawsMessage(compactionPlan, index) ? null : (
+					{compactionDrawsMessage(compactionPlan, index) || questionReferences.has(index - 1) ? null : (
 						<MessageRow
 							index={index}
 							message={message}
+							reference={questionReferences.get(index)}
 							isStreaming={index === activeIndex}
 							renderContext={context}
 							replyTiming={replyTimingFor(messages, index) ?? undefined}
@@ -814,7 +824,7 @@ const MessageHistory = memo(function MessageHistory({
 							// Editing or forking an unsettled tail must remain unavailable.
 							onEdit={canEdit && index === editIndex && runSettled ? () => actionsRef.current.onEditMessage?.(index) : undefined}
 							onFork={canFork && index === regenerateIndex && runSettled ? () => actionsRef.current.onFork?.(index) : undefined}
-							notPersisted={unpersistedMessages?.includes(message)}
+							notPersisted={unpersistedMessages?.includes(message) || unpersistedMessages?.includes(questionReferences.get(index)?.message ?? message)}
 						/>
 					)}
 				</React.Fragment>
@@ -949,10 +959,16 @@ function EmptyState({ isInitializing, isConfigured, onOpenSettings, quickActions
 	);
 }
 
+interface MessageReference {
+	message: CustomMessage;
+	references: ContextReference[];
+}
+
 interface MessageRowProps {
 	/** The message's own position in the transcript; the fold plan is keyed on it. */
 	index: number;
 	message: AgentMessage;
+	reference?: MessageReference;
 	isStreaming: boolean;
 	renderContext: MessageContext;
 	/** Regenerates this reply; supplied only for the newest one. */
@@ -998,13 +1014,14 @@ interface MessageRowProps {
 /**
  * One transcript entry.
  *
- * Only the two conversational roles get card chrome. Everything else — tool
- * calls, tool results, harness output, compaction summaries — renders flat, so
- * a card never contains another bordered box.
+ * Only the two conversational roles get bubble chrome. User-selected references
+ * and skill expansions belong inside their question; tool traffic and other
+ * harness records keep their own flat rows.
  */
 function MessageRow({
 	index,
 	message,
+	reference,
 	isStreaming,
 	renderContext,
 	onRetry,
@@ -1034,10 +1051,6 @@ function MessageRow({
 			return slot.head ? renderFoldedTrace(slot.group, renderContext) : null;
 		}
 		return <ToolResultTrace message={message} context={renderContext} />;
-	}
-	const references = messageReferences(message);
-	if (references && message.role === "custom" && message.display) {
-		return <div className="piem-chat__message piem-chat__message--references"><ReferenceCards references={references} app={renderContext.app} t={renderContext.t} /></div>;
 	}
 	if (message.role !== "user" && message.role !== "assistant") {
 		return <HarnessTrace message={message} context={renderContext} />;
@@ -1088,6 +1101,7 @@ function MessageRow({
 				onMouseOver={suppressOwnTooltip}
 			>
 				<div className="piem-chat__bubble">
+					{reference ? <ReferenceCards references={reference.references} app={renderContext.app} t={renderContext.t} /> : null}
 					<div className="piem-chat__message-content">{message.role === "assistant" ? assistantContent?.nodes : renderUserMessage(message, args)}</div>
 					{cutoff ? (
 						cutoff.raw !== undefined ? (
@@ -1148,7 +1162,8 @@ function MessageRow({
 					 * can act on is this button.
 					 */}
 					{notPersisted ? (
-						<UnsavedWarning text={message.role === "assistant" ? assistantText(message) : userText(message)} />
+						<UnsavedWarning text={[message.role === "assistant" ? assistantText(message) : userText(message),
+							typeof reference?.message.content === "string" ? reference.message.content : ""].filter(Boolean).join("\n\n")} />
 					) : null}
 				</div>
 				{/*

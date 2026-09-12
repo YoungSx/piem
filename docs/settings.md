@@ -151,7 +151,7 @@ items** in Obsidian's file menus. The editor offers **Ask about selection** when
 text is selected and **Ask about this note** otherwise. External HTTP/HTTPS links
 provide **Ask about this link**.
 
-Each action adds an expandable reference card beside the draft. Expand a card
+Each action adds an expandable reference card inside the composer. Expand a card
 to inspect its full path, URL, or captured selection; remove it to leave it out
 of the next question. Your own words stay unchanged. Select **Send** when the
 question is ready. Opening a menu or adding a card does not fetch a webpage or
@@ -161,7 +161,8 @@ Cards belong to the draft and survive closing the panel or switching chats.
 The first reference saves a new chat's identity, so its unsent draft is also
 reachable after restarting Obsidian. Opening an untouched blank chat saves nothing.
 They travel with queued questions, return when you take a queued question back,
-and appear with the sent question after reloading the conversation. Pi's native
+and appear inside the sent question's bubble, using the same disclosure style as
+skill content. This grouping survives reloading the conversation. Pi's native
 custom messages store the reference text for the model and separate metadata for
 the cards. File and folder cards name paths; they do not claim their full contents
 have already been read. Selection cards keep the passage as it was when selected.
