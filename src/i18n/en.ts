@@ -882,7 +882,7 @@ export const en = {
 	},
 
 	/**
-	 * The one-line summary a folded run of tool calls draws.
+	 * The one-line summary a folded run of thinking and tool calls draws.
 	 *
 	 * Authored mid-sentence and lower-case: `describeTraceFold` joins the phrases
 	 * with the two joiners at the end of this block and puts the finished line in
@@ -902,6 +902,8 @@ export const en = {
 		searchMany: "ran {count} searches",
 		otherOne: "used a tool",
 		otherMany: "used {count} tools",
+		thinkingOne: "thought it through",
+		thinkingMany: "thought it through {count} times",
 		/**
 		 * The same bucket, worded for the company it keeps. Alongside a named
 		 * category, "used 1 tool" invites the reader to wonder whether the notes
@@ -998,7 +1000,7 @@ export const en = {
 		 */
 		traceExpand: "Open tool activity",
 		traceExpandDesc:
-			"How much of the machine traffic — thinking, tool calls, results — starts open in the transcript. Any row can still be opened or closed by hand. With everything collapsed, a run of consecutive tool calls also folds into a single row naming what the run did.",
+			"How much of the machine traffic — thinking, tool calls, results — starts open in the transcript. Any row can still be opened or closed by hand. With everything collapsed, consecutive thinking and tool calls fold into a single row naming what the run did.",
 		traceExpandCollapsed: "Everything collapsed",
 		traceExpandHighValue: "High-value rows open",
 		traceExpandExpanded: "Everything open",

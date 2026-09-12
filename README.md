@@ -45,16 +45,20 @@ the side panel:
 > **Based on this note, recommend a beginner's hardware list with buying advice.**
 
 <p align="center">
-  <img src="assets/screenshots/errand-trace.webp" width="620" alt="Piem's transcript: the real write and edit tool receipts, followed by links to the new hardware checklist and the original note.">
+  <img src="assets/screenshots/errand-trace.webp" width="620" alt="Piem's transcript: two expanded groups combine three thinking steps with read, write and edit tool receipts; the edit shows a plus-four-minus-zero diff, followed by the reply.">
 </p>
 
-It read the note. Wrote a new one beside it — hardware table, prices, buying
+*Current UI captured in an isolated Obsidian demo vault. The conversation is scripted;
+the plugin's read, write and edit tools actually ran.*
+
+It read the note. Wrote a new one beside it — hardware table, buying
 advice, beginner steps. Then went back to the original and added a
 `[[wikilink]]` pointing at the new note, so the graph knows they belong
 together.
 
-Two files touched: **a hardware checklist saved, a backlink added.** Then it
-told you where to find them.
+Two files touched: **a hardware checklist saved, a backlink added (+4 −0 on the
+original).** Thinking and tool calls share folded groups; open one to see each
+step. The reply names the notes it changed.
 
 You never opened a file. You read the receipt and got on with your day.
 

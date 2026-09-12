@@ -5,18 +5,28 @@ harness in `scripts/preview-visual.mjs` produces measurement pages (three panel
 widths side by side, no Obsidian chrome), which is the right tool for checking
 layout and the wrong one for showing someone what the plugin is.
 
-The three transcript images were retaken on 2026-09-12 in a disposable vault
-after the native typography change. They reconstruct the earlier Pico 2 W /
+For the native typography update on 2026-09-12, three transcript images were
+retaken in a disposable vault. They reconstructed the earlier Pico 2 W /
 DualSense example: *"based on this note, recommend a beginner's hardware list
-with buying advice."* The prose is a fixture, not a new model response; the
+with buying advice."* The prose was a fixture, not a new model response; the
 installed plugin's real read, write and edit tools created the notes and their
 receipts, loaded through the native session manager and ChatApp. The model picker
-labels the reconstruction. The empty state remains the earlier phone capture.
+labels that reconstruction. The desktop overview and finished phone image retain
+those captures; the empty state remains the earlier phone capture.
+
+`errand-trace.webp` was replaced later on 2026-09-12 with a separate example in
+an isolated demo vault using the current plugin's mixed activity groups. Its
+conversation text is scripted; the shipped `read`,
+`write` and `edit` tools actually ran against the notes, and both files were read
+back to verify their contents. It is a real Obsidian capture of that example,
+not a replay of either earlier conversation or a new model response. Two groups
+are open to show three thinking steps alongside the tool receipts, including
+the original note's `+4 −0` edit. Both READMEs disclose the source beside the image.
 
 | File | Shows | Captured at |
 | --- | --- | --- |
 | `errand-desktop.webp` | Full window: the reconstructed note on the left, hardware table and buying advice on the right | 1400px wide, light theme |
-| `errand-trace.webp` | The transcript: real write/edit receipts and links to the resulting notes | 754px wide, light theme |
+| `errand-trace.webp` | The transcript: two open groups combining thinking with read/write/edit calls, the `+4 −0` diff, and the reply | 754px wide, light theme |
 | `mobile-empty.webp` | Phone, empty panel: quick actions shaped by the open note | 640px wide, light theme |
 | `mobile-done.webp` | Reconstructed errand finished, in Obsidian's official phone emulation | 390px viewport, light theme |
 

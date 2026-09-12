@@ -1592,6 +1592,8 @@ const RUN_CELLS = [
 	{ id: "cut", label: "asked, never answered" },
 	{ id: "failed", label: "it broke" },
 	{ id: "thinking", label: "a thought still forming" },
+	{ id: "thinking-fold", label: "a read and a live thought, folded together" },
+	{ id: "thinking-fold-open", label: "the same mixed run, opened in order" },
 ];
 
 /** The transcript and pending set for one cell. */
@@ -1662,13 +1664,14 @@ function runFixture(id, language) {
 	if (id === "cut") {
 		return { messages: [ask, reply(call("c-w", "write", { path: "Books/Deep Work.md" }))], pendingToolCalls: [] };
 	}
-	if (id === "thinking") {
+	if (id === "thinking" || id.startsWith("thinking-fold")) {
 		// The thought itself is the block in flight: no call out, so the running
 		// treatment has to come from the live row alone — brain in the slot,
 		// accent, breath, the same three signals a tool row gets.
 		return {
 			messages: [
 				ask,
+				...(id === "thinking" ? [] : [reply(call("c-r", "read", { path: "Books/Deep Work.md" })), back("c-r", "read", "# Deep Work")]),
 				{ role: "assistant", content: [{ type: "thinking", thinking: zh ? "第三篇和第二篇确实在讲同一本书…" : "The third note really is the same book as the second…" }], ...base },
 			],
 			pendingToolCalls: [],
@@ -1685,7 +1688,7 @@ function runFixture(id, language) {
 	};
 }
 
-/** One transcript mount, serialized; `id` picks which of the six cells it is. */
+/** One transcript mount, serialized; `id` picks the activity state. */
 async function mountToolRun(id, language) {
 	const { messages, pendingToolCalls, streaming } = runFixture(id, language);
 	const host = document.createElement("div");
@@ -1707,6 +1710,9 @@ async function mountToolRun(id, language) {
 	);
 	await flushRender();
 	await flushRender();
+	if (id === "thinking-fold-open") {
+		for (const details of host.querySelectorAll("details")) details.open = true;
+	}
 	const element = host.firstElementChild;
 	const markup = element.outerHTML;
 	root.unmount();
@@ -1764,7 +1770,7 @@ body { background: #191919; }
 ${grid("dark")}
 ${grid("light")}
 </body></html>`;
-	return { element: null, cleanup: async () => document.body.replaceChildren(), html, width: 300 + 300 + 560 + 3 * 14 + 60, height: 2500 };
+	return { element: null, cleanup: async () => document.body.replaceChildren(), html, width: 300 + 300 + 560 + 3 * 14 + 60, height: RUN_CELLS.length * 500 + 100 };
 }
 
 SCENARIOS["tool-run"] = () => toolRunPage();

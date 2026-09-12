@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
-import type { AssistantMessage, ImageContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ImageContent, ThinkingContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { App, Component, IconName } from "obsidian";
 import type { TextBlockKind } from "./markdownPolicy";
 import { MarkdownText } from "./MarkdownText";
@@ -15,6 +15,7 @@ import { useT } from "./TranslatorContext";
 import type { Translator } from "../i18n";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
+import { Trace } from "./Trace";
 import { parseSkillInvocation, type SkillInvocation } from "../agent/skillInvocation";
 import { GENERIC_TOOL_ICON, toolIcon } from "./toolCatalog";
 import { countDiffLines, describePendingTool, describeTool, isToolIdentifier, summarizeToolPayload, summarizeToolResult } from "./traceSummary";
@@ -228,8 +229,8 @@ function streamingIndex(isStreaming: boolean, messages: AgentMessage[]): number 
  * in order, so exactly the last block can still be growing.
  *
  * Stated here as an address, not as a predicate, because two unrelated things
- * need the same answer — the caret and spinner on the row itself, and the fold
- * planner's refusal to swallow a call that is still running — and a rule
+ * need the same answer — the caret on the row itself, and the running marker
+ * on a trace or its containing fold — and a rule
  * written twice is a rule that drifts. `null` on a settled transcript, where
  * no block is live no matter what.
  */
@@ -1028,7 +1029,7 @@ function MessageRow({
 		if (slot) {
 			// The run's first row draws the summary where it stood; every later
 			// member draws nothing, because that summary already speaks for it.
-			return slot.head ? <FoldedTrace group={slot.group} context={renderContext} /> : null;
+			return slot.head ? renderFoldedTrace(slot.group, renderContext) : null;
 		}
 		return <ToolResultTrace message={message} context={renderContext} />;
 	}
@@ -1046,9 +1047,9 @@ function MessageRow({
 	 * nothing but the suppressed `ask_user` call, and mid-run once every call the
 	 * turn made went into a fold anchored further up. Worse, in the first case it
 	 * came with a copy/insert actions row offering to copy no text at all. A stop
-	 * notice still earns the row, because that is content of its own.
+	 * notice or unsaved warning still earns the row: each is content of its own.
 	 */
-	if (message.role === "assistant" && message.content.length > 0 && !cutoff && !assistantContent?.firstBlock) {
+	if (message.role === "assistant" && message.content.length > 0 && !cutoff && !notPersisted && !assistantContent?.firstBlock) {
 		return null;
 	}
 	return (
@@ -1295,7 +1296,7 @@ interface MessageContext {
 	/** Mirrors the user setting; the default open state of every trace row. */
 	traceExpand: TraceExpandSetting;
 	/**
-	 * Which runs of tool traffic are folded, and where each fold draws.
+	 * Which runs of thinking and tool traffic are folded, and where each fold draws.
 	 *
 	 * Resolved once for the whole transcript rather than per row, because a run
 	 * crosses message boundaries — a call and its result are never in the same
@@ -1466,13 +1467,16 @@ function SkillInvocationPill({ invocation, context }: { invocation: SkillInvocat
  * Whether the block at `blockIndex` of message `index` is the one the model is
  * writing right now.
  *
- * A comparison against {@link liveRowRef}'s address rather than a rule of its
- * own: the fold planner is handed the same address to keep a running call out
- * of a fold, and the row and the planner disagreeing about which block is live
- * would show a settled count over a call still in flight.
+ * Shared by the prose caret and trace running state, including folded rows.
  */
 function isLiveBlock(context: MessageContext, index: number, blockIndex: number): boolean {
 	return context.liveRow?.message === index && context.liveRow.block === blockIndex;
+}
+
+/** A thought or call is active while streaming; a call also stays active during execution. */
+function isTraceRunning(context: MessageContext, ref: TraceRowRef, toolCallId?: string): boolean {
+	return (toolCallId !== undefined && context.runningToolCalls.has(toolCallId)) ||
+		(ref.block !== null && isLiveBlock(context, ref.message, ref.block));
 }
 
 interface RenderedAssistantMessage {
@@ -1494,7 +1498,7 @@ function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): Re
 		if (!visible && !(content.type === "text" && live)) {
 			return null;
 		}
-		const slot = content.type === "toolCall" ? traceFoldSlot(context.foldPlan, args.index, blockIndex) : null;
+		const slot = traceFoldSlot(context.foldPlan, args.index, blockIndex);
 		if (slot && !slot.head) {
 			return null;
 		}
@@ -1509,113 +1513,37 @@ function renderAssistantMessage(message: AssistantMessage, args: RenderArgs): Re
 			return <Block key={blockIndex} text={content.text} kind="assistant" isStreaming={args.isStreaming} context={context} className={live ? "piem-chat__block--live" : undefined} />;
 		}
 		if (content.type === "thinking") {
-			// The brain stays in the slot through both states, and a live one wears
-			// the same running treatment a tool row gets — accent glyph, lifted text,
-			// the breath. The spinner it replaced spent that slot answering "is
-			// something happening", which "Thinking…" already answers in words.
-			return (
-				<Trace
-					key={blockIndex}
-					icon="brain"
-					name={context.t.t(live ? "chat.thinkingNow" : "chat.thoughtItThrough")}
-					className={live ? "piem-chat__trace--thinking piem-chat__trace--running" : "piem-chat__trace--thinking"}
-					busy={live}
-					open={traceOpensByDefault(context.traceExpand, "thinking", false)}
-				>
-					<Block text={content.thinking} kind="thinking" isStreaming={args.isStreaming} context={context} />
-				</Trace>
-			);
+			return <ThinkingTrace key={blockIndex} thinking={content} context={context} position={{ message: args.index, block: blockIndex }} group={slot?.group} />;
 		}
-		if (slot) {
-			return <FoldedTrace key={blockIndex} group={slot.group} context={context} />;
-		}
-		return <ToolCallTrace key={blockIndex} call={content} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} index={args.index} blockIndex={blockIndex} />;
+		return <ToolCallTrace key={blockIndex} call={content} result={pairedResult(context.pairPlan, args.index, blockIndex)} context={context} index={args.index} blockIndex={blockIndex} group={slot?.group} />;
 	});
 	return { nodes, firstBlock, lastBlock };
 }
 
-
-interface TraceProps {
-	icon: IconName;
-	name: string;
-	detail?: string;
-	className?: string;
-	/**
-	 * True when `name` is a raw tool id (`get_active_note`) rather than a written
-	 * label ("Read a note"). Only an id is set in monospace; the rows whose names
-	 * are sentences — thinking, harness output, and every translated tool name —
-	 * are set in the interface font.
-	 */
-	nameIsIdentifier?: boolean;
-	/** Revealed content; `null` renders a plain row with no disclosure affordance. */
-	body?: React.ReactNode;
-	/**
-	 * Whether the row is still resolving, for assistive tech.
-	 *
-	 * The breath is the visual half of this and reaches nobody who cannot see it.
-	 * It is `aria-busy` rather than a live region on purpose: dozens of rows can be
-	 * out at once, and a region per row would announce a queue nobody asked to
-	 * hear. The tail placeholder is the announcement; this is what a reader
-	 * arriving at the row itself is told.
-	 */
-	busy?: boolean;
-	/**
-	 * The row's initial open state, from the expand mode the reader chose. An
-	 * `open` attribute on a `<details>` sets the default, not a lock — the reader
-	 * can still close the row by hand, which is why this is passed at render
-	 * rather than managed as state: a re-render from a settings change restates
-	 * the preference without fighting the reader's clicks.
-	 */
-	open?: boolean;
-	children?: React.ReactNode;
-}
-
-/**
- * Class for a trace row's name.
- *
- * Shared by {@link Trace} and {@link ToolResultTrace}, which draw the same row
- * from different data and would otherwise each decide the typeface for
- * themselves.
- */
-function traceNameClass(isIdentifier: boolean): string {
-	return `piem-chat__trace-name piem-chat__trace-name--${isIdentifier ? "identifier" : "label"}`;
-}
-
-/**
- * Collapsed one-line disclosure for machine traffic (tool calls, tool results,
- * thinking, harness output).
- *
- * One vocabulary for all of it: the transcript used to expand raw JSON and full
- * tool output inline while hiding thinking and diffs behind `<details>`, so a
- * single `grep` could bury the model's actual prose. Everything mechanical now
- * collapses to a 1-line row the reader opens on demand.
- */
-function Trace({ icon, name, detail, className, nameIsIdentifier = false, body, busy = false, open = false, children }: TraceProps): React.JSX.Element {
-	const revealed = body === undefined ? children : body;
-	const classes = ["piem-chat__trace", className].filter(Boolean).join(" ");
-	const row = (
-		<>
-			<ObsidianIcon name={icon} className="piem-chat__trace-icon" />
-			<span className={traceNameClass(nameIsIdentifier)}>{name}</span>
-			{detail ? <span className="piem-chat__trace-detail">{detail}</span> : null}
-		</>
-	);
-
-	// `undefined` rather than `false` for a settled row: `aria-busy="false"` on
-	// every trace in a long transcript is markup that says nothing.
-	const ariaBusy = busy ? true : undefined;
-	if (!revealed) {
-		return (
-			<div className={`${classes} piem-chat__trace--flat`} aria-busy={ariaBusy}>
-				{row}
-			</div>
-		);
-	}
+/** The same thought row, whether it stands alone or belongs to a folded run. */
+function ThinkingTrace({ thinking, context, position, group, initialOpen }: {
+	thinking: ThinkingContent;
+	context: MessageContext;
+	position: TraceRowRef;
+	group?: TraceFoldGroup;
+	initialOpen?: boolean;
+}): React.JSX.Element {
+	const [openBeforeFold, setOpenBeforeFold] = useState(false);
+	// Return the same Trace shell when the second step arrives: the native
+	// disclosure and its focused summary survive, with the first row still open.
+	if (group) return renderFoldedTrace(group, context, openBeforeFold);
+	const running = isTraceRunning(context, position);
 	return (
-		<details className={classes} open={open} aria-busy={ariaBusy}>
-			<summary className="piem-chat__trace-summary">{row}</summary>
-			<div className="piem-chat__trace-body">{revealed}</div>
-		</details>
+		<Trace
+			icon="brain"
+			name={context.t.t(running ? "chat.thinkingNow" : "chat.thoughtItThrough")}
+			className="piem-chat__trace--thinking"
+			busy={running}
+			open={initialOpen ?? traceOpensByDefault(context.traceExpand, "thinking", false)}
+			onToggle={setOpenBeforeFold}
+		>
+			<Block text={thinking.thinking} kind="thinking" isStreaming={context.streamingMessageIndex === position.message} context={context} />
+		</Trace>
 	);
 }
 
@@ -1653,6 +1581,8 @@ function ToolCallTrace({
 	context,
 	index,
 	blockIndex,
+	group,
+	initialOpen,
 }: {
 	call: ToolCall;
 	result: ToolResultMessage | null;
@@ -1666,11 +1596,14 @@ function ToolCallTrace({
 	 */
 	index: number;
 	blockIndex: number;
+	group?: TraceFoldGroup;
+	initialOpen?: boolean;
 }): React.JSX.Element {
+	const [openBeforeFold, setOpenBeforeFold] = useState(false);
+	if (group) return renderFoldedTrace(group, context, openBeforeFold);
 	const showDetails = context.showAgentDetails;
-	const running = context.runningToolCalls.has(call.id);
+	const running = isTraceRunning(context, { message: index, block: blockIndex }, call.id);
 	const streaming = context.streamingMessageIndex === index;
-	const live = streaming && isLiveBlock(context, index, blockIndex);
 	const diff = result ? extractDiff(result.details) : null;
 	const payload = showDetails ? <pre className="piem-chat__text">{JSON.stringify(call.arguments, null, 2)}</pre> : null;
 	/*
@@ -1695,14 +1628,15 @@ function ToolCallTrace({
 			name={describeTool(call.name, showDetails, context.t)}
 			nameIsIdentifier={isToolIdentifier(call.name, showDetails)}
 			detail={pairedDetail(call, result, diff, context.t)}
-			className={traceClasses(running || live, result)}
-			busy={running || live}
+			className={traceClasses(result)}
+			busy={running}
 			// A diff-bearing row opens itself under `highValue`: the critique called
 			// the undo story the panel's biggest gap, and what an edit changed is the
 			// one thing a reader answers by reading rather than by deciding to read.
 			// Only a row that has its result can be that row, so a call still out asks
 			// the question the call row always asked.
-			open={result ? traceOpensByDefault(context.traceExpand, "toolResult", diff !== null) : traceOpensByDefault(context.traceExpand, "toolCall", false)}
+			open={initialOpen ?? traceOpensByDefault(context.traceExpand, result ? "toolResult" : "toolCall", diff !== null)}
+			onToggle={setOpenBeforeFold}
 			// Without the payload or a result there is nothing behind the row to open,
 			// so it renders as a plain line rather than an empty disclosure.
 			body={payload || answer ? <>{payload}{answer}</> : null}
@@ -1743,12 +1677,11 @@ function traceIcon(name: string, running: boolean, streaming: boolean, result: T
 	return running || streaming ? toolIcon(name) : "circle-slash";
 }
 
-/** Modifier classes for a paired row: the body bound, the failure tint, the breath. */
-function traceClasses(running: boolean, result: ToolResultMessage | null): string | undefined {
+/** Tool-specific modifiers; Trace owns the running treatment for every kind of row. */
+function traceClasses(result: ToolResultMessage | null): string | undefined {
 	const classes = [
 		result ? "piem-chat__trace--result" : null,
 		result?.isError ? "piem-chat__trace--error" : null,
-		running ? "piem-chat__trace--running" : null,
 	].filter(Boolean);
 	return classes.length > 0 ? classes.join(" ") : undefined;
 }
@@ -1810,7 +1743,6 @@ function ToolResultTrace({ message, context }: { message: ToolResultMessage; con
 		}
 	}
 	const diff = extractDiff(message.details);
-	const classes = ["piem-chat__trace", "piem-chat__trace--result", message.isError ? "piem-chat__trace--error" : null].filter(Boolean).join(" ");
 	const detail = diff ? formatDiffCounts(diff) : summarizeToolResult(message, context.t);
 	return (
 		// A diff-bearing result opens itself: the critique called the undo story
@@ -1819,32 +1751,27 @@ function ToolResultTrace({ message, context }: { message: ToolResultMessage; con
 		// interaction, while the call row above it stays closed. The expand mode
 		// sits on top of that: `highValue` keeps exactly this behaviour, and
 		// `expanded` opens the rest of the traffic besides.
-		<details
-			className={classes}
+		<Trace
+			icon={message.isError ? "alert-triangle" : toolIcon(message.toolName)}
+			name={describeTool(message.toolName, context.showAgentDetails, context.t)}
+			nameIsIdentifier={isToolIdentifier(message.toolName, context.showAgentDetails)}
+			detail={detail}
+			className={traceClasses(message)}
 			open={traceOpensByDefault(context.traceExpand, "toolResult", diff !== null)}
 		>
-			<summary className="piem-chat__trace-summary">
-				<ObsidianIcon name={message.isError ? "alert-triangle" : toolIcon(message.toolName)} className="piem-chat__trace-icon" />
-				<span className={traceNameClass(isToolIdentifier(message.toolName, context.showAgentDetails))}>
-					{describeTool(message.toolName, context.showAgentDetails, context.t)}
-				</span>
-				{detail ? <span className="piem-chat__trace-detail">{detail}</span> : null}
-			</summary>
-			<div className="piem-chat__trace-body">
-				{message.content.map((content, index) => {
-					if (content.type === "text") {
-						return <Block key={index} text={content.text} kind="toolResult" isStreaming={false} context={context} />;
-					}
-					return <ImageBlock key={index} content={content} t={context.t} />;
-				})}
-				{diff ? <Block text={`\`\`\`diff\n${diff}\n\`\`\``} kind="assistant" isStreaming={false} context={context} /> : null}
-			</div>
-		</details>
+			{message.content.map((content, index) => {
+				if (content.type === "text") {
+					return <Block key={index} text={content.text} kind="toolResult" isStreaming={false} context={context} />;
+				}
+				return <ImageBlock key={index} content={content} t={context.t} />;
+			})}
+			{diff ? <Block text={`\`\`\`diff\n${diff}\n\`\`\``} kind="assistant" isStreaming={false} context={context} /> : null}
+		</Trace>
 	);
 }
 
 /**
- * A run of consecutive tool traffic, drawn as one row.
+ * Consecutive thinking and tool traffic, drawn as one row.
  *
  * The summary says what the run did by category; the body holds the very rows
  * it replaced, so the fold costs a click rather than the detail. That is the
@@ -1855,7 +1782,7 @@ function ToolResultTrace({ message, context }: { message: ToolResultMessage; con
  * Keyed on each row's transcript address rather than the tool call id, which a
  * session file replayed from another build is not guaranteed to keep unique.
  */
-function FoldedTrace({ group, context }: { group: TraceFoldGroup; context: MessageContext }): React.JSX.Element {
+function renderFoldedTrace(group: TraceFoldGroup, context: MessageContext, firstOpen = false): React.JSX.Element {
 	/*
 	 * Whether anything inside is still out. One bit, not a count: the summary
 	 * beside it already says how many calls the fold swallowed, and "6 of 8 back"
@@ -1864,12 +1791,12 @@ function FoldedTrace({ group, context }: { group: TraceFoldGroup; context: Messa
 	 * answers exactly that — one animation for however many calls are behind it,
 	 * which is the whole reason the running calls are allowed to fold now.
 	 */
-	const running = group.rows.some((row) => row.kind === "call" && context.runningToolCalls.has(row.call.id));
+	const running = group.rows.some((row) => row.kind !== "result" && isTraceRunning(context, row.ref, row.kind === "call" ? row.call.id : undefined));
 	return (
 		<Trace
-			icon={GENERIC_TOOL_ICON}
+			icon={group.tallies.every(({ category }) => category === "thinking") ? "brain" : GENERIC_TOOL_ICON}
 			name={describeTraceFold(group.tallies, context.t)}
-			className={running ? "piem-chat__trace--fold piem-chat__trace--running" : "piem-chat__trace--fold"}
+			className="piem-chat__trace--fold"
 			busy={running}
 			/*
 			 * The rows it swallowed, paired the same way the transcript pairs them —
@@ -1882,21 +1809,17 @@ function FoldedTrace({ group, context }: { group: TraceFoldGroup; context: Messa
 			 * *not* paired stayed a row of its own upstream, so it stays one here.
 			 */
 			body={group.rows
-				.filter((row) => row.kind === "call" || !resultIsPaired(context.pairPlan, row.ref.message))
-				.map((row) =>
-					row.kind === "call" ? (
-						<ToolCallTrace
-							key={`${row.ref.message}:${row.ref.block}`}
-							call={row.call}
-							result={pairedResult(context.pairPlan, row.ref.message, row.ref.block ?? -1)}
-							context={context}
-							index={row.ref.message}
-							blockIndex={row.ref.block ?? -1}
-						/>
-					) : (
-						<ToolResultTrace key={`${row.ref.message}:result`} message={row.result} context={context} />
-					),
-				)}
+				.filter((row) => row.kind !== "result" || !resultIsPaired(context.pairPlan, row.ref.message))
+				.map((row, index) => {
+					const key = `${row.ref.message}:${row.ref.block ?? "result"}`;
+					if (row.kind === "thinking") {
+						return <ThinkingTrace key={key} thinking={row.thinking} context={context} position={row.ref} initialOpen={index === 0 && firstOpen} />;
+					}
+					if (row.kind === "call") {
+						return <ToolCallTrace key={key} call={row.call} result={pairedResult(context.pairPlan, row.ref.message, row.ref.block ?? -1)} context={context} index={row.ref.message} blockIndex={row.ref.block ?? -1} initialOpen={index === 0 && firstOpen} />;
+					}
+					return <ToolResultTrace key={key} message={row.result} context={context} />;
+				})}
 		/>
 	);
 }
