@@ -1,7 +1,9 @@
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { CustomMessage } from "@earendil-works/pi-agent-core";
+import { messageReferences } from "./contextReference";
 
 /** One transcript entry, as the exporter reads it. */
-export type ExportableMessage = UserMessage | AssistantMessage | ToolResultMessage;
+export type ExportableMessage = UserMessage | AssistantMessage | ToolResultMessage | CustomMessage;
 
 export interface TranscriptExportOptions {
 	/** The chat's display title, as the note's `#` heading. */
@@ -48,6 +50,9 @@ export function noteFileName(title: string): string {
 }
 
 function renderBlock(message: ExportableMessage, roles: TranscriptExportOptions["roles"]): string | null {
+	if (message.role === "custom") {
+		return messageReferences(message) && typeof message.content === "string" ? message.content : null;
+	}
 	if (message.role === "user") {
 		const parts = typeof message.content === "string" ? [message.content] : message.content.map((part) => (part.type === "text" ? part.text : "[image]"));
 		const text = parts.join("\n\n").trim();

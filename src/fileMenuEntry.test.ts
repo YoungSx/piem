@@ -19,6 +19,7 @@ import { installDom } from "./testUtils/dom";
 import type { App, Editor, Plugin, TAbstractFile } from "obsidian";
 import type { ObsidianAgentService } from "./agent/ObsidianAgentService";
 import type { ContextRequest } from "./ui/contextRequest";
+import type { ContextReference } from "./agent/contextReference";
 import type PiemPluginType from "./main";
 
 installObsidianStub();
@@ -35,6 +36,8 @@ const { getT } = await import("./i18n");
 const { PiemChatView } = await import("./ui/PiemChatView");
 const { VIEW_TYPE_PIEM_CHAT } = await import("./constants");
 const { harness: serviceHarness } = await import("./testUtils/nativeExtensionServiceHarness");
+const { ObsidianSessionManager } = await import("./session/ObsidianSessionManager");
+const { DraftStore } = await import("./session/DraftStore");
 
 type TFileInstance = InstanceType<typeof TFile>;
 type PluginInstance = InstanceType<typeof PiemPluginType>;
@@ -53,10 +56,10 @@ function pluginWith(options: { service?: ObsidianAgentService | null; open?: boo
 	const service = options.service === undefined ? real.service : options.service;
 	const files = new Map<string, TAbstractFile>();
 	const viewTypes: string[] = [];
-	const prefills: { text: string; session?: string }[] = [];
+	const prefills: { text: string; session?: string; references?: readonly ContextReference[] }[] = [];
 	let revealed = 0, focused = 0;
 	const view = Object.assign(Object.create(PiemChatView.prototype) as InstanceType<typeof PiemChatView>, {
-		prefillComposer: async (text: string, session?: string) => { prefills.push({ text, session }); return true; },
+		prefillComposer: async (text: string, session?: string, references?: readonly ContextReference[]) => { prefills.push({ text, session, references }); return true; },
 		focusInput: () => { focused++; },
 	});
 	let open = options.open ?? false;
@@ -137,22 +140,48 @@ describe("context menu delivery", () => {
 		const file = vaultFile("Projects/first.md"); h.files.set(file.path, file);
 		try {
 			await askPiemAboutFile(h.plugin, file);
-			expect(h.real.service.getSnapshot().contextRefs.map(ref => ref.path)).toContain(file.path);
-			await h.real.service.sendPrompt("Review the file I chose");
-			expect(JSON.stringify(h.real.requests[0]?.messages)).toContain("Pinned note: Projects/first.md");
+			expect(h.prefills[0]?.references).toEqual([{ kind: "file", path: file.path }]);
+			expect(h.real.service.getSnapshot().contextRefs).toEqual([]);
+			await h.real.service.sendPrompt("Review the file I chose", [], h.prefills[0]?.references);
+			expect(JSON.stringify(h.real.requests[0]?.messages)).toContain("Projects/first.md");
 			expect(h.viewTypes).toEqual([VIEW_TYPE_PIEM_CHAT]);
 			expect(h.focusCount()).toBe(1);
 		} finally { h.dispose(); }
 	});
 
-	it("reuses an open panel and never materializes a blank chat just to pin a file", async () => {
+	it("keeps the first unsent card draft reachable after restarting the session manager", async () => {
 		const h = pluginWith({ open: true });
 		const file = vaultFile("Projects/plan.md"); h.files.set(file.path, file);
+		const store = new DraftStore(h.real.adapter, "Drafts");
+		Object.assign(h.view, { prefillComposer: async (text: string, session: string, references: ContextReference[]) => {
+			await store.set(session, text, references); return true;
+		} });
 		try {
 			await askPiemAboutFile(h.plugin, file);
+			await store.flush();
 			expect(h.viewTypes).toEqual([]);
 			expect(h.revealCount()).toBe(1);
-			expect(h.real.sessions.isBlankSession(h.real.service.getActiveSessionPath()!)).toBe(true);
+			const reloaded = new ObsidianSessionManager(h.real.adapter, "Piem/sessions", "obsidian-vault:Bridge test");
+			const info = await reloaded.continueRecentSession({ provider: "bridge-provider", modelId: "test-model" });
+			expect(info.id).toBe(h.real.service.getSnapshot().session!.id);
+			expect((await store.getDraft(info.id)).references).toEqual([{ kind: "file", path: file.path }]);
+			expect(h.real.requests).toHaveLength(0);
+		} finally { store.dispose(); h.dispose(); }
+	});
+
+	it("lets concurrent cold menu actions share one durable conversation", async () => {
+		const h = pluginWith();
+		const file = vaultFile("Projects/plan.md"); h.files.set(file.path, file);
+		try {
+			await Promise.all([askPiemAboutFile(h.plugin, file), askPiemAboutFile(h.plugin, file)]);
+			const sessions = await h.real.sessions.listSessions();
+			expect(sessions).toHaveLength(1);
+			expect(h.prefills).toHaveLength(2);
+			expect(h.prefills[0]?.session).toBe(h.prefills[1]?.session);
+			expect(shownNotices).toHaveLength(0);
+			await h.real.service.newSession();
+			expect(h.real.service.getSnapshot().session!.id).not.toBe(sessions[0]!.id);
+			expect(await h.real.sessions.listSessions()).toHaveLength(1);
 		} finally { h.dispose(); }
 	});
 
@@ -165,26 +194,26 @@ describe("context menu delivery", () => {
 		} finally { h.dispose(); }
 	});
 
-	it("keeps every selected target across pins, overflow and mixed folders", async () => {
+	it("stages every selected target as cards, including mixed folders", async () => {
 		const h = pluginWith();
 		const paths = Array.from({ length: 20 }, (_, i) => `Projects/${i}.md`);
 		for (const path of paths) h.files.set(path, vaultFile(path));
 		h.files.set("Projects", Object.assign(new TFolder(), { path: "Projects" }));
 		try {
 			await deliver(h.plugin, { paths: [...paths, paths[0]!, "Projects", "deleted.md"] });
-			expect(h.real.service.getSnapshot().contextRefs.filter(ref => ref.isPinned)).toHaveLength(8);
-			const text = h.prefills[0]?.text ?? "";
-			expect(text).toContain('vault folder "Projects"');
-			for (const path of paths.slice(8)) expect(text).toContain(JSON.stringify(path));
-			expect(text).not.toContain("deleted.md");
-			await h.real.service.sendPrompt(text + "Compare these");
+			expect(h.real.service.getSnapshot().contextRefs).toEqual([]);
+			const references = h.prefills[0]?.references ?? [];
+			expect(references).toHaveLength(21);
+			expect(references).toContainEqual({ kind: "folder", path: "Projects" });
+			expect(h.prefills[0]?.text).toBe("");
+			await h.real.service.sendPrompt("Compare these", [], references);
 			const request = JSON.stringify(h.real.requests[0]?.messages);
 			for (const path of paths) expect(request).toContain(path);
-			expect(shownNotices.map(notice => notice.message)).toContain(en.t("noteReference.batchResult", { added: 8, existing: 0, drafted: 13, missing: 1 }));
+			expect(shownNotices.map(notice => notice.message)).toContain(en.t("noteReference.missingCount", { count: 1 }));
 		} finally { h.dispose(); }
 	});
 
-	it.each([0, 7, 8])("reports exact results with %d pins already present", async (count) => {
+	it.each([0, 7, 8])("keeps all cards independent of %d pins already present", async (count) => {
 		const h = pluginWith();
 		try {
 			await h.real.service.initialize();
@@ -192,7 +221,8 @@ describe("context menu delivery", () => {
 			for (const path of paths) h.files.set(path, vaultFile(path));
 			for (const path of paths.slice(0, count)) h.real.service.pinContextRef(path);
 			await deliver(h.plugin, { paths });
-			expect(shownNotices.map(notice => notice.message)).toContain(en.t("noteReference.batchResult", { added: 8 - count, existing: count, drafted: 2, missing: 0 }));
+			expect(h.prefills[0]?.references).toHaveLength(10);
+			expect(h.real.service.getSnapshot().contextRefs.filter(ref => ref.isPinned)).toHaveLength(count);
 		} finally { h.dispose(); }
 	});
 
@@ -236,7 +266,7 @@ describe("registered context menus", () => {
 	it.each(["https://example.org/a?q=你好", "http://example.org"])("offers external web URL %s", url => {
 		const h = menus(); h.callbacks.get("url-menu")!(new Menu(), url);
 		lastMenu().click(en.t("commands.menuAskAboutUrl"));
-		expect(h.requests[0]?.text).toContain(JSON.stringify(url));
+		expect(h.requests[0]?.references).toEqual([{ kind: "url", url }]);
 	});
 
 	it.each(["mailto:a@example.org", "javascript:alert(1)", "obsidian://open", "file:///etc/passwd", "not a URL"])("declines an unfetchable URL %s", url => {
@@ -249,7 +279,6 @@ describe("registered context menus", () => {
 		const editor = { getSelection: () => selection, listSelections: () => [] } as unknown as Editor;
 		h.callbacks.get("editor-menu")!(new Menu(), editor, { file: { path: "Note.md" } });
 		lastMenu().click(en.t(selection ? "commands.menuAskAboutSelection" : "commands.askAboutNote"));
-		expect(h.requests[0]?.text).toContain("Note.md");
-		if (selection) expect(h.requests[0]?.text).toContain(selection);
+		expect(h.requests[0]?.references).toEqual([selection ? { kind: "selection", path: "Note.md", text: selection } : { kind: "file", path: "Note.md" }]);
 	});
 });

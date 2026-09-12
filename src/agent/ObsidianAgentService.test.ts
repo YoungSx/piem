@@ -9,6 +9,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AgentMessage, OperationStartedRecord, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { PromptQueue } from "./promptQueue";
+import { createReferenceMessage, messageReferences, type ContextReference } from "./contextReference";
 import type { SessionRuntime } from "./SessionRuntime";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { DEFAULT_SESSION_RETENTION } from "../session/retention";
@@ -1889,6 +1890,56 @@ describe("ObsidianAgentService", () => {
 });
 
 describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
+	it.each(["afterRun", "afterTurn"] as const)("keeps a queued question and its native references together with %s", async strategy => {
+		const gated = createGatedStreamFn();
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn });
+		settings.promptQueueStrategy = strategy;
+		const references: ContextReference[] = [{ kind: "folder", path: "Projects" }];
+		try {
+			const run = service.sendPrompt("First question");
+			await gated.waitForFirstRequest();
+			expect(await service.sendPrompt("Question with folder", [], references)).toBe(true);
+			if (strategy === "afterTurn") gated.releaseWithToolCall(); else gated.release();
+			await run;
+			await waitFor(() => !service.getSnapshot().isStreaming && service.getSnapshot().messages.some(message => messageReferences(message)));
+			const messages = service.getSnapshot().messages;
+			const index = messages.findIndex(message => messageReferences(message));
+			expect(messageReferences(messages[index])).toEqual(references);
+			const question = messages[index - 1];
+			expect(question?.role).toBe("user");
+			if (question?.role === "user") expect(firstText(question)).toBe("Question with folder");
+			expect(service.getSnapshot().queuedPrompts).toEqual([]);
+		} finally { service.dispose(); }
+	});
+
+	it("restages the references when a queued question is taken back", async () => {
+		const gated = createGatedStreamFn();
+		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
+		const references: ContextReference[] = [{ kind: "file", path: "A.md" }];
+		try {
+			const run = service.sendPrompt("First question");
+			await gated.waitForFirstRequest();
+			await service.sendPrompt("Take this back", [], references);
+			const taken = service.removeQueuedPrompt(service.getSnapshot().queuedPrompts[0]!.id);
+			expect(taken?.references).toEqual(references);
+			gated.release(); await run;
+			expect(service.getSnapshot().messages.some(message => messageReferences(message))).toBe(false);
+		} finally { service.dispose(); }
+	});
+
+	it("keeps a queued question when taking it back would overflow the current draft", async () => {
+		const gated = createGatedStreamFn();
+		const service = createService(new MemoryAdapter(), { streamFn: gated.streamFn });
+		try {
+			const run = service.sendPrompt("First question");
+			await gated.waitForFirstRequest();
+			await service.sendPrompt("q".repeat(2000), [], [{ kind: "file", path: "A.md" }]);
+			const id = service.getSnapshot().queuedPrompts[0]!.id;
+			expect(service.removeQueuedPrompt(id, [], "d".repeat(19000))).toBeNull();
+			expect(service.getSnapshot().queuedPrompts[0]?.id).toBe(id);
+			service.removeQueuedPrompt(id); gated.release(); await run;
+		} finally { service.dispose(); }
+	});
 	/** The first text of a message, for asserting on what the transcript actually says. */
 	function firstText(message: { content: unknown }): string {
 		const block = (message.content as { type: string; text?: string }[])[0];
@@ -5170,6 +5221,28 @@ describe("session fork", () => {
  * #184 draws, now on the single main line every conversation reads and writes.
  */
 describe("interrupted run recovery", () => {
+	it("resumes an interrupted question whose final message holds native reference cards", async () => {
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter);
+		await service.sendPrompt("Previous question");
+		const sessionPath = service.getSnapshot().session!.path;
+		const manager = new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test");
+		await manager.loadSession(sessionPath);
+		const question: AgentMessage = { role: "user", content: [{ type: "text", text: "Cut off with references" }], timestamp: 1 };
+		const reference = createReferenceMessage([{ kind: "folder", path: "Projects" }], 1);
+		await manager.beginRunOperation([question, reference]);
+		await manager.appendMessage(question);
+		await manager.appendMessage(reference);
+		const requests: Context[] = [];
+		const reloaded = createService(adapter, { streamFn: createCapturingStreamFn(requests) });
+		await reloaded.openSession(sessionPath);
+		expect(reloaded.getSnapshot().canResumeInterrupted).toBe(true);
+		await reloaded.resumeInterruptedRun();
+		expect(JSON.stringify(requests)).toContain("Projects");
+		expect(reloaded.getSnapshot().messages.filter(message => message.role === "user")).toHaveLength(2);
+		expect(reloaded.getSnapshot().canResumeInterrupted).toBe(false);
+	});
+
 	it("offers to continue a run the previous process left open", async () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter);

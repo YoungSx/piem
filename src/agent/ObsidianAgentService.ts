@@ -28,7 +28,10 @@ import {
 	calculateContextTokens,
 	shouldCompact,
 } from "@earendil-works/pi-agent-core";
-import { PromptQueue, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
+import { PromptQueue, queuedMessages, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
+import { MAX_DRAFT_LENGTH } from "../session/DraftStore";
+import { appendToDraft } from "../ui/noteReference";
+import { MAX_CONTEXT_REFERENCES, createReferenceMessage, mergeContextReferences, messageReferences, parseContextReferences, promptReferences, type ContextReference } from "./contextReference";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
 import { createObsidianModels, requestDefaults, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
 import { createObsidianRequestUrlFetch } from "../net/obsidianFetch";
@@ -663,6 +666,8 @@ type SavedCompactionOutcome = Exclude<CompactionOutcome, { status: "compacted" }
 	| (Extract<CompactionOutcome, { status: "compacted" }> & { entryId: string });
 
 export class ObsidianAgentService {
+	private readonly promptAccepted = new WeakMap<object, () => void>();
+	private readonly pendingPromptAcceptances = new WeakSet<SessionRuntime>();
 	private readonly app: App;
 	private readonly getSettings: () => PiemSettings;
 	private readonly sessionManager: ObsidianSessionManager;
@@ -1061,7 +1066,7 @@ export class ObsidianAgentService {
 		}
 	}
 
-	async sendPrompt(prompt: string, images: ImageContent[] = []): Promise<boolean> {
+	async sendPrompt(prompt: string, images: ImageContent[] = [], references: readonly ContextReference[] = [], onAccepted?: () => void): Promise<boolean> {
 		const trimmedPrompt = prompt.trim();
 		if (!trimmedPrompt || this.pendingSessionOpen || this.disposed) {
 			return false;
@@ -1093,6 +1098,11 @@ export class ObsidianAgentService {
 		 * words the status bar is showing at that same moment.
 		 */
 		const rt = this.runtimeForFocused();
+		const validReferences = parseContextReferences(references);
+		if (!validReferences) { this.setNotice(rt, this.t().t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES })); return false; }
+		if (validReferences.length && this.isExtensionInput(trimmedPrompt)) {
+			this.setNotice(rt, this.t().t("noteReference.extensionReferences")); return false;
+		}
 		if (rt.extensionBusy || rt.extensionCommand) { this.setNotice(rt, this.t().t("extensions.busy")); return false; }
 		if (rt.isCompacting || rt.retryInFlight) {
 			this.setNotice(rt, this.t().t(rt.isCompacting ? "chat.busyTidying" : "chat.busyResending"));
@@ -1112,7 +1122,7 @@ export class ObsidianAgentService {
 			try { return await this.runExtensionFor(rt, "clarify-input", trimmedPrompt); }
 			catch (error) { this.setError(rt, causeMessage(error)); return false; }
 		}
-		return await this.deliverPrompt(trimmedPrompt, images);
+		return await this.deliverPrompt(trimmedPrompt, images, validReferences, onAccepted);
 	}
 
 	/**
@@ -1172,32 +1182,46 @@ export class ObsidianAgentService {
 	 * normal send would raise — rather than half-completing a rewind that
 	 * already threw the original turn away.
 	 */
-	private async deliverPrompt(prompt: string, images: ImageContent[] = []): Promise<boolean> {
-		// Error boundary for the whole send. The composer clears its draft before
-		// awaiting, so a rejection here would strand the send — words spent, and
-		// staged image cards left hanging over an empty composer (issue #253).
+	private async deliverPrompt(prompt: string, images: ImageContent[] = [], references: readonly ContextReference[] = [], onAccepted?: () => void): Promise<boolean> {
+		// Error boundary for the whole send. Refusal leaves the composer's text
+		// and attachments untouched; acceptance is reported when Pi takes them.
 		// The run's failures already resolve in band (pi's `prompt` never
 		// rejects; the `catch` below banners the rest), but the prelude — the
 		// configuration refresh, the vault reads — used to sit outside that
 		// guard and could reject the call outright. Everything below now
 		// resolves `false` and lands on the banner; nothing escapes.
 		const rt = this.runtimeForFocused();
+		if (this.pendingPromptAcceptances.has(rt)) {
+			this.setNotice(rt, this.t().t("chat.busySending"));
+			return false;
+		}
 		if (rt.bookmarkWork || rt.bookmarkClosing) {
 			this.setNotice(rt, this.t().t("bookmarks.saving"));
 			return false;
 		}
+		// The service outlives a closed panel. Hold preparation here as well as
+		// disabling the button, then allow queueing as soon as Pi accepts it.
+		this.pendingPromptAcceptances.add(rt);
+		let accepted = false;
+		const accept = (): void => {
+			if (accepted) return;
+			accepted = true;
+			this.pendingPromptAcceptances.delete(rt);
+			onAccepted?.();
+		};
 		rt.promptPreparations += 1;
 		try {
-			return await this.resolveAndDeliver(rt, prompt, images);
+			return await this.resolveAndDeliver(rt, prompt, images, references, accept);
 		} catch (error) {
 			this.setError(rt, causeMessage(error));
 			return false;
 		} finally {
+			if (!accepted) this.pendingPromptAcceptances.delete(rt);
 			rt.promptPreparations -= 1;
 		}
 	}
 
-	private async resolveAndDeliver(rt: SessionRuntime, prompt: string, images: ImageContent[] = []): Promise<boolean> {
+	private async resolveAndDeliver(rt: SessionRuntime, prompt: string, images: ImageContent[] = [], references: readonly ContextReference[] = [], onAccepted?: () => void): Promise<boolean> {
 		const trimmedPrompt = prompt;
 		// The runtime was captured by the boundary above, before any await: a
 		// switch mid-resolution cannot retarget the ledger, the queue, or the
@@ -1308,7 +1332,9 @@ export class ObsidianAgentService {
 		// above were awaited: fall through to a plain send, and whatever the
 		// queue still holds rides along ahead of this message.
 		if (agent.state.isStreaming) {
-			return this.enqueuePrompt(rt, trimmedPrompt, promptText, allImages, images);
+			const queued = this.enqueuePrompt(rt, trimmedPrompt, promptText, allImages, images, references);
+			if (queued) onAccepted?.();
+			return queued;
 		}
 
 		let sent = false;
@@ -1329,7 +1355,9 @@ export class ObsidianAgentService {
 				content: [{ type: "text", text: promptText }, ...allImages],
 				timestamp: Date.now(),
 			};
-			const dispatch = stranded.length > 0 ? [...stranded.map((entry) => entry.message), message] : [message];
+			const dispatch = [...stranded.flatMap(queuedMessages), message,
+				...(references.length ? [createReferenceMessage(references, message.timestamp)] : [])];
+			if (onAccepted) this.promptAccepted.set(message, onAccepted);
 			// The ledger entry opens before the run departs: a crash between
 			// this write and the run's own finish is the orphan signature
 			// recovery reads on the next load. Filed against the lane it departs
@@ -1376,6 +1404,7 @@ export class ObsidianAgentService {
 		resolvedText: string,
 		allImages: ImageContent[],
 		stagedImages: ImageContent[],
+		references: readonly ContextReference[] = [],
 	): boolean {
 		if (!rt.agent) {
 			return false;
@@ -1385,7 +1414,9 @@ export class ObsidianAgentService {
 			content: [{ type: "text", text: resolvedText }, ...allImages],
 			timestamp: Date.now(),
 		};
-		rt.promptQueue.add({ text: originalText, imageCount: allImages.length, stagedImages, message });
+		rt.promptQueue.add({ text: originalText, imageCount: allImages.length, stagedImages, message,
+			...(references.length ? { contextMessage: createReferenceMessage(references, message.timestamp) } : {}),
+		});
 		this.notify();
 		return true;
 	}
@@ -1425,7 +1456,7 @@ export class ObsidianAgentService {
 		// retroactively in one already under way.
 		agent.clearSteeringQueue();
 		for (const message of rt.promptQueue.messages()) {
-			if (message.role === "custom") break;
+			if (message.role === "custom" && !messageReferences(message)) break;
 			agent.steer(message);
 		}
 	}
@@ -1693,8 +1724,8 @@ export class ObsidianAgentService {
 			this.notify();
 			await this.compactContextIfNeeded(rt, agent);
 			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.bookmarkClosing) return;
-			if (!await this.beginRunOperation(rt, entries.map((entry) => entry.message))) return;
-			await this.promptWithExtensions(rt, agent, entries.map((entry) => entry.message));
+			if (!await this.beginRunOperation(rt, entries.flatMap(queuedMessages))) return;
+			await this.promptWithExtensions(rt, agent, entries.flatMap(queuedMessages));
 		} catch (error) {
 			if (rt.stopEpoch === epoch && rt.agent === agent && !rt.bookmarkClosing) rt.promptQueue.restore(entries);
 			this.reportDispatchFailure(rt, error, tailBefore);
@@ -1827,7 +1858,8 @@ export class ObsidianAgentService {
 			// state — the user may have picked another model or level on the
 			// sheet, and those picks were kept as memory only until now. Renames,
 			// model changes, level changes never reach this path, which is the
-			// product rule: only a message persists the session. A non-blank
+			// Untouched sheets leave no file; an accepted reference draft may
+			// already have saved this identity for restart recovery. A non-blank
 			// path (already materialized, loaded from disk) is a no-op.
 			const model = agent.state.model;
 			if (this.sessionManager.isBlankSession(rt.sessionPath)) {
@@ -1987,7 +2019,7 @@ export class ObsidianAgentService {
 
 	/**
 	 * Whether `lane`'s transcript ends where `continue()` can pick it up: on the
-	 * user's words or a tool result, rather than on a reply that already arrived.
+	 * user's words, their reference cards, or a tool result.
 	 *
 	 * The active lane is read from the context already built for it rather than
 	 * re-projected, so the offer and the transcript on screen cannot disagree.
@@ -2007,7 +2039,7 @@ export class ObsidianAgentService {
 				return false;
 			}
 		}
-		return last?.role === "user" || last?.role === "toolResult";
+		return last?.role === "user" || last?.role === "toolResult" || messageReferences(last) !== null;
 	}
 
 	/**
@@ -2065,7 +2097,7 @@ export class ObsidianAgentService {
 		if (!prompt) {
 			return false;
 		}
-		return await this.rewindAndResend(rt, agent, promptIndex, prompt);
+		return await this.rewindAndResend(rt, agent, promptIndex, prompt, [], promptReferences(agent.state.messages, promptIndex));
 	}
 
 	/**
@@ -2088,7 +2120,7 @@ export class ObsidianAgentService {
 	 * staged ones are the only pictures the replacement turn shows, so dropping
 	 * them here would send less than the composer promised.
 	 */
-	async editAndResend(index: number, prompt: string, images: ImageContent[] = []): Promise<boolean> {
+	async editAndResend(index: number, prompt: string, images: ImageContent[] = [], references?: readonly ContextReference[], onAccepted?: () => void): Promise<boolean> {
 		const trimmed = prompt.trim();
 		if (!trimmed || this.pendingSessionOpen || this.disposed) {
 			return false;
@@ -2103,7 +2135,9 @@ export class ObsidianAgentService {
 		if (agent.state.messages[index]?.role !== "user") {
 			return false;
 		}
-		return await this.rewindAndResend(rt, agent, index, trimmed, images);
+		const validReferences = parseContextReferences(references ?? promptReferences(agent.state.messages, index));
+		if (!validReferences) { this.setNotice(rt, this.t().t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES })); return false; }
+		return await this.rewindAndResend(rt, agent, index, trimmed, images, validReferences, onAccepted);
 	}
 
 	/**
@@ -2144,6 +2178,8 @@ export class ObsidianAgentService {
 		promptIndex: number,
 		prompt: string,
 		images: ImageContent[] = [],
+		references: readonly ContextReference[] = [],
+		onAccepted?: () => void,
 	): Promise<boolean> {
 		if (agent.state.isStreaming || rt.isCompacting || rt.branchSummaryController || rt.retryInFlight || rt.bookmarkWork || rt.bookmarkClosing) {
 			return false;
@@ -2216,7 +2252,7 @@ export class ObsidianAgentService {
 			}
 			if (!isCurrent()) return false;
 			this.notify();
-			return await this.deliverPrompt(prompt, images);
+			return await this.deliverPrompt(prompt, images, references, onAccepted);
 		} finally {
 			rt.retryInFlight = false;
 			// A refused or failed send may never emit agent_start. Release and
@@ -2606,6 +2642,7 @@ export class ObsidianAgentService {
 			!options?.force &&
 			previous?.agent &&
 			!previous.agent.state.isStreaming &&
+			this.sessionManager.isBlankSession(previous.sessionPath) &&
 			previous.agent.state.messages.length === 0
 		) {
 			return;
@@ -3087,9 +3124,18 @@ export class ObsidianAgentService {
 	 * message — see the note on {@link PromptQueue} — so removing one from this
 	 * list is the whole operation.
 	 */
-	removeQueuedPrompt(id: string): TakenPrompt | null {
+	removeQueuedPrompt(id: string, currentReferences?: readonly ContextReference[], currentText?: string): TakenPrompt | null {
 		const rt = this.current();
 		if (!rt) {
+			return null;
+		}
+		const queued = rt.promptQueue.peek(id);
+		if (queued && currentText !== undefined && appendToDraft(currentText, queued.text).length > MAX_DRAFT_LENGTH) {
+			new Notice(this.t().t("noteReference.draftFull", { limit: MAX_DRAFT_LENGTH }));
+			return null;
+		}
+		if (queued && currentReferences && !mergeContextReferences(currentReferences, messageReferences(queued.contextMessage) ?? [])) {
+			new Notice(this.t().t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES }));
 			return null;
 		}
 		const taken = rt.promptQueue.remove(id);
@@ -3100,7 +3146,7 @@ export class ObsidianAgentService {
 		// Only the staged pictures. The rest of the message's images were resolved
 		// out of `![[…]]` embeds still written in the text going back to the
 		// composer, and restaging those would send each one twice on the next send.
-		return { text: taken.text, images: taken.stagedImages };
+		return { text: taken.text, images: taken.stagedImages, ...(taken.contextMessage ? { references: messageReferences(taken.contextMessage) ?? [] } : {}) };
 	}
 
 	/** Labels the active session; an empty name clears it back to the derived label. */
@@ -3162,7 +3208,7 @@ export class ObsidianAgentService {
 		const rt = this.current();
 		const transcript = (rt?.agent?.state.messages ?? []).filter(
 			(message): message is ExportableMessage =>
-				message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				message.role === "user" || message.role === "assistant" || message.role === "toolResult" || messageReferences(message) !== null,
 		);
 		const session = this.sessionInfo;
 		if (transcript.length === 0 || !session) {
@@ -3922,28 +3968,34 @@ export class ObsidianAgentService {
 		return this.current()?.agent ? this.currentPath : null;
 	}
 
-	/** Batch once so many selected files cause one context update, with no silent overflow. */
-	pinContextRefs(paths: readonly string[], sessionPath: string): { added: string[]; existing: string[]; overflow: string[] } | null {
-		const rt = this.current();
-		if (this.disposed || this.newSessionInFlight || this.pendingSessionOpen || !rt || rt.sessionPath !== sessionPath) return null;
-		const result = { added: [] as string[], existing: [] as string[], overflow: [] as string[] };
-		for (const path of new Set(paths)) {
-			if (!path) continue;
-			if (rt.pinnedNotes.pinned.includes(path)) result.existing.push(path);
-			else if (rt.pinnedNotes.pinned.length + result.added.length < MAX_PINNED_REFS) result.added.push(path);
-			else result.overflow.push(path);
-		}
-		if (result.added.length) {
-			rt.pinnedNotes.pinned = [...rt.pinnedNotes.pinned, ...result.added];
+	/** A saved reference draft needs a durable chat identity to be found after restart. */
+	async persistContextDraft(path: string): Promise<void> {
+		const rt = this.runtimes.get(path);
+		if (!rt?.agent || this.disposed) throw new Error("Context conversation is unavailable.");
+		if (!this.sessionManager.isBlankSession(path)) return;
+		const model = rt.agent.state.model;
+		const info = await this.sessionManager.materializeIfBlank(path, {
+			provider: model.provider, modelId: model.id, thinkingLevel: rt.agent.state.thinkingLevel,
+		});
+		rt.sessionInfo = info;
+		rt.sessionRevision++;
+		if (this.current() === rt && !this.pendingSessionOpen && !this.newSessionInFlight && !this.disposed) {
+			this.sessionManager.focusSession(path);
+			this.sessionInfo = info;
 			this.notify();
 		}
-		return result;
 	}
 
-	/** Keeps naming `path` even after the user navigates away. */
+	/** Keeps naming a file after navigation; this is separate from one-question cards. */
 	pinContextRef(path: string): void {
-		const result = this.currentPath ? this.pinContextRefs([path], this.currentPath) : null;
-		if (result?.overflow.length) new Notice(this.t().t("noteReference.pinFull", { limit: MAX_PINNED_REFS }));
+		const rt = this.current();
+		if (!rt || !path || rt.pinnedNotes.pinned.includes(path)) return;
+		if (rt.pinnedNotes.pinned.length >= MAX_PINNED_REFS) {
+			new Notice(this.t().t("noteReference.pinFull", { limit: MAX_PINNED_REFS }));
+			return;
+		}
+		rt.pinnedNotes.pinned = [...rt.pinnedNotes.pinned, path];
+		this.notify();
 	}
 
 	/** Drops a pinned note. */
@@ -4913,6 +4965,11 @@ export class ObsidianAgentService {
 	}
 
 	private async handleAgentEvent(rt: SessionRuntime, event: AgentEvent): Promise<void> {
+		if (event.type === "message_start") {
+			const accepted = this.promptAccepted.get(event.message);
+			this.promptAccepted.delete(event.message);
+			accepted?.();
+		}
 		try { if (event.type !== "agent_end") await rt.communityHost?.emitAgentEvent(event); }
 		catch (error) {
 			// Observer errors must not skip persistence or leave the run ledger

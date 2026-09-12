@@ -1,7 +1,11 @@
+import type { ContextReference } from "../agent/contextReference";
+
 type SubmitHandler = () => void;
+
 type FocusHandler = () => void;
 export type PrefillResult = boolean | "reported";
-type PrefillHandler = (text: string) => PrefillResult | void;
+export interface ComposerPrefill { text: string; references?: readonly ContextReference[] }
+type PrefillHandler = (text: string, references?: readonly ContextReference[]) => PrefillResult | void;
 
 export class ChatInputController {
 	private submitHandler: SubmitHandler | null = null;
@@ -15,7 +19,7 @@ export class ChatInputController {
 	 */
 	private focusWaitingForPrefill = false;
 	/** Queued prefill texts, replayed in order once the composer registers. */
-	private prefillQueue: { text: string; session?: string; resolve: (accepted: PrefillResult) => void }[] = [];
+	private prefillQueue: { request: ComposerPrefill; session?: string; resolve: (accepted: PrefillResult) => void }[] = [];
 
 	setSubmitHandler(handler: SubmitHandler | null): void {
 		this.submitHandler = handler;
@@ -54,7 +58,7 @@ export class ChatInputController {
 		while (this.prefillQueue.length > 0) {
 			const request = this.prefillQueue.shift();
 			if (request) {
-				request.resolve(!request.session || request.session === session ? handler(request.text) ?? true : false);
+				request.resolve(!request.session || request.session === session ? handler(request.request.text, request.request.references) ?? true : false);
 			}
 		}
 	}
@@ -84,11 +88,11 @@ export class ChatInputController {
 	 * {@link focus}. Delivery appends rather than overwrites: the user may have
 	 * typed a draft already.
 	 */
-	prefill(text: string, session?: string): Promise<PrefillResult> {
+	prefill(text: string, session?: string, references?: readonly ContextReference[]): Promise<PrefillResult> {
 		if (!this.prefillHandler) {
-			return new Promise(resolve => this.prefillQueue.push({ text, session, resolve }));
+			return new Promise(resolve => this.prefillQueue.push({ request: { text, references }, session, resolve }));
 		}
-		return Promise.resolve(!session || session === this.prefillSession ? this.prefillHandler(text) ?? true : false);
+		return Promise.resolve(!session || session === this.prefillSession ? this.prefillHandler(text, references) ?? true : false);
 	}
 
 	/**

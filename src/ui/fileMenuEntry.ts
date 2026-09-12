@@ -2,7 +2,9 @@ import { TFile, TFolder, type Menu, type Plugin, type TAbstractFile } from "obsi
 import { BRAND_ICON_ID } from "../brandIcon";
 import type { Translator } from "../i18n";
 import type { ContextRequest } from "./contextRequest";
-import { requestNoteReference, warnIfTruncated } from "./noteReferenceCommand";
+import { collectNoteReference, warnIfTruncated } from "./noteReferenceCommand";
+import { isWebUrl } from "../agent/contextReference";
+export { isWebUrl } from "../agent/contextReference";
 
 export function askPiemTarget(file: TAbstractFile): TFile | TFolder | null {
 	return file instanceof TFile || file instanceof TFolder ? file : null;
@@ -23,11 +25,6 @@ export function addAskPiemFileMenuEntry(
 	return true;
 }
 
-export function isWebUrl(value: string): boolean {
-	try { return ["http:", "https:"].includes(new URL(value).protocol); }
-	catch { return false; }
-}
-
 /** Obsidian owns rendering and accessibility; the plugin owns event cleanup. */
 export function registerContextMenus(plugin: Plugin, t: Translator, deliver: (request: ContextRequest) => void): void {
 	plugin.registerEvent(plugin.app.workspace.on("file-menu", (menu, file) => {
@@ -44,7 +41,7 @@ export function registerContextMenus(plugin: Plugin, t: Translator, deliver: (re
 	plugin.registerEvent(plugin.app.workspace.on("url-menu", (menu, url) => {
 		if (!isWebUrl(url)) return;
 		menu.addItem(item => item.setTitle(t.t("commands.menuAskAboutUrl")).setIcon(BRAND_ICON_ID)
-			.onClick(() => deliver({ text: t.t("noteReference.url", { url: JSON.stringify(url) }) })));
+			.onClick(() => deliver({ references: [{ kind: "url", url }] })));
 	}));
 	plugin.registerEvent(plugin.app.workspace.on("editor-menu", (menu, editor, info) => {
 		const path = info.file?.path;
@@ -52,10 +49,11 @@ export function registerContextMenus(plugin: Plugin, t: Translator, deliver: (re
 		const selectionOnly = Boolean(editor.getSelection().trim());
 		menu.addItem(item => item.setTitle(t.t(selectionOnly ? "commands.menuAskAboutSelection" : "commands.askAboutNote"))
 			.setIcon(BRAND_ICON_ID).onClick(() => {
-				requestNoteReference(editor, path, { selectionOnly, deliver: (text, truncated) => {
-					deliver({ text });
-					warnIfTruncated(truncated, t);
-				} });
+				const reference = collectNoteReference(editor, path, selectionOnly);
+				if (reference) {
+					deliver({ references: [reference] });
+					warnIfTruncated(reference.kind === "selection" && reference.truncated === true, t);
+				}
 			}));
 	}));
 }

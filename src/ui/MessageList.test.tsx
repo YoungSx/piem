@@ -13,6 +13,7 @@ const document = installDom();
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
 const { MessageList } = await import("./MessageList");
 const { createRoot: createRootImpl } = await import("react-dom/client");
+const { createReferenceMessage } = await import("../agent/contextReference");
 
 let createRootSync: typeof createRoot;
 
@@ -50,6 +51,21 @@ beforeEach(() => {
 		const rendered = document.createElement("p");
 		rendered.className = "stub-rendered";
 		el.appendChild(rendered);
+	});
+});
+
+describe("MessageList native reference cards", () => {
+	it("renders validated custom details as expandable cards without treating selection text as markup", async () => {
+		const host = renderMessages([userMessage("Review this"), createReferenceMessage([
+			{ kind: "selection", path: "Notes/A.md", text: "<script>unsafe()</script>", startLine: 2, endLine: 3 },
+			{ kind: "url", url: "https://example.org/page" },
+		])]);
+		await flushRender();
+		expect(host.querySelectorAll(".piem-chat__reference-details")).toHaveLength(2);
+		expect(host.querySelector(".piem-chat__reference-details")?.hasAttribute("open")).toBe(false);
+		expect(host.querySelector(".piem-chat__reference-body pre")?.textContent).toBe("<script>unsafe()</script>");
+		expect(host.querySelector("script")).toBeNull();
+		expect(host.querySelector(".piem-chat__reference-remove")).toBeNull();
 	});
 });
 

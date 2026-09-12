@@ -1,4 +1,5 @@
 import type { App, DataAdapter, Plugin } from "obsidian";
+import { parseContextReferences, referenceKey, type ContextReference } from "../agent/contextReference";
 import { debounce } from "obsidian";
 import { normalizeFolderPath } from "../vault/path";
 import { getPluginSessionDir } from "./ObsidianSessionManager";
@@ -46,6 +47,18 @@ const WRITE_DEBOUNCE_MS = 700;
  */
 export const MAX_DRAFT_LENGTH = 20_000;
 
+export interface DraftContent {
+	text: string;
+	references: ContextReference[];
+}
+
+const emptyDraft = (): DraftContent => ({ text: "", references: [] });
+
+export function consumeDraftContent(current: DraftContent, sent: DraftContent): DraftContent {
+	const sentKeys = new Set(sent.references.map(referenceKey));
+	return { text: current.text === sent.text ? "" : current.text, references: current.references.filter(ref => !sentKeys.has(referenceKey(ref))) };
+}
+
 export class DraftStore {
 	private readonly adapter: DataAdapter;
 	/** Folder the drafts live in; one file per session inside it. */
@@ -53,7 +66,8 @@ export class DraftStore {
 	/** The pre-per-chat single file, read once for migration and then retired. */
 	private readonly legacyPath: string;
 	/** Chat id → text, the cache every read and write goes through. */
-	private readonly drafts = new Map<string, string>();
+	private readonly drafts = new Map<string, DraftContent>();
+	private readonly listeners = new Map<string, Set<(draft: DraftContent) => void>>();
 	/** Active disk reads only; a keystroke invalidates their captured revision. */
 	private readonly reading = new Map<string, { revision: number; readers: number }>();
 	private loaded: Promise<void> | null = null;
@@ -99,16 +113,38 @@ export class DraftStore {
 	 * file is malformed, so the damage stops at one.
 	 */
 	async get(sessionId: string): Promise<string> {
+		return (await this.getDraft(sessionId)).text;
+	}
+
+	subscribe(sessionId: string, listener: (draft: DraftContent) => void): () => void {
+		const listeners = this.listeners.get(sessionId) ?? new Set();
+		listeners.add(listener);
+		this.listeners.set(sessionId, listeners);
+		return () => { listeners.delete(listener); if (!listeners.size) this.listeners.delete(sessionId); };
+	}
+
+	private publish(sessionId: string): void {
+		for (const listener of this.listeners.get(sessionId) ?? []) listener(structuredClone(this.drafts.get(sessionId) ?? emptyDraft()));
+	}
+
+	/** Remove only the text and cards Pi accepted, preserving later additions in this chat. */
+	async consume(sessionId: string, sent: DraftContent): Promise<void> {
+		await this.getDraft(sessionId);
+		const next = consumeDraftContent(this.drafts.get(sessionId) ?? emptyDraft(), sent);
+		this.setLoadedDraft(sessionId, next.text, next.references);
+	}
+
+	async getDraft(sessionId: string): Promise<DraftContent> {
 		await this.ensureLoaded();
 		const cached = this.drafts.get(sessionId);
 		if (cached !== undefined) {
-			return cached;
+			return structuredClone(cached);
 		}
 		// A chat in `dirty` whose value the map lacks is waiting to be *removed*:
 		// the stale file is still on disk until the debounce lands, and reading
 		// it here would resurrect the draft clear() just dropped.
 		if (this.dirty.has(sessionId)) {
-			return "";
+			return emptyDraft();
 		}
 		const pending = this.reading.get(sessionId) ?? { revision: 0, readers: 0 };
 		this.reading.set(sessionId, pending);
@@ -118,11 +154,11 @@ export class DraftStore {
 			const text = await this.readDraft(sessionId);
 			// Typing or clearing while disk I/O was pending wins, even if a flush
 			// already removed the dirty marker before this old read comes back.
-			if (pending.revision !== revision) return this.drafts.get(sessionId) ?? "";
+			if (pending.revision !== revision) return structuredClone(this.drafts.get(sessionId) ?? emptyDraft());
 			// Only successful reads are cached, so a later sync can supply a draft
 			// that was absent when this conversation first opened.
 			if (text !== null) this.drafts.set(sessionId, text);
-			return text ?? "";
+			return structuredClone(text ?? emptyDraft());
 		} finally {
 			if (--pending.readers === 0) this.reading.delete(sessionId);
 		}
@@ -134,26 +170,33 @@ export class DraftStore {
 	 * In-memory state updates immediately, so a chat switch that reads right
 	 * after a keystroke sees the current text without waiting for the disk.
 	 */
-	async set(sessionId: string, text: string): Promise<void> {
+	async set(sessionId: string, text: string, references?: readonly ContextReference[]): Promise<void> {
 		await this.ensureLoaded();
+		this.setLoadedDraft(sessionId, text, references);
+	}
+
+	private setLoadedDraft(sessionId: string, text: string, references?: readonly ContextReference[]): void {
 		const pending = this.reading.get(sessionId);
 		if (pending) pending.revision++;
-		const trimmed = text.slice(0, MAX_DRAFT_LENGTH);
-		if (!trimmed.trim()) {
+		const refs = parseContextReferences(references ?? this.drafts.get(sessionId)?.references ?? []);
+		if (!refs) throw new Error("Invalid draft references.");
+		if (!text.trim() && refs.length === 0) {
 			// An emptied composer has no draft; keeping a stale file would contradict
 			// the composer on the next look. Nothing was ever held means nothing to
 			// write — and no pointless removal racing a sync pass.
 			const existing = this.drafts.get(sessionId);
 			this.drafts.delete(sessionId);
-			if (pending || existing !== undefined && existing.trim()) {
+			if (pending || existing !== undefined && (existing.text.trim() || existing.references.length)) {
 				this.dirty.add(sessionId);
 				this.scheduleWrite();
 			}
+			this.publish(sessionId);
 			return;
 		}
-		this.drafts.set(sessionId, trimmed);
+		this.drafts.set(sessionId, { text, references: refs });
 		this.dirty.add(sessionId);
 		this.scheduleWrite();
+		this.publish(sessionId);
 	}
 
 	/**
@@ -172,6 +215,7 @@ export class DraftStore {
 		this.drafts.delete(sessionId);
 		this.dirty.add(sessionId);
 		this.scheduleWrite();
+		this.publish(sessionId);
 	}
 
 	/**
@@ -247,9 +291,9 @@ export class DraftStore {
 	}
 
 	private async writeNow(sessionId: string): Promise<void> {
-		const text = this.drafts.get(sessionId);
+		const draft = this.drafts.get(sessionId);
 		const path = this.draftFile(sessionId);
-		if (text === undefined || !text.trim()) {
+		if (!draft || !draft.text.trim() && draft.references.length === 0) {
 			// An empty draft is the absence of a file, not an empty one: writing
 			// `{}` would leave debris every sync pass has to carry around.
 			if (await this.adapter.exists(path)) {
@@ -258,16 +302,16 @@ export class DraftStore {
 			return;
 		}
 		await this.ensureDraftsDirectory();
-		await this.adapter.write(path, JSON.stringify({ text, updatedAt: Date.now() }));
+		await this.adapter.write(path, JSON.stringify({ text: draft.text.slice(0, MAX_DRAFT_LENGTH), ...(draft.references.length ? { references: draft.references } : {}), updatedAt: Date.now() }));
 	}
 
-	private async readDraft(sessionId: string): Promise<string | null> {
+	private async readDraft(sessionId: string): Promise<DraftContent | null> {
 		try {
 			const path = this.draftFile(sessionId);
 			if (!(await this.adapter.exists(path))) {
 				return null;
 			}
-			return parseDraftFile(await this.adapter.read(path));
+			return parseDraftFile(await this.adapter.read(path), () => this.log.warn("Draft reference metadata invalid; preserving the question text", () => ({ path })));
 		} catch (error) {
 			// A corrupt or unreadable file starts that chat empty rather than
 			// blocking the panel, but the user loses a draft with no visible
@@ -365,16 +409,16 @@ export class DraftStore {
  * field is validated and `null` — not a broken draft — comes back for anything
  * unrecognized.
  */
-function parseDraftFile(content: string): string | null {
+function parseDraftFile(content: string, invalidReferences: () => void): DraftContent | null {
 	const parsed: unknown = JSON.parse(content);
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 		return null;
 	}
-	const { text } = parsed as { text?: unknown };
-	if (typeof text !== "string" || !text.trim()) {
-		return null;
-	}
-	return text.slice(0, MAX_DRAFT_LENGTH);
+	const { text, references } = parsed as { text?: unknown; references?: unknown };
+	const refs = references === undefined ? [] : parseContextReferences(references);
+	if (!refs) invalidReferences();
+	if (typeof text !== "string" || !text.trim() && !refs?.length) return null;
+	return { text: text.slice(0, MAX_DRAFT_LENGTH), references: refs ?? [] };
 }
 
 interface LegacyDraftRecord {

@@ -7,6 +7,7 @@ import type { ObsidianAgentService } from "../agent/ObsidianAgentService";
 import { ChatApp } from "./ChatApp";
 import { PanelErrorBoundary } from "./PanelErrorBoundary";
 import { ChatInputController, type PrefillResult } from "./ChatInputController";
+import type { ContextReference } from "../agent/contextReference";
 import { resolveWorkingNotePath, watchActiveNote } from "./activeNoteWatch";
 import { watchSessionFile } from "./sessionFileWatch";
 import { watchWindowFocus } from "./windowFocusWatch";
@@ -143,9 +144,9 @@ export class PiemChatView extends ItemView {
 	 * until `ChatApp` registers its handler, which is what makes
 	 * `activateChatView()` + prefill work in a single awaited sequence.
 	 */
-	prefillComposer(text: string, session?: string): Promise<PrefillResult> {
+	prefillComposer(text: string, session?: string, references?: readonly ContextReference[]): Promise<PrefillResult> {
 		if (!this.root) return Promise.resolve(false);
-		return this.inputController.prefill(text, session);
+		return this.inputController.prefill(text, session, references);
 	}
 
 	async onOpen(): Promise<void> {

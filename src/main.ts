@@ -24,7 +24,7 @@ import { emptyBuiltinSkillReport } from "./skills/builtinSkillState";
 import { BookmarkDialogs } from "./ui/bookmarkDialogs";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
-import { requestNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
+import { collectNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
 import { registerContextMenus } from "./ui/fileMenuEntry";
 import { deliverContextRequest, type ContextRequest } from "./ui/contextRequest";
 import { openSessionDeleteConfirm, openSessionPicker } from "./ui/sessionDialogs";
@@ -681,21 +681,10 @@ export default class PiemPlugin extends Plugin {
 	 * landing in a not-yet-existing input.
 	 */
 	private async askPiemAboutSelection(editor: Editor, path: string | null, options = { selectionOnly: true }): Promise<void> {
-		const handled = requestNoteReference(editor, path, {
-			...options,
-			deliver: (text, truncated) => {
-				void this.deliverReference(text);
-				warnIfTruncated(truncated, this.t());
-			},
-		});
-		if (handled) {
-			return;
-		}
-		new Notice(this.t().t("commands.noActiveNote"));
-	}
-
-	private async deliverReference(text: string): Promise<void> {
-		await this.deliverContext({ text });
+		const reference = collectNoteReference(editor, path, options.selectionOnly);
+		if (!reference) { new Notice(this.t().t("commands.noActiveNote")); return; }
+		warnIfTruncated(reference.kind === "selection" && reference.truncated === true, this.t());
+		await this.deliverContext({ references: [reference] });
 	}
 
 	private async deliverContext(request: ContextRequest): Promise<void> {
