@@ -1,21 +1,29 @@
 # Screenshots
 
-Real captures from a real vault, used by both READMEs. Not renders: the preview
+Captures from Obsidian, used by both READMEs. Not HTML renders: the preview
 harness in `scripts/preview-visual.mjs` produces measurement pages (three panel
 widths side by side, no Obsidian chrome), which is the right tool for checking
 layout and the wrong one for showing someone what the plugin is.
 
-All four are from one session: a clipped article open, and one errand — *"based
-on this note, recommend a beginner's hardware list with buying advice"* — carried
-out on desktop and again on a phone. That continuity is the point of the mobile
-pair: same errand, nothing missing.
+The three transcript images were retaken on 2026-09-12 in a disposable vault
+after the native typography change. They reconstruct the earlier Pico 2 W /
+DualSense example: *"based on this note, recommend a beginner's hardware list
+with buying advice."* The prose is a fixture, not a new model response; the
+installed plugin's real read, write and edit tools created the notes and their
+receipts, loaded through the native session manager and ChatApp. The model picker
+labels the reconstruction. The empty state remains the earlier phone capture.
 
 | File | Shows | Captured at |
 | --- | --- | --- |
-| `errand-desktop.webp` | Full window: the note on the left, Piem answering on the right, with suggested follow-ups | 1400px wide, light theme |
-| `errand-trace.webp` | The transcript alone: two tool calls, the byte count, the `+4 −0` diff, and the summary of what it did | 754px wide, light theme |
+| `errand-desktop.webp` | Full window: the reconstructed note on the left, hardware table and buying advice on the right | 1400px wide, light theme |
+| `errand-trace.webp` | The transcript: real write/edit receipts and links to the resulting notes | 754px wide, light theme |
 | `mobile-empty.webp` | Phone, empty panel: quick actions shaped by the open note | 640px wide, light theme |
-| `mobile-done.webp` | Phone, same errand finished: the checklist and reply actions | 640px wide, light theme |
+| `mobile-done.webp` | Reconstructed errand finished, in Obsidian's official phone emulation | 390px viewport, light theme |
+
+The phone emulation is desktop Obsidian in its native mobile mode, not an
+iOS/Android hardware test. No phone status bar or controls were composited into
+the capture. The old byte count is not carried forward: it belonged to the old
+session, and the new receipts come from the operations actually executed.
 
 The UI is in Simplified Chinese, which the English README notes in a caption —
 it follows Obsidian's own language, so a Chinese capture is evidence the

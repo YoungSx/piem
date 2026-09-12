@@ -28,11 +28,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshots/errand-desktop.webp" alt="Obsidian with a clipped article open on the left and Piem's chat panel on the right, answering from that note with a hardware table, buying advice, and suggested follow-up actions.">
+  <img src="assets/screenshots/errand-desktop.webp" alt="Obsidian with the example note on the left and Piem on the right, showing a hardware table, buying advice, and beginner steps.">
 </p>
 
 <p align="center">
-  <sub>Your note on the left, the agent on the right. UI shown in Simplified Chinese — it follows Obsidian's language.</sub>
+  <sub>Your note on the left, the agent on the right. Reconstructed demo, real plugin file operations; UI shown in Simplified Chinese.</sub>
 </p>
 
 ---
@@ -45,7 +45,7 @@ the side panel:
 > **Based on this note, recommend a beginner's hardware list with buying advice.**
 
 <p align="center">
-  <img src="assets/screenshots/errand-trace.webp" width="620" alt="Piem's transcript: a tool call writing a new note, a confirmation of 1835 bytes written, a tool call editing the original note, a plus-four-minus-zero diff, then a summary listing the new note and the backlink it added.">
+  <img src="assets/screenshots/errand-trace.webp" width="620" alt="Piem's transcript: the real write and edit tool receipts, followed by links to the new hardware checklist and the original note.">
 </p>
 
 It read the note. Wrote a new one beside it — hardware table, prices, buying
@@ -53,8 +53,8 @@ advice, beginner steps. Then went back to the original and added a
 `[[wikilink]]` pointing at the new note, so the graph knows they belong
 together.
 
-Two files touched. **1,835 bytes written, +4 −0 on the original.** Then it told
-you which folder it chose and why, and offered three next moves.
+Two files touched: **a hardware checklist saved, a backlink added.** Then it
+told you where to find them.
 
 You never opened a file. You read the receipt and got on with your day.
 
@@ -115,11 +115,11 @@ commands.
 <p align="center">
   <img src="assets/screenshots/mobile-empty.webp" width="290" alt="Piem on a phone, empty panel: three suggested first actions and the composer, with the active note chip above it.">
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="assets/screenshots/mobile-done.webp" width="290" alt="Piem on the same phone after the errand: a checklist of what it created and the backlink it added, with the reply actions below.">
+  <img src="assets/screenshots/mobile-done.webp" width="290" alt="Piem in Obsidian's official phone emulation after the reconstructed errand, showing the saved checklist and backlinks.">
 </p>
 
 <p align="center">
-  <sub>The same errand, on a phone. Nothing is missing.</sub>
+  <sub>Left: an earlier capture on a phone. Right: the updated demo in Obsidian's official phone emulation.</sub>
 </p>
 
 Piem ships with `isDesktopOnly: false` and means it. Tools, subagents, skills,

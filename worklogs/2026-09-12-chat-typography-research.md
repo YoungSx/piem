@@ -1,6 +1,6 @@
 # 聊天正文排版：官方依据与最小接入方案
 
-研究日期：2026-09-12。范围限于正文行高、段落和列表节奏、行内代码混排；不扩大到过程状态、正文宽度或字重设计。本文来自实际读取的官方文档、Web 标准和本机 Obsidian 发布包，**没有执行宿主、浏览器或测试**，实现观察与运行验证分开记录。
+研究日期：2026-09-12。最初研究范围为正文行高、段落和列表节奏、行内代码混排；用户随后补充药丸与正文、药丸之间的间距，未要求改折叠逻辑、正文宽度或字重设计。以下官方依据来自实际读取的文档、Web 标准和本机 Obsidian 发布包；静态研究与文末的实际运行验证分开记录。
 
 ## 结论
 
@@ -77,3 +77,21 @@
 [css-text]: https://www.w3.org/TR/css-text-3/#line-break-property
 [text-spacing]: https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html
 [resize-text]: https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html
+
+
+## 5. 实现和视觉 smoke
+
+本次使用 impeccable 的 typeset 与 layout：保留 Obsidian 字号和字体，接上原生 Markdown 排版；相邻药丸沿用 `--size-4-1`，药丸与正文使用 `--size-4-2`，正文段落使用 `--p-spacing`。助手消息从实际可见节点标记首尾内容类型，隐藏询问、折叠成员和空白不参与边界；操作栏或错误提示阻止把行尾误认为正文。未改变工具折叠行为。
+
+真实宿主基线证明此前正文 15px、行高 19.5px、段距 6px、列表项 padding 0，行内代码为浏览器默认 monospace。修复后默认正文仍为 15px，行高 22.5px、段距 16px、列表项上下各 1.125px；行内代码使用原生等宽字体，13.125px。药丸之间 4px，药丸与正文 8px，同消息与跨消息一致。
+
+- `npm run verify`：构建、bundle/skills/copy/CSS/version 门禁、3771 项测试、lint 全部通过（254 个测试文件）。`MessageList.test.tsx` 单独运行 137 项通过；此前 MarkdownText/panelA11y/transcriptOverflow 的 106 项相关检查也通过。
+- `scripts/smoke-typography-obsidian.mjs`：实际 Obsidian、已安装成品与真实 ChatApp/MarkdownRenderer，原生会话 fixture，无模型请求。300/390/560px 实测面板宽 × 明暗主题，加 200% 字号和主题变量覆盖，共 8 场景、128 项检查通过；保存 24 张图并查看代表场景。
+- 两行语法高亮代码在旧版 300px 面板换成 15 行；为代码子元素继承父级空白策略后，仍为 2 行且可横滚。宽表格保留独立且可达的横向滚动。
+- 官方手机模拟：390×844 视口，实际面板约 303.59px、正文列 276px，正文 16px / 24px，行内代码 14px，无横向列溢出；明暗图均捕获。另实测连续正文，同一消息和跨消息段距均为 16px。此证据不代表 iOS/Android 硬件。
+- 现有 transcript 溢出/间距 harness 在真实 Electron 的隔离 iframe 中运行，3 种宽度全部通过，药丸 4px、正文边界 8px、段落/换人 16px；13/13、13/13、7/7 宽内容滚动区可达。独立 snap Chromium 因 socket-directory 错误不能启动，所以使用该真实 Chromium 引擎导出的 DOM 输入 `TRANSCRIPT_DOM`，没有假造测量。
+- impeccable 文字与布局机械扫描均返回 `[]`；独立源码复核未发现新的生产问题。
+
+三张过期 README 正文图已在真实宿主重拍：示例笔记和回答按已有硬件故事重建，实际插件的 read/write/edit 操作生成真实回执，没有模型请求。中英文 README 和截图来源同步更新，手机模拟明确标注；原实机空态图保留。所有四图合计约 336 KiB。
+
+证据摘要见 [smoke JSON](2026-09-12-chat-typography-smoke.json)。完整 PNG、逐项 JSON、构建日志和进程回收记录位于本机 `/home/ubuntu/piem-typeset-smoke-20260912/`。测试使用独立 profile/vault、自有 Xvfb、低优先级进程和 600 秒外层时限；宿主在部分长轮次接近时限时报告 GPU process isn't usable，成功 smoke 与失败日志分别保留，没有据此宣称图形环境已修复。最后所属 Obsidian/Xvfb/被收养的 Electron 子进程全部回收，未操作其他任务实例。
