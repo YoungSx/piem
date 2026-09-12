@@ -7,12 +7,14 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type BackgroundExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { createClarify, createContext, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
+import { createClarify, createContext, createOtel, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMessage" | "sendUserMessage"> {
 	platform: Omit<ExtensionPlatformCallbacks, "complete">;
 	prepare(): Promise<void>;
 	deliver(messages: AgentMessage[]): void;
+	/** Configured values for the original OTel factory's private environment. */
+	otelEnvironment?(): Readonly<Record<string, string>>;
 	/**
 	 * Where this host's load verdicts go.
 	 *
@@ -44,6 +46,7 @@ export class CommunityHost {
 	private navigationDispatches = 0;
 
 	private needsContextReset = false;
+	private contextReset?: Promise<void>;
 	private ui?: ExtensionUIAdapter;
 	private readonly log: LoggerLike;
 	private constructor(private readonly callbacks: CommunityCallbacks, private readonly extensions?: readonly CommunityExtension[]) {
@@ -73,7 +76,19 @@ export class CommunityHost {
 		// namespace it can address comes from construction, not from the path it
 		// asks for. Sharing one platform object would make them interchangeable.
 		const scoped = (owner: string) => this.platform.forExtension(owner);
-		const factories = this.extensions?.map(extension => {
+		const extensions: readonly CommunityExtension[] = this.extensions ?? [
+			{ id: "pi-invisible-continue", factory: invisibleContinue },
+			{ id: "pi-assistant-provenance", factory: provenance },
+			{ id: "pi-model-switch", factory: modelSwitch },
+			{ id: "pi-web-search", factory: createWebSearch(scoped("pi-web-search")) },
+			{ id: "pi-clarify", factory: createClarify(scoped("pi-clarify")) },
+			{ id: "pi-context", factory: createContext(scoped("pi-context")) },
+			{ id: "pi-otel", createFactory: platform => {
+				Object.assign(platform.process.env, callbacks.otelEnvironment?.() ?? {});
+				return createOtel(platform);
+			} },
+		];
+		const factories = extensions.map(extension => {
 			if ("factory" in extension) return extension;
 			if (this.backgrounds.has(extension.id)) throw new Error(`Duplicate background extension: ${extension.id}`);
 			const resources = this.platform.forBackgroundExtension(extension.id);
@@ -84,14 +99,7 @@ export class CommunityHost {
 				onLoadFailure: () => { resources.dispose(); this.backgrounds.delete(extension.id); },
 			};
 		});
-		this.host = await createExtensionHost(factories ?? [
-			{ id: "pi-invisible-continue", factory: invisibleContinue },
-			{ id: "pi-assistant-provenance", factory: provenance },
-			{ id: "pi-model-switch", factory: modelSwitch },
-			{ id: "pi-web-search", factory: createWebSearch(scoped("pi-web-search")) },
-			{ id: "pi-clarify", factory: createClarify(scoped("pi-clarify")) },
-			{ id: "pi-context", factory: createContext(scoped("pi-context")) },
-		], {
+		this.host = await createExtensionHost(factories, {
 			...callbacks,
 			...(this.extensions ? { getAuth: undefined } : { assertOperation: () => this.assertActive() }),
 			refreshSession: () => callbacks.prepare(),
@@ -333,13 +341,8 @@ export class CommunityHost {
 	private async operate<T>(work: () => Promise<T>, signal?: AbortSignal, refresh = true): Promise<T> {
 		if (this.disposed) throw new Error("Extension host was disposed.");
 		if (this.needsContextReset) {
-			await this.platform.drain();
-			if (this.disposed) throw new Error("Extension host was disposed.");
-			this.host.dispose("reload");
-			await this.host.closed();
-			await this.initialize();
-			if (this.ui) this.host.attachUI(this.ui);
-			this.needsContextReset = false;
+			this.contextReset ??= this.resetContext().finally(() => { this.contextReset = undefined; });
+			await this.contextReset;
 		}
 		return this.platform.withOperation(async () => {
 			this.failure = {};
@@ -354,6 +357,25 @@ export class CommunityHost {
 				return result;
 			} catch (error) { this.pending = []; throw error; }
 		}, signal);
+	}
+	private async resetContext(): Promise<void> {
+		await this.platform.drain();
+		if (this.disposed) throw new Error("Extension host was disposed.");
+		for (const resources of this.backgrounds.values()) resources.beginShutdown();
+		this.host.dispose("reload");
+		try { await this.host.closed(); }
+		catch (error) {
+			// A slow exporter must not strand the next chat operation on a retired host.
+			this.log.warn("Extension cleanup failed during reload", () => ({ error: error instanceof Error ? error.message : String(error) }));
+		} finally {
+			for (const resources of this.backgrounds.values()) resources.dispose();
+			this.backgrounds.clear();
+		}
+		if (this.disposed) throw new Error("Extension host was disposed.");
+		await this.initialize();
+		if (this.disposed) { this.host.dispose(); await this.host.closed(); throw new Error("Extension host was disposed."); }
+		if (this.ui) this.host.attachUI(this.ui);
+		this.needsContextReset = false;
 	}
 	private takeMessages(): AgentMessage[] { const messages = this.pending; this.pending = []; return messages; }
 	private deliver(): void { const messages = this.takeMessages(); if (messages.length) this.callbacks.deliver(messages); }

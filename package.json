@@ -51,6 +51,7 @@
 		"pi-context": "2.2.0",
 		"pi-invisible-continue": "0.3.11",
 		"pi-model-switch": "0.2.0",
+		"pi-otel": "github:b1tank/pi-otel#337d1390571dacc4b07e6500ecbadabf585c19d9",
 		"pi-web-search": "1.5.0",
 		"react": "18.3.1",
 		"react-dom": "18.3.1",
@@ -58,6 +59,9 @@
 		"yaml": "2.9.0"
 	},
 	"overrides": {
+		"@opentelemetry/resources": "2.10.0",
+		"@opentelemetry/sdk-metrics": "2.10.0",
+		"@opentelemetry/sdk-trace-base": "2.10.0",
 		"@earendil-works/pi-agent-core": "0.84.3",
 		"@earendil-works/pi-ai": "0.84.3",
 		"@earendil-works/pi-tui": "0.84.3",

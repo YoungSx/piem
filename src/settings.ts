@@ -19,6 +19,7 @@ import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compac
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
 import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
 import { normalizeExtensionConfig, type ExtensionConfigData } from "./extensions/extensionConfigStore";
+import { normalizeOtelEndpoint } from "./extensions/otelConfig";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
 import { DEFAULT_LOG_LEVEL, readLogLevel, type LogLevelSetting } from "./logging/logLevel";
@@ -203,6 +204,8 @@ export interface PiemSettings {
 	 * Extension-supplied, therefore bounded on load rather than trusted.
 	 */
 	extensionConfig?: ExtensionConfigData;
+	/** User-owned Collector; absent keeps the original telemetry extension inactive. */
+	otelEndpoint?: string;
 }
 
 export const DEFAULT_SETTINGS: PiemSettings = {
@@ -346,6 +349,8 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	if (builtinSkillState) settings.builtinSkillState = builtinSkillState;
 	const extensionConfig = normalizeExtensionConfig(data?.extensionConfig);
 	if (extensionConfig) settings.extensionConfig = extensionConfig;
+	const otelEndpoint = normalizeOtelEndpoint(data?.otelEndpoint);
+	if (otelEndpoint) settings.otelEndpoint = otelEndpoint;
 	return settings;
 }
 

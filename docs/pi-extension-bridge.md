@@ -7,9 +7,10 @@ host runs the bookmark adapter and the community adapter against the existing
 agent and Vault-backed session store. It is a reusable host for supported
 contracts, not a full Node environment or a sandbox for arbitrary code.
 
-The generic compatibility layer adds host capabilities only. It installs no new
-community extension, including `pi-suggest`, and adds no default model requests.
-Existing Quick actions keep their generation and click-to-send behavior.
+The bundled extensions include the original `b1tank/pi-otel` Git package. Its
+background factory uses the same static bridge and exports only when the user
+configures a collector. The bridge adds no default model requests; existing
+Quick actions keep their generation and click-to-send behavior.
 
 ## Contracts
 
@@ -325,8 +326,8 @@ supports a cancellation signal and accepts `ref` without a process-liveness
 effect in a WebView. Shutdown stops intervals, allows the existing one-second
 cleanup window for a final request, then revokes remaining timers, delays,
 requests and environment access. A failed factory's resources are retired
-while other extensions remain available. This adds no telemetry extension or
-automatic outbound request to the release.
+while other extensions remain available. The registered `pi-otel` factory remains
+inactive without a configured collector.
 
 During shutdown, session ID/file/name, model, thinking level and other safe
 metadata use the last valid snapshot. The service may already have retired the
@@ -334,9 +335,35 @@ owning conversation; shutdown does not reopen it or expose credentials. Old
 contexts and all mutation capabilities remain invalid. History/tree reads are
 not retained as a second copy of the vault session.
 
+### Bundled OpenTelemetry factory
+
+`pi-otel` is the unmodified [b1tank Git package](https://github.com/b1tank/pi-otel),
+not the npm package sharing its name. `package.json` pins the full Git commit;
+`bun.lock` locks its official OTel dependencies. Its original entry is compiled
+through `pi-scoped-factory:pi-otel` and registered as a background `createFactory`.
+No upstream instrumentation or exporter is copied into Piem source.
+
+`otelConfig.ts` validates the plugin's optional `otelEndpoint`, then projects
+`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME=piem`, the plugin manifest version
+as `PI_OTEL_SERVICE_VERSION`, and `OTEL_METRIC_EXPORT_INTERVAL=60000` into that
+factory's private environment. It does not inherit host environment variables or
+provider credentials. No endpoint means no export; all changes require a plugin
+reload because the upstream factory reads its configuration on load. The address
+is an HTTP(S) base URL, without signal suffixes, credentials, query or fragment.
+
+The browser exporters send OTLP/HTTP JSON at `/v1/traces`, `/v1/metrics` and
+`/v1/logs`. Content flags retain upstream's off defaults, but raw model error
+messages can enter span status and exception events. The extension receives the
+main conversation's supported events, without full subagent instrumentation.
+Shutdown uses the existing one-second cleanup window; final delivery on a slow or
+unavailable collector is not guaranteed. See [settings](settings.md#extensions)
+and [the data disclosure](security.md#opentelemetry-export).
+
+### Integration checklist
+
 1. Audit its package source, transitive imports, registration, file paths, network,
    UI and lifetime. Choose a mobile-compatible factory with explicit licensing.
-2. Pin its npm version with Bun and add all compiled source hashes and a virtual
+2. Pin its npm version or full Git commit with Bun and add all compiled source hashes and a virtual
    root to `scripts/pi-extension-packages.json`. The build refuses unaudited source
    inside registered packages and unknown external dependencies from them.
 3. Add the original entry to `communityFactories.mjs` and its declaration; register

@@ -247,6 +247,7 @@ export interface SettingsPanelSettings {
 	/** Names of skills switched off; read by the toggle rows, written by them too. */
 	disabledSkills: string[];
 	mcpServers: McpServerConfig[];
+	otelEndpoint?: string;
 	logLevel: LogLevelSetting;
 }
 

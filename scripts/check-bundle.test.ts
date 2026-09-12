@@ -26,6 +26,8 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 			["pi-scoped-extension:pi-web-search"]: { bytesInOutput: 100 },
 			["pi-scoped-extension:pi-clarify"]: { bytesInOutput: 100 },
 			["pi-scoped-extension:pi-context"]: { bytesInOutput: 100 },
+			["pi-scoped-extension:pi-otel"]: { bytesInOutput: 100 },
+			["node_modules/buffer/index.js"]: { bytesInOutput: 100 },
 			["node_modules/pi-assistant-provenance/extensions/assistant-provenance/index.ts"]: { bytesInOutput: 100 },
 			["node_modules/pi-model-switch/index.ts"]: { bytesInOutput: 100 },
 			["node_modules/pi-invisible-continue/continue.ts"]: { bytesInOutput: 100 },
@@ -45,11 +47,11 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 
 describe("bundle composition after adding the public Node environment", () => {
 	it("allows only the measured empty faux initializer", async () => {
-		expect((await gate({ [`${providers}faux.js`]: { bytesInOutput: 17 } })).exitCode).toBe(0);
+		for (const bytesInOutput of [17, 18]) expect((await gate({ [`${providers}faux.js`]: { bytesInOutput } })).exitCode).toBe(0);
 	});
 
 	it("fails as soon as faux contributes more than its empty initializer", async () => {
-		const result = await gate({ [`${providers}faux.js`]: { bytesInOutput: 18 } });
+		const result = await gate({ [`${providers}faux.js`]: { bytesInOutput: 19 } });
 		expect(result.exitCode).toBe(1);
 		expect(result.output).toContain("banned module in bundle");
 	});
@@ -78,7 +80,7 @@ describe("bundle composition after adding the public Node environment", () => {
 		}
 	});
 	it("requires all scoped extension graphs and the original truncation helper", async () => {
-		for (const module of ["pi-scoped-extension:pi-web-search", "pi-scoped-extension:pi-clarify", "pi-scoped-extension:pi-context", `${codingAgent}dist/core/tools/truncate.js`]) {
+		for (const module of ["pi-scoped-extension:pi-web-search", "pi-scoped-extension:pi-clarify", "pi-scoped-extension:pi-context", "pi-scoped-extension:pi-otel", "node_modules/buffer/index.js", `${codingAgent}dist/core/tools/truncate.js`]) {
 			expect((await gate({ [module]: { bytesInOutput: 0 } })).output).toContain(`required module missing from bundle: ${module}`);
 		}
 	});

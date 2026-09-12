@@ -6,5 +6,6 @@ export { default as invisibleContinue } from "../../node_modules/pi-invisible-co
 export { createFactory as createWebSearch } from "pi-scoped-factory:pi-web-search";
 export { createFactory as createClarify } from "pi-scoped-factory:pi-clarify";
 export { createFactory as createContext } from "pi-scoped-factory:pi-context";
+export { createFactory as createOtel } from "pi-scoped-factory:pi-otel";
 // Reuse the upstream input grammar at the composer routing boundary too.
 export { hasClarifyMarker } from "../../node_modules/pi-clarify/src/marker.ts";

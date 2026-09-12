@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved sixteen
+ * The number is anchored to measurement, not taste, and it has moved seventeen
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -106,6 +106,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 16. Owned shutdown signals for scoped SDK page listeners measured 2,003,146 B
  *     (+366 B). The ceiling is 2,004,000 B; the metafile confirms that unused
  *     global/document views and all OTel SDK packages remain outside the bundle.
+ * 17. The unmodified Git-pinned pi-otel factory, official browser SDKs, Collector
+ *     setting, browser Buffer and required notices measured 2,203,785 B
+ *     (+200,639 B). The ceiling follows to 2.11 MiB. The graph uses HTTP JSON
+ *     without Node or gRPC runtimes.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -120,7 +124,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2_004_000;
+const MAX_BUNDLE_BYTES = 2.11 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -187,12 +191,13 @@ const BANNED_MODULES = new Map([
 
 /**
  * The public pi-agent-core/node barrel leaves one empty lazy initializer for
- * faux.js after tree shaking: 17 bytes, with every faux export removed. Allow
+ * faux.js after tree shaking: 17–18 bytes as minified identifiers grow, with
+ * every faux export removed. Allow
  * only that exact file and budget; importing even fauxText exceeds it. Every
  * other provider remains banned, including zero-byte entries if one appears.
  */
 const EMPTY_FAUX_INITIALIZER = "node_modules/@earendil-works/pi-ai/dist/providers/faux.js";
-const EMPTY_FAUX_INITIALIZER_BYTES = 17;
+const EMPTY_FAUX_INITIALIZER_BYTES = 18;
 
 /**
  * Pi implementations the bundle must contain, including internal files reached
@@ -208,6 +213,8 @@ const EMPTY_FAUX_INITIALIZER_BYTES = 17;
  * {@link BANNED_MODULES}, so a nested or pnpm-style layout is caught too.
  */
 const REQUIRED_MODULES = new Map([
+	["node_modules/buffer/index.js", "The scoped global Buffer must be bundled; mobile has no external Node buffer module."],
+	["pi-scoped-extension:pi-otel", "The unmodified Git-pinned telemetry extension must ship through the scoped factory bridge."],
 	["pi-scoped-extension:pi-web-search", "The audited original web-search graph must ship in a per-host factory."],
 	["pi-scoped-extension:pi-clarify", "The audited original clarify graph must ship in a per-host factory."],
 	["pi-scoped-extension:pi-context", "The audited original context graph must ship in a per-host factory."],
@@ -442,7 +449,7 @@ if (bundleInputs) {
 	}
 	for (const [segment, why] of BANNED_MODULES) {
 		const offenders = Object.entries(bundleInputs).filter(([input, contribution]) =>
-			input.includes(segment) && !(input.endsWith(EMPTY_FAUX_INITIALIZER) && contribution.bytesInOutput === EMPTY_FAUX_INITIALIZER_BYTES),
+			input.includes(segment) && !(input.endsWith(EMPTY_FAUX_INITIALIZER) && contribution.bytesInOutput <= EMPTY_FAUX_INITIALIZER_BYTES),
 		);
 		if (offenders.length > 0) {
 			failures.push({ name: `banned module in bundle: ${segment} (${offenders.length} file(s))`, why, at: "-" });
