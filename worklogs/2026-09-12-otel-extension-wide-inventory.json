@@ -1,0 +1,3858 @@
+{
+  "as_of": "2026-09-12",
+  "repository_head": "645917e6ad7e285e244da7bf03c3816060f5762a",
+  "purpose": "Discovery and readiness assessment of existing Pi telemetry extensions; no production enablement",
+  "coverage": {
+    "npm": {
+      "counts": {
+        "queries": 20,
+        "raw_result_rows": 9000,
+        "deduplicated_search_packages_including_irrelevant": 5046,
+        "metadata_inspected_additional_or_adjacent": 44,
+        "published_extension_sources_deep_read": 3,
+        "downloads_windows": 20
+      },
+      "queries": [
+        {
+          "query": "keywords:pi-extension",
+          "total": 4653,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 3000,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 1500,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 3750,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 1000,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 4000,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 3250,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 2750,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 2000,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 2250,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 4500,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 750,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 1750,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 500,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 1250,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 4250,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 3500,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 2500,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi tracing",
+          "total": 26806,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "pi braintrust",
+          "total": 20414,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "keywords:pi-package tracing",
+          "total": 9653,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi honeycomb",
+          "total": 20652,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "keywords:pi-package",
+          "total": 9653,
+          "visited": 4250,
+          "pages": [
+            2000,
+            3000,
+            2750,
+            2250,
+            4000,
+            0,
+            3250,
+            2500,
+            750,
+            250,
+            1500,
+            1250,
+            3750,
+            3500,
+            1000,
+            1750,
+            500
+          ],
+          "errors": [
+            {
+              "offset": 4750,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 4500,
+              "error": "HTTP Error 429: Too Many Requests"
+            },
+            {
+              "offset": 4250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi-coding-agent opentelemetry",
+          "total": 157473,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi-coding-agent telemetry",
+          "total": 160218,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi-extension telemetry",
+          "total": 88569,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi langsmith",
+          "total": 20545,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "pi langfuse",
+          "total": 20689,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "pi helicone",
+          "total": 20400,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "pi otlp",
+          "total": 21397,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "keywords:pi-package genai",
+          "total": 9653,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi telemetry",
+          "total": 28744,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "keywords:pi-package otlp",
+          "total": 9653,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi opik",
+          "total": 20370,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "keywords:pi-package observability",
+          "total": 9653,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": [
+            {
+              "offset": 250,
+              "error": "HTTP Error 429: Too Many Requests"
+            }
+          ]
+        },
+        {
+          "query": "pi logfire",
+          "total": 20385,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        },
+        {
+          "query": "pi observability",
+          "total": 29511,
+          "visited": 250,
+          "pages": [
+            0
+          ],
+          "errors": []
+        }
+      ],
+      "limitations": [
+        "All npm search queries are ranked results; only a partial keyword catalog was traversed. Initial search rate limiting is recorded; stopped rather than retrying indefinitely.",
+        "No repository dependency install, plugin integration, collector or service started. Three emitter probes use exact published modules but fake OTel handles.",
+        "Package publication dates are not package source maintenance dates. Downloads are not users.",
+        "Platform-branded integrations were not automatically excluded by names; unverified generic OTLP support remains explicit."
+      ]
+    },
+    "pi_catalog": {
+      "date_utc": "2026-09-12",
+      "catalog_home": "https://pi.dev/packages",
+      "homepage_total_packages": 5423,
+      "search_method": "Observed GET form action=/packages name=<term>, followed server-rendered Next pagination links; no inferred private API",
+      "search_terms": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability",
+        "trace",
+        "otlp",
+        "honeycomb",
+        "grafana",
+        "jaeger",
+        "helicone",
+        "traceloop",
+        "opik",
+        "langsmith",
+        "logfire",
+        "langfuse",
+        "phoenix",
+        "braintrust",
+        "arize",
+        "openlit",
+        "lunary",
+        "agentops",
+        "weave",
+        "signoz",
+        "baselime",
+        "axiom",
+        "datadog",
+        "new relic",
+        "hyperdx",
+        "sentry",
+        "mlflow",
+        "promptlayer",
+        "lightstep",
+        "aspecto",
+        "langtrace"
+      ],
+      "search_term_count": 35,
+      "query_pages": 36,
+      "raw_rows": 234,
+      "unique_catalog_rows": 140,
+      "previous_candidates_seen": 7,
+      "new_catalog_rows": 133,
+      "category_counts": {
+        "previous_candidates": 7,
+        "other_catalog_hit": 72,
+        "platform_telemetry_candidate": 16,
+        "generic_otel_candidate": 3,
+        "companion_service": 1,
+        "local_telemetry_or_event_bridge": 38,
+        "observability_query_tool": 3
+      },
+      "new_export_candidate_count": 19,
+      "errors": [],
+      "limitations": [
+        "Only name/description/author search surface and listed keywords searched, not all 5423 package sources",
+        "Package labels from catalog are not sufficient identity evidence; pi manifest read for focused packages",
+        "Catalog display download period may differ from npm API; not used for final relative ranking",
+        "Five packages source reviewed by this subtask: Grafana, ObservMe, Laminar, ramarivera, Latitude; other rows metadata leads",
+        "No installs, extension execution, compiler runs, collectors, or mobile performance measurements"
+      ],
+      "supplemental_npm_rows": 2,
+      "total_inventory_rows": 142,
+      "all_inventory_category_counts": {
+        "previous_candidates": 7,
+        "other_catalog_hit": 72,
+        "platform_telemetry_candidate": 16,
+        "generic_otel_candidate": 5,
+        "companion_service": 1,
+        "local_telemetry_or_event_bridge": 38,
+        "observability_query_tool": 3
+      },
+      "source_reviewed_names": [
+        "@lmnr-ai/pi-extension",
+        "@senad-d/observme",
+        "@grafana/agento11y-pi",
+        "@ramarivera/pi-langfuse",
+        "@latitude-data/pi-telemetry"
+      ]
+    },
+    "github": {
+      "repo_search_requests": 12,
+      "code_search_pages": 10,
+      "awesome_lists": 3,
+      "classified_entries": 27,
+      "limitations": [
+        "Includes libraries, local-only tools and a SPEC-only repository",
+        "No search completeness claim; unindexed/private repos and branches not covered"
+      ]
+    }
+  },
+  "registry_packages": [
+    {
+      "name": "@braintrust/pi-extension",
+      "version": "2.0.1",
+      "published_at": "2026-09-09T16:06:14.737Z",
+      "category": "vendor_daemon",
+      "evidence_level": "元数据和README",
+      "finding": "README：Pi 事件转发 bt tracing daemon，daemon负责建span和导出，不适合手机原样加载",
+      "sources": [
+        "https://registry.npmjs.org/%40braintrust%2Fpi-extension",
+        "https://pi.dev/packages/@braintrust/pi-extension"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/braintrustdata/braintrust-coding-agent-plugins.git",
+        "directory": "src/plugins/pi/content"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.mjs"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-Xl+V1OWMQYnFrfqVfkIct/RORdezCUhYrLeyXLh7ASqua5h38bKfM9nLPEWsQ9cxSL3h3R0ttnAe+dOOTNwSuA==",
+        "shasum": "73c03648356d349b21726703466e0ec579bd0833",
+        "tarball": "https://registry.npmjs.org/@braintrust/pi-extension/-/pi-extension-2.0.1.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 23195,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40braintrust%2Fpi-extension"
+        },
+        "week": {
+          "count": 3329,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40braintrust%2Fpi-extension"
+        }
+      },
+      "catalog_queries": [
+        "tracing",
+        "observability",
+        "braintrust"
+      ]
+    },
+    {
+      "name": "@contextcompany/pi",
+      "version": "1.2.2",
+      "published_at": "2026-07-15T08:56:52.008Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "ContextCompany instrumentation+Pi扩展，依赖自有API，未确认通用OTLP",
+      "sources": [
+        "https://registry.npmjs.org/%40contextcompany%2Fpi",
+        "https://pi.dev/packages/@contextcompany/pi"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/The-Context-Company/observatory.git",
+        "directory": "packages/ts/pi"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/extension.js"
+        ]
+      },
+      "dependencies": {
+        "@contextcompany/api": "1.0.4"
+      },
+      "artifact": {
+        "integrity": "sha512-EpkNtJ0kinSiMSI3AufsOKhmgSrZU3Ysr/ZCIGCB1KuKVOfGj0NRbZHdhbFLATDStCq6BDtWWL+aGVHHgxeSIw==",
+        "shasum": "6fe1c77e817fb292d1ea397831671b16589c0643",
+        "tarball": "https://registry.npmjs.org/@contextcompany/pi/-/pi-1.2.2.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 352,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40contextcompany%2Fpi"
+        },
+        "week": {
+          "count": 54,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40contextcompany%2Fpi"
+        }
+      },
+      "catalog_queries": [
+        "tracing",
+        "observability"
+      ]
+    },
+    {
+      "name": "@darsh0230/pi-langfuse",
+      "version": "1.0.0",
+      "published_at": "2026-07-14T12:16:23.313Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/%40darsh0230%2Fpi-langfuse"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/darsh0230/pi-langfuse.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./index.ts"
+        ]
+      },
+      "dependencies": {
+        "@langfuse/otel": "^5.4.0",
+        "@langfuse/tracing": "^5.4.0",
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+        "@opentelemetry/sdk-trace-base": "^2.9.0",
+        "http-proxy-agent": "^7.0.2",
+        "https-proxy-agent": "^7.0.6"
+      },
+      "artifact": {
+        "integrity": "sha512-uxkk3GEkaCeY8nb9HZib5xWz5qmhLpH8gJpxFAggyT0FiH8nDD2quTZPPuaubyjkSnuPBo8uC7ZaRdnt+FzVxg==",
+        "shasum": "6665e9d123ace21f02f190001be3ec49e55955d5",
+        "tarball": "https://registry.npmjs.org/@darsh0230/pi-langfuse/-/pi-langfuse-1.0.0.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "@desek/pi-mlflow-tracing",
+      "version": "0.1.0",
+      "published_at": "2026-08-04T13:09:22.884Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "MLflow span tree导出；声明零运行依赖，未核wire兼容",
+      "sources": [
+        "https://registry.npmjs.org/%40desek%2Fpi-mlflow-tracing"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/desek/agent-observability.git",
+        "directory": "packages/pi-mlflow-tracing"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-KSo8uAnbfkR5LqOogcFEl9C8NrlJa+352/LNR/iXBUcZaHZNEgwIlvIXJvmb7/vd33a25DRxe00tf3HOGn067A==",
+        "shasum": "82f9d89a9a44add21589544462db46ba67ec3650",
+        "tarball": "https://registry.npmjs.org/@desek/pi-mlflow-tracing/-/pi-mlflow-tracing-0.1.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 45,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40desek%2Fpi-mlflow-tracing"
+        },
+        "week": {
+          "count": 10,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40desek%2Fpi-mlflow-tracing"
+        }
+      }
+    },
+    {
+      "name": "@desek/pi-opentelemetry",
+      "version": "0.1.1",
+      "published_at": "2026-08-04T14:24:10.942Z",
+      "category": "generic_otlp",
+      "evidence_level": "已深读发布源码",
+      "finding": "三信号、实例使用、默认正文关；静态 gRPC / Git、协议名和事件字段问题待改",
+      "sources": [
+        "https://registry.npmjs.org/%40desek%2Fpi-opentelemetry",
+        "https://pi.dev/packages/@desek/pi-opentelemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/desek/agent-observability.git",
+        "directory": "packages/pi-opentelemetry"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api-logs": "~0.220.0",
+        "@opentelemetry/exporter-logs-otlp-grpc": "~0.220.0",
+        "@opentelemetry/exporter-logs-otlp-http": "~0.220.0",
+        "@opentelemetry/exporter-metrics-otlp-grpc": "~0.220.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "~0.220.0",
+        "@opentelemetry/exporter-trace-otlp-grpc": "~0.220.0",
+        "@opentelemetry/exporter-trace-otlp-http": "~0.220.0",
+        "@opentelemetry/resources": "~2.9.0",
+        "@opentelemetry/sdk-logs": "~0.220.0",
+        "@opentelemetry/sdk-metrics": "~2.9.0",
+        "@opentelemetry/sdk-trace-base": "~2.9.0"
+      },
+      "artifact": {
+        "integrity": "sha512-JV2Nq47N93b56QlSKdB9WCeSn+turReQE5qYecTXgbJhbvKK34/YYIeRYh49ZhYOf0Rf/IScdMyvUoN43dmWZA==",
+        "shasum": "d9eae0cf2694012e0ea4d86125b6fd20595bbb5d",
+        "tarball": "https://registry.npmjs.org/@desek/pi-opentelemetry/-/pi-opentelemetry-0.1.1.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 315,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40desek%2Fpi-opentelemetry"
+        },
+        "week": {
+          "count": 46,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40desek%2Fpi-opentelemetry"
+        }
+      },
+      "catalog_queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "observability",
+        "trace",
+        "otlp"
+      ]
+    },
+    {
+      "name": "@grafana/agento11y-pi",
+      "version": "0.24.0",
+      "published_at": "2026-08-20T13:43:42.975Z",
+      "category": "vendor_otlp",
+      "evidence_level": "published_source_reviewed",
+      "finding": "Requires proprietary generation API alongside optional OTLP; high mobile bridge adaptation cost",
+      "sources": [
+        "https://registry.npmjs.org/%40grafana%2Fagento11y-pi",
+        "https://pi.dev/packages/@grafana/agento11y-pi"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/grafana/agento11y.git",
+        "directory": "plugins/pi"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.js"
+        ]
+      },
+      "dependencies": {
+        "@grpc/grpc-js": "^1.14.4",
+        "@grpc/proto-loader": "^0.8.0"
+      },
+      "artifact": {
+        "integrity": "sha512-20XOPRt28AfQdVxkTCQYqCyRmLM8N0Bq0rgr5vL4GTNM1DcDX363FIiq5Xn7x83MiHKX9mBMZ4lMdV19OZIl1A==",
+        "shasum": "da878e5778722ef198d549f20f540cb0e536519d",
+        "tarball": "https://registry.npmjs.org/@grafana/agento11y-pi/-/agento11y-pi-0.24.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 449,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40grafana%2Fagento11y-pi"
+        },
+        "week": {
+          "count": 13,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40grafana%2Fagento11y-pi"
+        }
+      },
+      "catalog_queries": [
+        "observability",
+        "grafana"
+      ],
+      "source_review": {
+        "verdict": "Requires proprietary generation API alongside optional OTLP; high mobile bridge adaptation cost",
+        "protocol": "OTLP/HTTP JSON traces+metrics plus required /api/v1/generations:export HTTP API",
+        "source_refs": [
+          "dist/index.js:30894-30933",
+          "dist/index.js:31114-31147",
+          "dist/index.js:32135-32185",
+          "dist/index.js:32716-32775"
+        ],
+        "blockers": [
+          "Already bundled Node OTel implementation",
+          "Static fs/child_process and global aliases/require",
+          "Unsupported session_before_compact/session_before_tree",
+          "No OTLP-only config path in factory"
+        ],
+        "positive": [
+          "metadata_only by default",
+          "Instance BasicTracerProvider and MeterProvider",
+          "shutdown attempts both own pipelines"
+        ]
+      }
+    },
+    {
+      "name": "@hdkiller/pi-langfuse",
+      "version": "0.2.2",
+      "published_at": "2026-04-26T15:01:58.156Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/%40hdkiller%2Fpi-langfuse"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/hdkiller/pi-langfuse.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.js"
+        ],
+        "image": "https://raw.githubusercontent.com/hdkiller/pi-langfuse/main/docs/screenshot.jpg"
+      },
+      "dependencies": {
+        "langfuse": "^3.38.20"
+      },
+      "artifact": {
+        "integrity": "sha512-OmhGohRmy0CZZYzNQRwA5RUN2vEnuvSKD4JWDE8isuzcCFckEiy/lyJuP0hk3QqPD2EAAhzmN9O7gbEWOHbIgg==",
+        "shasum": "c82c5fddf238d877ff8e67f2b04b81a6718b4f4e",
+        "tarball": "https://registry.npmjs.org/@hdkiller/pi-langfuse/-/pi-langfuse-0.2.2.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "@introspection-sdk/introspection-pi",
+      "version": "0.23.0",
+      "published_at": "2026-09-03T05:23:16.463Z",
+      "category": "instrumentation_library",
+      "evidence_level": "元数据和README",
+      "finding": "无 pi.extensions；需要宿主传 tracer/instrumentSession；包含内容scrubber但非现成exporter",
+      "sources": [
+        "https://registry.npmjs.org/%40introspection-sdk%2Fintrospection-pi"
+      ],
+      "repository": null,
+      "pi_manifest": null,
+      "dependencies": {
+        "@opentelemetry/api": "^1.9.1",
+        "@introspection-sdk/types": "0.23.0"
+      },
+      "artifact": {
+        "shasum": "55bde16e49ef31174bbe929bd0f0b2028d12f067",
+        "tarball": "https://registry.npmjs.org/@introspection-sdk/introspection-pi/-/introspection-pi-0.23.0.tgz",
+        "integrity": "sha512-GTx7boYy42AvKBGjdDPLU4IGaqqJ/PPEQQ87DxqzLLavsyadu9DCGUy5UPyK8KzNxD6p0dEbn5d9QNjJvhkLrg=="
+      },
+      "downloads": {
+        "month": {
+          "count": 5876,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40introspection-sdk%2Fintrospection-pi"
+        },
+        "week": {
+          "count": 925,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40introspection-sdk%2Fintrospection-pi"
+        }
+      }
+    },
+    {
+      "name": "@jademind/pi-telemetry",
+      "version": "0.1.4",
+      "published_at": "2026-02-24T15:29:19.213Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "每PID本地JSON心跳+snapshot CLI，不是OTLP",
+      "sources": [
+        "https://registry.npmjs.org/%40jademind%2Fpi-telemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/jademind/pi-telemetry.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./extensions"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-UehdXksNLcQvOvHhRYAPoWOl0fWMDOJTHHO8/V++pm2UstSSsIhj1xZOoAatcffa7I3mFWpq47Dv487do1NrYA==",
+        "shasum": "094b87dca5c25db7006a6cdc53c0c080ef1e06b0",
+        "tarball": "https://registry.npmjs.org/@jademind/pi-telemetry/-/pi-telemetry-0.1.4.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "@keegancodes/pi-otel",
+      "version": "1.0.0",
+      "published_at": "2026-08-28T18:17:43.728Z",
+      "category": "generic_otlp",
+      "evidence_level": "已深读发布源码",
+      "finding": "三信号、实例 provider、无直接 Node 导入；静态 gRPC、固定 10 秒 metrics、模型失败语义待改",
+      "sources": [
+        "https://registry.npmjs.org/%40keegancodes%2Fpi-otel"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/keegandonley/pi-otel.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@grpc/grpc-js": "^1.14.3",
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/api-logs": "~0.220.0",
+        "@opentelemetry/exporter-logs-otlp-grpc": "~0.220.0",
+        "@opentelemetry/exporter-logs-otlp-http": "~0.220.0",
+        "@opentelemetry/exporter-metrics-otlp-grpc": "~0.220.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "~0.220.0",
+        "@opentelemetry/exporter-trace-otlp-grpc": "~0.220.0",
+        "@opentelemetry/exporter-trace-otlp-http": "~0.220.0",
+        "@opentelemetry/resources": "~2.9.0",
+        "@opentelemetry/sdk-logs": "~0.220.0",
+        "@opentelemetry/sdk-metrics": "~2.9.0",
+        "@opentelemetry/sdk-trace-base": "~2.9.0",
+        "@opentelemetry/semantic-conventions": "~1.34.0"
+      },
+      "artifact": {
+        "integrity": "sha512-Hd+xODLutAcMaIzX6xo+YNPIX6WJ3+7TVecQja0l496MNEOARsdHObTZLPiHemjME/62j0YibW+sXgi2IR1+pw==",
+        "shasum": "d22be81010a10da0c72585ea75b29e1ccb274ea1",
+        "tarball": "https://registry.npmjs.org/@keegancodes/pi-otel/-/pi-otel-1.0.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 131,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40keegancodes%2Fpi-otel"
+        },
+        "week": {
+          "count": 10,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40keegancodes%2Fpi-otel"
+        }
+      }
+    },
+    {
+      "name": "@langchain/langsmith-pi-extension",
+      "version": "0.2.0",
+      "published_at": "2026-08-17T17:06:22.285Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "官方 LangSmith 扩展，依赖 langsmith+zod；不是仅凭下载可当通用OTLP",
+      "sources": [
+        "https://registry.npmjs.org/%40langchain%2Flangsmith-pi-extension",
+        "https://pi.dev/packages/@langchain/langsmith-pi-extension"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/langchain-ai/langsmith-pi-extension.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.js"
+        ]
+      },
+      "dependencies": {
+        "langsmith": "^0.8.7",
+        "zod": "^4.4.3"
+      },
+      "artifact": {
+        "integrity": "sha512-Cl/QsuDIMtEjlyMXCq2fwVyRzRxm1r199Ea94AYBKzDHvhv+bBu+j/AAlrVYm403JpVRRpDeQ1XKuyOwbOKjXA==",
+        "shasum": "84a8253b0af83df1f1412dbb4347989ccf14c0e5",
+        "tarball": "https://registry.npmjs.org/@langchain/langsmith-pi-extension/-/langsmith-pi-extension-0.2.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 22543,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40langchain%2Flangsmith-pi-extension"
+        },
+        "week": {
+          "count": 7240,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40langchain%2Flangsmith-pi-extension"
+        }
+      },
+      "catalog_queries": [
+        "langsmith"
+      ]
+    },
+    {
+      "name": "@langfuse/pi-observability-plugin",
+      "version": "0.1.2",
+      "published_at": "2026-08-31T13:02:06.130Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/%40langfuse%2Fpi-observability-plugin",
+        "https://pi.dev/packages/@langfuse/pi-observability-plugin"
+      ],
+      "repository": {
+        "url": "git+https://github.com/langfuse/pi-observability-plugin.git",
+        "type": "git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@langfuse/otel": "^5.10.0",
+        "@langfuse/tracing": "^5.10.0",
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/sdk-trace-node": "^2.10.0",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.221.0"
+      },
+      "artifact": {
+        "shasum": "7ae80de7e00dc70eb5bb174c8985a765020ae627",
+        "tarball": "https://registry.npmjs.org/@langfuse/pi-observability-plugin/-/pi-observability-plugin-0.1.2.tgz",
+        "integrity": "sha512-fHcjmfG9odWGlPpJSfg4RU7z+sxd4QaF5kLceXeY2KKJk2rwq3GJCwD3HESCjm1s0u6k1cp+at9eku/fTNeMKA=="
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability",
+        "trace",
+        "langfuse"
+      ]
+    },
+    {
+      "name": "@latitude-data/pi-telemetry",
+      "version": "0.0.3",
+      "published_at": "2026-06-18T08:09:37.317Z",
+      "category": "vendor_otlp",
+      "evidence_level": "published_source_reviewed",
+      "finding": "Keep as lightweight adaptation candidate; no-content status bypass and Node identity/shutdown need fixes",
+      "sources": [
+        "https://registry.npmjs.org/%40latitude-data%2Fpi-telemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/latitude-dev/latitude-llm.git#main"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/extension.js"
+        ]
+      },
+      "dependencies": {
+        "@clack/prompts": "1.4.0",
+        "picocolors": "1.1.1"
+      },
+      "artifact": {
+        "integrity": "sha512-aWMEHT1tue3HmqTfJCO4eWqkJtDF6/fZit+z+kTgKMcWWu0lB4qKnbU9lHL06/s6cOQ4pssRvKyAjeISMk826A==",
+        "shasum": "36104093b3f325378bb746cc27d9ad990d8f844e",
+        "tarball": "https://registry.npmjs.org/@latitude-data/pi-telemetry/-/pi-telemetry-0.0.3.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 27,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40latitude-data%2Fpi-telemetry"
+        },
+        "week": {
+          "count": 7,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40latitude-data%2Fpi-telemetry"
+        }
+      },
+      "source_review": {
+        "verdict": "Keep as lightweight adaptation candidate; no-content status bypass and Node identity/shutdown need fixes",
+        "protocol": "OTLP/HTTP JSON traces",
+        "source_refs": [
+          "dist/extension.js:7-34",
+          "dist/extension.js:106-162",
+          "dist/extension.js:248-305",
+          "dist/extension.js:698-718",
+          "dist/extension.js:875-882",
+          "dist/extension.js:984-1061"
+        ],
+        "blockers": [
+          "Requires key+project with fixed Bearer and X-Latitude-Project headers",
+          "Raw model error bypasses no-content via status.message",
+          "Identity/host/path always exported",
+          "Node execSync/userInfo/hostname/release unavailable",
+          "In-flight export not tracked and active run dropped on shutdown",
+          "Full content retained until final wire filtering"
+        ],
+        "positive": [
+          "No OTel/Langfuse SDK runtime",
+          "All twelve events supported by Piem",
+          "Per-factory state and generic names",
+          "Configurable baseURL and 10 second abort timeout",
+          "No-content covers main content attributes"
+        ]
+      }
+    },
+    {
+      "name": "@lifanh/pi-langfuse-extension",
+      "version": "0.1.3",
+      "published_at": "2026-06-06T07:24:58.953Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/%40lifanh%2Fpi-langfuse-extension"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lifanh/pi-langfuse-extension.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.js"
+        ]
+      },
+      "dependencies": {
+        "@langfuse/otel": "^5.3.0",
+        "@langfuse/tracing": "^5.3.0",
+        "@opentelemetry/api": "^1.9.1",
+        "@opentelemetry/core": "^2.7.1",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
+        "@opentelemetry/sdk-trace-base": "^2.0.1"
+      },
+      "artifact": {
+        "integrity": "sha512-qyW88zYbEqe9sGWzbUtNMiimibufJmmAxWpgNVGbzFMrRW5CsZBkfgVbHpNyAmqwzST3FpsFu8THOed4Mt5SpA==",
+        "shasum": "c8e08a24da3960d695d4b6b394306ac5ce012fba",
+        "tarball": "https://registry.npmjs.org/@lifanh/pi-langfuse-extension/-/pi-langfuse-extension-0.1.3.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "@lmnr-ai/pi-extension",
+      "version": "0.1.1",
+      "published_at": "2026-08-28T15:25:16.683Z",
+      "category": "vendor_tracing",
+      "evidence_level": "published_source_reviewed",
+      "finding": "Uses actual OTLP HTTP with custom base URL, but heavyweight Node SDK, content capture and lifecycle coupling",
+      "sources": [
+        "https://registry.npmjs.org/%40lmnr-ai%2Fpi-extension",
+        "https://pi.dev/packages/@lmnr-ai/pi-extension"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lmnr-ai/lmnr-pi-extension.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@lmnr-ai/lmnr": "^0.8.40",
+        "@opentelemetry/api": "^1.9.0"
+      },
+      "artifact": {
+        "integrity": "sha512-oubwkgCqFVIHRcQbDwwucPmPRb4cBfPXn+S4U7cv3QIO9MsMQrkShgsyaDM91zRxMe/1TWAwCEx67n3gEC1pfw==",
+        "shasum": "4e637280ae5d11d5b5f956d2cb15d66e0a9464c9",
+        "tarball": "https://registry.npmjs.org/@lmnr-ai/pi-extension/-/pi-extension-0.1.1.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 1081,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40lmnr-ai%2Fpi-extension"
+        },
+        "week": {
+          "count": 112,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40lmnr-ai%2Fpi-extension"
+        }
+      },
+      "catalog_queries": [
+        "otel",
+        "tracing",
+        "observability",
+        "otlp"
+      ],
+      "source_review": {
+        "verdict": "Uses actual OTLP HTTP with custom base URL, but heavyweight Node SDK, content capture and lifecycle coupling",
+        "protocol": "OTLP/HTTP protobuf traces via Laminar SDK",
+        "source_refs": [
+          "src/tracer.ts:24-41",
+          "src/config.ts:111-126",
+          "src/index.ts:87-96",
+          "src/attributes.ts:103-108",
+          "src/index.ts:296-305",
+          "dependency @lmnr-ai/lmnr@0.8.45 dist/index.mjs:5862-5892",
+          "dependency @lmnr-ai/lmnr@0.8.45 dist/index.mjs:6872-6889"
+        ],
+        "blockers": [
+          "Factory requires project API key and SDK uses fixed Bearer auth",
+          "No content capture switch; full input/output serialized",
+          "NodeTracerProvider+AsyncLocalStorage required even forceHttp",
+          "SDK global once initialization; shutdown only fire-and-forget flush"
+        ],
+        "positive": [
+          "Actual OTLP transport not proprietary-only",
+          "Supports custom LMNR_BASE_URL",
+          "Explicit span parent relationships",
+          "No automatic provider instrumentation when instrumentModules={}"
+        ]
+      }
+    },
+    {
+      "name": "@mobrienv/pi-otlp",
+      "version": "0.2.0",
+      "published_at": "2026-02-12T22:04:16.055Z",
+      "category": "generic_otlp",
+      "evidence_level": "已深读发布源码",
+      "finding": "仅 metrics；60 秒周期可配；静态文件诊断流、全局注册、副作用和同名工具计时冲突待改",
+      "sources": [
+        "https://registry.npmjs.org/%40mobrienv%2Fpi-otlp"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mikeyobrien/pi-otlp.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "^0.57.0",
+        "@opentelemetry/resources": "^1.30.0",
+        "@opentelemetry/sdk-metrics": "^1.30.0",
+        "@opentelemetry/semantic-conventions": "^1.30.0"
+      },
+      "artifact": {
+        "integrity": "sha512-UnCrYMBEV1VLdoNX6fUBXC8+OqTtjYz582gBV1a1r0ogQ30YXjn+aw1w/O/cgoTTCXwDWz/BH7KJTr3/Cq+T+Q==",
+        "shasum": "4d678ebf3f934a4d2747224a4efbf1657cce2cec",
+        "tarball": "https://registry.npmjs.org/@mobrienv/pi-otlp/-/pi-otlp-0.2.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 42,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40mobrienv%2Fpi-otlp"
+        },
+        "week": {
+          "count": 5,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40mobrienv%2Fpi-otlp"
+        }
+      }
+    },
+    {
+      "name": "@narumitw/pi-langfuse",
+      "version": "0.50.5",
+      "published_at": "2026-08-26T18:05:51.320Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/%40narumitw%2Fpi-langfuse",
+        "https://pi.dev/packages/@narumitw/pi-langfuse"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/narumiruna/pi-extensions.git",
+        "directory": "packages/pi-langfuse"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@langfuse/otel": "^5.10.1",
+        "@langfuse/tracing": "^5.10.1",
+        "@narumitw/pi-tui-kit": "^0.59.0",
+        "@opentelemetry/api": "^1.9.1",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
+        "@opentelemetry/sdk-trace-base": "^2.10.0",
+        "@opentelemetry/sdk-trace-node": "^2.10.0"
+      },
+      "artifact": {
+        "integrity": "sha512-8+SCABV4awt4Uxc3zebGz7g0kf996+e9/QrCSMzBQxc4UC2e3QL3zIuNlTVuM6twuBi+/DcVGrCHfO2ldZzKWQ==",
+        "shasum": "ab89f2321a7bf6f2abff5f1c7cf154055ee5e3b9",
+        "tarball": "https://registry.npmjs.org/@narumitw/pi-langfuse/-/pi-langfuse-0.50.5.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "tracing",
+        "observability",
+        "trace",
+        "langfuse"
+      ]
+    },
+    {
+      "name": "@posthog/pi",
+      "version": "0.3.0",
+      "published_at": "2026-09-02T18:07:55.964Z",
+      "category": "vendor_analytics",
+      "evidence_level": "元数据",
+      "finding": "PostHog MCP+LLM analytics；posthog-node依赖；不是通用OTLP证据",
+      "sources": [
+        "https://registry.npmjs.org/%40posthog%2Fpi",
+        "https://pi.dev/packages/@posthog/pi"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/PostHog/posthog-pi.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "@sinclair/typebox": "^0.34.49",
+        "posthog-node": "^5.0.0"
+      },
+      "artifact": {
+        "integrity": "sha512-dygI5hHeVwf3fHTLBgUSVM229nxQLXwIUBEnuVxGYSoADL5J+tt+fkGBpXhsdIVzoStFZziRpbMSa9zentHKoA==",
+        "shasum": "3ccd13f3232bb0a1cdadd36eac588370af8cff82",
+        "tarball": "https://registry.npmjs.org/@posthog/pi/-/pi-0.3.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 370,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40posthog%2Fpi"
+        },
+        "week": {
+          "count": 38,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40posthog%2Fpi"
+        }
+      },
+      "catalog_queries": [
+        "tracing",
+        "observability"
+      ]
+    },
+    {
+      "name": "@pureooze/pi-telemetry",
+      "version": "0.1.0",
+      "published_at": "2026-08-14T00:53:23.067Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "本地operations.jsonl，README明确不网络请求",
+      "sources": [
+        "https://registry.npmjs.org/%40pureooze%2Fpi-telemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pureooze/pi-config.git",
+        "directory": "packages/telemetry"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./index.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-pYJGnUK5Yfpg6uinRuTi1v20+CBWIqJR0XEizbO4IVoXMflLr8t43Vt69vmi4q0k3nU4dDQ3L+jxLjfkEtHo/g==",
+        "shasum": "df1e25a0f938ced41682a591bb2d36e5e0ccb7e9",
+        "tarball": "https://registry.npmjs.org/@pureooze/pi-telemetry/-/pi-telemetry-0.1.0.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "@raindrop-ai/pi-agent",
+      "version": "0.2.1",
+      "published_at": "2026-09-10T18:29:28.635Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "Raindrop subscriber+Pi扩展，声明Pi>=0.84.4；未读内联依赖源码，不认定零依赖",
+      "sources": [
+        "https://registry.npmjs.org/%40raindrop-ai%2Fpi-agent",
+        "https://pi.dev/packages/@raindrop-ai/pi-agent"
+      ],
+      "repository": {
+        "url": "git+https://github.com/raindrop-ai/pi-agent.git",
+        "type": "git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/extension.js"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "shasum": "7e1288a68c46a1d10792034fcc71adf66d8a74b7",
+        "tarball": "https://registry.npmjs.org/@raindrop-ai/pi-agent/-/pi-agent-0.2.1.tgz",
+        "integrity": "sha512-EFEbxtftUb7XgZgtBdMfNQf7J7TljxFfczx6+sIHHOoS0uOcFu1aX5l5rQRuZS4cRENJaK3hK0oqVO4hPD1rbQ=="
+      },
+      "downloads": {
+        "month": {
+          "count": 27213,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40raindrop-ai%2Fpi-agent"
+        },
+        "week": {
+          "count": 5082,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40raindrop-ai%2Fpi-agent"
+        }
+      },
+      "catalog_queries": [
+        "tracing",
+        "observability"
+      ]
+    },
+    {
+      "name": "@ramarivera/pi-langfuse",
+      "version": "0.1.1",
+      "published_at": "2026-06-01T08:42:13.922Z",
+      "category": "vendor_otlp",
+      "evidence_level": "published_source_reviewed",
+      "finding": "Lightweight hand-written OTLP JSON; default author endpoint and content/lifecycle/transport need adaptation",
+      "sources": [
+        "https://registry.npmjs.org/%40ramarivera%2Fpi-langfuse"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/ramarivera/pi-langfuse.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-8CiWERc5c3TyLeLKa43pdWFXA+5cTT78LGmEt0J2/i27ZuS7sPZ2tl+Ey/0bYPB5EXcujkKKl4RRQik0tkMkww==",
+        "shasum": "2a11daa7eb6f63c032783e8d36a15524d34bb46a",
+        "tarball": "https://registry.npmjs.org/@ramarivera/pi-langfuse/-/pi-langfuse-0.1.1.tgz"
+      },
+      "downloads": {},
+      "source_review": {
+        "verdict": "Lightweight hand-written OTLP JSON; default author endpoint and content/lifecycle/transport need adaptation",
+        "protocol": "OTLP/HTTP JSON traces",
+        "source_refs": [
+          "src/extension.ts:99-100",
+          "src/extension.ts:429-475",
+          "src/extension.ts:483-519",
+          "src/extension.ts:567-592",
+          "src/extension.ts:637-664"
+        ],
+        "blockers": [
+          "Default enabled full-content export to author endpoint",
+          "No content off switch or auth header map",
+          "No response.ok check, timeout, retry, or shutdown",
+          "os.hostname missing; BigInt literal vs es2018 compile target untested"
+        ],
+        "positive": [
+          "No runtime SDK dependencies",
+          "Per-factory state",
+          "Custom full endpoint including OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+          "All six events supported by Piem"
+        ]
+      }
+    },
+    {
+      "name": "@ravan08/pi-langfuse",
+      "version": "2.0.0",
+      "published_at": "2026-08-18T06:22:35.200Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/%40ravan08%2Fpi-langfuse",
+        "https://pi.dev/packages/@ravan08/pi-langfuse"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/saravananravi08/pi-langfuse-extension.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./index.ts"
+        ],
+        "image": "https://raw.githubusercontent.com/saravananravi08/pi-langfuse-extension/main/docs/screenshot1.jpg"
+      },
+      "dependencies": {
+        "@langfuse/otel": "^5.10.1",
+        "@langfuse/tracing": "^5.10.1",
+        "@opentelemetry/sdk-node": "^0.221.0",
+        "typebox": "^1.3.6"
+      },
+      "artifact": {
+        "integrity": "sha512-4ofEDdgF9LXVDeMu6WFBUd0a23d6clu5tmlQR3AohWeR9rtSNxh1gG9yBRH0ldb+wsl1j2dnCfF9HHc3uzJEzg==",
+        "shasum": "50a6c39a5e8abe684814374a9f64cb491d34f570",
+        "tarball": "https://registry.npmjs.org/@ravan08/pi-langfuse/-/pi-langfuse-2.0.0.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "tracing",
+        "observability",
+        "trace",
+        "langfuse"
+      ]
+    },
+    {
+      "name": "@respan/instrumentation-pi",
+      "version": "0.1.3",
+      "published_at": "2026-09-04T11:46:10.454Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "Respan兼容OTel spans；默认完整内容和无限内容长度；还需tracing SDK依赖图审查",
+      "sources": [
+        "https://registry.npmjs.org/%40respan%2Finstrumentation-pi",
+        "https://pi.dev/packages/@respan/instrumentation-pi"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/respanai/respan.git",
+        "directory": "javascript-sdks/instrumentations/respan-instrumentation-pi"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/extension.js"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/core": "^2.10.0",
+        "@opentelemetry/sdk-trace-base": "^2.10.0",
+        "@opentelemetry/semantic-conventions": "^1.43.0",
+        "@respan/respan-sdk": "^1.3.2",
+        "@respan/tracing": "^1.1.6",
+        "@traceloop/ai-semantic-conventions": "^0.13.0"
+      },
+      "artifact": {
+        "integrity": "sha512-bb7Q3EOL4Y5MxCsYZNAzbc26L5hwq90gC9wUFryL1u0hhc7SsG9B6PuAZT+K0usf9wLSIXWS9zMS7G95TO5CHg==",
+        "shasum": "ac238562d6480f414e2d74f41e26e436ba5f2774",
+        "tarball": "https://registry.npmjs.org/@respan/instrumentation-pi/-/instrumentation-pi-0.1.3.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 573,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40respan%2Finstrumentation-pi"
+        },
+        "week": {
+          "count": 81,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40respan%2Finstrumentation-pi"
+        }
+      },
+      "catalog_queries": [
+        "tracing",
+        "observability"
+      ]
+    },
+    {
+      "name": "@senad-d/observme",
+      "version": "0.1.9",
+      "published_at": "2026-07-26T20:51:27.720Z",
+      "category": "generic_otlp",
+      "evidence_level": "published_source_reviewed",
+      "finding": "Standard OTLP with broad features but many substantive desktop/runtime adaptations",
+      "sources": [
+        "https://registry.npmjs.org/%40senad-d%2Fobservme",
+        "https://pi.dev/packages/@senad-d/observme"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/senad-d/ObservMe.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/extension.ts"
+        ],
+        "skills": [
+          "./skills"
+        ],
+        "image": "https://raw.githubusercontent.com/senad-d/ObservMe/main/img/demo.gif"
+      },
+      "dependencies": {
+        "@opentelemetry/api": "1.9.1",
+        "@opentelemetry/api-logs": "0.220.0",
+        "@opentelemetry/exporter-logs-otlp-proto": "0.220.0",
+        "@opentelemetry/exporter-metrics-otlp-proto": "0.220.0",
+        "@opentelemetry/exporter-trace-otlp-proto": "0.220.0",
+        "@opentelemetry/resources": "2.9.0",
+        "@opentelemetry/sdk-logs": "0.220.0",
+        "@opentelemetry/sdk-metrics": "2.9.0",
+        "@opentelemetry/sdk-trace-base": "2.9.0",
+        "@opentelemetry/sdk-trace-node": "2.9.0"
+      },
+      "artifact": {
+        "integrity": "sha512-Ut5NxQ6VoKdpv0uPgdsFc+PIixKRkPpkdLmyW27B3Z949OViPvJt2ot6CGBP16BcYfDfy5a/O7R5SwN5OBFHXQ==",
+        "shasum": "dc76c986348aa58a7b9f73923fdb47ea7b6685f9",
+        "tarball": "https://registry.npmjs.org/@senad-d/observme/-/observme-0.1.9.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 214,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40senad-d%2Fobservme"
+        },
+        "week": {
+          "count": 17,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40senad-d%2Fobservme"
+        }
+      },
+      "catalog_queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "observability",
+        "trace",
+        "grafana"
+      ],
+      "source_review": {
+        "verdict": "Standard OTLP with broad features but many substantive desktop/runtime adaptations",
+        "protocol": "OTLP/HTTP protobuf traces+metrics+logs",
+        "source_refs": [
+          "src/extension.ts:1-18",
+          "src/otel/traces.ts:95-100",
+          "src/otel/traces.ts:183-205",
+          "src/otel/otlp-endpoint.ts:18-55",
+          "src/config/defaults.ts:50-89",
+          "src/pi/otel-operation-ownership.ts:30-46"
+        ],
+        "blockers": [
+          "Static NodeTracerProvider and perf_hooks/http/https/fs/promises/fork",
+          "HMAC capability missing in bridge",
+          "Unsupported session_info_changed/session_before_tree/user_bash",
+          "Process-global pending cleanup ownership",
+          "Configuration bootstraps project files via Node helper"
+        ],
+        "positive": [
+          "All content capture false by default",
+          "Own trace/metric/log providers, not global registration",
+          "Explicit signal endpoints/headers/timeouts",
+          "3 second bounded cleanup retains unsettled promise ownership"
+        ]
+      }
+    },
+    {
+      "name": "@spences10/pi-observability",
+      "version": "0.0.23",
+      "published_at": "2026-07-26T11:19:41.102Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据",
+      "finding": "live event stream+本地dashboard，不是OTLP证据",
+      "sources": [
+        "https://registry.npmjs.org/%40spences10%2Fpi-observability",
+        "https://pi.dev/packages/@spences10/pi-observability"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/spences10/my-pi.git",
+        "directory": "packages/pi-observability"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.js"
+        ],
+        "image": "https://raw.githubusercontent.com/spences10/my-pi/main/assets/pi-package-preview.png"
+      },
+      "dependencies": {
+        "@fontsource/victor-mono": "^5.2.8",
+        "@spences10/pi-sqlite-core": "0.0.2",
+        "@spences10/pi-tui-modal": "0.0.24"
+      },
+      "artifact": {
+        "integrity": "sha512-0EY0kTshOCAjG5sZqBs8ZwkJvAmaXIhLODftzuuE3N6dyCjZI5woqrjn84jGQ/f5EMuU9CogwT1MxRcm/BFJlQ==",
+        "shasum": "58ed331a2f2c7da7bbdb67477ad38824ae889b0b",
+        "tarball": "https://registry.npmjs.org/@spences10/pi-observability/-/pi-observability-0.0.23.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "telemetry",
+        "observability"
+      ]
+    },
+    {
+      "name": "@spences10/pi-telemetry",
+      "version": "0.0.33",
+      "published_at": "2026-07-26T11:19:43.567Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据",
+      "finding": "SQLite本地遥测，不是OTLP证据",
+      "sources": [
+        "https://registry.npmjs.org/%40spences10%2Fpi-telemetry",
+        "https://pi.dev/packages/@spences10/pi-telemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/spences10/my-pi.git",
+        "directory": "packages/pi-telemetry"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/index.js"
+        ],
+        "image": "https://raw.githubusercontent.com/spences10/my-pi/main/assets/pi-package-preview.png"
+      },
+      "dependencies": {
+        "@spences10/pi-sqlite-core": "0.0.2",
+        "@spences10/pi-tui-modal": "0.0.24",
+        "@spences10/pi-settings": "0.0.3"
+      },
+      "artifact": {
+        "integrity": "sha512-FAu7MaDVXoz1yKeS7bhJ5oeQh9qbTiRjOjZXaTqUs7Gp4DRO+JWWB1HkXiHe2FLyr9w5QDxPezw522XQ9nMVwg==",
+        "shasum": "c9c690698ddbbcd634a10703982f6f6be3927364",
+        "tarball": "https://registry.npmjs.org/@spences10/pi-telemetry/-/pi-telemetry-0.0.33.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "telemetry"
+      ]
+    },
+    {
+      "name": "@telemetry-dev/pi",
+      "version": "0.1.3",
+      "published_at": "2026-09-07T13:11:20.103Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "依赖 telemetry.dev SDK；声明进程一次初始化，正文默认开启；通用OTLP尚未确认",
+      "sources": [
+        "https://registry.npmjs.org/%40telemetry-dev%2Fpi"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/telemetry-dev/sdks.git",
+        "directory": "packages/pi"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/register.mjs"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api": "^1.9.1",
+        "@telemetry-dev/sdk": "^0.1.3"
+      },
+      "artifact": {
+        "integrity": "sha512-LWxOmkETXkwoozLonGICL2AaJwjJIVNXTLJM32v2nOOA4dMe5nPveIiuzU/xmTqVnU03baPuCTd9VPF+mpRbyw==",
+        "shasum": "5e6e63ec79acb19f151f315f5fd9b537cd478639",
+        "tarball": "https://registry.npmjs.org/@telemetry-dev/pi/-/pi-0.1.3.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 291,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40telemetry-dev%2Fpi"
+        },
+        "week": {
+          "count": 181,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40telemetry-dev%2Fpi"
+        }
+      }
+    },
+    {
+      "name": "@traceroot-ai/pi-extension",
+      "version": "0.1.0",
+      "published_at": "2026-07-24T07:09:07.260Z",
+      "category": "vendor_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "官方 OTel + Node provider；文档允许显式 TRACEROOT_OTLP_ENDPOINT，仍要求API key",
+      "sources": [
+        "https://registry.npmjs.org/%40traceroot-ai%2Fpi-extension"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/traceroot-ai/traceroot-pi-extension.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/exporter-trace-otlp-proto": "^0.57.2",
+        "@opentelemetry/resources": "^1.30.1",
+        "@opentelemetry/sdk-trace-base": "^1.30.1",
+        "@opentelemetry/sdk-trace-node": "^1.30.1"
+      },
+      "artifact": {
+        "integrity": "sha512-tl95u35YoBCwkduNzJQeehMXxLsk28FA/G0/+xHUXtZyOg3olrlZcaeLkwJ8xnUHWnZi6UptZidAQThCI27+0Q==",
+        "shasum": "72662d7e51035424e78d05a3e5049bf41bdc072d",
+        "tarball": "https://registry.npmjs.org/@traceroot-ai/pi-extension/-/pi-extension-0.1.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 63,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40traceroot-ai%2Fpi-extension"
+        },
+        "week": {
+          "count": 6,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40traceroot-ai%2Fpi-extension"
+        }
+      }
+    },
+    {
+      "name": "@tryinget/pi-telemetry",
+      "version": "0.4.0",
+      "published_at": "2026-09-02T20:49:03.815Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "NDJSON shards+HTML dashboard，非已确认OTLP",
+      "sources": [
+        "https://registry.npmjs.org/%40tryinget%2Fpi-telemetry",
+        "https://pi.dev/packages/@tryinget/pi-telemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/tryingET/pi-extensions.git",
+        "directory": "packages/pi-telemetry"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./extensions/telemetry.ts"
+        ],
+        "prompts": [
+          "./prompts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-pJjySIKkTZpkaVUI9pezePsXLY6Oh8prCnwm/KlnR64mlDhhMCNAhymC4zATbbDIGBinLbgobsnoreCU8brQ6A==",
+        "shasum": "a18947e9ab69e18ee95bd8ed62f0e0e40e0c6831",
+        "tarball": "https://registry.npmjs.org/@tryinget/pi-telemetry/-/pi-telemetry-0.4.0.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "telemetry"
+      ]
+    },
+    {
+      "name": "@uselemma/pi",
+      "version": "0.1.0",
+      "published_at": "2026-08-21T19:44:55.160Z",
+      "category": "vendor_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "README明确不是OTLP exporter，只POST Lemma /traces/ingest",
+      "sources": [
+        "https://registry.npmjs.org/%40uselemma%2Fpi",
+        "https://pi.dev/packages/@uselemma/pi"
+      ],
+      "repository": null,
+      "pi_manifest": {
+        "extensions": [
+          "./extensions"
+        ]
+      },
+      "dependencies": {
+        "@uselemma/tracing": "^7.11.0"
+      },
+      "artifact": {
+        "integrity": "sha512-HHbF8qWkOZyKBvIUi8qO92n3boJNBGliy4Fcjpv95M+ZmNbgjaw9KHhkzQcY57/WnOsLhqsw9/BYhSE5gPuBkw==",
+        "shasum": "c0df1b6a32a40baa669ddd418f5b5be6f96280bd",
+        "tarball": "https://registry.npmjs.org/@uselemma/pi/-/pi-0.1.0.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "tracing",
+        "observability"
+      ]
+    },
+    {
+      "name": "@yofriadi/pi-mlflow",
+      "version": "0.1.0",
+      "published_at": "2026-08-12T03:50:20.548Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据和README",
+      "finding": "mlflow-tracing SDK，默认capture开；可关闭内容，通用OTLP待核",
+      "sources": [
+        "https://registry.npmjs.org/%40yofriadi%2Fpi-mlflow",
+        "https://pi.dev/packages/@yofriadi/pi-mlflow"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/yofriadi/pi-extensions.git",
+        "directory": "packages/pi-mlflow"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api": "1.9.0",
+        "mlflow-tracing": "0.1.3"
+      },
+      "artifact": {
+        "integrity": "sha512-j9MvJ7p2aSuqnY9t8m+6RUXNStAd7jCNw/JArScSSO1o2AmJzoVRCPZ3FmGJ+CKag3C3o93S2FG5uNrYFfHwkA==",
+        "shasum": "2a52eb3984f2496b39e6395d426bc465ee70d867",
+        "tarball": "https://registry.npmjs.org/@yofriadi/pi-mlflow/-/pi-mlflow-0.1.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 187,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/%40yofriadi%2Fpi-mlflow"
+        },
+        "week": {
+          "count": 10,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/%40yofriadi%2Fpi-mlflow"
+        }
+      },
+      "catalog_queries": [
+        "tracing",
+        "trace",
+        "mlflow"
+      ]
+    },
+    {
+      "name": "@zeeq-ai/zeeq-app-pi-telemetry",
+      "version": "1.0.1",
+      "published_at": "2026-07-25T00:28:52.795Z",
+      "category": "vendor_analytics",
+      "evidence_level": "元数据",
+      "finding": "Zeeq lifecycle扩展，未确认OTLP",
+      "sources": [
+        "https://registry.npmjs.org/%40zeeq-ai%2Fzeeq-app-pi-telemetry",
+        "https://pi.dev/packages/@zeeq-ai/zeeq-app-pi-telemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+ssh://git@github.com/zeeq-ai/zeeq-app.git",
+        "directory": "src/plugins/pi"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-eAYIRxewYkibVRuPTAl9B8Cp5kP8vLggG/2ZdZWsFNV39VSeFUiA3Zk01uXemGzVgYEe33oo3i5NJv+ZeKzqiA==",
+        "shasum": "80f08cbabc81bfea2733a7c804e48420315b7f08",
+        "tarball": "https://registry.npmjs.org/@zeeq-ai/zeeq-app-pi-telemetry/-/zeeq-app-pi-telemetry-1.0.1.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "telemetry"
+      ]
+    },
+    {
+      "name": "abra-ai",
+      "version": "0.1.5",
+      "published_at": "2026-08-02T01:28:22.170Z",
+      "category": "adjacent_cli",
+      "evidence_level": "元数据",
+      "finding": "无pi.extensions；多Agent workspace观测CLI，未核Pi安装片段",
+      "sources": [
+        "https://registry.npmjs.org/abra-ai"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/ModaLabs/abra.git",
+        "directory": "apps/cli"
+      },
+      "pi_manifest": null,
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-xxZjPK/M9Qhy7c1qeU4p4SOCPBO9KyJOP5vH30kLrmzJY/4XCmV9l68P9OpZIv5rdqyEpuOLnD7WWfztC9a5Dg==",
+        "shasum": "8a67acce6f4e00996b67804d115f9567fdbf44c0",
+        "tarball": "https://registry.npmjs.org/abra-ai/-/abra-ai-0.1.5.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "claude-code-opentelemetry",
+      "version": "1.1.0",
+      "published_at": "2026-07-23T22:59:09.567Z",
+      "category": "generic_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "metrics-only；官方 metrics SDK + HTTP exporter；文档称 protobuf，尚未核发布源码",
+      "sources": [
+        "https://registry.npmjs.org/claude-code-opentelemetry"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/xiaoxianma/claude-code-opentelemetry.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ],
+        "image": "https://raw.githubusercontent.com/xiaoxianma/claude-code-opentelemetry/main/media/hero.png"
+      },
+      "dependencies": {
+        "@opentelemetry/api": "1.9.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "0.221.0",
+        "@opentelemetry/resources": "2.10.0",
+        "@opentelemetry/sdk-metrics": "2.10.0",
+        "@opentelemetry/semantic-conventions": "1.43.0",
+        "diff": "8.0.4"
+      },
+      "artifact": {
+        "integrity": "sha512-n7kes6KfbvIXDcs4VnNBeiZKg9oDFGvsIs/1MJp7T2V1FXzDLCagQy7iM88lGdq/Qt0259I/HI7Fs95zYVVkaw==",
+        "shasum": "4156dbd54d0867e3297cddf48ebe54001f2c944f",
+        "tarball": "https://registry.npmjs.org/claude-code-opentelemetry/-/claude-code-opentelemetry-1.1.0.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 79,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/claude-code-opentelemetry"
+        },
+        "week": {
+          "count": 4,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/claude-code-opentelemetry"
+        }
+      }
+    },
+    {
+      "name": "observal-pi",
+      "version": "1.13.1",
+      "published_at": "2026-09-05T17:33:55.570Z",
+      "category": "vendor_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "Observal session POST，本地配置与node built-ins；5s请求超时",
+      "sources": [
+        "https://registry.npmjs.org/observal-pi",
+        "https://pi.dev/packages/observal-pi"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Observal/Observal.git",
+        "directory": "packages/pi-extension"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./extensions/observal.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-7kX6fU+dRdD7n1KmcatxOzPSoCNcSp1uU1xugD7MxoiMMR3OYgpn1jsKnCgMP74u2athpFE4AI1gNIE9t9n4lg==",
+        "shasum": "c4cde7c43ad97731db33ca81a8904db5ed19e8ea",
+        "tarball": "https://registry.npmjs.org/observal-pi/-/observal-pi-1.13.1.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "telemetry",
+        "tracing",
+        "trace"
+      ]
+    },
+    {
+      "name": "pi-agent-observer",
+      "version": "0.1.0-alpha.1",
+      "published_at": "2026-07-21T11:16:40.066Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "本地runtime发现和元数据；README落后仍称未发布，而registry已有alpha",
+      "sources": [
+        "https://registry.npmjs.org/pi-agent-observer"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/almogdepaz/pi-agent-observer.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./dist/extension.js"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-emIVyszEori78JZ/kFXtPZ3RT2y30a5CIhPUeYaFEvw45/gfL1uE5ES+oGTin0Na8TNw+U3y34diJMGi7XZBSQ==",
+        "shasum": "dfde414f27824c5d9748c5838bbe5191d437e492",
+        "tarball": "https://registry.npmjs.org/pi-agent-observer/-/pi-agent-observer-0.1.0-alpha.1.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "pi-codex-otel",
+      "version": "0.0.8",
+      "published_at": "2026-09-07T05:31:00.415Z",
+      "category": "generic_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "logs-only，官方 OTLP HTTP protobuf，标准 env；需核源码兼容",
+      "sources": [
+        "https://registry.npmjs.org/pi-codex-otel",
+        "https://pi.dev/packages/pi-codex-otel"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mkusaka/pi-codex-otel.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": {
+        "@opentelemetry/api-logs": "0.220.0",
+        "@opentelemetry/exporter-logs-otlp-proto": "0.220.0",
+        "@opentelemetry/resources": "2.9.0",
+        "@opentelemetry/sdk-logs": "0.220.0"
+      },
+      "artifact": {
+        "integrity": "sha512-LDcwKgcWSL8IDXk+e5D5ATkM29lALJwkIFVw6vO81NUyZ5k5fRw4GUxRrGh5Mul/I/bFsixNApZ/uAqcCnkFng==",
+        "shasum": "5f6e8957f6aac138e5a27355575561e35492897a",
+        "tarball": "https://registry.npmjs.org/pi-codex-otel/-/pi-codex-otel-0.0.8.tgz"
+      },
+      "downloads": {
+        "month": {
+          "count": 954,
+          "start": "2026-08-13",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-08-13:2026-09-11/pi-codex-otel"
+        },
+        "week": {
+          "count": 202,
+          "start": "2026-09-05",
+          "end": "2026-09-11",
+          "source": "https://api.npmjs.org/downloads/point/2026-09-05:2026-09-11/pi-codex-otel"
+        }
+      },
+      "catalog_queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "otlp"
+      ],
+      "source_review": {
+        "level": "focused source",
+        "limits": "直接讀OAuth SQLite/外部auth.json/git email；os hostname；Codex語義/metadata偽裝非通用GenAI",
+        "source": "https://github.com/mkusaka/pi-codex-otel/blob/fac74ca3bd7e6214c15a45cd78961d51347dc60b/src/index.ts",
+        "sha": "fac74ca3bd7e6214c15a45cd78961d51347dc60b"
+      }
+    },
+    {
+      "name": "pi-conductor-analytics-plugin",
+      "version": "0.3.0",
+      "published_at": "2026-08-29T23:28:44.247Z",
+      "category": "webhook_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "conductor:record自有JSON转发，非OTLP",
+      "sources": [
+        "https://registry.npmjs.org/pi-conductor-analytics-plugin",
+        "https://pi.dev/packages/pi-conductor-analytics-plugin"
+      ],
+      "repository": null,
+      "pi_manifest": {
+        "extensions": [
+          "./extensions"
+        ]
+      },
+      "dependencies": {},
+      "artifact": {
+        "integrity": "sha512-4kBx/mRTZsvRuJdAkSiLjcy4gP/xe8hDmRs7cayfyYiP64YS/n4Ae5/u6g+hP6kzrbxJZGFhO1s8jf4AvZAB8A==",
+        "shasum": "0cbfdf6b5a7dd0b26cb4e31913f3fa0e1d4bce1a",
+        "tarball": "https://registry.npmjs.org/pi-conductor-analytics-plugin/-/pi-conductor-analytics-plugin-0.3.0.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "telemetry"
+      ]
+    },
+    {
+      "name": "pi-langfuse",
+      "version": "1.5.19",
+      "published_at": "2026-09-04T09:10:23.570Z",
+      "category": "vendor_tracing",
+      "evidence_level": "元数据",
+      "finding": "Langfuse方向补充候选；有pi.extensions，未深读，不因包名否定通用collector可能性",
+      "sources": [
+        "https://registry.npmjs.org/pi-langfuse",
+        "https://pi.dev/packages/pi-langfuse"
+      ],
+      "repository": {
+        "url": "git+https://github.com/gooyoung/pi-langfuse.git",
+        "type": "git"
+      },
+      "pi_manifest": {
+        "image": "https://github.com/gooyoung/pi-langfuse/blob/main/image.png?raw=true",
+        "extensions": [
+          "./index.ts"
+        ]
+      },
+      "dependencies": {
+        "@langfuse/otel": "^5.3.0",
+        "@langfuse/client": "^5.3.0",
+        "@langfuse/tracing": "^5.3.0",
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/sdk-node": "^0.218.0",
+        "@opentelemetry/sdk-trace-base": "^2.0.1",
+        "@opentelemetry/context-async-hooks": "^2.7.1"
+      },
+      "artifact": {
+        "shasum": "199da94d8c178e598eee23cd1e8edcdca7c79ba3",
+        "tarball": "https://registry.npmjs.org/pi-langfuse/-/pi-langfuse-1.5.19.tgz",
+        "integrity": "sha512-126kXwGCsvPOyLKRHZHlClMunnZhFPpHjDFgXpihir6ufo+H/LL7fnSAtYSTQWUdmY+wIhPq5nr0detX7ISjGg=="
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "tracing",
+        "observability",
+        "langfuse"
+      ]
+    },
+    {
+      "name": "pi-observable-coding-agent",
+      "version": "0.0.2",
+      "published_at": "2026-08-06T10:33:57.586Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "本地JSONL/会话条目与dashboard，不是OTLP",
+      "sources": [
+        "https://registry.npmjs.org/pi-observable-coding-agent"
+      ],
+      "repository": null,
+      "pi_manifest": {
+        "extensions": [
+          "./dist/extension.js"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-VCLfy/yChPrvWmD61K/gtHbSwLE4q/1OrIhjlBQ9sAJtFjkLpqftDuJ9Wu7EwM/OQ1nHtiQZ2ufsz6XlztNFrQ==",
+        "shasum": "b27e5eaa1ff7733dda16979138f30bd121f98fdd",
+        "tarball": "https://registry.npmjs.org/pi-observable-coding-agent/-/pi-observable-coding-agent-0.0.2.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "pi-prometheus",
+      "version": "0.2.0",
+      "published_at": "2026-08-26T12:50:30.224Z",
+      "category": "prometheus_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "本地/metrics端口+TUI、Grafana，不是OTLP push",
+      "sources": [
+        "https://registry.npmjs.org/pi-prometheus",
+        "https://pi.dev/packages/pi-prometheus"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/aramz33/pi-prometheus.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./extensions/prometheus/index.ts"
+        ],
+        "image": "https://raw.githubusercontent.com/aramz33/pi-prometheus/v0.2.0/examples/media/context-budget.png"
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-Vvm0q7Rad+t18aIQogSnQM3E6pG4zF9El8f5kcjFnZrlQyrk6NEonrtdoC8clbesnKnqTjzxgI0r/sIbrVwc9A==",
+        "shasum": "d3cf8ce287095ae6a1b678dc7f573a0d425f46ab",
+        "tarball": "https://registry.npmjs.org/pi-prometheus/-/pi-prometheus-0.2.0.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "observability",
+        "grafana"
+      ]
+    },
+    {
+      "name": "pi-provider-trace",
+      "version": "0.1.1",
+      "published_at": "2026-07-08T08:16:47.335Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "provider HTTP/SSE wire trace+Web UI，不是OTLP证据",
+      "sources": [
+        "https://registry.npmjs.org/pi-provider-trace"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Dwsy/pi-provider-trace.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./src/index.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-Tffsk2tHhUlPbby2H/oSukKuAV8INj0HjEH84h3yx58FyS7haj6156jwIanIbDLzhIWf98C3ZjW5ZDccUJ1olg==",
+        "shasum": "dff645534a1177d8040d3283a3aa99c91c526475",
+        "tarball": "https://registry.npmjs.org/pi-provider-trace/-/pi-provider-trace-0.1.1.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "pi-telemetry-minimal",
+      "version": "0.3.0",
+      "published_at": "2026-04-28T13:45:07.120Z",
+      "category": "webhook_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "每assistant turn JSONL+自有JSON webhook，明确不包含正文，非OTLP",
+      "sources": [
+        "https://registry.npmjs.org/pi-telemetry-minimal"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/drsh4dow/pi-telemetry-minimal.git"
+      },
+      "pi_manifest": {
+        "extensions": [
+          "./extensions/telemetry-minimal.ts"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-0cEGclCJCpYfv1Jfy0Ft/umpd1NZmPJAqCYgaXJYTIJNiMQ7hDdUPSQVUF1sVBBxlxYxvV6ZLasUMu2R9eIuOg==",
+        "shasum": "0c893306db3c11a1c6bf869bfc539d67cc887929",
+        "tarball": "https://registry.npmjs.org/pi-telemetry-minimal/-/pi-telemetry-minimal-0.3.0.tgz"
+      },
+      "downloads": {}
+    },
+    {
+      "name": "pine-of-glass",
+      "version": "0.12.0",
+      "published_at": "2026-09-10T13:09:47.298Z",
+      "category": "local_non_otlp",
+      "evidence_level": "元数据和README",
+      "finding": "TUI context/traceline/cache/latency展示，不是OTLP exporter",
+      "sources": [
+        "https://registry.npmjs.org/pine-of-glass",
+        "https://pi.dev/packages/pine-of-glass"
+      ],
+      "repository": null,
+      "pi_manifest": {
+        "extensions": [
+          "./extensions/pi-contextimate",
+          "./extensions/pi-traceline",
+          "./extensions/pi-cachemire",
+          "./extensions/pi-meantime"
+        ]
+      },
+      "dependencies": null,
+      "artifact": {
+        "integrity": "sha512-sEYXYaAeqAb6+J5yU3lQg2zLUa0ho5kCVU3OwwiJ78r5nqSMZNyD8nx8wvmtBcbnqFpEW7OSPGToEq8gnEdn6g==",
+        "shasum": "a8e24253e3e77d3b91ee6406bc3f68541a762f7a",
+        "tarball": "https://registry.npmjs.org/pine-of-glass/-/pine-of-glass-0.12.0.tgz"
+      },
+      "downloads": {},
+      "catalog_queries": [
+        "observability",
+        "trace"
+      ]
+    }
+  ],
+  "github_implementations": [
+    {
+      "repo": "b1tank/pi-otel",
+      "sha": "337d1390571dacc4b07e6500ecbadabf585c19d9",
+      "commit_date": "2026-08-26T14:40:13Z",
+      "stars": 0,
+      "package_name": "pi-otel",
+      "manifest_version": "0.2.0",
+      "distribution": "Git-only explicitly private",
+      "entry": "src/index.ts",
+      "url": "https://github.com/b1tank/pi-otel/blob/337d1390571dacc4b07e6500ecbadabf585c19d9/src/index.ts",
+      "assessment": "優先適配",
+      "positive": "官方 OTLP HTTP JSON traces/metrics/logs；無直接 Node 核心 import；私有 provider；正文預設關",
+      "limits": "metrics預設1秒；chat以turn_end結束含工具時間；context.active根；metadata-only仍sanitize；provider錯誤文字仍可能發送",
+      "review_depth": "deep source + root browser VM probe",
+      "identity_key": "github:b1tank/pi-otel",
+      "evidence_level": "full_source_standard_browser_build_and_mock_host_run",
+      "standard_browser_result": {
+        "standardBrowserBuild": true,
+        "bytes": 136065,
+        "externalImports": [],
+        "signals": [
+          "/v1/logs",
+          "/v1/metrics",
+          "/v1/traces"
+        ],
+        "contentType": "application/json",
+        "requestCount": 6,
+        "firstSessionSpans": 3,
+        "secondSessionSpans": 6,
+        "secondRequestsAfterFirstShutdown": 3,
+        "contentSentinelsAbsent": true,
+        "noNodeGlobals": true,
+        "processIsTestConfigOnly": true,
+        "cleanup": {
+          "intervals": 0,
+          "timeouts": 0,
+          "listeners": 0
+        },
+        "limitations": [
+          "Standard browser bundle with fake Pi host and in-memory HTTP responses; not the Piem scoped compiler",
+          "No Collector, Obsidian, mobile device or slow-network verification"
+        ]
+      },
+      "piem_scoped_build": "failed in both original-lock and current-range graphs; browser redirects, dotted relative path and global access restrictions"
+    },
+    {
+      "repo": "stnly/pi-otel",
+      "sha": "398d40a72a1ba3a599e8596f26c3f148df1e7296",
+      "commit_date": "2026-09-10T04:55:02Z",
+      "stars": 0,
+      "package_name": "pi-otel",
+      "manifest_version": "0.3.1",
+      "distribution": "Git install documented; npm same-name not identity",
+      "entry": "src/index.ts",
+      "url": "https://github.com/stnly/pi-otel/blob/398d40a72a1ba3a599e8596f26c3f148df1e7296/src/index.ts",
+      "assessment": "較大改造",
+      "positive": "官方三信號 SDK；private providers；協議可選",
+      "limits": "預設 full capture；Node os/host detectors/http agents/signal hooks/hrtime；dynamic imports；缺session_before_compact/session_before_tree/user_bash",
+      "review_depth": "deep source",
+      "identity_key": "github:stnly/pi-otel"
+    },
+    {
+      "repo": "jcpowermac/pi-otel",
+      "sha": "898387d631d469cf13a0bed6bd7ab1cffb4747ab",
+      "commit_date": "2026-09-11T12:09:18Z",
+      "stars": 0,
+      "package_name": "pi-otel",
+      "manifest_version": "0.2.0",
+      "distribution": "Local/Git source; npm same-name not identity",
+      "entry": "src/index.ts",
+      "url": "https://github.com/jcpowermac/pi-otel/blob/898387d631d469cf13a0bed6bd7ab1cffb4747ab/src/index.ts",
+      "assessment": "較大改造",
+      "positive": "traces，預設captureContent false，有shutdown",
+      "limits": "NodeTracerProvider.register；靜態fs file exporter；JSON配置私有路徑適配；流錯誤/語義另驗",
+      "review_depth": "deep source",
+      "identity_key": "github:jcpowermac/pi-otel"
+    },
+    {
+      "repo": "gattjoe/pi-otel-minimal",
+      "sha": "999736b9fc0d1b66a918a0ddd1d0bfff14cd1a87",
+      "commit_date": "2026-07-22T23:04:38Z",
+      "stars": 1,
+      "package_name": "pi-otel-minimal",
+      "manifest_version": "0.1.0",
+      "distribution": "Git install documented; npm publication not established",
+      "entry": "index.ts",
+      "url": "https://github.com/gattjoe/pi-otel-minimal/blob/999736b9fc0d1b66a918a0ddd1d0bfff14cd1a87/index.ts",
+      "assessment": "低優先",
+      "positive": "BasicTracerProvider instance；OTLP traces",
+      "limits": "全文及prompt/bash進span name；整個session JSONL發Loki；console輸出headers；session_switch；無UI即shutdown",
+      "review_depth": "deep source",
+      "identity_key": "github:gattjoe/pi-otel-minimal"
+    },
+    {
+      "repo": "mammothb/pi-extensions",
+      "sha": "78d58654432d26a63545b9428a336eb3e3c99af1",
+      "commit_date": "2026-09-01T14:28:22Z",
+      "stars": 0,
+      "package_name": "@mammothb/pi-otel",
+      "manifest_version": "0.2.1",
+      "distribution": "Published npm source verified",
+      "entry": "packages/pi-otel/index.ts",
+      "url": "https://github.com/mammothb/pi-extensions/blob/78d58654432d26a63545b9428a336eb3e3c99af1/packages/pi-otel/index.ts",
+      "assessment": "保留備選",
+      "positive": "純官方SDK；traces+metrics；本輪找到公共repo且全部production source匹配npm",
+      "limits": "前輪全局provider/配置路徑/secret cmd/10秒metrics問題仍在",
+      "review_depth": "source identity verified",
+      "identity_key": "github:mammothb/pi-extensions"
+    },
+    {
+      "repo": "yuta24/pi-harness",
+      "sha": "c496c9540e2f322d1aacd3f4eeda611be33f32d9",
+      "commit_date": "2026-06-16T13:55:32Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "Monorepo single-file extension",
+      "entry": "extensions/otel.ts",
+      "url": "https://github.com/yuta24/pi-harness/blob/c496c9540e2f322d1aacd3f4eeda611be33f32d9/extensions/otel.ts",
+      "assessment": "輕量移植參考",
+      "positive": "單文件572行；僅randomBytes import；手寫OTLP JSON traces/logs；正文預設關",
+      "limits": "未發現license；unsupported session_before_compact；provider headers時過早end；shutdown未關未完成spans；手寫協議",
+      "review_depth": "focused source",
+      "identity_key": "github:yuta24/pi-harness"
+    },
+    {
+      "repo": "specter119/pi-otel",
+      "sha": "c77911aeade4df8f82a26be2a64fa505cdd1c019",
+      "commit_date": "2026-08-25T06:56:51Z",
+      "stars": 0,
+      "package_name": "pi-otel",
+      "manifest_version": null,
+      "distribution": "Git source; npm identity not established",
+      "entry": "src/index.ts",
+      "url": "https://github.com/specter119/pi-otel/blob/c77911aeade4df8f82a26be2a64fa505cdd1c019/src/index.ts",
+      "assessment": "低優先",
+      "positive": "traces/metrics/logs",
+      "limits": "NodeTracerProvider，grpc/proto imports，fs/process hooks",
+      "review_depth": "focused source",
+      "identity_key": "github:specter119/pi-otel"
+    },
+    {
+      "repo": "woxQAQ/otelpi",
+      "sha": "c414af930ab726f22ef630bd84c5be1fb497b81b",
+      "commit_date": "2026-03-19T16:47:27Z",
+      "stars": 0,
+      "package_name": "otelpi",
+      "manifest_version": "0.0.1",
+      "distribution": "Git source; npm publication not established",
+      "entry": "pi-otel.ts",
+      "url": "https://github.com/woxQAQ/otelpi/blob/c414af930ab726f22ef630bd84c5be1fb497b81b/pi-otel.ts",
+      "assessment": "較大改造",
+      "positive": "BasicTracerProvider instance，ROOT_CONTEXT，capture預設關",
+      "limits": "static gRPC exporter；fs配置；舊@mariozechner imports；不傳headers到exporter",
+      "review_depth": "focused source",
+      "identity_key": "github:woxQAQ/otelpi"
+    },
+    {
+      "repo": "mkusaka/pi-codex-otel",
+      "sha": "fac74ca3bd7e6214c15a45cd78961d51347dc60b",
+      "commit_date": "2026-09-07T05:30:23Z",
+      "stars": 0,
+      "package_name": "pi-codex-otel",
+      "manifest_version": "0.0.8",
+      "distribution": "npm lead + Git source; registry not checked by this agent",
+      "entry": "src/index.ts",
+      "url": "https://github.com/mkusaka/pi-codex-otel/blob/fac74ca3bd7e6214c15a45cd78961d51347dc60b/src/index.ts",
+      "assessment": "用途較窄",
+      "positive": "OTLP/HTTP protobuf logs-only；instance logger",
+      "limits": "直接讀OAuth SQLite/外部auth.json/git email；os hostname；Codex語義/metadata偽裝非通用GenAI",
+      "review_depth": "focused source",
+      "identity_key": "github:mkusaka/pi-codex-otel"
+    },
+    {
+      "repo": "maxmalkin/pi-OTEL",
+      "sha": "9c3c26718a005f5d658fd06f6a7fcb3e396227b4",
+      "commit_date": "2026-05-05T03:19:49Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "Git source",
+      "entry": "src/index.ts",
+      "url": "https://github.com/maxmalkin/pi-OTEL/blob/9c3c26718a005f5d658fd06f6a7fcb3e396227b4/src/index.ts",
+      "assessment": "較大改造",
+      "positive": "traces+metrics；capture預設關",
+      "limits": "NodeTracerProvider+global register；SDK API版本兼容待查",
+      "review_depth": "focused source",
+      "identity_key": "github:maxmalkin/pi-OTEL"
+    },
+    {
+      "repo": "ejklock/pi-otel",
+      "sha": "7bb8aad5e95c50048209551c84186f5d5c4488a7",
+      "commit_date": "2026-06-22T21:19:19Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "Git source fork",
+      "entry": "src/index.ts",
+      "url": "https://github.com/ejklock/pi-otel/blob/7bb8aad5e95c50048209551c84186f5d5c4488a7/src/index.ts",
+      "assessment": "與maxmalkin去重",
+      "positive": "src/index.ts与maxmalkin逐字節相同",
+      "limits": "不是獨立新增實現；同Node限制",
+      "review_depth": "focused source",
+      "identity_key": "github:ejklock/pi-otel"
+    },
+    {
+      "repo": "tcw165/pi-otel-genai",
+      "sha": "af939b0c5e65b2452d4a34be51708d9c18ac59c0",
+      "commit_date": "2026-04-19T03:20:21Z",
+      "stars": 0,
+      "package_name": "@oh-my-goose/pi-otel-genai",
+      "manifest_version": "0.1.3",
+      "distribution": "Git source; manifest points oh-my-goose repo",
+      "entry": "src/index.ts",
+      "url": "https://github.com/tcw165/pi-otel-genai/blob/af939b0c5e65b2452d4a34be51708d9c18ac59c0/src/index.ts",
+      "assessment": "初篩備選",
+      "positive": "官方base SDK traces+metrics",
+      "limits": "spawn command；@this aliases；npm publication not verified",
+      "review_depth": "entry and metadata only",
+      "identity_key": "github:tcw165/pi-otel-genai"
+    },
+    {
+      "repo": "markacianfrani/pi-signoz",
+      "sha": "74bde1269444f89f44f634678e3c2fd7e150816a",
+      "commit_date": "2026-08-01T17:23:21Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "Git source",
+      "entry": "index.ts",
+      "url": "https://github.com/markacianfrani/pi-signoz/blob/74bde1269444f89f44f634678e3c2fd7e150816a/index.ts",
+      "assessment": "較大改造",
+      "positive": "手寫 OTLP JSON；metadata default；明確parent，不用ALS",
+      "limits": "Node http/https transport；fs配置/os；沒有license核實",
+      "review_depth": "focused source",
+      "identity_key": "github:markacianfrani/pi-signoz"
+    },
+    {
+      "repo": "one1zero1one/pi-otel-honeycomb",
+      "sha": "a1405c1968f73ebcfb21c7035e0abba995e80f46",
+      "commit_date": "2026-05-23T20:23:41Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "Git source",
+      "entry": "honeycomb-tracing.ts",
+      "url": "https://github.com/one1zero1one/pi-otel-honeycomb/blob/a1405c1968f73ebcfb21c7035e0abba995e80f46/honeycomb-tracing.ts",
+      "assessment": "低優先",
+      "positive": "手寫 OTLP JSON traces，traceparent子進程關聯",
+      "limits": "Honeycomb auth；fs/execSync/os；內容預設收集；未見shutdown",
+      "review_depth": "focused source",
+      "identity_key": "github:one1zero1one/pi-otel-honeycomb"
+    },
+    {
+      "repo": "connerohnesorge/.pi",
+      "sha": "ae76bab73896bafbc41bfc3a670168b7e614a1d7",
+      "commit_date": "2026-07-06T12:12:49Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "dotfiles extension",
+      "entry": "agent/extensions/otel/index.ts",
+      "url": "https://github.com/connerohnesorge/.pi/blob/ae76bab73896bafbc41bfc3a670168b7e614a1d7/agent/extensions/otel/index.ts",
+      "assessment": "較大改造",
+      "positive": "OTLP tracing+metrics",
+      "limits": "NodeTracerProvider、child_process身份探测",
+      "review_depth": "focused source",
+      "identity_key": "github:connerohnesorge/.pi"
+    },
+    {
+      "repo": "psg2/agent-stuff",
+      "sha": "e6d7eb3a0af50e1d893d00bab937283a770cde1e",
+      "commit_date": "2026-06-21T04:23:52Z",
+      "stars": 0,
+      "package_name": "pi-extension-otel-monitoring",
+      "manifest_version": "0.1.0",
+      "distribution": "monorepo extension",
+      "entry": "pi/extensions/otel-monitoring/index.ts",
+      "url": "https://github.com/psg2/agent-stuff/blob/e6d7eb3a0af50e1d893d00bab937283a770cde1e/pi/extensions/otel-monitoring/index.ts",
+      "assessment": "用途較窄",
+      "positive": "instance meter/logger、metrics+logs",
+      "limits": "多exporter動態import；身份/headers helper/pi.exec；未完整深審",
+      "review_depth": "focused source",
+      "identity_key": "github:psg2/agent-stuff"
+    },
+    {
+      "repo": "chiwanpark/pi-enhanced",
+      "sha": "d7810a254ce734335374a913e4f8165bd3a03928",
+      "commit_date": "2026-09-11T15:23:27Z",
+      "stars": 1,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "monorepo extension",
+      "entry": "extensions/otel-exporter.ts",
+      "url": "https://github.com/chiwanpark/pi-enhanced/blob/d7810a254ce734335374a913e4f8165bd3a03928/extensions/otel-exporter.ts",
+      "assessment": "較大改造",
+      "positive": "metrics/logs official SDK",
+      "limits": "grpc/prometheus exporter依賴；fs身份/配置；未完整深審",
+      "review_depth": "selected files",
+      "identity_key": "github:chiwanpark/pi-enhanced"
+    },
+    {
+      "repo": "mattdurham/bob",
+      "sha": "8fde76b2d4dc6b4057bb7a1130c573910a8b75bb",
+      "commit_date": "2026-08-17T01:29:20Z",
+      "stars": 9,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "monorepo extension",
+      "entry": "extensions/otel.ts",
+      "url": "https://github.com/mattdurham/bob/blob/8fde76b2d4dc6b4057bb7a1130c573910a8b75bb/extensions/otel.ts",
+      "assessment": "低優先",
+      "positive": "單文件手寫JSON traces",
+      "limits": "globals共享context；raw內容；require fs debug；Basic auth限定",
+      "review_depth": "focused source",
+      "identity_key": "github:mattdurham/bob"
+    },
+    {
+      "repo": "ptdewey/agents",
+      "sha": "173381db123baddd30a1347acf49d93834cb216a",
+      "commit_date": "2026-08-06T15:27:47Z",
+      "stars": 0,
+      "package_name": null,
+      "manifest_version": null,
+      "distribution": "monorepo extension",
+      "entry": "extensions/otel-metrics.ts",
+      "url": "https://github.com/ptdewey/agents/blob/173381db123baddd30a1347acf49d93834cb216a/extensions/otel-metrics.ts",
+      "assessment": "較大改造",
+      "positive": "手寫OTLP metrics+traces",
+      "limits": "fs write/paths/static helpers；1229行手寫SDK；未全審",
+      "review_depth": "selected source",
+      "identity_key": "github:ptdewey/agents"
+    },
+    {
+      "repo": "Saturate/pi-telemetry-pi",
+      "sha": "98c42de331997af2775c4441bc089bc838c2d5ad",
+      "commit_date": "2026-07-10T10:28:39Z",
+      "stars": 0,
+      "package_name": "@saturate/pi-telemetry",
+      "manifest_version": null,
+      "distribution": "spec only",
+      "entry": "SPEC.md",
+      "url": "https://github.com/Saturate/pi-telemetry-pi/blob/98c42de331997af2775c4441bc089bc838c2d5ad/SPEC.md",
+      "assessment": "非實現",
+      "positive": "有設計說明",
+      "limits": "固定tree只有SPEC，沒有extension",
+      "review_depth": "complete tree inspected",
+      "identity_key": "github:Saturate/pi-telemetry-pi"
+    },
+    {
+      "repo": "earendil-works/pi-mono",
+      "sha": "71dca871bc80b6bc97be37f0ca3189399d651fff",
+      "commit_date": "2026-09-11T17:42:45Z",
+      "stars": 104228,
+      "package_name": "@earendil-works/pi-telemetry",
+      "manifest_version": null,
+      "distribution": "official library",
+      "entry": "packages/telemetry/README.md",
+      "url": "https://github.com/earendil-works/pi-mono/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/telemetry/README.md",
+      "assessment": "非導出擴展",
+      "positive": "官方contract/in-memory/noop",
+      "limits": "README明說無exporter；examples tree139 files無otel名，README無相關例",
+      "review_depth": "source + full tree",
+      "identity_key": "github:earendil-works/pi-mono"
+    },
+    {
+      "repo": "getlarge/themoltnet",
+      "sha": "e3ebe6c83c1156a4e506b38457335844816b38a8",
+      "entry": "libs/pi-runtime/src/otel/index.ts",
+      "url": "https://raw.githubusercontent.com/getlarge/themoltnet/e3ebe6c83c1156a4e506b38457335844816b38a8/libs/pi-runtime/src/otel/index.ts",
+      "distribution": "injected extension library",
+      "limits": "仅@opentelemetry/api;需要host global provider/exporter，非自足导出包",
+      "review_depth": "entry-focused source only",
+      "identity_key": "github:getlarge/themoltnet"
+    },
+    {
+      "repo": "akua-dev/agentos",
+      "sha": "a30d855b06853c98477c6121238e4202e3b0b26a",
+      "entry": "packages/agentos/src/telemetry/pi-extension.ts",
+      "url": "https://raw.githubusercontent.com/akua-dev/agentos/a30d855b06853c98477c6121238e4202e3b0b26a/packages/agentos/src/telemetry/pi-extension.ts",
+      "distribution": "application-integrated extension",
+      "limits": "Effect+AgentOS runtime/contracts耦合，非通用即装扩展",
+      "review_depth": "entry-focused source only",
+      "identity_key": "github:akua-dev/agentos"
+    },
+    {
+      "repo": "rcarmo/piclaw-addons",
+      "sha": "6374ed3c85627c590794e44828d13b08587ba46b",
+      "entry": "addons/observability/index.ts",
+      "url": "https://raw.githubusercontent.com/rcarmo/piclaw-addons/6374ed3c85627c590794e44828d13b08587ba46b/addons/observability/index.ts",
+      "distribution": "Piclaw addon",
+      "limits": "node:net+keychain/KV/global host API，非Piem即装",
+      "review_depth": "entry-focused source only",
+      "identity_key": "github:rcarmo/piclaw-addons"
+    },
+    {
+      "repo": "caohaotiantian/EAgent",
+      "sha": "086e47d24c702940cd11dcbbb8980fc04b19e6ee",
+      "entry": "src/extensions/otel-exporter.ts",
+      "url": "https://raw.githubusercontent.com/caohaotiantian/EAgent/086e47d24c702940cd11dcbbb8980fc04b19e6ee/src/extensions/otel-exporter.ts",
+      "distribution": "different agent kernel extension",
+      "limits": "从../kernel/extension取ExtensionAPI，不是Pi API；不计Pi可安装候选",
+      "review_depth": "entry-focused source only",
+      "identity_key": "github:caohaotiantian/EAgent"
+    },
+    {
+      "repo": "opensearch-project/agent-health",
+      "sha": "a16cdd6609553de55f54429d252dd33044bbff10",
+      "entry": "examples/pi-profiling/agent-health-profile.ts",
+      "url": "https://raw.githubusercontent.com/opensearch-project/agent-health/a16cdd6609553de55f54429d252dd33044bbff10/examples/pi-profiling/agent-health-profile.ts",
+      "distribution": "Pi single-file profiling extension",
+      "limits": "OTLP JSON，有Apache2 header；fs marker+pi.exec profiling；capture默认开",
+      "review_depth": "entry-focused source only",
+      "identity_key": "github:opensearch-project/agent-health"
+    },
+    {
+      "repo": "robobryce/pi-local-otel",
+      "sha": "c1c7fbf70bd9f530880c2ae3a0c4618eae51090b",
+      "entry": "README.md",
+      "distribution": "local JSONL extension; no OTLP exporter",
+      "limits": "README explicitly no collector/OTLP/network endpoint",
+      "review_depth": "README+manifest only",
+      "identity_key": "github:robobryce/pi-local-otel"
+    }
+  ],
+  "catalog_other_hits": [
+    {
+      "name": "pi-otel",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/pi-otel",
+      "queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability",
+        "trace",
+        "otlp"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@the-librarian/pi-extension",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@the-librarian/pi-extension",
+      "queries": [
+        "otel"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@mammothb/pi-otel",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/@mammothb/pi-otel",
+      "queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability",
+        "trace",
+        "otlp",
+        "grafana"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-reactor",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-reactor",
+      "queries": [
+        "otel"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-feishu-notify",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-feishu-notify",
+      "queries": [
+        "otel"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@damngamerz/pi-otel",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/@damngamerz/pi-otel",
+      "queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "observability",
+        "trace",
+        "grafana"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@gamalan/pi-gateway",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@gamalan/pi-gateway",
+      "queries": [
+        "otel"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-phoenix-otel",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/pi-phoenix-otel",
+      "queries": [
+        "otel",
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability",
+        "trace",
+        "phoenix",
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@hobocode/thought-layer",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@hobocode/thought-layer",
+      "queries": [
+        "otel",
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@agimon-ai/doompi-telemetry",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/@agimon-ai/doompi-telemetry",
+      "queries": [
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-phoenix",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/pi-phoenix",
+      "queries": [
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "phoenix"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@amaster.ai/pi-telemetry",
+      "category": "previous_candidates",
+      "source": "https://pi.dev/packages/@amaster.ai/pi-telemetry",
+      "queries": [
+        "opentelemetry",
+        "telemetry",
+        "tracing",
+        "observability",
+        "langfuse"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@agimon-ai/log-sink-mcp",
+      "category": "companion_service",
+      "source": "https://pi.dev/packages/@agimon-ai/log-sink-mcp",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@agimon-ai/doompi-log",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@agimon-ai/doompi-log",
+      "queries": [
+        "telemetry",
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@rohaquinlop/pi-deepseek-cache",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@rohaquinlop/pi-deepseek-cache",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@firstpick/pi-extension-git-footer-status",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@firstpick/pi-extension-git-footer-status",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@raquezha/notrace",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@raquezha/notrace",
+      "queries": [
+        "telemetry",
+        "observability",
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-beautiful-tui",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-beautiful-tui",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-papercuts",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-papercuts",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@tryinget/pi-agent-vent",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@tryinget/pi-agent-vent",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@blackbelt-technology/pi-dashboard-cost-estimator",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@blackbelt-technology/pi-dashboard-cost-estimator",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-deepseek-cache",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-deepseek-cache",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-metrics",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-metrics",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-session-timer",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-session-timer",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-claude-style-tui",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-claude-style-tui",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-status-footer",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-status-footer",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-turn-metrics",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-turn-metrics",
+      "queries": [
+        "telemetry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "chronos-skill",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/chronos-skill",
+      "queries": [
+        "telemetry",
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-hive",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-hive",
+      "queries": [
+        "telemetry",
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@zhushanwen/pi-subagent-workflow",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@zhushanwen/pi-subagent-workflow",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-trace-extension",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-trace-extension",
+      "queries": [
+        "tracing",
+        "observability",
+        "trace",
+        "langfuse"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-flows",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-flows",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-llm-debugging",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-llm-debugging",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@frostime/pi-usage-analytics",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@frostime/pi-usage-analytics",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@zhushanwen/pi-workflow",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@zhushanwen/pi-workflow",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@firstpick/pi-skill-repo-explorer",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@firstpick/pi-skill-repo-explorer",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-codebase-memory-mcp",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-codebase-memory-mcp",
+      "queries": [
+        "tracing"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@zhushanwen/pi-extension-logger",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@zhushanwen/pi-extension-logger",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@danypops/pi-jittor",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@danypops/pi-jittor",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@fradser/pi-monitor",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@fradser/pi-monitor",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-subagentura",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-subagentura",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@mrclrchtr/supi-debug",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@mrclrchtr/supi-debug",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@heyhuynhgiabuu/pi-task",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@heyhuynhgiabuu/pi-task",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@pi-unipi/trajectory",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@pi-unipi/trajectory",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@datadog/pi-plugin",
+      "category": "observability_query_tool",
+      "source": "https://pi.dev/packages/@datadog/pi-plugin",
+      "queries": [
+        "observability",
+        "trace",
+        "datadog"
+      ],
+      "evidence_level": "exact_registry_metadata"
+    },
+    {
+      "name": "pi-router",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-router",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@groeponline/pi-agent-control-extension",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@groeponline/pi-agent-control-extension",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@zhushanwen/pi-cache-probe",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@zhushanwen/pi-cache-probe",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-observability",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-observability",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "tuneloop",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/tuneloop",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@tryinget/pi-evalset-lab",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@tryinget/pi-evalset-lab",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@monopi/diagnostics",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@monopi/diagnostics",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@groeponline/pi-control",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@groeponline/pi-control",
+      "queries": [
+        "observability",
+        "agentops"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@eggmasonvalue/pi-subagent",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@eggmasonvalue/pi-subagent",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@jmcombs/pi-steward",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@jmcombs/pi-steward",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@blackbelt-technology/pi-dashboard-eng-disciplines",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@blackbelt-technology/pi-dashboard-eng-disciplines",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@tkreuziger/pi-office",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@tkreuziger/pi-office",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@false00/pi-elasticsearch",
+      "category": "observability_query_tool",
+      "source": "https://pi.dev/packages/@false00/pi-elasticsearch",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-cost",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-cost",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@juanbenjumea/pi-dynamic-footer",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@juanbenjumea/pi-dynamic-footer",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-overwatch",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-overwatch",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@dreki-gg/pi-datadog",
+      "category": "observability_query_tool",
+      "source": "https://pi.dev/packages/@dreki-gg/pi-datadog",
+      "queries": [
+        "observability",
+        "datadog"
+      ],
+      "evidence_level": "exact_registry_metadata"
+    },
+    {
+      "name": "@dotdotgod/pi",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@dotdotgod/pi",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "codecartographer-pi",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/codecartographer-pi",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-session-trace",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-session-trace",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@zhushanwen/pi-system-prompt-trace",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@zhushanwen/pi-system-prompt-trace",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-turnlog",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-turnlog",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "trace-memory",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/trace-memory",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@pi-kaush/pi-response-style",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@pi-kaush/pi-response-style",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@firstpick/pi-skill-deep-research",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@firstpick/pi-skill-deep-research",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@demo-0416/pi-trace",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@demo-0416/pi-trace",
+      "queries": [
+        "trace",
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-refactor",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-refactor",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-agent-trace",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-agent-trace",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-tps",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-tps",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-local-trace-viewer",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-local-trace-viewer",
+      "queries": [
+        "trace",
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@firstpick/pi-skill-spec-vs-impl-checker",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@firstpick/pi-skill-spec-vs-impl-checker",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@hahahhh/pi-trace",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@hahahhh/pi-trace",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@dhcurry/pi-context-manager",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@dhcurry/pi-context-manager",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-blast-radius",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-blast-radius",
+      "queries": [
+        "trace"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@kdejaeger/pi-telegram-plus",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@kdejaeger/pi-telegram-plus",
+      "queries": [
+        "jaeger"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@kdejaeger/pi-model-router",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@kdejaeger/pi-model-router",
+      "queries": [
+        "jaeger"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "yimo-pi-kit",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/yimo-pi-kit",
+      "queries": [
+        "opik"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@oai404iao/pi-keep-defaults",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@oai404iao/pi-keep-defaults",
+      "queries": [
+        "opik"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@pi-unipi/web-api",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@pi-unipi/web-api",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-condense",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-condense",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@yofriadi/pi-condense",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@yofriadi/pi-condense",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@inobit/pi-themes",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@inobit/pi-themes",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-session-search",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-session-search",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@aefree/pi-themes",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@aefree/pi-themes",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@npmc_5/pi-recap",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@npmc_5/pi-recap",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@blackbelt-technology/pi-dashboard-video-transcription",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@blackbelt-technology/pi-dashboard-video-transcription",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-session-handoff",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-session-handoff",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@firstpick/pi-skill-paper-summarizer",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@firstpick/pi-skill-paper-summarizer",
+      "queries": [
+        "arize"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "rolebox",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/rolebox",
+      "queries": [
+        "lunary"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "design-playbook",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/design-playbook",
+      "queries": [
+        "agentops"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-weave",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-weave",
+      "queries": [
+        "weave"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-dsh-minimal",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-dsh-minimal",
+      "queries": [
+        "weave"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@workweave/router",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@workweave/router",
+      "queries": [
+        "weave"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@weave-os/router",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@weave-os/router",
+      "queries": [
+        "weave"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@laloomery/pi-weave-ext",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@laloomery/pi-weave-ext",
+      "queries": [
+        "weave"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@pumblus/okf-harness",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@pumblus/okf-harness",
+      "queries": [
+        "sentry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@kiranpg/pi-sentry",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@kiranpg/pi-sentry",
+      "queries": [
+        "sentry"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@artale/pi-pai",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@artale/pi-pai",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-tool-duration",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-tool-duration",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@async23/pi-sessions-studio",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@async23/pi-sessions-studio",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-kanban",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-kanban",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@r3b1s/tmux-pilot",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@r3b1s/tmux-pilot",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-hwchiu",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-hwchiu",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-inspect",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-inspect",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-agent-budget",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-agent-budget",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@tkreuziger/pi-events",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@tkreuziger/pi-events",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@onlinechefgroep/pi-agent-orchestrator",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/@onlinechefgroep/pi-agent-orchestrator",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-prompt-view",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/pi-prompt-view",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "@2008muyu/pi-stats-insight",
+      "category": "local_telemetry_or_event_bridge",
+      "source": "https://pi.dev/packages/@2008muyu/pi-stats-insight",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    },
+    {
+      "name": "pi-pai",
+      "category": "other_catalog_hit",
+      "source": "https://pi.dev/packages/pi-pai",
+      "queries": [
+        "observability"
+      ],
+      "evidence_level": "catalog_metadata_only"
+    }
+  ],
+  "root_source_review": {
+    "@damngamerz/pi-otel": {
+      "version": "0.1.6",
+      "artifact": "https://registry.npmjs.org/@damngamerz/pi-otel/-/pi-otel-0.1.6.tgz",
+      "sha1": "49aab6f0406cb06b46d6054dd1c1a0bda5fb08a3",
+      "positive": "Instance providers; content-free baseline; message_end closes LLM; no whole-content hashing in baseline",
+      "limits": "Static NodeTracerProvider; real settings files; optional evaluator coupling; missing stopReason error handling; old peer Pi range",
+      "evidence": "Published source read; no whole-extension execution"
+    }
+  },
+  "limitations": [
+    "Registry and GitHub inventories overlap and counts must not be added",
+    "Metadata-only and README-only candidates are not validated integrations",
+    "Browser mock-host run does not validate Piem integration, network collectors, CORS, mobile devices or slow shutdown",
+    "No exported user data; network probes used in-memory fetch only"
+  ]
+}
