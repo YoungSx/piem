@@ -107,8 +107,8 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     (+366 B). The ceiling is 2,004,000 B; the metafile confirms that unused
  *     global/document views and all OTel SDK packages remain outside the bundle.
  * 17. The unmodified Git-pinned pi-otel factory, official browser SDKs, Collector
- *     setting, browser Buffer and required notices measured 2,203,785 B
- *     (+200,639 B). The ceiling follows to 2.11 MiB. The graph uses HTTP JSON
+ *     setting, browser Buffer and required notices measured 2,204,000 B
+ *     (+200,854 B). The ceiling follows to 2.11 MiB. The graph uses HTTP JSON
  *     without Node or gRPC runtimes.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript

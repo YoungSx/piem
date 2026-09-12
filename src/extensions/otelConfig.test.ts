@@ -18,4 +18,11 @@ describe("OTel Collector configuration", () => {
 		});
 		expect(normalizeOtelEndpoint("http://127.0.0.1:4318/")).toBe("http://127.0.0.1:4318");
 	});
+
+	it("validates the encoded length so accepted Unicode addresses survive reload", () => {
+		const endpoint = normalizeOtelEndpoint("https://collector.example/收集");
+		expect(endpoint).toBe("https://collector.example/%E6%94%B6%E9%9B%86");
+		expect(normalizeOtelEndpoint(endpoint)).toBe(endpoint);
+		expect(normalizeOtelEndpoint("https://collector.example/" + "中".repeat(300))).toBeUndefined();
+	});
 });

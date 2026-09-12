@@ -6,7 +6,8 @@ export function normalizeOtelEndpoint(value: unknown): string | undefined {
 	try {
 		const url = new URL(text);
 		if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash) return undefined;
-		return url.href.replace(/\/+$/, "");
+		const normalized = url.href.replace(/\/+$/, "");
+		return normalized.length <= 2048 ? normalized : undefined;
 	} catch { return undefined; }
 }
 
