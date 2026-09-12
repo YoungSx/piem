@@ -1,15 +1,12 @@
 ---
 name: vault-memory
-description: "Recall relevant memory at the start of substantive tasks and when asked about past decisions; save or correct lasting preferences and verified lessons in Piem/memory/ using ordinary vault tools."
+description: "Read Piem/memory/MEMORY.md at the start of every conversation with substantive work. Save lasting preferences and verified lessons as the work proceeds."
 compatibility: Requires Piem's Obsidian vault tools.
 ---
 
 # Vault memory
 
-> **Read `Piem/memory/MEMORY.md` at the start of every multi-step task.** This file
-> contains user preferences and verified lessons. Missing it wastes effort on already-solved
-> problems or violates stated preferences. Reading an empty file costs one tool call;
-> missing a critical preference wastes the entire conversation.
+> **Default to recall.** Read `Piem/memory/MEMORY.md` at conversation start unless the task is a trivial one-liner or pure chat. Missing this file wastes effort on already-solved problems and violates settled preferences.
 
 Remember useful facts across conversations as ordinary Markdown in
 `Piem/memory/`. This skill uses the existing `find`, `ls`, `grep`, `read`, `write`,
@@ -17,7 +14,11 @@ and `edit` tools. The skill owns the memory workflow; files remain user-editable
 
 ## When to recall
 
-Recall memory at the start of these conversations:
+**Recall by default.** Skip only when:
+- Pure conversation with no action (greetings, clarifying questions, status checks)
+- Trivial one-liner edits where past decisions can't apply (fix typo, run existing command)
+
+Otherwise, read `Piem/memory/MEMORY.md` before starting work.
 
 - User mentions a past decision, preference, or lesson
 - Task involves code or notes you worked on before
