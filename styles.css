@@ -1723,12 +1723,17 @@ button.piem-chat__context-open {
 .piem-chat__references {
 	list-style: none;
 	margin: 0;
-	padding: var(--size-4-1);
+	padding: 0;
 	display: grid;
 	gap: var(--size-4-1);
+	min-width: 0;
+	/* A batch stays scrollable without pushing the question off screen. */
 	max-height: 240px;
 	overflow-y: auto;
-	min-width: 0;
+}
+
+.piem-chat__bubble > .piem-chat__references {
+	margin-block-end: var(--size-4-2);
 }
 
 .piem-chat__reference {
@@ -1736,26 +1741,30 @@ button.piem-chat__context-open {
 	align-items: flex-start;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
+	background: var(--background-secondary);
 	min-width: 0;
 }
 
 .piem-chat__reference-details { flex: 1; min-width: 0; }
-.piem-chat__reference-details > summary {
-	display: flex;
-	align-items: center;
-	gap: var(--size-4-1);
-	padding: var(--size-4-2);
-	cursor: pointer;
-	font-size: var(--font-ui-small);
-}
-.piem-chat__reference-details > summary:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
-.piem-chat__reference-details[open] .piem-chat__reference-chevron { transform: rotate(180deg); }
-.piem-chat__reference-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .piem-chat__reference-kind, .piem-chat__reference-hint { color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.piem-chat__reference-body { display: grid; gap: var(--size-4-2); padding: var(--size-4-2); overflow-wrap: anywhere; }
+.piem-chat__reference-body { display: grid; gap: var(--size-4-2); overflow-wrap: anywhere; }
 .piem-chat__reference-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
-.piem-chat__reference-open { all: unset; color: var(--text-accent); cursor: pointer; text-decoration: underline; }
-.piem-chat__reference-open:focus-visible { outline: 2px solid var(--interactive-accent); }
+button.piem-chat__reference-open {
+	background: transparent;
+	box-shadow: none;
+	border: 0;
+	border-radius: 0;
+	height: auto;
+	padding: 0;
+	font: inherit;
+	color: var(--text-accent);
+	cursor: pointer;
+	text-align: start;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	text-decoration: underline;
+}
+button.piem-chat__reference-open:focus-visible { outline: 2px solid var(--background-modifier-border-focus); }
 .piem-chat__reference-remove { flex: none; }
 
 .piem-chat__skill-pill {
@@ -1772,6 +1781,7 @@ button.piem-chat__context-open {
 	overflow: hidden;
 }
 
+.piem-chat__reference-details > summary,
 .piem-chat__skill-pill-summary {
 	align-items: center;
 	color: var(--text-muted);
@@ -1779,32 +1789,37 @@ button.piem-chat__context-open {
 	display: flex;
 	gap: var(--size-4-1);
 	list-style: none;
-	min-height: var(--size-4-6);
+	min-height: var(--input-height);
 	padding: 0 var(--size-4-2);
 	user-select: none;
 }
 
 /* Obsidian ships webkit, so the default disclosure triangle needs both hooks. */
+.piem-chat__reference-details > summary::-webkit-details-marker,
 .piem-chat__skill-pill-summary::-webkit-details-marker {
 	display: none;
 }
 
+.piem-chat__reference-details > summary::marker,
 .piem-chat__skill-pill-summary::marker {
 	content: "";
 }
 
 @media (hover: hover) {
 
+	.piem-chat__reference-details > summary:hover,
 	.piem-chat__skill-pill-summary:hover {
 		background: var(--background-modifier-hover);
 	}
 }
 
+.piem-chat__reference-details > summary:focus-visible,
 .piem-chat__skill-pill-summary:focus-visible {
 	outline: 2px solid var(--background-modifier-border-focus);
 	outline-offset: -2px;
 }
 
+.piem-chat__reference-icon,
 .piem-chat__skill-pill-icon {
 	/* Matched to the trace glyph: 16px outweighed the 12px words it serves. */
 	--icon-size: var(--icon-xs);
@@ -1812,8 +1827,10 @@ button.piem-chat__context-open {
 	flex-shrink: 0;
 }
 
+.piem-chat__reference-name,
 .piem-chat__skill-pill-name {
 	flex: 1 1 auto;
+	min-width: 0;
 	font-size: var(--font-ui-smaller);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1827,6 +1844,7 @@ button.piem-chat__context-open {
  * away from invisible. The rotation is the plain `<details>` open state —
  * no new motion vocabulary, just the arrow telling the truth twice.
  */
+.piem-chat__reference-chevron,
 .piem-chat__skill-pill-chevron {
 	--icon-size: var(--icon-xs);
 	color: var(--text-faint);
@@ -1834,8 +1852,24 @@ button.piem-chat__context-open {
 	transition: transform 120ms ease;
 }
 
+.piem-chat__reference-details[open] .piem-chat__reference-chevron,
 .piem-chat__skill-pill[open] .piem-chat__skill-pill-chevron {
 	transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.piem-chat__reference-chevron,
+	.piem-chat__skill-pill-chevron {
+		transition: none;
+	}
+}
+
+@media (any-pointer: coarse) {
+	.piem-chat__reference-details > summary,
+	.piem-chat__skill-pill-summary,
+	button.piem-chat__reference-open {
+		min-height: max(44px, var(--input-height));
+	}
 }
 
 /*
@@ -1847,6 +1881,7 @@ button.piem-chat__context-open {
  * reachable by scrolling *inside* the receipt, which is the honest scale
  * for quoted material.
  */
+.piem-chat__reference-body,
 .piem-chat__skill-pill-body {
 	border-top: 1px solid var(--background-modifier-border);
 	font-size: var(--font-ui-smaller);
