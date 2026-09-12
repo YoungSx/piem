@@ -6,35 +6,76 @@ compatibility: Requires Piem's Obsidian vault tools.
 
 # Vault memory
 
+> **Read `Piem/memory/MEMORY.md` at the start of every multi-step task.** This file
+> contains user preferences and verified lessons. Missing it wastes effort on already-solved
+> problems or violates stated preferences. Reading an empty file costs one tool call;
+> missing a critical preference wastes the entire conversation.
+
 Remember useful facts across conversations as ordinary Markdown in
 `Piem/memory/`. This skill uses the existing `find`, `ls`, `grep`, `read`, `write`,
 and `edit` tools. The skill owns the memory workflow; files remain user-editable.
 
-## Recall
+## When to recall
 
-At the start of a substantive task, recall relevant memory unless it is already
-in context. Skip the lookup for a self-contained request that needs no history.
+Recall memory at the start of these conversations:
 
-1. If the memory directory is not known to exist, use `find` with
-   `pattern: "Piem/memory/*"`. An empty result is normal in a new vault; continue
-   without asking the user to set anything up. Use `ls` once the folder is known.
-2. Use `read` on `Piem/memory/MEMORY.md` when present, then up to three recent
-   `YYYY-MM-DD.md` logs if relevant. Read the logs even when the core file is
-   missing: a same-day lesson is still useful.
-3. For older decisions, follow relevant links or use a focused `grep` under
-   `Piem/memory/`, then `read` the matching passages. Narrow a truncated listing
-   by filename or date; continue a truncated read with its line offset. Search
-   only as far as the task needs. Unreadable or partial results are not proof
-   that no memory exists.
+- User mentions a past decision, preference, or lesson
+- Task involves code or notes you worked on before
+- User says "like last time", "as we discussed", "remember when"
+- Fixing a bug (past attempts may be logged)
+- Any multi-step task (preferences may apply)
+- User asks "what do you know about X"
 
-## Save when useful
+Skip recall ONLY for:
+
+- One-off questions with no project context ("what's the time complexity of quicksort?")
+- User explicitly says "ignore memory" or "fresh start"
+
+When in doubt, recall. The cost of reading an empty directory is one tool call;
+the cost of missing a critical preference is redoing the entire task wrong.
+
+## How to recall
+
+**Step 1**: Always read `Piem/memory/MEMORY.md` first, even if you expect it to be empty.
+
+**Step 2**: For tasks involving recent work, also read today's and yesterday's logs:
+- `Piem/memory/YYYY-MM-DD.md` (use today's date)
+- `Piem/memory/YYYY-MM-DD.md` (yesterday's date)
+
+If a file doesn't exist, that's normal—continue without asking the user to create it.
+
+**Step 3**: For older context, search then read:
+- `grep -r "keyword" Piem/memory/` to find relevant passages
+- `read` the matching files or follow links from MEMORY.md
+
+If `Piem/memory/` doesn't exist yet, that's normal for new vaults. Create it when
+you first save something. An empty result or a failed read is not proof that no
+memory exists—it means the vault is new or the specific file hasn't been created yet.
+
+## Save proactively
+
+Don't wait for explicit “remember this”. Save when:
+
+- **User corrects you**: they stated their actual preference or fact
+- **A fix succeeds**: the solution works after trial and error
+- **You discover a workaround**: “X doesn't work in this environment, use Y instead”
+- **User shares project context**: “we're using React 18”, “we deploy to Cloudflare”
+- **User states a preference**: reply language, code style, testing approach
+- **A lesson is verified**: the approach worked and solved the problem
+
+Where to save:
 
 | Evidence | Destination |
 | --- | --- |
-| The user says “remember this”, states a lasting preference, or corrects a fact | `Piem/memory/MEMORY.md` immediately |
+| User says “remember this”, states a lasting preference, or corrects a fact | `Piem/memory/MEMORY.md` immediately |
 | A decision has lasting effect, or a lesson was verified by a successful result | `Piem/memory/MEMORY.md`; one occurrence can be enough |
 | An inference is unverified, a failure is unexplained, or an event is temporary | `Piem/memory/YYYY-MM-DD.md`, with its uncertainty and scope |
 | A tested sequence of steps is useful again | Read `distill-skill` and save a procedure |
+
+**Bad saves** (don't record these):
+- Speculation: “this might work”
+- Obvious facts: “JavaScript is a language”
+- Temporary state: “server is down right now” (goes to daily log instead)
 
 Use value and evidence, not a repeat count or elapsed days. Routine recording,
 correction, merging, and pruning do not need `ask_user`. Respect the user's
