@@ -6,10 +6,11 @@ import { installObsidianStub, lastMenu, platformMock, resetMenus } from "../test
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
 import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import type { QuickAction } from "./quickActionSuggestions";
-import type { DraftStore } from "../session/DraftStore";
+import type { DraftContent, DraftStore } from "../session/DraftStore";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { SubagentRegistry } from "../subagent/registry";
 import { findSubagentRole } from "../subagent/roles";
+import type { ContextReference } from "../agent/contextReference";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 
 installObsidianStub();
@@ -17,6 +18,7 @@ const document = installDom();
 
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
 const { ChatApp } = await import("./ChatApp");
+const { consumeDraftContent } = await import("../session/DraftStore");
 const { ChatInputController } = await import("./ChatInputController");
 const { DEFAULT_SETTINGS, describeModelTarget } = await import("../settings");
 const { getT } = await import("../i18n");
@@ -78,6 +80,7 @@ const { window: domWindow } = globalThis as unknown as {
 class FakeAgentService {
 	/** Every prompt that reached the service, so a bypassed route shows up as an absence. */
 	readonly sentPrompts: string[] = [];
+	readonly sentReferences: (readonly ContextReference[])[] = [];
 	private snapshot: ChatSnapshot;
 	private readonly listeners = new Set<(snapshot: ChatSnapshot) => void>();
 	extensionSend?: () => Promise<boolean>;
@@ -124,7 +127,8 @@ class FakeAgentService {
 		return () => { if (this.extensionUI === adapter) this.extensionUI = undefined; adapter.reset(); };
 	}
 
-	async sendPrompt(prompt: string): Promise<boolean> {
+	async sendPrompt(prompt: string, _images: ImageContent[] = [], references: readonly ContextReference[] = []): Promise<boolean> {
+		this.sentReferences.push(references);
 		this.sentPrompts.push(prompt);
 		if (this.isExtensionInput(prompt) && this.extensionSend) return this.extensionSend();
 		if (this.failSends) {
@@ -287,18 +291,37 @@ class FakeAgentService {
 class RecordingDraftStore {
 	readonly clearedSessions: string[] = [];
 	private readonly texts = new Map<string, string>();
+	private readonly references = new Map<string, readonly ContextReference[]>();
+	private readonly listeners = new Map<string, Set<(draft: DraftContent) => void>>();
 
 	async get(sessionId: string): Promise<string> {
 		return this.texts.get(sessionId) ?? "";
 	}
+	async getDraft(sessionId: string) { return { text: await this.get(sessionId), references: [...this.references.get(sessionId) ?? []] }; }
+	subscribe(id: string, listener: (draft: DraftContent) => void) {
+		const listeners = this.listeners.get(id) ?? new Set(); listeners.add(listener); this.listeners.set(id, listeners);
+		return () => { listeners.delete(listener); };
+	}
+	async consume(id: string, sent: DraftContent) {
+		const next = consumeDraftContent(await this.getDraft(id), sent);
+		await this.set(id, next.text, next.references);
+	}
+	private publish(id: string) {
+		const value = { text: this.texts.get(id) ?? "", references: [...this.references.get(id) ?? []] };
+		for (const listener of this.listeners.get(id) ?? []) listener(value);
+	}
 
-	async set(sessionId: string, text: string): Promise<void> {
+	async set(sessionId: string, text: string, references?: readonly ContextReference[]): Promise<void> {
 		this.texts.set(sessionId, text);
+		if (references) this.references.set(sessionId, references);
+		this.publish(sessionId);
 	}
 
 	async clear(sessionId: string): Promise<void> {
 		this.clearedSessions.push(sessionId);
 		this.texts.delete(sessionId);
+		this.references.delete(sessionId);
+		this.publish(sessionId);
 	}
 
 	async flush(): Promise<void> {}
@@ -507,6 +530,102 @@ describe("ChatApp external prefill", () => {
 		await mounted?.unmount();
 		mounted = undefined;
 		document.body.replaceChildren();
+	});
+
+	it("stages removable cards beside the unchanged draft and sends only the survivors", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		await typeDraft(composer(mounted.host), "Compare these");
+		const refs: ContextReference[] = [{ kind: "file", path: "A.md" }, { kind: "folder", path: "Projects" }];
+		expect(await mounted.inputController.prefill("", SESSION_ID, refs)).toBe(true);
+		expect(composer(mounted.host).value).toBe("Compare these");
+		expect(mounted.host.querySelectorAll(".piem-chat__reference")).toHaveLength(2);
+		mounted.host.querySelector<HTMLButtonElement>('[aria-label="Remove reference: A.md"]')!.click();
+		await flushRender();
+		expect((await mounted.draftStore.getDraft(SESSION_ID)).references).toEqual([refs[1]!]);
+		mounted.inputController.submit();
+		await flushRender();
+		expect(mounted.service.sentReferences).toEqual([[refs[1]!]]);
+		expect(mounted.host.querySelectorAll(".piem-chat__reference")).toHaveLength(0);
+	});
+
+	it.each([false, true])("keeps newer text and cards after a delayed send settles %s across A-B-A", async sent => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const first: ContextReference = { kind: "file", path: "A.md" };
+		const newer: ContextReference = { kind: "folder", path: "Projects" };
+		await mounted.inputController.prefill("First question", SESSION_ID, [first]);
+		let settle!: (sent: boolean) => void;
+		const send = spyOn(mounted.service, "sendPrompt").mockImplementationOnce(() => new Promise(resolve => { settle = resolve; }));
+		try {
+			mounted.inputController.submit(); await flushRender();
+			mounted.service.emit({ session: { ...sessionInfo(), id: "b", path: "b.jsonl" } }); await flushRender();
+			mounted.service.emit({ session: sessionInfo() }); await flushRender();
+			await typeDraft(composer(mounted.host), "New question");
+			await mounted.inputController.prefill("", SESSION_ID, [newer]);
+			settle(sent); await flushRender();
+			expect(composer(mounted.host).value).toBe("New question");
+			expect((await mounted.draftStore.getDraft(SESSION_ID)).references).toEqual(sent ? [newer] : [first, newer]);
+			expect(mounted.host.querySelectorAll(".piem-chat__reference")).toHaveLength(sent ? 1 : 2);
+		} finally { send.mockRestore(); }
+	});
+
+	it("blocks repeat submissions until acceptance, then permits the next queued draft", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		await mounted.inputController.prefill("First question", SESSION_ID, [{ kind: "file", path: "A.md" }]);
+		let accept!: () => void;
+		let finish!: (sent: boolean) => void;
+		const send = spyOn(mounted.service as unknown as ObsidianAgentService, "sendPrompt")
+			.mockImplementationOnce((_prompt, _images, _references, onAccepted) => new Promise(resolve => { accept = onAccepted!; finish = resolve; }));
+		try {
+			mounted.inputController.submit();
+			mounted.inputController.submit();
+			await flushRender();
+			expect(send).toHaveBeenCalledTimes(1);
+			expect(sendButton(mounted.host).disabled).toBe(true);
+			accept();
+			await flushRender();
+			expect(composer(mounted.host).value).toBe("");
+			await typeDraft(composer(mounted.host), "Second question");
+			mounted.inputController.submit();
+			await flushRender();
+			expect(send).toHaveBeenCalledTimes(2);
+			finish(true);
+			await flushRender();
+		} finally { send.mockRestore(); }
+	});
+
+	it("permits retry after a submission is refused without losing its draft or cards", async () => {
+		mounted = await mountChat({ withDraftStore: true, snapshot: { isConfigured: true } });
+		const refs: ContextReference[] = [{ kind: "folder", path: "Projects" }];
+		await mounted.inputController.prefill("Question", SESSION_ID, refs);
+		let finish!: (sent: boolean) => void;
+		const send = spyOn(mounted.service, "sendPrompt").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+		try {
+			mounted.inputController.submit();
+			mounted.inputController.submit();
+			await flushRender();
+			expect(send).toHaveBeenCalledTimes(1);
+			finish(false);
+			await flushRender();
+			expect(await mounted.draftStore.getDraft(SESSION_ID)).toEqual({ text: "Question", references: refs });
+			mounted.inputController.submit();
+			await flushRender();
+			expect(send).toHaveBeenCalledTimes(2);
+		} finally { send.mockRestore(); }
+	});
+
+	it("restores cards with a refused send and keeps them scoped across chat switches", async () => {
+		mounted = await mountChat({ withDraftStore: true, failSends: true });
+		const refs: ContextReference[] = [{ kind: "url", url: "https://example.org" }];
+		await mounted.inputController.prefill("Question", SESSION_ID, refs);
+		mounted.inputController.submit();
+		await flushRender();
+		expect((await mounted.draftStore.getDraft(SESSION_ID)).references).toEqual(refs);
+		mounted.service.emit({ session: { ...sessionInfo(), id: "b", path: "b.jsonl" } });
+		await flushRender();
+		expect(mounted.host.querySelectorAll(".piem-chat__reference")).toHaveLength(0);
+		mounted.service.emit({ session: sessionInfo() });
+		await flushRender();
+		expect(mounted.host.querySelectorAll(".piem-chat__reference")).toHaveLength(1);
 	});
 
 	it("keeps a reference received before the first conversation and its saved draft are ready", async () => {

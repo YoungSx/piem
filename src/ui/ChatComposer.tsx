@@ -14,7 +14,9 @@ import { ExtensionCompletionMenu } from "./ExtensionCompletionMenu";
 
 interface ChatComposerProps {
 	input: string;
+	references?: React.ReactNode;
 	readOnly?: boolean;
+	isSubmitting?: boolean;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	/**
@@ -164,7 +166,9 @@ interface ChatComposerProps {
  */
 export function ChatComposer({
 	input,
+	references,
 	readOnly = false,
+	isSubmitting = false,
 	isEditing = false,
 	onCancelEdit,
 	isStreaming,
@@ -223,7 +227,7 @@ export function ChatComposer({
 		: isBusy
 			? "stop"
 			: "send";
-	const sendDisabled = isInitializing || !isConfigured || !input.trim();
+	const sendDisabled = isInitializing || isSubmitting || !isConfigured || !input.trim();
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [completionOpen, setCompletionOpen] = useState(false);
 	const [completionRequest, setCompletionRequest] = useState(0);
@@ -524,6 +528,7 @@ export function ChatComposer({
 						))}
 					</ul>
 				) : null}
+				{!collapsed ? references : null}
 				{pendingImages && pendingImages.length > 0 && !collapsed ? (
 					<ul className="piem-chat__pending-images">
 						{pendingImages.map((image, index) => (
@@ -649,7 +654,7 @@ export function ChatComposer({
 							 * queueing, and it names itself, because an icon here would
 							 * just be the next thing a reader has to guess.
 							 */
-							<button type="button" className="piem-chat__queue-button" onClick={onSend} disabled={isInitializing}>
+							<button type="button" className="piem-chat__queue-button" onClick={onSend} disabled={isInitializing || isSubmitting}>
 								{t.t("chat.queueDraft")}
 							</button>
 						) : null}

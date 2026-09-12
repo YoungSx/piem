@@ -138,7 +138,7 @@ Piem 核验基线：`2dfe8251bfad6647da0a5cd978f86d8536cc08c6`。**最值得补�
 - **通用上下文与自定义展示**：`CustomMessage` 提供 `role: "custom"`、自定义 `customType`、`content`、`display`、`details`、`timestamp`。官方 `convertToLlm()` 将 `content` 转成 user message，不发送 `details` 或 `customType`。`display: false` 仍参与模型上下文。一次纯函数探针已验证这三个行为。[官方类型和转换](https://github.com/earendil-works/pi/blob/bfb004d4418ff05c6f909eaaab856cbe75c1fde0/packages/agent/src/harness/messages.ts#L31-L38)
 - **渲染扩展点**：`pi.registerMessageRenderer(customType, renderer)` 可用 metadata 渲染自定义消息，但返回的是终端 `Component`。`pi.appendEntry()` 加 `registerEntryRenderer()` 则适合持久化的界面专用内容，不参与模型上下文。[官方说明](https://github.com/earendil-works/pi/blob/bfb004d4418ff05c6f909eaaab856cbe75c1fde0/packages/coding-agent/docs/extensions.md#L1398-L1419)、[官方 renderer 示例](https://github.com/earendil-works/pi/blob/bfb004d4418ff05c6f909eaaab856cbe75c1fde0/packages/coding-agent/examples/extensions/message-renderer.ts)
 
-如果后续把所选文件、目录、网址显示成可点击的结构化附件，官方 `CustomMessage` 的 `content/details` 分工适合复用；`customType` 名称和 `details` 内的引用 schema 仍由 Piem 定义。需要同时处理发送前的草稿附件和发送后的消息渲染、持久化及重放，不是换一层标签即完成。当前这批菜单实现仍采用草稿预填及固定引用；Piem 的 `HarnessTrace` 支持普通 custom 消息，但 `extensionHost` 将第三方 `messageRenderers` 记录为忽略项，尚无通用自定义 React 消息卡片桥。
+如果后续把所选文件、目录、网址显示成可点击的结构化附件，官方 `CustomMessage` 的 `content/details` 分工适合复用；`customType` 名称和 `details` 内的引用 schema 仍由 Piem 定义。需要同时处理发送前的草稿附件和发送后的消息渲染、持久化及重放，不是换一层标签即完成。上述为调研时的实现快照。后续按用户选择已实现 Piem 自有引用类型的原生 `CustomMessage` 卡片，见 [实现与验证记录](2026-09-12-proactive-context-implementation.md)。第三方 `registerMessageRenderer` 仍是终端组件接口，未在本次实现通用 React 消息桥。
 
 ## 固定来源
 

@@ -1,4 +1,6 @@
 import React, { memo, useEffect, useRef, useState } from "react";
+import { messageReferences } from "../agent/contextReference";
+import { ReferenceCards } from "./ReferenceCards";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { AssistantMessage, ImageContent, ThinkingContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
@@ -1032,6 +1034,10 @@ function MessageRow({
 			return slot.head ? renderFoldedTrace(slot.group, renderContext) : null;
 		}
 		return <ToolResultTrace message={message} context={renderContext} />;
+	}
+	const references = messageReferences(message);
+	if (references && message.role === "custom" && message.display) {
+		return <div className="piem-chat__message piem-chat__message--references"><ReferenceCards references={references} app={renderContext.app} t={renderContext.t} /></div>;
 	}
 	if (message.role !== "user" && message.role !== "assistant") {
 		return <HarnessTrace message={message} context={renderContext} />;

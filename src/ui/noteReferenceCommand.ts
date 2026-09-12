@@ -1,5 +1,6 @@
 import { Notice, type Editor } from "obsidian";
 import { buildNoteReference } from "./noteReference";
+import { MAX_REFERENCE_EXCERPT, type ContextReference } from "../agent/contextReference";
 import type { Translator } from "../i18n";
 
 /**
@@ -48,4 +49,16 @@ export function warnIfTruncated(truncated: boolean, t: Translator): void {
 		// Sentence case is enforced by eslint-plugin-obsidianmd for UI text.
 		new Notice(t.t("noteReference.truncated"));
 	}
+}
+
+/** Snapshot the selection at the user's action; later navigation cannot change it. */
+export function collectNoteReference(editor: Editor, path: string | null | undefined, selectionOnly: boolean): ContextReference | null {
+	if (!path) return null;
+	if (!selectionOnly) return { kind: "file", path };
+	const text = editor.getSelection();
+	if (!text.trim()) return null;
+	const chars = Array.from(text);
+	return { kind: "selection", path, text: chars.slice(0, MAX_REFERENCE_EXCERPT).join(""),
+		...selectionRange(editor, text), ...(chars.length > MAX_REFERENCE_EXCERPT ? { truncated: true } : {}),
+	};
 }

@@ -138,6 +138,15 @@ describe("DraftStore per-chat isolation", () => {
 		expect(await store.get("unknown")).toBe("");
 	});
 
+	it("keeps valid question text when reference metadata is corrupt", async () => {
+		const adapter = new MemoryAdapter();
+		adapter.seed(draftFile("session-a"), JSON.stringify({ text: "Keep this question", references: [{ kind: "file", path: "../bad.md" }] }));
+		const { logger, records } = spyLogger();
+		const { store } = createStore(adapter, logger);
+		expect(await store.getDraft("session-a")).toEqual({ text: "Keep this question", references: [] });
+		expect(records.some(record => record.message.includes("reference metadata invalid"))).toBe(true);
+	});
+
 	it("drops the draft when the composer is emptied by removing the file, not writing debris", async () => {
 		const { store, adapter } = createStore();
 		await store.set("session-a", "typed then deleted");
@@ -261,10 +270,13 @@ describe("DraftStore persistence", () => {
 	});
 
 	it("caps a single draft so a pasted note body cannot bloat the file", async () => {
-		const { store } = createStore();
+		const { store, adapter } = createStore();
 		await store.set("session-a", "x".repeat(30_000));
+		await store.flush();
 
-		expect((await store.get("session-a")).length).toBe(20_000);
+		expect((await store.get("session-a")).length).toBe(30_000);
+		const { store: reloaded } = createStore(adapter);
+		expect((await reloaded.get("session-a")).length).toBe(20_000);
 	});
 
 	it("forgets the previous folder's drafts when the new one holds no draft files", async () => {

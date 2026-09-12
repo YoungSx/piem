@@ -1,141 +1,82 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DraftStore } from "../session/DraftStore";
+import { consumeDraftContent, type DraftContent, type DraftStore } from "../session/DraftStore";
+import type { ContextReference } from "../agent/contextReference";
 
 export interface SessionDraft {
-	/** Current composer text. */
 	draft: string;
-	/** False while adopting this conversation's persisted draft. */
+	references: ContextReference[];
 	ready: boolean;
-	/** Records a keystroke; persistence is debounced inside the store. */
-	setDraft: (text: string) => void;
-	/** Clears the draft after a successful send, without waiting for a write. */
+	setDraft: (text: string, references?: readonly ContextReference[]) => void;
+	setReferences: (references: readonly ContextReference[]) => void;
 	clearDraft: () => void;
+	consumeDraft: (sent: DraftContent) => Promise<void>;
 }
 
-/**
- * Composer text, scoped to one conversation and persisted across reloads.
- *
- * The draft used to be plain component state, which lost it whenever the leaf
- * unmounted, and switching chats left it in place — so a half-written question
- * for one conversation could be sent to another. Keying on a scope makes the
- * draft follow the conversation rather than the panel.
- *
- * `scope` is the store's key for one composer — the session's own id, as
- * `DraftStore` records. Opaque here on purpose: this hook never parses it, so a
- * scope change is a scope change whatever it was derived from.
- *
- * Written on unmount as well as on a pause: teardown cancels the store's
- * debounce, which is precisely the case (closing the panel mid-sentence) that
- * this exists to survive.
- */
+/** Text and references share one adoption, revision, and persisted draft file. */
 export function useSessionDraft(store: DraftStore | undefined, scope: string | undefined): SessionDraft {
-	const [draft, setDraftState] = useState("");
-	const scopeRef = useRef<string | undefined>(scope);
-	const draftRef = useRef("");
-	const writeRevision = useRef(0);
-	// Identity belongs to this adoption, not merely the path: A → B → A must
-	// finish the new A read before extensions can inspect or fill its draft.
-	const adoption = useMemo(() => ({ store, scope }), [store, scope]);
-	const activeAdoption = useRef<typeof adoption>();
-	const [loadedScope, setLoadedScope] = useState<{ store: DraftStore | undefined; scope: string | undefined }>();
-	const loadedRef = useRef(loadedScope);
-	const markLoaded = useCallback((loaded: typeof adoption): void => {
-		loadedRef.current = loaded;
-		setLoadedScope(loaded);
-	}, []);
+	const adoption = useMemo(() => ({ store, scope, revision: 0,
+		value: { text: "", references: [] } as DraftContent,
+	}), [store, scope]);
+	const active = useRef<typeof adoption>();
+	const [loaded, setLoaded] = useState<typeof adoption>();
+	const [, redraw] = useState(0);
 
-	draftRef.current = draft;
-
-	// A send can settle after switching conversations or closing the panel.
-	// Its captured setter still owns the old store key, but no longer the UI.
-	// Layout cleanup retires that ownership as soon as the switch commits.
 	useLayoutEffect(() => {
-		activeAdoption.current = adoption;
-		return () => { activeAdoption.current = undefined; };
+		active.current = adoption;
+		return () => { active.current = undefined; };
 	}, [adoption]);
 
 	useEffect(() => {
-		const previousScope = scopeRef.current;
-		scopeRef.current = scope;
-		if (!store) {
-			if (previousScope !== scope) setDraftState("");
-			markLoaded(adoption);
-			return undefined;
-		}
-
-		// Hand the outgoing branch's text back to the store before adopting the new
-		// one, or switching away mid-sentence would drop it.
-		if (previousScope && previousScope !== scope && loadedRef.current?.store === store && loadedRef.current.scope === previousScope) {
-			void store.set(previousScope, draftRef.current);
-		}
-
-		if (!scope) {
-			setDraftState("");
-			return undefined;
-		}
-
 		let cancelled = false;
-		const revision = writeRevision.current;
-		void store.get(scope).then((stored) => {
-			if (!cancelled) {
-				// An extension or a keystroke may already have supplied newer text.
-				if (revision === writeRevision.current) {
-					draftRef.current = stored;
-					setDraftState(stored);
-				}
-				markLoaded(adoption);
-			}
+		const revision = adoption.revision;
+		if (!store || !scope) { setLoaded(adoption); return; }
+		void store.getDraft(scope).then(value => {
+			if (cancelled) return;
+			if (revision === adoption.revision) adoption.value = value;
+			setLoaded(adoption);
+			redraw(value => value + 1);
 		});
-		return () => {
-			cancelled = true;
-		};
-	}, [store, scope, adoption, markLoaded]);
+		return () => { cancelled = true; };
+	}, [store, scope, adoption]);
 
-	// Flush on unmount: `DraftStore.flush` cancels the debounce and writes, so
-	// closing the panel keeps the last keystrokes instead of discarding them.
 	useEffect(() => {
-		if (!store) {
-			return undefined;
-		}
-		return () => {
-			const current = scopeRef.current;
-			if (current && loadedRef.current?.store === store && loadedRef.current.scope === current) {
-				void store.set(current, draftRef.current).then(() => store.flush());
-				return;
-			}
-			void store.flush();
-		};
-	}, [store]);
+		if (!store || !scope) return;
+		return store.subscribe(scope, value => {
+			if (active.current !== adoption) return;
+			adoption.revision++;
+			adoption.value = value;
+			setLoaded(adoption);
+			redraw(revision => revision + 1);
+		});
+	}, [store, scope, adoption]);
 
-	const setDraft = useCallback(
-		(text: string) => {
-			if (activeAdoption.current === adoption) {
-				writeRevision.current++;
-				draftRef.current = text;
-				setDraftState(text);
-				markLoaded(adoption);
-			}
-			const current = adoption.scope;
-			if (store && current) {
-				void store.set(current, text);
-			}
-		},
-		[store, adoption, markLoaded],
-	);
+	const setDraft = useCallback((text: string, references?: readonly ContextReference[]) => {
+		adoption.revision++;
+		adoption.value = { text, references: [...(references ?? adoption.value.references)] };
+		if (active.current === adoption) { setLoaded(adoption); redraw(value => value + 1); }
+		if (store && scope) void store.set(scope, text, adoption.value.references);
+	}, [store, scope, adoption]);
+
+	const setReferences = useCallback((references: readonly ContextReference[]) => {
+		setDraft(adoption.value.text, references);
+	}, [setDraft, adoption]);
 
 	const clearDraft = useCallback(() => {
-		if (activeAdoption.current === adoption) {
-			writeRevision.current++;
-			draftRef.current = "";
-			setDraftState("");
-			markLoaded(adoption);
-		}
-		const current = adoption.scope;
-		if (store && current) {
-			void store.clear(current);
-		}
-	}, [store, adoption, markLoaded]);
+		adoption.revision++;
+		adoption.value = { text: "", references: [] };
+		if (active.current === adoption) { setLoaded(adoption); redraw(value => value + 1); }
+		if (store && scope) void store.clear(scope);
+	}, [store, scope, adoption]);
 
-	const ready = !scope || loadedScope === adoption;
-	return { draft: scope && ready ? draft : "", ready, setDraft, clearDraft };
+	const consumeDraft = useCallback(async (sent: DraftContent) => {
+		if (store && scope) { await store.consume(scope, sent); return; }
+		const next = consumeDraftContent(adoption.value, sent);
+		setDraft(next.text, next.references);
+	}, [store, scope, adoption, setDraft]);
+
+	// Writes already land in the store on every mutation; unmount only flushes.
+	useEffect(() => () => { void store?.flush(); }, [store]);
+	const ready = !scope || loaded === adoption;
+	return { draft: scope && ready ? adoption.value.text : "", references: scope && ready ? adoption.value.references : [],
+		ready, setDraft, setReferences, clearDraft, consumeDraft };
 }

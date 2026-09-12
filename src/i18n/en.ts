@@ -320,6 +320,7 @@ export const en = {
 		 * happening — the tidying row in the transcript, the status bar for a resend.
 		 */
 		busyTidying: "Piem is tidying earlier thoughts. Send this again in a moment.",
+		busySending: "Piem is still accepting your question. Wait a moment before sending again.",
 		busyResending: "Piem is resending your message. Send this again in a moment.",
 		/**
 		 * Outcomes of a control the reader just pressed, on Obsidian's own toast.
@@ -734,15 +735,19 @@ export const en = {
 
 	/** Note-reference command. */
 	noteReference: {
+		cards: "Attached references",
+		kind: { file: "File", folder: "Folder", url: "Webpage", selection: "Selection" },
+		remove: "Remove reference: {name}",
+		lines: "Lines {start}–{end}",
+		pathHint: "Piem can read this file or folder when you send your question.",
+		webHint: "Piem can request this webpage when you send your question.",
+		referenceLimit: "Attach up to {limit} references, with at most 20,000 characters of reference data. Remove some and try again.",
+		missingCount: "{count} selected item(s) are no longer available.",
+		extensionReferences: "These references belong to a question. Send your question, or remove the references before running this command.",
 		truncated: "The selected text was long; only its beginning was quoted.",
-		folder: "Regarding the vault folder {path}:\n\n",
-		url: "Regarding the external webpage {url}:\n\n",
-		file: "Regarding the vault file {path}:\n\n",
 		selectionChanged: "The conversation changed. Select the items again to add them here.",
 		unavailable: "Could not add the reference. Open the chat and try again.",
 		draftFull: "The draft would exceed {limit} characters. Send or shorten it, then add the reference again.",
-		batchResult: "Pinned: {added}. Already pinned: {existing}. Added to draft: {drafted}. Unavailable: {missing}.",
-		pinLimit: "Up to {limit} files can stay pinned. Additional files are listed in the draft.",
 		pinFull: "Up to {limit} files can stay pinned. Unpin one to add another.",
 		missing: "The selected item is no longer in the vault.",
 		dropFiles: "Drop images here. For vault files or folders, use Ask in their context menu.",

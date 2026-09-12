@@ -74,6 +74,9 @@ const context = await esbuild.context({
 		"@lezer/lr",
 		...builtinModules],
 	format: "cjs",
+	// Obsidian reads the bundle as UTF-8; keep Chinese copy literal instead of
+	// expanding every character into a longer Unicode escape on disk.
+	charset: "utf8",
 	target: "es2018",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",

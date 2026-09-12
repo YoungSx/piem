@@ -33,6 +33,8 @@ import { fileToPendingImage, newPendingImageId, toImageContents, type PendingIma
 import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
 import { useExtensionUI } from "./useExtensionUI";
 import { ExtensionSurfaces } from "./ExtensionSurfaces";
+import { ReferenceCards } from "./ReferenceCards";
+import { MAX_CONTEXT_REFERENCES, mergeContextReferences, promptReferences, referenceKey, type ContextReference } from "../agent/contextReference";
 
 interface ChatAppProps {
 	service: ObsidianAgentService;
@@ -69,7 +71,14 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// Keyed by session: a half-written question belongs to the chat it was typed
 	// in, not to whatever is on screen when the reader comes back.
 	const draftScope = snapshot.session?.id;
-	const { draft: input, ready: draftReady, setDraft: setInput, clearDraft } = useSessionDraft(draftStore, draftScope);
+	const { draft: input, references, ready: draftReady, setDraft: setInput, setReferences, clearDraft, consumeDraft } = useSessionDraft(draftStore, draftScope);
+	// Hold each chat's submission only until Pi owns it; a running answer can
+	// still accept another queued question, including after switching chats.
+	const pendingSubmissions = useRef(new Set<string>());
+	const [, refreshSubmissions] = useState(0);
+	const isSubmitting = !!draftScope && pendingSubmissions.current.has(draftScope);
+	const referencesRef = useRef(references);
+	referencesRef.current = references;
 	const [sessions, setSessions] = useState<ActiveSessionInfo[]>([]);
 	const [isStarting, setIsStarting] = useState(true);
 	// Initial startup and a later cold session open share the existing opening
@@ -113,6 +122,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		draftBefore: string;
 		/** The stage as the user left it before arming; cancel restores it. */
 		imagesBefore: PendingImage[];
+		referencesBefore: ContextReference[];
 	} | null>(null);
 	/**
 	 * The model-generated quick actions for whichever placement asked last, tagged
@@ -497,8 +507,9 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 				original,
 				draftBefore: inputRef.current,
 				imagesBefore: pendingImages,
+				referencesBefore: referencesRef.current,
 			});
-			setInput(original);
+			setInput(original, promptReferences(snapshot.messages, index));
 			setPendingImages(priorImages);
 		},
 		[service, snapshot.messages, snapshot.session?.id, setInput, pendingImages],
@@ -506,7 +517,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 	const handleCancelEdit = useCallback((): void => {
 		setEditArmed(null);
-		setInput(editArmed?.draftBefore ?? "");
+		setInput(editArmed?.draftBefore ?? "", editArmed?.referencesBefore ?? []);
 		setPendingImages(editArmed?.imagesBefore ?? []);
 	}, [editArmed, setInput]);
 
@@ -526,11 +537,13 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 */
 	const handleEditQueuedPrompt = useCallback(
 		(id: string): void => {
-			const taken = service.removeQueuedPrompt(id);
+			const taken = service.removeQueuedPrompt(id, referencesRef.current, inputRef.current);
 			if (!taken) {
 				return;
 			}
-			setInput(appendToDraft(inputRef.current, taken.text));
+			const merged = mergeContextReferences(referencesRef.current, taken.references ?? []);
+			// Taking a queued question back must carry its references as well.
+			setInput(appendToDraft(inputRef.current, taken.text), merged ?? referencesRef.current);
 			// Fresh ids, like the transcript's own edit restage: these
 			// `ImageContent`s never carried one, and the stage keys off it.
 			setPendingImages((staged) => [
@@ -549,7 +562,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	}, [snapshot.messages, snapshot.streamingMessage]);
 
 	const sendPrompt = async (): Promise<void> => {
-		if (service.getSnapshot().isOpeningSession) return;
+		if (!draftScope || !draftReady || service.getSnapshot().isOpeningSession || pendingSubmissions.current.has(draftScope)) return;
 		const prompt = input.trim();
 		// A send while the agent answers is allowed: it queues (see the service).
 		// The states that still refuse are a compaction with no run behind it —
@@ -559,73 +572,46 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			return;
 		}
 		const images = toImageContents(pendingImages);
-		if (service.isExtensionInput?.(prompt)) {
-			const original = inputRef.current;
-			const path = snapshot.session?.path;
-			const scope = composerScope.current;
-			// Commands such as /clarify read and replace the live editor. Leave it
-			// intact through cancellation, refusal and failure; only consume an
-			// accepted command still sitting unchanged in its original composer.
-			const sent = await service.sendPrompt(prompt, images);
-			if (sent && scope === composerScope.current && service.getSnapshot().session?.path === path && inputRef.current === original) {
-				inputRef.current = "";
-				clearDraft();
-			}
-			// Extension commands do not consume the staged image attachments.
-			return;
-		}
-		// The service resolves `false` and banners its own failures, so these
-		// awaits "cannot" reject — but each one is also the moment the draft has
-		// already been spent. A residual rejection would strand the send silently
-		// (words gone, image cards hanging, no banner), so the catch hands the
-		// text back before rethrowing for diagnosis.
-		const guardedSend = async (send: () => Promise<boolean>): Promise<boolean> => {
-			try {
-				return await send();
-			} catch (error) {
-				setInput(prompt);
-				throw error;
-			}
+		const sentReferences = [...references];
+		pendingSubmissions.current.add(draftScope);
+		refreshSubmissions(value => value + 1);
+		const releaseSubmission = (): void => {
+			if (pendingSubmissions.current.delete(draftScope)) refreshSubmissions(value => value + 1);
 		};
-		if (activeEdit) {
-			// An edit cannot apply mid-run — it rewinds the transcript another
-			// run is reading — and arming one is blocked while streaming, so a
-			// stray send from an edit armed just before the run started waits.
-			if (snapshot.isStreaming) {
+		let accepted = false;
+		try {
+			if (service.isExtensionInput?.(prompt)) {
+				const original = inputRef.current;
+				const path = snapshot.session?.path;
+				const scope = composerScope.current;
+				// Commands such as /clarify read and replace the live editor. Leave it
+				// intact through cancellation, refusal and failure; only consume an
+				// accepted command still sitting unchanged in its original composer.
+				const sent = await service.sendPrompt(prompt, images, sentReferences);
+				if (sent && scope === composerScope.current && service.getSnapshot().session?.path === path && inputRef.current === original) {
+					inputRef.current = "";
+					clearDraft();
+				}
+				// Extension commands do not consume the staged image attachments.
 				return;
 			}
-			// An armed edit rewrites the conversation rather than appending. Same
-			// draft economy as the plain send: the composer empties before the
-			// rewind starts (a branch summary can hold the await for seconds, and a
-			// draft lingering through it reads as "nothing happened"), and a refusal
-			// hands the text back with the edit still armed.
-			clearDraft();
-			const sent = await guardedSend(() => service.editAndResend(activeEdit.index, prompt, images));
-			if (sent) {
-				setEditArmed(null);
-				setPendingImages([]);
-			} else {
-				setInput(prompt);
+			const stagedIds = new Set(pendingImages.map(image => image.id));
+			const onAccepted = (): void => {
+				if (accepted) return;
+				accepted = true;
+				void consumeDraft({ text: input, references: sentReferences }).finally(releaseSubmission);
+				setPendingImages(current => current.filter(image => !stagedIds.has(image.id)));
+			};
+			if (activeEdit) {
+				if (snapshot.isStreaming) return;
+				const sent = await service.editAndResend(activeEdit.index, prompt, images, sentReferences, onAccepted);
+				if (sent) { onAccepted(); setEditArmed(null); }
+				return;
 			}
-			return;
-		}
-		if (!snapshot.isConfigured) {
-			// Send is disabled without a key, but the ⌘↵ submit command routes through
-			// `sendPromptRef` and never sees the button's disabled state. Let it reach
-			// the service so it surfaces the error banner, and deliberately skip
-			// `clearDraft()` so a request that cannot go out keeps the user's text.
-			await service.sendPrompt(prompt, images);
-			return;
-		}
-		clearDraft();
-		const sent = await guardedSend(() => service.sendPrompt(prompt, images));
-		if (sent) {
-			// A successful send consumed the staged images; clear the thumbnails.
-			setPendingImages([]);
-		} else {
-			// Hand the text and images back rather than losing them to a failed
-			// request (or a capability-gate block the user can still recover from).
-			setInput(prompt);
+			const sent = await service.sendPrompt(prompt, images, sentReferences, onAccepted);
+			if (sent) onAccepted();
+		} finally {
+			if (!accepted) releaseSubmission();
 		}
 	};
 
@@ -716,14 +702,19 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// A queued prefill can flush React; drain it after the registration effect.
 		queueMicrotask(() => {
 			if (cancelled) return;
-			inputController.setPrefillHandler((text) => {
+			inputController.setPrefillHandler((text, incomingReferences = []) => {
 				if (service.getSnapshot().session?.id !== draftScope) return false;
-				const next = appendToDraft(inputRef.current, text);
+				const next = text ? appendToDraft(inputRef.current, text) : inputRef.current;
+				const merged = mergeContextReferences(referencesRef.current, incomingReferences);
+				if (!merged) {
+					new Notice(getT(snapshot.language).t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES }));
+					return "reported";
+				}
 				if (next.length > MAX_DRAFT_LENGTH) {
 					new Notice(getT(snapshot.language).t("noteReference.draftFull", { limit: MAX_DRAFT_LENGTH }));
 					return "reported";
 				}
-				flushSync(() => { setInput(next); });
+				flushSync(() => { setInput(next, merged); });
 				inputController.notifyPrefillCommitted();
 				return true;
 			}, draftScope);
@@ -836,7 +827,9 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 				<ChatComposer
 					input={input}
+					references={<ReferenceCards references={references} app={app} t={getT(snapshot.language)} onRemove={ref => setReferences(references.filter(item => referenceKey(item) !== referenceKey(ref)))} />}
 					readOnly={!draftScope || !draftReady}
+					isSubmitting={isSubmitting}
 					isEditing={activeEdit !== null}
 					onCancelEdit={handleCancelEdit}
 					isStreaming={snapshot.isStreaming}

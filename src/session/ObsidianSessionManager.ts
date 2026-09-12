@@ -159,6 +159,7 @@ export class ObsidianSessionManager {
 	 * and metadata cannot tell the two storages apart.
 	 */
 	private readonly blankPaths = new Set<string>();
+	private readonly materializing = new Map<string, Promise<ActiveSessionInfo>>();
 	/** Which hydrated session the legacy single-session API surface reads. */
 	private activePath: string | null = null;
 	/**
@@ -289,10 +290,15 @@ export class ObsidianSessionManager {
 	 * memory only. This is where they become facts a restart can read.
 	 */
 	async materializeIfBlank(path: string, defaults: SessionDefaults): Promise<ActiveSessionInfo> {
+		const pending = this.materializing.get(path);
+		if (pending) return pending;
 		if (!this.isBlankSession(path)) {
 			return this.summarize(this.requireHydrated(path).metadata, this.requireHydrated(path).session);
 		}
-		return this.materializeSession(path, defaults);
+		const work = this.materializeSession(path, defaults);
+		this.materializing.set(path, work);
+		try { return await work; }
+		finally { this.materializing.delete(path); }
 	}
 
 	/**

@@ -3,12 +3,13 @@ import type { DataAdapter } from "obsidian";
 import { flushRender, installDom } from "../testUtils/dom";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { JSX } from "react";
+import type { DraftContent } from "../session/DraftStore";
 
 installObsidianStub();
 const document = installDom();
 
 // Dynamic imports so the mocked `obsidian` module wins over any cached real one.
-const { DraftStore } = await import("../session/DraftStore");
+const { DraftStore, MAX_DRAFT_LENGTH } = await import("../session/DraftStore");
 const { useSessionDraft } = await import("./useSessionDraft");
 const { createRoot } = await import("react-dom/client");
 
@@ -112,6 +113,19 @@ describe("useSessionDraft", () => {
 		expect(harness.current.draft).toBe("still unfinished");
 	});
 
+	it("keeps the full long draft in the editor when storage publishes an update", async () => {
+		const store = createStore();
+		const { harness, render } = await mount(store, "session-a");
+		const text = "a".repeat(MAX_DRAFT_LENGTH) + "tail";
+		harness.current.setDraft(text);
+		await flushRender();
+		expect(harness.current.draft).toBe(text);
+		await store.flush();
+		await render("session-b");
+		await render("session-a");
+		expect(harness.current.draft).toBe(text);
+	});
+
 	it.each(["restore", "clear"])("keeps a late %s in its original chat after another draft is loaded", async (operation) => {
 		const store = createStore();
 		await store.set("session-a", "A before sending");
@@ -143,7 +157,7 @@ describe("useSessionDraft", () => {
 		await flushRender();
 		const { setDraft, clearDraft } = harness.current;
 		let finishRead!: (text: string) => void;
-		const read = spyOn(store, "get").mockImplementationOnce(() => new Promise<string>((resolve) => { finishRead = resolve; }));
+		const read = spyOn(store, "getDraft").mockImplementationOnce(() => new Promise<DraftContent>((resolve) => { finishRead = text => resolve({ text, references: [] }); }));
 		try {
 			await render("session-b");
 			expect(harness.current.ready).toBe(false);
@@ -241,7 +255,7 @@ describe("useSessionDraft", () => {
 	it("keeps a newer write when the initial stored draft arrives late", async () => {
 		const store = createStore();
 		let finishRead!: (text: string) => void;
-		const read = spyOn(store, "get").mockImplementationOnce(() => new Promise<string>((resolve) => { finishRead = resolve; }));
+		const read = spyOn(store, "getDraft").mockImplementationOnce(() => new Promise<DraftContent>((resolve) => { finishRead = text => resolve({ text, references: [] }); }));
 		try {
 			const { harness } = await mount(store, "session-a");
 			expect(harness.current.ready).toBe(false);
@@ -258,7 +272,7 @@ describe("useSessionDraft", () => {
 	it("does not resurrect a cleared draft when a pending read settles", async () => {
 		const store = createStore();
 		let finishRead!: (text: string) => void;
-		const read = spyOn(store, "get").mockImplementationOnce(() => new Promise<string>((resolve) => { finishRead = resolve; }));
+		const read = spyOn(store, "getDraft").mockImplementationOnce(() => new Promise<DraftContent>((resolve) => { finishRead = text => resolve({ text, references: [] }); }));
 		try {
 			const { harness } = await mount(store, "session-a");
 			harness.current.clearDraft();
@@ -274,9 +288,9 @@ describe("useSessionDraft", () => {
 		await store.set("session-a", "A on disk");
 		await store.set("session-b", "B on disk");
 		let finishRead!: (text: string) => void;
-		const originalGet = store.get.bind(store);
-		const read = spyOn(store, "get").mockImplementation((scope) => scope === "session-a"
-			? new Promise<string>((resolve) => { finishRead = resolve; }) : originalGet(scope));
+		const originalGet = store.getDraft.bind(store);
+		const read = spyOn(store, "getDraft").mockImplementation((scope) => scope === "session-a"
+			? new Promise<DraftContent>((resolve) => { finishRead = text => resolve({ text, references: [] }); }) : originalGet(scope));
 		try {
 			const { harness, render } = await mount(store, "session-a");
 			expect(harness.current.ready).toBe(false);
@@ -285,7 +299,7 @@ describe("useSessionDraft", () => {
 			finishRead("Late A");
 			await flushRender();
 			expect(harness.current.draft).toBe("B on disk");
-			expect(await originalGet("session-a")).toBe("A on disk");
+			expect((await originalGet("session-a")).text).toBe("A on disk");
 		} finally { read.mockRestore(); }
 	});
 
@@ -293,7 +307,7 @@ describe("useSessionDraft", () => {
 		const store = createStore();
 		await store.set("session-a", "A on disk");
 		let finishRead!: (text: string) => void;
-		const read = spyOn(store, "get").mockImplementationOnce(() => new Promise<string>((resolve) => { finishRead = resolve; }));
+		const read = spyOn(store, "getDraft").mockImplementationOnce(() => new Promise<DraftContent>((resolve) => { finishRead = text => resolve({ text, references: [] }); }));
 		try {
 			const { harness, unmount } = await mount(store, "session-a");
 			expect(harness.current.ready).toBe(false);
@@ -310,7 +324,7 @@ describe("useSessionDraft", () => {
 		const { harness, render } = await mount(store, "session-a");
 		await render(undefined);
 		let finishRead!: (text: string) => void;
-		const read = spyOn(store, "get").mockImplementationOnce(() => new Promise<string>((resolve) => { finishRead = resolve; }));
+		const read = spyOn(store, "getDraft").mockImplementationOnce(() => new Promise<DraftContent>((resolve) => { finishRead = text => resolve({ text, references: [] }); }));
 		try {
 			await render("session-a");
 			expect(harness.current.ready).toBe(false);
@@ -336,7 +350,7 @@ async function mount(
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	const root = createRoot(host);
-	const harness: Harness = { current: { draft: "", ready: false, setDraft: () => undefined, clearDraft: () => undefined } };
+	const harness: Harness = { current: { draft: "", references: [], ready: false, setDraft: () => undefined, setReferences: () => undefined, clearDraft: () => undefined, consumeDraft: async () => undefined } };
 
 	const render = async (next?: string): Promise<void> => {
 		root.render(<Probe store={store} sessionId={next} harness={harness} />);

@@ -45,6 +45,7 @@
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ContextReference } from "./contextReference";
 
 /**
  * One waiting message, as the panel renders it.
@@ -72,6 +73,7 @@ export interface QueueEntry extends QueuedPrompt {
 	 * the same words were queued twice.
 	 */
 	message: AgentMessage;
+	contextMessage?: AgentMessage;
 	/**
 	 * Only the images the user had staged in the composer, for the take-back.
 	 *
@@ -89,6 +91,11 @@ export interface TakenPrompt {
 	text: string;
 	/** The pictures to restage beside them; empty when there were none. */
 	images: readonly ImageContent[];
+	references?: readonly ContextReference[];
+}
+
+export function queuedMessages(entry: QueueEntry): AgentMessage[] {
+	return entry.contextMessage ? [entry.message, entry.contextMessage] : [entry.message];
 }
 
 /**
@@ -108,6 +115,7 @@ export class PromptQueue {
 		imageCount: number;
 		stagedImages: readonly ImageContent[];
 		message: AgentMessage;
+		contextMessage?: AgentMessage;
 	}): QueuedPrompt {
 		const entry: QueueEntry = {
 			id: `queued-${this.nextId}`,
@@ -115,6 +123,7 @@ export class PromptQueue {
 			imageCount: input.imageCount,
 			stagedImages: input.stagedImages,
 			message: input.message,
+			...(input.contextMessage ? { contextMessage: input.contextMessage } : {}),
 		};
 		this.nextId += 1;
 		this.entries.push(entry);
@@ -151,6 +160,10 @@ export class PromptQueue {
 	 * that race is not an error — the message went out, which is what the user
 	 * would have been told anyway.
 	 */
+	peek(id: string): QueueEntry | undefined {
+		return this.entries.find(entry => entry.id === id);
+	}
+
 	remove(id: string): QueueEntry | undefined {
 		const index = this.entries.findIndex((entry) => entry.id === id);
 		if (index === -1) {
@@ -192,7 +205,7 @@ export class PromptQueue {
 	 * empty the chips a poll before the model had actually been given the words.
 	 */
 	messages(): AgentMessage[] {
-		return this.entries.map((entry) => entry.message);
+		return this.entries.flatMap(queuedMessages);
 	}
 
 	/** The waiting messages, oldest first, without the bytes or the agent's objects. */
