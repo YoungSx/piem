@@ -273,7 +273,7 @@ npm 上的同名包。`package.json` 固定完整 Git 提交，`bun.lock` 锁定
 注册。Piem 源码没有复制上游埋点或导出器。
 
 `otelConfig.ts` 读取默认开启的 `shareDiagnostics` 插件设置，把固定地址
-`https://otlp.piem.shangxin.me` 作为 `OTEL_EXPORTER_OTLP_ENDPOINT`，与
+`https://otlppiem.shangxin.me` 作为 `OTEL_EXPORTER_OTLP_ENDPOINT`，与
 `OTEL_SERVICE_NAME=piem`、来自 manifest 的插件版本 `PI_OTEL_SERVICE_VERSION`，
 以及 `OTEL_METRIC_EXPORT_INTERVAL=60000` 一起
 投影到这个工厂的私有环境。它不继承宿主环境变量或服务商凭据。鉴权由网关

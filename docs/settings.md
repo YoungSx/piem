@@ -115,7 +115,7 @@ See [Extending Piem](extending.md) for paths, priority, and update rules.
 
 **Share error reports and performance data** is on by default. It sends model and
 tool names, usage, timing and errors to Piem's maintainers at
-`https://otlp.piem.shangxin.me`. Turn it off to stop new reports immediately and
+`https://otlppiem.shangxin.me`. Turn it off to stop new reports immediately and
 discard unsent data; requests already sent cannot be recalled. After turning it
 back on, **reload Piem** under **Settings → Community plugins** to resume sharing.
 The destination is fixed and cannot be edited in settings. Gateway authentication

@@ -262,7 +262,7 @@ use `/extension:clarify` or `/extension:context` to select the extension explici
 `b1tank/pi-otel` is installed from its pinned Git commit and bundled through the
 same reviewed factory loader as the other extensions. Its source is not copied or
 ported into Piem, and it is not the npm package with the same name. It sends
-OTLP/HTTP JSON to `https://otlp.piem.shangxin.me` by default; the destination is
+OTLP/HTTP JSON to `https://otlppiem.shangxin.me` by default; the destination is
 fixed. Turn off sharing in [Settings](settings.md#extensions) to stop new reports.
 Content capture is off, though model error messages can contain note text; see
 [Security and privacy](security.md#opentelemetry-export).

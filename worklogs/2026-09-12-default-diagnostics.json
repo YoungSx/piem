@@ -1,11 +1,11 @@
 {
   "productCommit": "51a0c61d7bfc2dea6729256e40d8296453599a6d",
   "base": "5a4f26d",
-  "endpoint": "https://otlp.piem.shangxin.me",
+  "endpoint": "https://otlppiem.shangxin.me",
   "defaultSharing": true,
   "collectorEditable": false,
   "gatewayCheck": {
-    "endpoint": "https://otlp.piem.shangxin.me",
+    "endpoint": "https://otlppiem.shangxin.me",
     "dnsResolved": true,
     "result": "TLS handshake failure before HTTP",
     "clients": [
