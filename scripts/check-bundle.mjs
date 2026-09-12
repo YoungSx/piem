@@ -36,7 +36,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * Nothing else in the suite notices it: a bundle that doubles in size still
  * parses, still loads, still passes every test.
  *
- * The number is anchored to measurement, not taste, and it has moved fifteen
+ * The number is anchored to measurement, not taste, and it has moved sixteen
  * times:
  *
  * 1. Trimming pi-ai's provider catalog from 39 providers to nine took the bundle
@@ -103,6 +103,9 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     after synchronizing the default branch.
  *     The ceiling follows to 1.91 MiB. No OTel extension or SDK is bundled;
  *     unused Buffer and crypto implementations remain tree-shaken out.
+ * 16. Owned shutdown signals for scoped SDK page listeners measured 2,003,146 B
+ *     (+366 B). The ceiling is 2,004,000 B; the metafile confirms that unused
+ *     global/document views and all OTel SDK packages remain outside the bundle.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -117,7 +120,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = Math.round(1.91 * 1024 * 1024);
+const MAX_BUNDLE_BYTES = 2_004_000;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

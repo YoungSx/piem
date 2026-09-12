@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { auditedGraph, relativeSource } from "./pi-scoped-resolver.mjs";
+import { globalsModule, prepareSource } from "./pi-scoped-globals.mjs";
 
 const AUDIT = JSON.parse(await readFile(new URL("./pi-extension-packages.json", import.meta.url), "utf8"));
 export const SCOPED_FACTORIES = Object.freeze(Object.fromEntries(
@@ -64,162 +65,7 @@ function closeOverPlatform(code, allowedImports, ts) {
 	return `${imports.join("\n")}\nexport function createFactory(${parameter}) {\nconst { ${bindings.join(", ")} } = ${parameter};\n${body.join("\n")}\nreturn ${factory};\n}\n`;
 }
 
-const CAPABILITIES = ["fetch", "process", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "Buffer"];
-const GLOBAL_OBJECTS = new Set(["globalThis", "window", "self", "global"]);
 const LOADERS = new Map([[".ts", "ts"], [".mts", "ts"], [".cts", "ts"], [".tsx", "tsx"], [".js", "js"], [".mjs", "js"], [".cjs", "js"], [".jsx", "jsx"], [".json", "json"]]);
-const inside = (directory, file) => file.startsWith(`${directory}${path.sep}`);
-const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
-
-function auditedPath(directory, relative) {
-	if (typeof relative !== "string" || relative.includes("\\") || relative.includes("\0") || relative.split("/").includes("node_modules") || path.posix.isAbsolute(relative) || path.posix.normalize(relative) !== relative || relative === "." || relative.startsWith("../")) {
-		throw new Error(`Invalid audited source path: ${relative}`);
-	}
-	return path.join(directory, relative);
-}
-
-/** Only exact audited entries are used; package main/exports/browser never select new source. */
-async function auditedGraph(root, name, audit) {
-	const physicalRoot = await realpath(root);
-	const packages = new Map();
-	const watchFiles = [];
-	async function visit(packageName, specification, directory) {
-		if (!PACKAGE_NAME.test(packageName)) throw new Error(`Invalid audited package name: ${packageName}`);
-		if (!specification?.entry || !specification.version || !specification.files) throw new Error(`Missing scoped extension audit: ${packageName}`);
-		const previous = packages.get(directory);
-		if (previous) {
-			if (JSON.stringify(previous.audit) !== JSON.stringify(specification)) throw new Error(`Conflicting extension audits: ${packageName}`);
-			return previous;
-		}
-		const physicalDirectory = await realpath(directory);
-		if (!inside(physicalRoot, physicalDirectory)) throw new Error(`Audited package escaped its checkout: ${packageName}`);
-		const metadataPath = path.join(directory, "package.json");
-		if (!inside(physicalDirectory, await realpath(metadataPath))) throw new Error(`Audited metadata escaped its package: ${packageName}`);
-		if (JSON.parse(await readFile(metadataPath, "utf8")).version !== specification.version) throw new Error(`Re-audit ${packageName} before upgrading.`);
-		watchFiles.push(metadataPath);
-		const files = new Map();
-		for (const [relative, hash] of Object.entries(specification.files)) {
-			const file = auditedPath(directory, relative);
-			if (!inside(physicalDirectory, await realpath(file))) throw new Error(`Audited source escaped its package: ${packageName}/${relative}`);
-			const bytes = await readFile(file);
-			if (createHash("sha256").update(bytes).digest("hex") !== hash) throw new Error(`Audited extension file changed: ${packageName}/${relative}`);
-			files.set(file, bytes.toString("utf8"));
-			watchFiles.push(file);
-		}
-		const entry = auditedPath(directory, specification.entry);
-		if (!files.has(entry)) throw new Error(`Unaudited extension source: ${packageName}/${specification.entry}`);
-		const exports = new Map([[".", entry]]);
-		for (const [subpath, relative] of Object.entries(specification.exports ?? {})) {
-			if (!subpath.startsWith("./") || subpath.includes("*")) throw new Error(`Invalid audited export: ${packageName}/${subpath}`);
-			auditedPath(directory, subpath.slice(2));
-			const file = auditedPath(directory, relative);
-			if (!files.has(file)) throw new Error(`Unaudited extension source: ${packageName}/${relative}`);
-			exports.set(subpath, file);
-		}
-		const owner = { name: packageName, audit: specification, directory, entry, exports, files, dependencies: new Map() };
-		packages.set(directory, owner);
-		for (const [dependency, dependencyAudit] of Object.entries(specification.dependencies ?? {})) {
-			if (!PACKAGE_NAME.test(dependency)) throw new Error(`Invalid audited package name: ${dependency}`);
-			// Match the install's nearest node_modules, but never search outside this checkout.
-			let dependencyDirectory;
-			for (let parent = directory; parent === root || inside(root, parent); parent = path.dirname(parent)) {
-				const candidate = path.join(parent, "node_modules", dependency);
-				try { await readFile(path.join(candidate, "package.json")); dependencyDirectory = candidate; break; }
-				catch (error) { if (error.code !== "ENOENT") throw error; }
-			}
-			if (!dependencyDirectory) throw new Error(`Missing audited extension dependency: ${dependency}`);
-			owner.dependencies.set(dependency, await visit(dependency, dependencyAudit, dependencyDirectory));
-		}
-		return owner;
-	}
-	return { entry: await visit(name, audit, path.join(root, "node_modules", name)), packages, watchFiles };
-}
-
-function relativeSource(owner, importer, specifier) {
-	const file = path.resolve(path.dirname(importer), specifier);
-	if (!inside(owner.directory, file)) throw new Error(`Unaudited scoped extension dependency: ${specifier}`);
-	const extension = path.extname(file);
-	const candidates = [file];
-	// TypeScript packages commonly spell ./utility.js while publishing utility.ts.
-	if ([".js", ".jsx", ".mjs", ".cjs"].includes(extension)) {
-		for (const replacement of extension === ".mjs" ? [".mts"] : extension === ".cjs" ? [".cts"] : [".ts", ".tsx"]) candidates.push(file.slice(0, -extension.length) + replacement);
-	} else if (!extension) {
-		for (const suffix of [".tsx", ".ts", ".jsx", ".js", ".json"]) candidates.push(file + suffix, path.join(file, `index${suffix}`));
-	}
-	const found = candidates.find(candidate => owner.files.has(candidate));
-	if (!found) throw new Error(`Unaudited extension source: ${owner.name}/${path.relative(owner.directory, file)}`);
-	return found;
-}
-
-/** Esbuild inject handles names and dotted members, but not string-indexed globals. */
-function prepareSource(original, filename, virtualURL, ts) {
-	const kind = filename.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-	const source = ts.createSourceFile(filename, original, ts.ScriptTarget.Latest, true, kind);
-	if (source.parseDiagnostics.length) throw new Error(`Invalid audited extension source: ${filename}`);
-	let changed = false;
-	const globalObject = node => ts.isIdentifier(node) && GLOBAL_OBJECTS.has(node.text);
-	const transformed = ts.transform(source, [context => {
-		const visit = node => {
-			// Checking only calls misses `const load = require; load(name)`.
-			// Refuse the loader value as well; ordinary object property names stay valid.
-			if (ts.isIdentifier(node) && node.text === "require" &&
-				!(node.parent && ((ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) ||
-				(ts.isPropertyAssignment(node.parent) && node.parent.name === node) ||
-				(ts.isBindingElement(node.parent) && node.parent.propertyName === node)))) {
-				throw new Error("Dynamic extension loading is unavailable.");
-			}
-			if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && ts.isIdentifier(node.expression)) {
-				const key = ts.isPropertyAccessExpression(node) ? node.name.text :
-					ts.isStringLiteral(node.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(node.argumentExpression) ? node.argumentExpression.text : undefined;
-				if ((globalObject(node.expression) && ["require", "module"].includes(key)) ||
-					(node.expression.text === "module" && key === "require")) throw new Error("Dynamic extension loading is unavailable.");
-			}
-			if (ts.isVariableDeclaration(node) && node.initializer && globalObject(node.initializer)) {
-				if (ts.isObjectBindingPattern(node.name)) {
-					if (node.name.elements.some(element => element.dotDotDotToken || (element.propertyName && ts.isComputedPropertyName(element.propertyName)))) {
-						throw new Error("Dynamic extension platform access is unavailable.");
-					}
-					// An explicit object preserves defaults/nested bindings while each value
-					// becomes a dotted access that esbuild can bind without changing scope.
-					const properties = node.name.elements.map(element => {
-						const key = element.propertyName ?? element.name;
-						if (!ts.isIdentifier(key) && !ts.isStringLiteral(key)) throw new Error("Dynamic extension platform access is unavailable.");
-						return ts.factory.createPropertyAssignment(key, ts.factory.createElementAccessExpression(node.initializer, ts.factory.createStringLiteral(key.text)));
-					});
-					changed = true;
-					return ts.visitEachChild(ts.factory.updateVariableDeclaration(node, node.name, node.exclamationToken, node.type, ts.factory.createObjectLiteralExpression(properties)), visit, context);
-				}
-				throw new Error("Indirect extension platform access is unavailable.");
-			}
-			if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && globalObject(node.right)) {
-				throw new Error("Indirect extension platform access is unavailable.");
-			}
-			if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-				(ts.isIdentifier(node.expression) && node.expression.text === "require") ||
-				(ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "require"))) {
-				throw new Error("Dynamic extension loading is unavailable.");
-			}
-			if (ts.isPropertyAccessExpression(node) && ts.isMetaProperty(node.expression) && node.expression.keywordToken === ts.SyntaxKind.ImportKeyword && node.name.text === "url") {
-				changed = true;
-				return ts.factory.createStringLiteral(virtualURL);
-			}
-			if ((ts.isElementAccessExpression(node) || ts.isPropertyAccessExpression(node)) && ts.isIdentifier(node.expression) && GLOBAL_OBJECTS.has(node.expression.text)) {
-				if (ts.isElementAccessExpression(node)) {
-					const key = node.argumentExpression;
-					const symbolKey = ts.isCallExpression(key) && ts.isPropertyAccessExpression(key.expression) && ts.isIdentifier(key.expression.expression) && key.expression.expression.text === "Symbol" && key.expression.name.text === "for";
-					if (!ts.isStringLiteral(key) && !ts.isNoSubstitutionTemplateLiteral(key) && !symbolKey) throw new Error("Dynamic extension platform access is unavailable.");
-					if (!symbolKey && CAPABILITIES.includes(key.text)) {
-						changed = true;
-						return node.questionDotToken ? ts.factory.createPropertyAccessChain(node.expression, node.questionDotToken, key.text) : ts.factory.createPropertyAccessExpression(node.expression, key.text);
-					}
-				}
-			}
-			return ts.visitEachChild(node, visit, context);
-		};
-		return node => ts.visitNode(node, visit);
-	}]);
-	try { return changed ? ts.createPrinter().printFile(transformed.transformed[0]) : original; }
-	finally { transformed.dispose(); }
-}
 
 export async function buildScopedFactory(root, name, audit) {
 	root = path.resolve(root);
@@ -232,12 +78,13 @@ export async function buildScopedFactory(root, name, audit) {
 	const pureModules = new Map(["path", "util", "os", "url", "crypto", "buffer"].map(module => [module, path.join(bridge, `${module}.ts`)]));
 	const tui = path.join(compatibility, "piTui.ts");
 	const codingAgent = path.join(compatibility, "piCodingAgent.ts");
-	const pureImports = new Set(["typebox", ...pureModules.values(), tui, codingAgent, truncate]);
+	const globals = path.join(root, "src/extensions/extensionGlobals.ts");
+	const pureImports = new Set(["typebox", ...pureModules.values(), tui, codingAgent, truncate, globals]);
 	const platformExport = names => `export { ${names.join(", ")} } from ${JSON.stringify(PLATFORM)};`;
 	const namespaceModule = names => `import { ${names.join(", ")} } from ${JSON.stringify(PLATFORM)}; export { ${names.join(", ")} }; export default { ${names.join(", ")} };`;
 	const timers = ["setTimeout", "clearTimeout", "setInterval", "clearInterval"];
 	const modules = new Map([
-		[GLOBALS, `import { ${CAPABILITIES.filter(name => name !== "Buffer").join(", ")} } from ${JSON.stringify(PLATFORM)}; import { Buffer } from ${JSON.stringify(pureModules.get("buffer"))}; export { ${CAPABILITIES.flatMap(name => [name, ...[...GLOBAL_OBJECTS].map(object => `${name} as ${JSON.stringify(`${object}.${name}`)}`)]).join(", ")} };`],
+		[GLOBALS, globalsModule(PLATFORM, pureModules.get("buffer"), globals)],
 		["fs", namespaceModule(["readFileSync", "existsSync", "mkdirSync", "writeFileSync", "unlinkSync", "readdirSync"])],
 		["timers", namespaceModule(timers)],
 		["timers/promises", `import { timersPromises } from ${JSON.stringify(PLATFORM)}; export const setTimeout = timersPromises.setTimeout; export default timersPromises;`],

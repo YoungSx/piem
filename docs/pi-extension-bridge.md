@@ -270,18 +270,37 @@ A scoped audit declares `entry`, `version`, `virtualRoot` and the SHA-256 of
 each source file in `files`. Its optional `dependencies` map names exact npm
 packages with the same audit shape. Optional `exports` maps exact `./subpaths`
 to files already listed in that dependency's `files`; undeclared subpaths fail.
-Each dependency has an explicit entry;
-`package.json` main/browser/exports cannot select unaudited files. Choose a
-library's browser entry during its audit. Package versions, every listed source
-file and filesystem boundaries are checked before compilation.
+Optional `browser` maps exact package-relative `./source.js` selectors to
+`./browser/source.js` files already in that package's `files`. It applies to
+entries, declared exports and relative imports. A selector need not include the
+Node source in the audit; its target must pass the same hash and path checks.
+Cross-package mappings, wildcard mappings and `false` replacements are rejected.
+`package.json` main/browser/exports cannot select unaudited files. Relative
+imports also resolve dotted basenames such as `./lodash.merge` to an audited
+`lodash.merge.js`, with code-file extensions checked before directory indexes.
+Package versions, every listed source file and filesystem boundaries are checked
+before compilation.
 
 The compiler binds bare and supported explicit global references to fetch,
 process, Buffer and timers to the factory's own platform, including dependency
-code. It never replaces browser globals. Unknown imports, runtime loading and
-recognized indirect platform access fail the build. Other global state, including
-SDK registrations under `Symbol.for`, still needs source review and multi-host
-testing; the compiler does not isolate arbitrary JavaScript. This remains a
-reviewed static graph, not a sandbox for arbitrary packages.
+code. In background factories, `globalThis`, `window`, `self` and `global`,
+including aliases and computed property access, refer to the same private object.
+SDK registrations under `Symbol.for` stay on that object; they do not alter the
+host or another factory. It exposes selected Web/JavaScript primitives and the
+owned fetch, process and timer APIs, with no fallback to ambient host properties.
+Unknown imports and runtime loading remain build errors. A foreground-only
+factory cannot acquire this background global view. This is a reviewed static
+graph, not a JavaScript security sandbox; arbitrary code and shared built-in
+prototypes still require source review.
+
+Browser SDKs retain real page lifecycle notifications through a limited owned
+`document`: `visibilityState`, `visibilitychange` and `pagehide`. Event targets
+refer to this view rather than the host DOM. Listener identity, capture, once and
+abort signals are respected; at most 64 registrations are allowed per view.
+Shutdown removes listeners immediately, including after a failed factory or a
+timed out shutdown handler. Removing an already-retired listener remains safe.
+Other DOM access is unavailable. Direct fetch/timer factories do not instantiate
+these global or document views.
 
 A host may register `{ id, createFactory }` for a reviewed background factory.
 It receives a private writable virtual environment and PID, not the operating
