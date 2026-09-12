@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ThinkingContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import { getT } from "../i18n";
 import {
 	blockIsVisible,
@@ -63,13 +63,43 @@ describe("planTraceFolds", () => {
 		expect(rowKeys(groups[0]!)).toEqual(["2:1", "3:result", "4:0", "5:result"]);
 	});
 
-	it("breaks a run at a thought, which is the model reasoning between the calls", () => {
+	it("keeps thoughts between calls in the same run, in transcript order", () => {
 		const plan = plan_([
 			assistant(call("read")),
 			result("read"),
 			assistant(thinking("that note is stale"), call("read")),
 			result("read"),
 		]);
+
+		const groups = heads(plan);
+		expect(groups).toHaveLength(1);
+		expect(rowKeys(groups[0]!)).toEqual(["0:0", "1:result", "2:0", "2:1", "3:result"]);
+		expect(tallies(groups[0]!)).toEqual(["read=2", "thinking=1"]);
+	});
+
+	it("anchors a mixed run at its first thought", () => {
+		const thought = thinking("start with the note");
+		const plan = plan_([assistant(thought, call("read")), result("read")]);
+		const group = traceFoldSlot(plan, 0, 0)?.group;
+
+		expect(traceFoldSlot(plan, 0, 0)?.head).toBe(true);
+		expect(group?.rows[0]).toEqual({ kind: "thinking", thinking: thought, ref: { message: 0, block: 0 } });
+		expect(group && rowKeys(group)).toEqual(["0:0", "0:1", "1:result"]);
+		expect(group && tallies(group)).toEqual(["read=1", "thinking=1"]);
+	});
+
+	it("folds consecutive thoughts but leaves one thought alone", () => {
+		const first = assistant(thinking("first"));
+		expect(heads(plan_([first]))).toHaveLength(0);
+
+		const plan = plan_([first, assistant(thinking("second"))]);
+		const group = heads(plan)[0]!;
+		expect(rowKeys(group)).toEqual(["0:0", "1:0"]);
+		expect(tallies(group)).toEqual(["thinking=2"]);
+	});
+
+	it("does not count an orphan result as a second action beside one thought", () => {
+		const plan = plan_([result("read"), assistant(thinking("check the result"))]);
 
 		expect(heads(plan)).toHaveLength(0);
 	});
@@ -170,13 +200,13 @@ describe("planTraceFolds", () => {
 	});
 
 	it("ignores the empty text block a provider can open before its first token", () => {
-		const plan = plan_([assistant(call("read")), result("read"), assistant(text("  "), call("read")), result("read")]);
+		const plan = plan_([assistant(thinking("look it up")), assistant(text("  "), call("read")), result("read")]);
 
 		expect(heads(plan)).toHaveLength(1);
 	});
 
 	it("folds nothing in the two modes chosen to open machine traffic", () => {
-		const messages = [assistant(call("read"), call("grep")), result("read"), result("grep")];
+		const messages = [assistant(thinking("look it up"), call("read"), call("grep")), result("read"), result("grep")];
 
 		for (const mode of ["highValue", "expanded"] as const) {
 			expect(heads(plan_(messages, { mode }))).toHaveLength(0);
@@ -247,6 +277,21 @@ describe("describeTraceFold", () => {
 		expect(describeTraceFold(tally({ read: 1, other: 1 }), en)).toBe("Read a note and used another tool");
 	});
 
+	it("counts thoughts separately and joins them to tool activity in both languages", () => {
+		expect(describeTraceFold(tally({ thinking: 1 }), en)).toBe("Thought it through");
+		expect(describeTraceFold(tally({ thinking: 2 }), en)).toBe("Thought it through 2 times");
+		expect(describeTraceFold(tally({ thinking: 1 }), zh)).toBe("思考了 1 次");
+		expect(describeTraceFold(tally({ read: 1, thinking: 2 }), en)).toBe("Read a note and thought it through 2 times");
+		expect(describeTraceFold(tally({ read: 1, thinking: 2 }), zh)).toBe("读取了 1 条笔记并思考了 2 次");
+	});
+
+	it("does not describe thinking as another tool", () => {
+		expect(describeTraceFold(tally({ other: 1, thinking: 1 }), en)).toBe("Used a tool and thought it through");
+		expect(describeTraceFold(tally({ other: 2, thinking: 1 }), en)).toBe("Used 2 tools and thought it through");
+		expect(describeTraceFold(tally({ other: 1, thinking: 1 }), zh)).toBe("使用了 1 个工具并思考了 1 次");
+		expect(describeTraceFold(tally({ read: 1, other: 1, thinking: 1 }), en)).toBe("Read a note, used another tool and thought it through");
+	});
+
 });
 
 /** Builds a plan for `messages`, in the all-collapsed mode unless a test says otherwise. */
@@ -301,7 +346,7 @@ function text(value: string): AssistantMessage["content"][number] {
 	return { type: "text", text: value };
 }
 
-function thinking(value: string): AssistantMessage["content"][number] {
+function thinking(value: string): ThinkingContent {
 	return { type: "thinking", thinking: value };
 }
 
@@ -315,6 +360,29 @@ function thinking(value: string): AssistantMessage["content"][number] {
  * result.
  */
 describe("planning a fold over paired rows", () => {
+	it("counts a thought and a paired call once each", () => {
+		const messages = [assistant(thinking("read first"), call("read")), result("read")];
+		const plan = plan_(messages, { pairs: planToolPairs(messages) });
+		const group = heads(plan)[0]!;
+
+		expect(rowKeys(group)).toEqual(["0:0", "0:1"]);
+		expect(tallies(group)).toEqual(["read=1", "thinking=1"]);
+		expect(traceFoldSlot(plan, 1, null)).toBeNull();
+	});
+
+	it("keeps a failed call between thought runs outside both folds", () => {
+		const messages = [
+			assistant(thinking("first"), thinking("second"), call("read")),
+			result("read", { isError: true }),
+			assistant(thinking("try a search"), call("grep")),
+			result("grep"),
+		];
+		const plan = plan_(messages, { pairs: planToolPairs(messages) });
+
+		expect(heads(plan).map(rowKeys)).toEqual([["0:0", "0:1"], ["2:0", "2:1"]]);
+		expect(traceFoldSlot(plan, 0, 2)).toBeNull();
+	});
+
 	/*
 	 * A paired result is not a row at all: its call draws it. Counted as one, it
 	 * inflates what the fold claims to have swallowed, and when it happens to open a

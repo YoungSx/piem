@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ThinkingContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Translator } from "../i18n";
 import { ASK_USER_TOOL } from "./askUserRecord";
 import { categorizeTool, type ToolCategory } from "./toolCatalog";
@@ -7,11 +7,12 @@ import { EMPTY_TOOL_PAIR_PLAN, pairedResult, resultIsPaired, type ToolPairPlan }
 import type { TraceExpandSetting } from "./traceExpand";
 
 /**
- * Folding a run of consecutive tool traffic into one transcript row.
+ * Folding consecutive thinking and tool traffic into one transcript row.
  *
  * A turn that reads six notes writes twelve rows into the transcript — a call
  * row and a result row per tool — and the model's actual prose ends up as a
- * paragraph adrift in machine traffic. The rows are each already one line and
+ * paragraph adrift in machine traffic. Thoughts between calls belong to the
+ * same run. The rows are each already one line and
  * already closed; the problem is their *number*, which no per-row treatment can
  * fix.
  *
@@ -48,12 +49,14 @@ import type { TraceExpandSetting } from "./traceExpand";
  * `toolCatalog.ts` beside that tool's name and glyph — this is only the order
  * they are spoken in, which is the fold line's own business.
  */
-export const TRACE_FOLD_CATEGORIES: readonly ToolCategory[] = ["write", "web", "subagent", "read", "search", "other"];
+export type TraceFoldCategory = ToolCategory | "thinking";
+
+export const TRACE_FOLD_CATEGORIES: readonly TraceFoldCategory[] = ["write", "web", "subagent", "read", "search", "other", "thinking"];
 
 /**
  * Where a foldable row sits in the transcript.
  *
- * A tool call is a content block inside an assistant message; a tool result is
+ * A thought or tool call is a block inside an assistant message; a tool result is
  * a message of its own, which is what `block: null` says. The pair is what lets
  * a run cross the boundary between them — the common case, since a call and its
  * result are never in the same message.
@@ -67,20 +70,21 @@ export interface TraceRowRef {
 
 /** One row a fold swallowed, carrying what the fold's body needs to draw it. */
 export type TraceFoldRow =
+	| { ref: TraceRowRef; kind: "thinking"; thinking: ThinkingContent }
 	| { ref: TraceRowRef; kind: "call"; call: ToolCall }
 	| { ref: TraceRowRef; kind: "result"; result: ToolResultMessage };
 
 /** One category's share of a folded run. */
 export interface TraceFoldTally {
-	category: ToolCategory;
+	category: TraceFoldCategory;
 	count: number;
 }
 
-/** A run of tool traffic the transcript draws as one row. */
+/** A run of thinking and tool traffic the transcript draws as one row. */
 export interface TraceFoldGroup {
 	/** The rows it swallowed, in transcript order. */
 	rows: readonly TraceFoldRow[];
-	/** Call counts per category, in {@link TRACE_FOLD_CATEGORIES} order. */
+	/** Thought and call counts, in {@link TRACE_FOLD_CATEGORIES} order. */
 	tallies: readonly TraceFoldTally[];
 }
 
@@ -112,14 +116,14 @@ export function traceFoldSlot(plan: TraceFoldPlan, message: number, block: numbe
 }
 
 /**
- * How many calls a run needs before folding it is a win.
+ * How many thoughts or calls a run needs before folding it is a win.
  *
  * Two. A single call's own row already says more than any summary could — the
  * tool it used *and* the path it touched — so folding one would trade
  * information for a click. It also keeps the common one-shot turn ("read this
  * note, answer") looking exactly as it does today.
  */
-const MIN_FOLDED_CALLS = 2;
+const MIN_FOLDED_STEPS = 2;
 
 /** What the planner needs to know beyond the transcript itself. */
 export interface TraceFoldOptions {
@@ -142,11 +146,11 @@ export interface TraceFoldOptions {
 }
 
 /**
- * Which runs of tool traffic to fold, and where each one draws.
+ * Which runs of thinking and tool traffic to fold, and where each one draws.
  *
  * One pass over the transcript, accumulating a run and flushing it whenever
- * something visible that is not a foldable tool row interrupts it: prose, a
- * thought, a harness line, a question, a failure, the user's own turn. The run
+ * something visible that is not foldable interrupts it: prose, a harness line,
+ * a question, a failure, the user's own turn. The run
  * that survives to the end of the transcript is flushed too — a turn cut off
  * mid-tools folds like any other.
  */
@@ -156,15 +160,15 @@ export function planTraceFolds(messages: readonly AgentMessage[], options: Trace
 	}
 	const slots = new Map<string, TraceFoldSlot>();
 	let run: TraceFoldRow[] = [];
-	let calls = 0;
+	let steps = 0;
 
 	const flush = (): void => {
-		if (calls >= MIN_FOLDED_CALLS) {
-			const group: TraceFoldGroup = { rows: run, tallies: tallyCalls(run) };
+		if (steps >= MIN_FOLDED_STEPS) {
+			const group: TraceFoldGroup = { rows: run, tallies: tallyRows(run) };
 			run.forEach((row, index) => slots.set(rowKey(row.ref.message, row.ref.block), { group, head: index === 0 }));
 		}
 		run = [];
-		calls = 0;
+		steps = 0;
 	};
 
 	messages.forEach((message, index) => {
@@ -177,8 +181,13 @@ export function planTraceFolds(messages: readonly AgentMessage[], options: Trace
 					// the reader cannot see.
 					return;
 				}
+				if (block.type === "thinking") {
+					run.push({ ref: { message: index, block: blockIndex }, kind: "thinking", thinking: block });
+					steps += 1;
+					return;
+				}
 				/*
-				 * Anything else visible interrupts the run: prose, a thought, and the
+				 * Anything else visible interrupts the run: prose and the
 				 * question row agent details bring back. A visible `ask_user` call has
 				 * reached here rather than the guard above, and it must break the run
 				 * rather than join it — the payload that mode exists to show is the
@@ -202,7 +211,7 @@ export function planTraceFolds(messages: readonly AgentMessage[], options: Trace
 					return;
 				}
 				run.push({ ref: { message: index, block: blockIndex }, kind: "call", call: block });
-				calls += 1;
+				steps += 1;
 			});
 			return;
 		}
@@ -264,7 +273,8 @@ export function blockIsVisible(block: AssistantMessage["content"][number], showA
  * phrase came first.
  */
 export function describeTraceFold(tallies: readonly TraceFoldTally[], t: Translator): string {
-	const phrases = tallies.map((tally) => phraseFor(tally, tallies.length > 1, t));
+	const hasNamedTools = tallies.some(({ category }) => category !== "thinking" && category !== "other");
+	const phrases = tallies.map((tally) => phraseFor(tally, hasNamedTools, t));
 	return sentenceCase(joinPhrases(phrases, t));
 }
 
@@ -278,13 +288,14 @@ type CopyKey = Parameters<Translator["t"]>[0];
  * named category it has to be "used 2 *other* tools" or the reader is invited to
  * wonder whether the notes it just read were tools as well.
  */
-const CATEGORY_KEYS: Readonly<Record<ToolCategory, { one: CopyKey; many: CopyKey }>> = {
+const CATEGORY_KEYS: Readonly<Record<TraceFoldCategory, { one: CopyKey; many: CopyKey }>> = {
 	write: { one: "traceFold.writeOne", many: "traceFold.writeMany" },
 	web: { one: "traceFold.webOne", many: "traceFold.webMany" },
 	subagent: { one: "traceFold.subagentOne", many: "traceFold.subagentMany" },
 	read: { one: "traceFold.readOne", many: "traceFold.readMany" },
 	search: { one: "traceFold.searchOne", many: "traceFold.searchMany" },
 	other: { one: "traceFold.otherOne", many: "traceFold.otherMany" },
+	thinking: { one: "traceFold.thinkingOne", many: "traceFold.thinkingMany" },
 };
 
 const OTHER_ALONGSIDE_KEYS: { one: CopyKey; many: CopyKey } = {
@@ -321,13 +332,13 @@ function sentenceCase(text: string): string {
 	return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : text;
 }
 
-function tallyCalls(rows: readonly TraceFoldRow[]): TraceFoldTally[] {
-	const counts = new Map<ToolCategory, number>();
+function tallyRows(rows: readonly TraceFoldRow[]): TraceFoldTally[] {
+	const counts = new Map<TraceFoldCategory, number>();
 	for (const row of rows) {
-		if (row.kind !== "call") {
+		if (row.kind === "result") {
 			continue;
 		}
-		const category = categorizeTool(row.call.name);
+		const category = row.kind === "thinking" ? "thinking" : categorizeTool(row.call.name);
 		counts.set(category, (counts.get(category) ?? 0) + 1);
 	}
 	return TRACE_FOLD_CATEGORIES.flatMap((category) => {

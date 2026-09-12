@@ -84,9 +84,9 @@ tidy as a seam you can open to read the summary it wrote.
   actually sent.
 - **Open tool activity** — how much of the machine traffic starts open:
   thinking, tool calls, results. Everything is collapsed by default, and any row
-  still opens by hand. In that mode a run of consecutive tool calls folds one
-  step further, into a single row that says what the run did — "changed a note
-  and read 5 notes" — with the rows it replaced inside it. A failed call and an
+  still opens by hand. In that mode two or more consecutive thoughts and tool
+  calls fold into a single row that says what the run did — "read a note and
+  thought it through" — with the original rows inside, in order. A failed call and an
   answered question stay outside the fold: neither should cost a click to see.
 - **Mid-reply sends** — a message you send while Piem is still answering is not
   refused; it waits, and this is how long. *The whole answer is finished* is the

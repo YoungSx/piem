@@ -2016,6 +2016,15 @@ button.piem-chat__context-open {
  * each one line until the reader opens them, and a scrollbox around the
  * transcript's own vocabulary would be a second scroller inside the first.
  */
+.piem-chat__trace--fold > .piem-chat__trace-summary > .piem-chat__trace-name {
+	/* Mixed activity can name several categories; keep one row on a narrow panel. */
+	flex-shrink: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .piem-chat__trace--fold > .piem-chat__trace-body > .piem-chat__trace {
 	margin-block: var(--size-4-1);
 }

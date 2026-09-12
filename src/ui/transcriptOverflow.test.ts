@@ -72,6 +72,15 @@ describe("the transcript column never scrolls sideways", () => {
 		// moving into a long block; `hidden` clips the paint and keeps that working.
 		expect(declarations(ruleBody(".piem-chat__messages"))).not.toContain("overflow-x: clip");
 	});
+
+	it("keeps a mixed activity summary on one line without widening the column", () => {
+		const body = declarations(ruleBody(".piem-chat__trace--fold > .piem-chat__trace-summary > .piem-chat__trace-name"));
+		expect(body).toContain("flex-shrink: 1");
+		expect(body).toContain("min-width: 0");
+		expect(body).toContain("overflow: hidden");
+		expect(body).toContain("text-overflow: ellipsis");
+		expect(body).toContain("white-space: nowrap");
+	});
 });
 
 describe("wide content scrolls inside its own box", () => {
