@@ -136,7 +136,7 @@ describe("diagnostics sharing in the real agent service", () => {
 		service.dispose();
 		await until(() => f.timerCount === 0 && f.listenerCount === 0);
 		expect([...new Set(f.receipts.map(receipt => receipt.url))].sort()).toEqual([
-			"https://otlp.piem.shangxin.me/v1/logs", "https://otlp.piem.shangxin.me/v1/metrics", "https://otlp.piem.shangxin.me/v1/traces",
+			"https://otlppiem.shangxin.me/v1/logs", "https://otlppiem.shangxin.me/v1/metrics", "https://otlppiem.shangxin.me/v1/traces",
 		]);
 		const bodies = f.receipts.map(receipt => receipt.body).join("\n");
 		for (const value of ["pi.session.start", "pi.session.shutdown", "gen_ai.client.token.usage", "fixture-model", "fixture-version"]) expect(bodies).toContain(value);

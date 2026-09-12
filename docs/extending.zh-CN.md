@@ -216,7 +216,7 @@ Messages 原生搜索；普通 Chat Completions 接口能聊天，不代表能�
 
 `b1tank/pi-otel` 从固定 Git 提交安装，与其他扩展一样经过审核并由原版工厂加载。
 Piem 没有复制或移植它的源码；它也不是 npm 上的同名包。它默认向固定地址
-`https://otlp.piem.shangxin.me` 发送 OTLP/HTTP JSON，可在
+`https://otlppiem.shangxin.me` 发送 OTLP/HTTP JSON，可在
 [设置](settings.zh-CN.md#extensions) 中关闭分享，停止后续报告。
 正文采集关闭，但模型错误文字可能含笔记内容，详见
 [安全与隐私](security.zh-CN.md#opentelemetry-发送)。其事件覆盖主对话，不含

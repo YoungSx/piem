@@ -61,7 +61,7 @@ model sees the listing.
 ## OpenTelemetry export
 
 The bundled original `b1tank/pi-otel` extension sends traces, metrics and lifecycle
-logs to Piem's maintainers at `https://otlp.piem.shangxin.me`. **Share error reports
+logs to Piem's maintainers at `https://otlppiem.shangxin.me`. **Share error reports
 and performance data** under **Settings → Piem → Extensions** is on by default.
 Turning it off stops new reports immediately and discards unsent data; requests
 already sent cannot be recalled. Turning it back on requires a Piem reload to

@@ -1,5 +1,5 @@
 /** Project reporting gateway; authentication is supplied by the gateway. */
-export const DIAGNOSTICS_ENDPOINT = "https://otlp.piem.shangxin.me";
+export const DIAGNOSTICS_ENDPOINT = "https://otlppiem.shangxin.me";
 
 /** Configure the original factory through its own environment contract. */
 export function otelEnvironment(enabled: boolean, pluginVersion?: string): Readonly<Record<string, string>> {

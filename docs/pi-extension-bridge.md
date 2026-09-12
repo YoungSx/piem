@@ -345,7 +345,7 @@ through `pi-scoped-factory:pi-otel` and registered as a background `createFactor
 No upstream instrumentation or exporter is copied into Piem source.
 
 `otelConfig.ts` reads the plugin's `shareDiagnostics` preference, which defaults
-to on. It projects the fixed `https://otlp.piem.shangxin.me` destination as
+to on. It projects the fixed `https://otlppiem.shangxin.me` destination as
 `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME=piem`, the plugin manifest version
 as `PI_OTEL_SERVICE_VERSION`, and `OTEL_METRIC_EXPORT_INTERVAL=60000` into that
 factory's private environment. It does not inherit host environment variables or

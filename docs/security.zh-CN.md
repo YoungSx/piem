@@ -49,7 +49,7 @@ GitHub 及其下载主机会收到资源 URL（包含插件版本）、设备 IP
 ## OpenTelemetry 发送
 
 内置的原版 `b1tank/pi-otel` 扩展把追踪、指标和生命周期日志发给 Piem 维护者，
-地址为 `https://otlp.piem.shangxin.me`。
+地址为 `https://otlppiem.shangxin.me`。
 **设置 → Piem → 扩展能力 → 分享错误报告与性能数据** 默认开启。
 关闭后立即停止后续报告并丢弃未发送数据；已经发出
 的请求无法撤回。重新开启后需重载 Piem 才会恢复分享。目标服务除了遥测数据，
