@@ -111,7 +111,7 @@ describe("extension config store", () => {
 		// Replacing an existing file at the cap is still allowed.
 		disk.store.stage("ext-0", "second.json", '{"kept":true}');
 		expect(() => disk.store.stage("ext-0", "config.json", "x".repeat(4097))).toThrow("4096 bytes");
-		for (const name of ["../escape.json", "nested/file.json", "config.js", ".hidden.json", ""]) {
+		for (const name of ["../escape.json", "deep/nested/file.json", "trailing/.json", "config.js", ".hidden.json", ""]) {
 			expect(() => disk.store.stage("ext-0", name, "{}")).toThrow("Invalid extension config file name");
 		}
 		for (const owner of ["../other", "a/b", ""]) {
@@ -120,6 +120,17 @@ describe("extension config store", () => {
 		await disk.store.flush();
 		expect(Object.keys(disk.restart() ?? {})).toHaveLength(8);
 		expect(disk.restart()?.["ext-0"]?.["second.json"]).toBe('{"kept":true}');
+	});
+
+	it("accepts scoped owners with one directory level, the upstream config layout", async () => {
+		const disk = vault();
+		// Config helpers address `<package>/<file>.json` under XDG style roots.
+		disk.store.stage("@juicesharp/rpiv-todo", "rpiv-todo/config.json", "{}");
+		disk.store.stage("pi-context", "nested/file.json", "{}");
+		await disk.store.flush();
+		const restored = disk.restart();
+		expect(restored?.["@juicesharp/rpiv-todo"]?.["rpiv-todo/config.json"]).toBe("{}");
+		expect(restored?.["pi-context"]?.["nested/file.json"]).toBe("{}");
 	});
 
 	it("drops out-of-bounds stored data on load rather than trusting the file", () => {

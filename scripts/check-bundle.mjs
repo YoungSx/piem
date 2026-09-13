@@ -221,6 +221,7 @@ const REQUIRED_MODULES = new Map([
 	["pi-scoped-extension:pi-web-search", "The audited original web-search graph must ship in a per-host factory."],
 	["pi-scoped-extension:pi-clarify", "The audited original clarify graph must ship in a per-host factory."],
 	["pi-scoped-extension:pi-context", "The audited original context graph must ship in a per-host factory."],
+	["pi-scoped-extension:@juicesharp/rpiv-todo", "The audited original todo graph must ship in a per-host factory."],
 	["node_modules/@earendil-works/pi-coding-agent/dist/core/tools/truncate.js", "Search output must use Pi's original bounded truncation helper."],
 	["node_modules/pi-assistant-provenance/extensions/assistant-provenance/index.ts", "The original provenance extension must ship."],
 	["node_modules/pi-model-switch/index.ts", "The original model-switch extension must ship."],

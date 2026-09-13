@@ -7,7 +7,7 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type BackgroundExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { createClarify, createContext, createOtel, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
+import { createClarify, createContext, createOtel, createRpivTodo, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMessage" | "sendUserMessage"> {
 	platform: Omit<ExtensionPlatformCallbacks, "complete">;
@@ -84,6 +84,10 @@ export class CommunityHost {
 			{ id: "pi-web-search", factory: createWebSearch(scoped("pi-web-search")) },
 			{ id: "pi-clarify", factory: createClarify(scoped("pi-clarify")) },
 			{ id: "pi-context", factory: createContext(scoped("pi-context")) },
+			// A background factory: the upstream extension schedules a warm-up timer
+			// during registration itself, before any chat operation opens, and its
+			// event handlers outlive the operation that emitted the event.
+			{ id: "@juicesharp/rpiv-todo", createFactory: platform => createRpivTodo(platform) },
 			{ id: "pi-otel", createFactory: platform => {
 				Object.assign(platform.process.env, this.otelDisabled ? {} : callbacks.otelEnvironment?.() ?? {});
 				return createOtel(platform);

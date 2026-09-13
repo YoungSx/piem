@@ -6096,6 +6096,27 @@ input.piem-ask-other::placeholder {
 	white-space: normal;
 }
 
+/*
+ * Panel widgets (aboveEditor/belowEditor setWidget) sit in a quiet card so a
+ * live status surface — the todo overlay — reads as a pinned note rather than
+ * loose terminal spillover. Dialogs keep Obsidian's modal chrome instead.
+ */
+.piem-chat__extension-surfaces .piem-native-extension {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: var(--size-4-2) var(--size-4-3);
+}
+
+.piem-chat__extension-surfaces .piem-native-extension__text {
+	line-height: var(--line-height-normal);
+}
+
+/* The measure probe stays out of the card's inner box. */
+.piem-chat__extension-surfaces .piem-native-extension__measure {
+	left: calc(-1 * var(--size-4-3));
+}
+
 .piem-native-extension__measure {
 	pointer-events: none;
 	position: absolute;

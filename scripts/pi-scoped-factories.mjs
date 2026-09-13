@@ -79,19 +79,19 @@ export async function buildScopedFactory(root, name, audit) {
 	const tui = path.join(compatibility, "piTui.ts");
 	const codingAgent = path.join(compatibility, "piCodingAgent.ts");
 	const globals = path.join(root, "src/extensions/extensionGlobals.ts");
-	const pureImports = new Set(["typebox", ...pureModules.values(), tui, codingAgent, truncate, globals]);
+	const pureImports = new Set(["typebox", "typebox/value", ...pureModules.values(), path.join(compatibility, "piAI.ts"), tui, codingAgent, truncate, globals]);
 	const platformExport = names => `export { ${names.join(", ")} } from ${JSON.stringify(PLATFORM)};`;
 	const namespaceModule = names => `import { ${names.join(", ")} } from ${JSON.stringify(PLATFORM)}; export { ${names.join(", ")} }; export default { ${names.join(", ")} };`;
 	const timers = ["setTimeout", "clearTimeout", "setInterval", "clearInterval"];
 	const modules = new Map([
 		[GLOBALS, globalsModule(PLATFORM, pureModules.get("buffer"), globals)],
-		["fs", namespaceModule(["readFileSync", "existsSync", "mkdirSync", "writeFileSync", "unlinkSync", "readdirSync"])],
+		["fs", namespaceModule(["readFileSync", "existsSync", "mkdirSync", "writeFileSync", "unlinkSync", "readdirSync", "chmodSync"])],
 		["timers", namespaceModule(timers)],
 		["timers/promises", `import { timersPromises } from ${JSON.stringify(PLATFORM)}; export const setTimeout = timersPromises.setTimeout; export default timersPromises;`],
 		["process", `import { process } from ${JSON.stringify(PLATFORM)}; export default process; export const { env, pid, cwd, platform, arch, versions, argv, exit } = process;`],
 	]);
 	for (const scope of ["@earendil-works", "@mariozechner"]) {
-		for (const suffix of ["", "/compat"]) modules.set(`${scope}/pi-ai${suffix}`, `export { Type } from "typebox"; ${platformExport(["complete", "getEnvApiKey"])}`);
+		for (const suffix of ["", "/compat"]) modules.set(`${scope}/pi-ai${suffix}`, `export { Type } from "typebox"; export { StringEnum } from ${JSON.stringify(path.join(compatibility, "piAI.ts"))}; ${platformExport(["complete", "getEnvApiKey"])}`);
 		modules.set(`${scope}/pi-coding-agent`, `export { DynamicBorder, theme, getSelectListTheme } from ${JSON.stringify(codingAgent)}; ${platformExport(["getAgentDir", "BorderedLoader"])} export { truncateHead, truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from ${JSON.stringify(truncate)};`);
 		modules.set(`${scope}/pi-tui`, `export { Container, SelectList, Key, matchesKey, parseKey, getKeybindings, visibleWidth, truncateToWidth } from ${JSON.stringify(tui)}; ${platformExport(["Text"])}`);
 	}
@@ -103,13 +103,20 @@ export async function buildScopedFactory(root, name, audit) {
 			name: "pi-scoped-platform",
 			setup(build) {
 				build.onResolve({ filter: /.*/ }, args => {
-					if (args.kind === "dynamic-import" || args.kind === "require-call" || args.kind === "require-resolve") throw new Error(`Dynamic extension loading is unavailable: ${args.path}`);
+					if (args.kind === "require-call" || args.kind === "require-resolve") throw new Error(`Dynamic extension loading is unavailable: ${args.path}`);
+					// An audited relative lazy import (`import("./todo-overlay.js")`) stays
+					// dynamic: esbuild lowers it to a lazy init closure at this target,
+					// preserving the upstream warm-up contract without runtime loaders.
+					const owner = [...graph.packages.values()].find(item => item.files.has(args.importer));
+					if (args.kind === "dynamic-import") {
+						if (!owner || !args.path.startsWith(".")) throw new Error(`Dynamic extension loading is unavailable: ${args.path}`);
+						return { path: relativeSource(owner, args.importer, args.path) };
+					}
 					if (args.path === PLATFORM || pureImports.has(args.path)) return { path: args.path, external: true, sideEffects: false };
 					const builtin = args.path.replace(/^node:/, "");
 					if (modules.has(builtin)) return { path: builtin, namespace: BINDINGS };
 					if (pureModules.has(builtin)) return { path: pureModules.get(builtin), external: true, sideEffects: false };
 					if (args.path === graph.entry.entry && args.importer === "<stdin>") return { path: graph.entry.entry };
-					const owner = [...graph.packages.values()].find(item => item.files.has(args.importer));
 					if (owner && !args.path.startsWith(".")) {
 						const packageName = args.path.split("/").slice(0, args.path.startsWith("@") ? 2 : 1).join("/");
 						const dependency = owner.dependencies.get(packageName);

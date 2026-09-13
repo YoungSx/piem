@@ -33,6 +33,8 @@ export interface ExtensionPlatform {
 	writeFileSync(path: string, data: string, encoding?: string): void;
 	unlinkSync(path: string): void;
 	readdirSync(path: string): string[];
+	/** Mode bits have no namespaced equivalent; the visible stub fails best-effort callers only. */
+	chmodSync(path: string, mode: unknown): void;
 	Text: new (...args: unknown[]) => object;
 	BorderedLoader: new (...args: unknown[]) => object;
 	process: Readonly<{ env: Readonly<Record<string, string | undefined>> }>;
@@ -158,14 +160,21 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	 * name a file, so no spelling of `path` reaches another extension's data.
 	 * The root and `.json` restriction is kept as the outer guard, which also
 	 * rejects any `..` that survived normalization.
+	 *
+	 * Upstream config helpers (rpiv-config) join `homedir()` with `.config`
+	 * and the package name, so the fake home root `/vault/.config` is translated
+	 * here instead of rejected: `<package>/<file>.json` lands in the owner's own
+	 * namespace, still one directory segment at most.
 	 */
 	const configFile = (path: string): string => {
 		const name = normalize(path);
-		if (!name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) || !name.endsWith(".json")) return unavailable("reads outside extension JSON snapshots");
-		const file = name.slice(EXTENSION_CONFIG_ROOT.length + 1);
-		// A subdirectory is outside the flat namespace, not a missing file: reporting
+		const home = "/vault/.config";
+		const root = name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) ? EXTENSION_CONFIG_ROOT : name.startsWith(`${home}/`) ? home : undefined;
+		if (root === undefined || !name.endsWith(".json")) return unavailable("reads outside extension JSON snapshots");
+		const file = name.slice(root.length + 1);
+		// A nested directory is outside the namespace, not a missing file: reporting
 		// ENOENT would invite an extension to keep trying deeper paths.
-		if (file.includes("/")) return unavailable("reads outside extension JSON snapshots");
+		if ((file.match(/\//g)?.length ?? 0) > 1 || file.endsWith("/")) return unavailable("reads outside extension JSON snapshots");
 		return file;
 	};
 	const requireStore = (): ExtensionConfigStore => callbacks.config ?? unavailable("extension configuration");
@@ -178,7 +187,7 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	 * store, not a filesystem, and pretending otherwise would be the silent
 	 * no-op the bridge exists to avoid.
 	 */
-	const configView = (owner: string | undefined, check = assertActive): Pick<ExtensionPlatform, "readFileSync" | "existsSync" | "mkdirSync" | "writeFileSync" | "unlinkSync" | "readdirSync"> => {
+	const configView = (owner: string | undefined, check = assertActive): Pick<ExtensionPlatform, "readFileSync" | "existsSync" | "mkdirSync" | "writeFileSync" | "unlinkSync" | "readdirSync" | "chmodSync"> => {
 		const read = (path: string): string | undefined => {
 			check();
 			const file = configFile(path);
@@ -204,7 +213,17 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 			mkdirSync: path => {
 				check();
 				if (owner === undefined) return unavailable("extension configuration");
-				if (normalize(path) !== EXTENSION_CONFIG_ROOT) unavailable("fs.mkdirSync");
+				// Upstream creates the config directory before writing into it. The
+				// namespace roots already exist, and one directory segment is the
+				// namespace's own shape (`<package>/config.json`); anything deeper
+				// is a real directory request this host cannot honour.
+				const name = normalize(path);
+				const root = name === "/vault/.config" || name.startsWith("/vault/.config/") ? "/vault/.config"
+					: name === EXTENSION_CONFIG_ROOT || name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) ? EXTENSION_CONFIG_ROOT
+					: undefined;
+				if (root === undefined) return unavailable("fs.mkdirSync");
+				const segments = name.slice(root.length).split("/").filter(Boolean);
+				if (segments.length > 1 || segments.some(segment => !/^[a-z0-9][a-z0-9._-]*$/i.test(segment))) unavailable("fs.mkdirSync");
 			},
 			writeFileSync: (path, data, encoding) => {
 				if (encoding !== undefined && encoding !== "utf8" && encoding !== "utf-8") return unavailable("non-UTF-8 resource writes");
@@ -212,6 +231,10 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 				write(path, data);
 			},
 			unlinkSync: path => write(path, undefined),
+			// The namespace store has no mode bits; upstream chmod calls are
+			// best-effort and caught by their own try/catch, so failing visibly
+			// preserves the original "no effect, not silent success" contract.
+			chmodSync: () => unavailable("fs.chmodSync"),
 			readdirSync: path => {
 				check();
 				if (owner === undefined || normalize(path) !== EXTENSION_CONFIG_ROOT) return unavailable("fs.readdirSync outside extension configuration");
@@ -298,6 +321,7 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 				mkdirSync: (path, options) => { checkWrite(); config.mkdirSync(path, options); },
 				writeFileSync: (path, text, encoding) => { checkWrite(); config.writeFileSync(path, text, encoding); persist(); },
 				unlinkSync: path => { checkWrite(); config.unlinkSync(path); persist(); },
+				chmodSync: config.chmodSync,
 				process: createScopedProcess(resources.assertActive),
 			};
 			return {
