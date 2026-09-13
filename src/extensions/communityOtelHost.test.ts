@@ -239,7 +239,16 @@ describe("original OTel in the default community host", () => {
 		await round(current.host);
 		f.block = true;
 		current.host.cancel();
-		await current.host.input("continue after the timeout");
+		// Capture the rejection here instead of awaiting bare: if an unrelated
+		// uncaught error kills this test while the input is still in flight, a
+		// bare await would later propagate the disposal rejection into a test
+		// promise bun has already given up on and report it as an unhandled
+		// error between tests.
+		let inputFailure: unknown;
+		const inputSettled = current.host.input("continue after the timeout").catch(error => { inputFailure = error; });
+		await inputSettled;
+		if (inputFailure !== undefined) throw inputFailure;
+		if (inputFailure !== undefined) throw inputFailure;
 		const retired = current.receipts.slice();
 		expect(retired.length).toBeGreaterThan(0);
 		expect(retired.every(receipt => receipt.signal?.aborted)).toBe(true);

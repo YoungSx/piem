@@ -339,7 +339,6 @@ export class CommunityHost {
 	dispose(reason?: SessionShutdownEvent["reason"]): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		console.log(`[probe] dispose called contextReset=${this.contextReset ? "pending" : "none"}`);
 		// A reload still racing with this dispose must not surface its own
 		// disposed rejection as an unhandled error after the owner is gone.
 		void this.contextReset?.catch(() => undefined);
@@ -357,9 +356,7 @@ export class CommunityHost {
 	private async operate<T>(work: () => Promise<T>, signal?: AbortSignal, refresh = true): Promise<T> {
 		if (this.disposed) throw new Error("Extension host was disposed.");
 		if (this.needsContextReset) {
-			// PROBE
 			this.contextReset ??= this.resetContext().finally(() => { this.contextReset = undefined; });
-			console.log(`[probe] operate await reset seq=${this.seq}`);
 			await this.contextReset;
 		}
 		return this.platform.withOperation(async () => {
@@ -376,12 +373,8 @@ export class CommunityHost {
 			} catch (error) { this.pending = []; throw error; }
 		}, signal);
 	}
-	private seq = 0;
 	private async resetContext(): Promise<void> {
-		const seq = ++this.seq;
-		console.log(`[probe] reset enter seq=${seq} disposed=${this.disposed}`);
 		await this.platform.drain();
-		console.log(`[probe] reset drained seq=${seq} disposed=${this.disposed}`);
 		if (this.disposed) throw new Error("Extension host was disposed.");
 		for (const resources of this.backgrounds.values()) resources.beginShutdown();
 		this.host.dispose("reload");
@@ -390,11 +383,9 @@ export class CommunityHost {
 			// A slow exporter must not strand the next chat operation on a retired host.
 			this.log.warn("Extension cleanup failed during reload", () => ({ error: error instanceof Error ? error.message : String(error) }));
 		} finally {
-			console.log(`[probe] reset finally seq=${seq} disposed=${this.disposed}`);
 			for (const resources of this.backgrounds.values()) resources.dispose();
 			this.backgrounds.clear();
 		}
-		console.log(`[probe] reset pre-392 seq=${seq} disposed=${this.disposed}`);
 		if (this.disposed) throw new Error("Extension host was disposed.");
 		await this.initialize();
 		if (this.disposed) { this.host.dispose(); await this.host.closed(); throw new Error("Extension host was disposed."); }
