@@ -112,4 +112,51 @@ describe("scoped global aliases", () => {
 			'import { connect } from "node:net"; export default () => connect;',
 		]) await expect(compile(source)).rejects.toThrow();
 	});
+
+	it("compiles an awaited bare-package import to the upstream fallback and a relative lazy import to a static edge", async () => {
+		// The rpiv-todo shape: an optional i18n SDK imported with top-level
+		// await (absent by design, upstream catches and falls back) plus a
+		// lazily imported overlay loaded on demand.
+		const overlay = "export class TodoOverlay { constructor() { this.mounted = true; } }";
+		const directory = mkdtempSync(path.join(tmpdir(), "pi-scoped-lazy-"));
+		cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+		const root = path.join(directory, "node_modules/contract");
+		mkdirSync(root, { recursive: true });
+		writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "1.0.0" }));
+		const source = `
+			try { const sdk = await import("@juicesharp/rpiv-i18n"); sdk.setup(); } catch { /* absent SDK */ }
+			export const warm = async () => (await import("./todo-overlay.js")).TodoOverlay;
+			export default () => ({ name: "todo", warm });
+		`;
+		writeFileSync(path.join(root, "index.ts"), source);
+		writeFileSync(path.join(root, "todo-overlay.ts"), overlay);
+		const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
+		const audit = { entry: "index.ts", version: "1.0.0", files: { "index.ts": digest(source), "todo-overlay.ts": digest(overlay) } };
+		const compiled = await buildScopedFactory(directory, "contract", audit);
+		// es2018 has no top-level await: the absent-SDK import must be gone.
+		expect(compiled.contents).not.toContain("await import(");
+		const output = await build({
+			stdin: { contents: compiled.contents, resolveDir: process.cwd(), loader: "js" },
+			bundle: true, write: false, metafile: true, minify: true, format: "cjs", platform: "browser", logLevel: "silent",
+			plugins: [{ name: "lazy-contract", setup(build) {
+				build.onResolve({ filter: /[/\\]src[/\\]extensions[/\\]/ }, args => {
+					if (args.path.startsWith(`${directory}${path.sep}`)) return { path: path.join(process.cwd(), path.relative(directory, args.path)) };
+					return undefined;
+				});
+			} }],
+		});
+		expect(Object.values(output.metafile!.outputs).flatMap(item => item.imports)).toEqual([]);
+		const forbidden = (): never => { throw new Error("Ambient host capability escaped"); };
+		const sandbox = {
+			module: { exports: {} }, URL, TextEncoder, TextDecoder, AbortController,
+			fetch: forbidden, setTimeout: forbidden, clearTimeout: forbidden, setInterval: forbidden, clearInterval: forbidden,
+			process: new Proxy({}, { get: forbidden }), Buffer: new Proxy({}, { get: forbidden }),
+		};
+		vm.runInNewContext(output.outputFiles[0]!.text, sandbox, { timeout: 1000, contextCodeGeneration: { strings: false, wasm: false } });
+		const factory = (sandbox.module.exports as { createFactory(platform: BackgroundExtensionPlatform): () => { warm(): Promise<new () => { mounted: boolean }> } }).createFactory;
+		const { host } = background();
+		const extension = factory(host.forBackgroundExtension("todo").platform)();
+		const overlayClass = await extension.warm();
+		expect(new overlayClass().mounted).toBe(true);
+	});
 });

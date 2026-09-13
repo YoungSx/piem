@@ -79,7 +79,10 @@ export function createNativeExtensionUI(
 		setWorkingIndicator: deny, setHiddenThinkingLabel: deny, setFooter: deny,
 		setHeader: deny, setTitle: deny, custom: components.custom, setEditorComponent: deny,
 		getEditorComponent: deny, get theme() { lifetime.assertActive(); return theme as ExtensionUIContext["theme"]; },
-		getAllThemes: deny, getTheme: deny, setTheme: deny, getToolsExpanded: deny, setToolsExpanded: deny,
+		// Upstream widgets read this on every render; this host always shows the
+		// collapsed tool view, so a visible false is truthful rather than denied.
+		getToolsExpanded: () => false,
+		getAllThemes: deny, getTheme: deny, setTheme: deny, setToolsExpanded: deny,
 	};
 	return {
 		ui,

@@ -35,8 +35,10 @@ export const EXTENSION_CONFIG_ROOT = "/extensions/config";
 const MAX_OWNERS = 8;
 const MAX_FILES = 4;
 const MAX_BYTES = 4096;
-const FILE_NAME = /^[a-z0-9][a-z0-9._-]*\.json$/i;
-const OWNER_NAME = /^[a-z0-9][a-z0-9._-]*$/i;
+/** One directory segment at most: upstream config helpers address `<package>/<file>.json`. */
+const FILE_NAME = /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?\.json$/i;
+/** Scoped package ids (`@juicesharp/rpiv-todo`) carry exactly one slash; bare ids none. */
+const OWNER_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
 const has = (target: object, key: string): boolean => Object.prototype.hasOwnProperty.call(target, key);
 
 /** Stored snapshots: extension id, then file name, then JSON text. */

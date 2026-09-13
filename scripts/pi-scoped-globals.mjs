@@ -58,7 +58,35 @@ export function prepareSource(original, filename, virtualURL, ts) {
 				changed = true;
 				return ts.visitEachChild(ts.factory.updateVariableDeclaration(node, node.name, node.exclamationToken, node.type, ts.factory.createObjectLiteralExpression(properties)), visit, context);
 			}
-			if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
+			if (ts.isAwaitExpression(node) && ts.isCallExpression(node.expression) && node.expression.expression.kind === ts.SyntaxKind.ImportKeyword) {
+				// A bare optional-SDK import can never resolve in the audited graph: the
+				// package is absent by design. Replacing the whole await — promise and
+				// keyword — with a synchronous throw preserves the upstream try/catch
+				// fallback (English-only UI, defaults) and removes top-level await in
+				// the same stroke. Relative lazy imports stay dynamic; the resolver
+				// turns those into audited static edges, so they fall through to the
+				// shared import-call check below.
+				const specifier = node.expression.arguments[0];
+				if (ts.isStringLiteral(specifier) && specifier.text !== "" && !specifier.text.startsWith(".")) {
+					changed = true;
+					// An expression that throws when evaluated, valid wherever the await was.
+					return ts.factory.createCallExpression(
+						ts.factory.createArrowFunction(undefined, undefined, [], undefined, ts.factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+							ts.factory.createBlock([ts.factory.createThrowStatement(ts.factory.createNewExpression(
+								ts.factory.createIdentifier("Error"), undefined, [
+									ts.factory.createStringLiteral(`Optional extension dependency is unavailable: ${specifier.text}`),
+								],
+							))], true)),
+						undefined, undefined,
+					);
+				}
+			}
+			if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+				const specifier = node.arguments[0];
+				if (ts.isStringLiteral(specifier) && specifier.text.startsWith(".")) return ts.visitEachChild(node, visit, context);
+				throw new Error("Dynamic extension loading is unavailable.");
+			}
+			if (ts.isCallExpression(node) && (ts.isIdentifier(node.expression) && node.expression.text === "require")) {
 				throw new Error("Dynamic extension loading is unavailable.");
 			}
 			if (ts.isPropertyAccessExpression(node) && ts.isMetaProperty(node.expression) && node.expression.keywordToken === ts.SyntaxKind.ImportKeyword && node.name.text === "url") {

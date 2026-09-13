@@ -8,6 +8,7 @@
         "@earendil-works/pi-agent-core": "^0.84.3",
         "@earendil-works/pi-ai": "^0.84.3",
         "@earendil-works/pi-coding-agent": "0.84.3",
+        "@juicesharp/rpiv-todo": "2.9.0",
         "@modelcontextprotocol/client": "^2.0.0",
         "@noble/hashes": "2.4.0",
         "buffer": "6.0.3",
@@ -214,6 +215,10 @@
     "@humanwhocodes/momoa": ["@humanwhocodes/momoa@3.3.10", "", {}, "sha512-KWiFQpSAqEIyrTXko3hFNLeQvSK8zXlJQzhhxsyVn58WFRYXST99b3Nqnu+ttOtjds2Pl2grUHGpe2NzhPynuQ=="],
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
+
+    "@juicesharp/rpiv-config": ["@juicesharp/rpiv-config@2.10.0", "", { "dependencies": { "typebox": "^1.1.24" } }, "sha512-iIa3QjwxQ3LOUxCoaLoHP8CVJOA5bZbgd1MsGVGCy4mVvNUq5P5qBEDzvkKpF/bXA++Eoili5eSixwQR96yEqQ=="],
+
+    "@juicesharp/rpiv-todo": ["@juicesharp/rpiv-todo@2.9.0", "", { "dependencies": { "@juicesharp/rpiv-config": "^2.9.0", "typebox": "^1.1.24" }, "peerDependencies": { "@earendil-works/pi-ai": "*", "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*", "@juicesharp/rpiv-i18n": "*" }, "optionalPeers": ["@juicesharp/rpiv-i18n"] }, "sha512-kETvX1ysqm2ff8OQU/FvDlT/9oVGgIki5Z5WeolNqVd/YCA+TOL3n0l5FDOsm4rJKPPKjJ1xHNBdgsC2XngZIQ=="],
 
     "@marijn/find-cluster-break": ["@marijn/find-cluster-break@1.0.2", "", {}, "sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g=="],
 
