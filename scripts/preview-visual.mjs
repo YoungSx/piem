@@ -113,6 +113,7 @@ const React = await import("react");
 
 const { ChatApp } = await import("../src/ui/ChatApp.tsx");
 const { MessageList } = await import("../src/ui/MessageList.tsx");
+const { ExtensionSurfaces } = await import("../src/ui/ExtensionSurfaces.tsx");
 const { TranslatorProvider } = await import("../src/ui/TranslatorContext.tsx");
 const { ChatInputController } = await import("../src/ui/ChatInputController.ts");
 const { AskUserBroker } = await import("../src/tools/askUserBroker.ts");
@@ -2065,6 +2066,57 @@ ${columns}
 		},
 	};
 };
+
+/* ------------------------------------------------------- rpiv-todo overlay widget */
+
+/*
+ * The upstream To Do overlay, as the panel mounts it above the composer.
+ *
+ * rpiv-todo registers a *component* widget and paints it as terminal lines. The
+ * compat layer strips the escapes (text is data, never an interaction protocol),
+ * so what reaches the DOM is plain text and the whole design decision is the
+ * container: a note card on `--background-secondary` inside
+ * `.piem-chat__extension-surfaces`. That container is what this page has to
+ * show, so the surface is a stand-in returning the upstream row shapes verbatim
+ * — the styling under test does not depend on which side produced them.
+ */
+function todoOverlaySurface(lines) {
+	const node = { kind: "container", children: lines.map(text => ({ kind: "text", text, paddingX: 0, paddingY: 0 })) };
+	return { getSnapshot: () => node, subscribe: () => () => {}, resize: () => {}, cancel: () => {} };
+}
+
+SCENARIOS["todo-overlay"] = async () => {
+	const host = document.createElement("div");
+	host.className = "piem-chat";
+	document.body.appendChild(host);
+	const root = reactDomClient.createRoot(host);
+	const snapshot = {
+		widgets: [],
+		statuses: [],
+		componentWidgets: [{
+			key: "rpiv-todos",
+			placement: "aboveEditor",
+			// The overlay's own rows: heading with the completed count, tree
+			// branches, the in-progress marker, and the overflow summary.
+			surface: todoOverlaySurface([
+				"\u25cf Todos (1/4)",
+				"\u251c\u2500 \u2713 Audit the reading list",
+				"\u251c\u2500 \u25b8 Merging duplicate notes",
+				"\u251c\u2500 \u25cb Re-tag the 2025 imports",
+				"\u2514\u2500 +1 more (1 pending)",
+			]),
+		}],
+	};
+	root.render(React.createElement(TranslatorProvider, { language: "en" },
+		React.createElement(ExtensionSurfaces, { snapshot, placement: "aboveEditor" })));
+	await flushRender();
+	if (host.querySelector(".piem-native-extension") === null) throw new Error("the todo overlay never rendered");
+	return {
+		element: host,
+		cleanup: async () => { root.unmount(); host.remove(); document.body.replaceChildren(); },
+	};
+};
+
 
 /* ------------------------------------------------------------------ page assembly */
 
