@@ -35,6 +35,32 @@ function fixture(shortShutdown = false) {
 	const hosts: CommunityHost[] = [];
 	const errors: unknown[] = [], warnings: string[] = [], notices: string[] = [];
 	let nextTimer = 0, visibilityState = "visible", block = false;
+	// React roots from the ui suites are never unmounted (bun runs every file in
+	// one process), so a delayed render can fire while this stub owns
+	// `window.document` and a plain stub object makes React's commit throw
+	// against a document that lacks happy-dom's internals — an uncaught error
+	// bun attributes to whatever test is running. Forwarding everything else to
+	// the real document keeps those stray flushes harmless; the fixture still
+	// owns visibility and counts its own listeners.
+	const realDocument = (globalThis.window as { document?: Document } | undefined)?.document;
+	const documentStub: Document = realDocument
+		? new Proxy(realDocument, {
+			get: (real, prop) => {
+				if (prop === "visibilityState") return visibilityState;
+				if (prop === "addEventListener") {
+					return (...args: Parameters<EventTarget["addEventListener"]>) => { listeners.added++; target.addEventListener(...args); };
+				}
+				if (prop === "removeEventListener") {
+					return (...args: Parameters<EventTarget["removeEventListener"]>) => { listeners.removed++; target.removeEventListener(...args); };
+				}
+				return Reflect.get(real, prop);
+			},
+		})
+		: {
+			get visibilityState() { return visibilityState; },
+			addEventListener: (...args: Parameters<EventTarget["addEventListener"]>) => { listeners.added++; target.addEventListener(...args); },
+			removeEventListener: (...args: Parameters<EventTarget["removeEventListener"]>) => { listeners.removed++; target.removeEventListener(...args); },
+		} as unknown as Document;
 	const restore = stubWindowMembers({
 		crypto: webcrypto, performance,
 		setTimeout: (callback: (...args: unknown[]) => void, delay = 0, ...args: unknown[]) => {
@@ -48,11 +74,7 @@ function fixture(shortShutdown = false) {
 			if (timer !== undefined) nativeClearTimeout(timer);
 			timers.delete(id);
 		},
-		document: {
-			get visibilityState() { return visibilityState; },
-			addEventListener: (...args: Parameters<EventTarget["addEventListener"]>) => { listeners.added++; target.addEventListener(...args); },
-			removeEventListener: (...args: Parameters<EventTarget["removeEventListener"]>) => { listeners.removed++; target.removeEventListener(...args); },
-		},
+		document: documentStub,
 	});
 	cleanups.push(async () => {
 		block = false;
