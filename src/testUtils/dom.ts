@@ -1,6 +1,17 @@
+import { afterEach } from "bun:test";
 import { Window } from "happy-dom";
 
 let installedDocument: Document | undefined;
+
+/**
+ * Intervals installed on the shared test window. A component-level interval
+ * (e.g. a per-second elapsed readout) outlives its test because React roots
+ * are never unmounted across the suite, and when it later fires under a
+ * test that has swapped `document` (e.g. a `window` stub) React's commit
+ * throws against the wrong realm — an unhandled error attributed to an
+ * unrelated test. No interval may outlive the test that created it.
+ */
+const installedIntervals = new Set<unknown>();
 
 /**
  * Installs a minimal DOM globals so React components can be rendered under
@@ -20,6 +31,22 @@ export function installDom(): Document {
 		return installedDocument;
 	}
 	const window = new Window({ url: "http://localhost/" });
+	// Track and retire intervals per test (see installedIntervals above).
+	const setIntervalImpl = window.setInterval.bind(window);
+	const clearIntervalImpl = window.clearInterval.bind(window);
+	window.setInterval = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+		const id = setIntervalImpl(callback, delay, ...args);
+		installedIntervals.add(id);
+		return id;
+	}) as unknown as typeof window.setInterval;
+	window.clearInterval = ((id?: unknown) => {
+		if (id !== undefined) installedIntervals.delete(id);
+		clearIntervalImpl(id as Parameters<typeof clearIntervalImpl>[0]);
+	}) as unknown as typeof window.clearInterval;
+	afterEach(() => {
+		for (const id of installedIntervals) clearIntervalImpl(id as Parameters<typeof clearIntervalImpl>[0]);
+		installedIntervals.clear();
+	});
 	const globals = globalThis as unknown as Record<string, unknown>;
 	globals.window = window;
 	globals.document = window.document;
