@@ -173,8 +173,13 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		if (root === undefined || !name.endsWith(".json")) return unavailable("reads outside extension JSON snapshots");
 		const file = name.slice(root.length + 1);
 		// A nested directory is outside the namespace, not a missing file: reporting
-		// ENOENT would invite an extension to keep trying deeper paths.
-		if ((file.match(/\//g)?.length ?? 0) > 1 || file.endsWith("/")) return unavailable("reads outside extension JSON snapshots");
+		// ENOENT would invite an extension to keep trying deeper paths. The fake home
+		// root is the one exception — upstream config helpers (rpiv-config) spell their
+		// path `<home>/.config/<package>/<file>.json`, so one directory segment is the
+		// namespace's own shape there, and only there.
+		const slashes = file.match(/\//g)?.length ?? 0;
+		const nestedAllowed = root === "/vault/.config" ? 1 : 0;
+		if (slashes > nestedAllowed || file.endsWith("/")) return unavailable("reads outside extension JSON snapshots");
 		return file;
 	};
 	const requireStore = (): ExtensionConfigStore => callbacks.config ?? unavailable("extension configuration");
@@ -218,12 +223,17 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 				// namespace's own shape (`<package>/config.json`); anything deeper
 				// is a real directory request this host cannot honour.
 				const name = normalize(path);
-				const root = name === "/vault/.config" || name.startsWith("/vault/.config/") ? "/vault/.config"
+				const home = "/vault/.config";
+				const root = name === home || name.startsWith(`${home}/`) ? home
 					: name === EXTENSION_CONFIG_ROOT || name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) ? EXTENSION_CONFIG_ROOT
 					: undefined;
 				if (root === undefined) return unavailable("fs.mkdirSync");
 				const segments = name.slice(root.length).split("/").filter(Boolean);
-				if (segments.length > 1 || segments.some(segment => !/^[a-z0-9][a-z0-9._-]*$/i.test(segment))) unavailable("fs.mkdirSync");
+				// One segment is the namespace's own shape under the fake home root
+				// (`/vault/.config/<package>`); deeper than that, or under the real
+				// root, is a directory request this host cannot honour.
+				const maxSegments = root === home ? 1 : 0;
+				if (segments.length > maxSegments || segments.some(segment => !/^[a-z0-9][a-z0-9._-]*$/i.test(segment))) unavailable("fs.mkdirSync");
 			},
 			writeFileSync: (path, data, encoding) => {
 				if (encoding !== undefined && encoding !== "utf8" && encoding !== "utf-8") return unavailable("non-UTF-8 resource writes");
