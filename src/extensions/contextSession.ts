@@ -45,10 +45,20 @@ export class ContextSession {
 		return this.enqueue(async epoch => {
 			if (this.navigation) throw new Error("Context changes must settle before refreshing history.");
 			if (this.labels.size || this.entries.length) await this.writeChanges(epoch);
-			this.snapshot = undefined;
-			const session = await this.source.load();
-			this.assertActive(epoch, session);
-			await this.readSnapshot(session, epoch);
+			// The previous snapshot stays readable until the new one is published:
+			// a concurrent operation's synchronous handler — a `session_start`
+			// replay reading the branch — may run between this refresh's awaits,
+			// and losing its view to "refresh in progress" is a hole no caller
+			// can close. Only a refresh that never ran or one that failed leaves
+			// nothing to read; `readSnapshot` swaps the new snapshot in whole.
+			try {
+				const session = await this.source.load();
+				this.assertActive(epoch, session);
+				await this.readSnapshot(session, epoch);
+			} catch (error) {
+				this.snapshot = undefined;
+				throw error;
+			}
 			this.writeFailure = undefined;
 		});
 	}
@@ -192,6 +202,12 @@ export class ContextSession {
 		this.tail = task.catch(() => undefined);
 		return task;
 	}
+	/**
+	 * Builds the next snapshot fully before publishing it, so the previous one
+	 * stays readable through the whole read: `current()` serves it until the
+	 * swap, and a synchronous handler between two awaits never sees "not
+	 * refreshed" — only a genuinely never-refreshed session does.
+	 */
 	private async readSnapshot(session: Session, epoch: number): Promise<void> {
 		for (let attempt = 0; attempt < 3; attempt++) {
 			this.assertActive(epoch, session);
@@ -204,8 +220,9 @@ export class ContextSession {
 			const newer = await session.getLog({ afterSeq: log.at(-1)?.seq ?? 0, limit: 1 });
 			this.assertActive(epoch, session);
 			if (newer.length) continue;
-			this.snapshot = new ContextSnapshot(log, leaf);
-			for (const entry of this.entries) this.snapshot.appendCustomEntry(entry);
+			const snapshot = new ContextSnapshot(log, leaf);
+			for (const entry of this.entries) snapshot.appendCustomEntry(entry);
+			this.snapshot = snapshot;
 			this.session = session;
 			return;
 		}
