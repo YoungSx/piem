@@ -442,6 +442,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		actionsLabel: "扩展操作",
 		runningAction: "正在执行…",
 		actionFailed: "操作失败，请重试。",
+		entryAria: "扩展操作",
 	},
 
 	session: {

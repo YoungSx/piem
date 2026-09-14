@@ -37,46 +37,33 @@ async function setup() {
 }
 
 describe("native extension surfaces", () => {
-	it("shows no new controls until registered and exposes shortcuts as touch actions below the editor", async () => {
+	it("shows no new controls until registered and renders widget content above the editor", async () => {
 		const { ui, host } = await setup();
 		expect(host.querySelector("section")).toBeNull();
-		let calls = 0;
-		ui.setShortcuts([{ key: "ctrl+shift+r", description: "Review draft", run: async () => { calls++; } }]);
+		ui.setWidget("hint", ["One", "Two"]);
 		await flushRender();
-		expect(host.querySelector("[data-position=above]")?.children).toHaveLength(0);
-		const details = host.querySelector<HTMLDetailsElement>("details")!;
-		expect(details.open).toBe(false);
-		expect(details.querySelector("summary")?.textContent).toBe("扩展操作");
-		details.open = true;
-		details.querySelector<HTMLButtonElement>("button")!.click();
+		const above = host.querySelector("[data-position=above]")!;
+		expect(above.children).toHaveLength(1);
+		expect(above.querySelector("section")?.textContent).toContain("One");
+		// The below-editor surface stays empty: shortcut actions moved to the
+		// context row's entry icon, and the content surface renders nothing
+		// without content of its own.
+		expect(host.querySelector("[data-position=below]")?.children).toHaveLength(0);
+		ui.setWidget("hint", undefined);
 		await flushRender();
-		expect(calls).toBe(1);
-		expect(details.querySelector("kbd")?.textContent).toBe("ctrl+shift+r");
+		expect(host.querySelector("section")).toBeNull();
 	});
 
-	it("disables duplicate actions, reports failure in the current language and permits retry", async () => {
+	it("renders no shortcut strip below the editor even while shortcuts and a failure are on the books", async () => {
 		const { ui, host } = await setup();
-		let fail!: (error: Error) => void;
-		let calls = 0;
-		ui.setShortcuts([{ key: "ctrl+shift+r", description: "Review", run: () => { calls++; return new Promise((_resolve, reject) => { fail = reject; }); } }]);
+		ui.setShortcuts([{ key: "ctrl+shift+r", description: "Review", run: async () => {} }]);
+		ui.setWidget("panel", ["A mounted panel"]);
 		await flushRender();
-		const action = ui.getSnapshot().shortcuts![0]!;
-		const first = action.run();
-		await action.run();
-		await flushRender();
-		expect(calls).toBe(1);
-		expect(host.querySelector<HTMLButtonElement>("button")?.disabled).toBe(true);
-		expect(host.querySelector("[role=status]")?.textContent).toBe("正在执行…");
-		fail(new Error("Private failure details"));
-		await first; await flushRender();
-		expect(host.querySelector("[role=alert]")?.textContent).toBe("操作失败，请重试。");
-		expect(host.textContent).not.toContain("Private failure details");
-		expect(host.querySelector<HTMLButtonElement>("button")?.disabled).toBe(false);
-		const retry = action.run();
-		expect(calls).toBe(2);
-		fail(new DOMException("Stopped", "AbortError"));
-		await retry; await flushRender();
+		// The actions live in the entry icon now; the surfaces stay content-only.
+		expect(host.querySelector("details")).toBeNull();
+		expect(host.querySelector("[role=status]")).toBeNull();
 		expect(host.querySelector("[role=alert]")).toBeNull();
+		expect(host.querySelector("kbd")).toBeNull();
 	});
 
 	it("ignores retained actions after reset and late failures cannot restore departed UI", async () => {
