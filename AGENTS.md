@@ -209,6 +209,18 @@ about the case `pre-wrap` fails on.
 - **The version lives in `manifest.json` and nowhere else.** `package.json` and `versions.json` are stamped from it; everything else must read it at runtime — `this.manifest.version` in a `Plugin` subclass, or a constructor argument for a module that is not one (see `McpManager`'s `pluginVersion`). `npm run check:version` fails the build on a hardcoded version anywhere under `src/`, in any markdown at the repo root, or anywhere under `docs/` — it enumerates the *roots* prose lives in rather than a list of files, so splitting a doc out never smuggles a version literal past it. `worklogs/` is deliberately out of scope: an entry there records what a release looked like the day it was written. Runs in both CI workflows.
 - Why that gate exists: `src/mcp/mcpManager.ts` reported `{ name: "piem", version: "1.0.0" }` to every MCP server for two releases after 1.0.0, and both READMEs called a shipped 1.0.x plugin "early alpha (`0.1.0-alpha.x`)". Neither could fail any other gate, because nothing reads those strings back. The old `scripts/stamp-version.mjs` stamped a hardcoded list of three files, so a version in a fourth place was invisible to it by construction — which is why the gate enumerates where the version *may* live rather than where it must be written.
 
+### Pre-releases (the BRAT track)
+
+- **To ship a beta to testers without the community store following it, do not touch `master`'s version files.** The store bot reads the *default branch's* `manifest.json` and serves the release tagged with that version — a beta that never lands there is invisible to it. The same bump on a side branch is exactly what BRAT wants: since 1.1.0 BRAT tracks GitHub releases directly and picks the latest release or pre-release by semver, independent of the default branch.
+- **The flow, by hand (`release.mjs` is stable-track only — it always commits the bump to `master`):**
+    1. Cut a `release/x.y.z-beta.N` branch off `master` (or off the feature branch under test).
+    2. Bump all three homes — `manifest.json`, `package.json`, `versions.json` — to the beta version. The release workflow verifies each against the tag and fails otherwise; `release.mjs` normally stamps them for you, so by hand this is the step to get right.
+    3. Tag (lightweight, **no leading `v`**, same convention as stable) and push the tag. The release workflow builds, runs the gates, and publishes the release.
+    4. `gh release edit <tag> --prerelease` — the workflow's publish step does not set the pre-release flag.
+- **Keep the beta line consistent with BRAT's expectations:** tag, release title, and the version inside the released `manifest.json` must match (the workflow's verification guarantees this). Leave `minAppVersion` alone. Do not merge the bump commit back to `master` — the stable line moves independently, and the next stable release simply numbers past the betas.
+- **One caveat to pass on to testers:** after installing a beta through BRAT, Obsidian's own updater will not move them from `x.y.z-beta.N` to its own stable `x.y.z`; they ride BRAT until the next stable tick re-triggers the normal update path.
+- **Do not spell out a concrete beta version in prose** (docs, README): `check:version` matches any line containing the current version, and once the stable line catches up, `x.y.z-beta.N` contains it as a substring. Use a placeholder like the ones above.
+
 ## Agent capability
 
 This plugin's value is what the agent can actually do. A capability the user has
