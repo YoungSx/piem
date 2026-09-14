@@ -126,6 +126,7 @@ export async function researchFixture(options: {
 		pasteToEditor: text => editor.replace(editor.read() + text),
 		select: async () => undefined, confirm: async () => false, input: async () => undefined, editor: async () => undefined,
 		setStatus: () => {}, setWidget: () => {}, setComponentWidget: () => {}, addAutocompleteProvider: () => {}, reset: () => {},
+		setShortcuts: () => {},
 	});
 	return { plugin, service, memory, record, requests, required, dynamic, realm, idle, unload, bindEditor, setPlan: (next: WirePlan) => { plan = next; } };
 }
