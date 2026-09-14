@@ -20,6 +20,7 @@ import { contextLevel } from "./headerCopy";
 import { ContextRow } from "./ContextRow";
 import { openForkConfirm } from "./forkConfirmModal";
 import { SubagentEntryIcon } from "./SubagentEntryIcon";
+import { ExtensionEntryIcon, hasExtensionEntry } from "./ExtensionEntryIcon";
 import { MessageList } from "./MessageList";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { ThinkingLevelSelector } from "./ThinkingLevelSelector";
@@ -922,17 +923,24 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 							 * Null rather than an icon that renders null: the row reads this
 							 * prop's presence as "something is riding along, stay visible", so
 							 * handing it a component that draws nothing would produce an empty
-							 * row on every turn that never delegated.
+							 * row on every turn that never delegated. The extension entry's
+							 * own visibility predicate keeps that contract: a fragment passed
+							 * unconditionally would revive the row on every turn.
 							 */
 							trailing={
-								onOpenSubagents && ownSubagents.length > 0 ? (
-									<SubagentEntryIcon
-										snapshots={ownSubagents}
-										onOpen={onOpenSubagents}
-										// The panel's own archive action, reached from the chat:
-										// one registry call, so both controls tidy identically.
-										onArchiveFinished={() => service.getSubagentRegistry().archiveSettled()}
-									/>
+								hasExtensionEntry(extensionUI.snapshot) || (onOpenSubagents && ownSubagents.length > 0) ? (
+									<>
+										<ExtensionEntryIcon snapshot={extensionUI.snapshot} />
+										{onOpenSubagents && ownSubagents.length > 0 ? (
+											<SubagentEntryIcon
+												snapshots={ownSubagents}
+												onOpen={onOpenSubagents}
+												// The panel's own archive action, reached from the chat:
+												// one registry call, so both controls tidy identically.
+												onArchiveFinished={() => service.getSubagentRegistry().archiveSettled()}
+											/>
+										) : null}
+									</>
 								) : null
 							}
 						/>

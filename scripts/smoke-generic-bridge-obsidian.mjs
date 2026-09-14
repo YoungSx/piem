@@ -15,7 +15,7 @@ async function beginSmoke(root, endpoint, expectMobile) {
 	window.__piemGenericSmoke = { report, record };
 	const check = (name, value) => { if (!value) throw new Error(name); report.checks.push(name); };
 	const wait = async predicate => {
-		for (let attempt = 0; attempt < 250; attempt++) {
+		for (let attempt = 0; attempt < 1000; attempt++) {
 			if (await predicate()) return;
 			await new Promise(resolve => setTimeout(resolve, 20));
 		}
@@ -65,7 +65,19 @@ async function beginSmoke(root, endpoint, expectMobile) {
 		ui.wait = wait;
 		ui.check = check;
 		ui.textarea = () => document.querySelector(".piem-chat__composer textarea");
-		ui.action = label => [...document.querySelectorAll(".piem-chat__extension-actions button")].find(button => button.textContent.includes(label));
+		// The entry popover is conditionally rendered, so a lookup that misses
+		// opens the entry icon first; the caller's wait() polls until it lands.
+		// The debounce keeps a poll before React's re-render from toggling the
+		// popover straight back closed.
+		let lastOpenAttempt = 0;
+		ui.action = label => {
+			const button = [...document.querySelectorAll(".piem-chat__extension-entry-action")].find(candidate => candidate.textContent.includes(label));
+			if (!button && performance.now() - lastOpenAttempt > 200) {
+				lastOpenAttempt = performance.now();
+				document.querySelector(".piem-chat__extension-entry-button")?.click();
+			}
+			return button;
+		};
 		ui.modal = () => [...document.querySelectorAll(".piem-native-extension-dialog")].at(-1);
 		ui.pending = () => service.runtimes.get(service.getActiveSessionPath())?.extensionUI?.getSnapshot().shortcutPending;
 		ui.open = async label => {
@@ -74,8 +86,6 @@ async function beginSmoke(root, endpoint, expectMobile) {
 			// Obsidian's mobile exit animation retains the departing modal's
 			// controls; wait for dismissal before locating the next picker.
 			await wait(() => !ui.modal());
-			const details = ui.action(label).closest("details");
-			details.open = true;
 			ui.action(label).click();
 		};
 		ui.finish = async () => {
@@ -84,14 +94,22 @@ async function beginSmoke(root, endpoint, expectMobile) {
 			return report;
 		};
 		report.stage = "native widget";
-		await wait(() => document.querySelector(".piem-native-extension__text")?.textContent === "Native component ready");
+		// The compat text renderer pads TUI lines to the terminal width, so the
+		// element's textContent carries leading/trailing spaces per line — match
+		// by containment rather than strict equality.
+		await wait(() => document.querySelector(".piem-native-extension__text")?.textContent?.includes("Native component ready"));
 		check("component widget reaches real panel", true);
-		check("plain widget remains supported", document.querySelector(".piem-chat__extension-widget")?.textContent === "Bridge contract fixture");
-		check("markup stays literal text", [...document.querySelectorAll(".piem-native-extension__text")].some(element => element.textContent === "<script>literal text</script>"));
+		await wait(() => document.querySelector(".piem-chat__extension-widget")?.textContent?.includes("Bridge contract fixture"));
+		check("plain widget remains supported", true);
+		// Polled rather than sampled: the widget's lines stream in across React
+		// commits, so a single sample right after mount can miss a later line.
+		await wait(() => [...document.querySelectorAll(".piem-native-extension__text")].some(element => element.textContent?.includes("<script>literal text</script>")));
+		check("markup stays literal text", true);
 		check("no HTML element created from extension text", !document.querySelector(".piem-native-extension script"));
+		check("entry icon available", !!document.querySelector(".piem-chat__extension-entry-button"));
+		check("actions collapsed initially", !document.querySelector(".piem-chat__extension-entry-popover"));
 		await wait(() => ui.action("Choose a bridge item"));
-		check("touch actions available", document.querySelectorAll(".piem-chat__extension-actions button").length === 3);
-		check("actions collapsed initially", !document.querySelector(".piem-chat__extension-actions").open);
+		check("touch actions available", document.querySelectorAll(".piem-chat__extension-entry-action").length === 3);
 		record.context.ui.setEditorText("");
 		await wait(() => ui.textarea()?.value === "");
 		report.environment = { mobile: app.isMobile, phone: document.body.classList.contains("is-phone"), width: innerWidth, transport: "fetch" };

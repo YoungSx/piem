@@ -826,6 +826,7 @@ export const en = {
 		actionsLabel: "Extension actions",
 		runningAction: "Running action…",
 		actionFailed: "This action failed. Try again.",
+		entryAria: "Extension actions",
 	},
 
 	/** Session dialogs: titles, search, and chat actions. */

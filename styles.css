@@ -5306,6 +5306,153 @@ button.piem-chat__latest--asking {
 	}
 }
 
+/* --- extension entry icon in the context row (src/ui/ExtensionEntryIcon.tsx) --- */
+
+/*
+ * The way into an extension's shortcut actions, to the left of the subagent
+ * monitor's icon. The wrapper holds its shape and hosts the popover's
+ * positioning, the same as the subagent wrapper above: the trailing slot
+ * already absorbs the row's slack, so the two icons sit one gap apart.
+ */
+.piem-chat__extension-entry {
+	display: inline-flex;
+	position: relative;
+}
+
+/*
+ * The icon itself, same arithmetic as the subagent icon: `clickable-icon` is
+ * load-bearing — Obsidian styles every `button:not(.clickable-icon)` as a
+ * filled form control this stylesheet cannot outrank.
+ */
+.piem-chat__extension-entry-button {
+	position: relative;
+}
+
+/* A run in flight tints the icon, the same channel the subagent icon reads. */
+.piem-chat__extension-entry-button--running {
+	--icon-color: var(--interactive-accent);
+	--icon-color-hover: var(--interactive-accent-hover);
+}
+
+/* A failed run reddens the glyph, so "your press did nothing" is not silent. */
+.piem-chat__extension-entry-button--failed {
+	--icon-color: var(--text-error);
+	--icon-color-hover: var(--text-error);
+}
+
+/*
+ * The failure dot, on the icon's corner like the subagent badge. Absolutely
+ * positioned so it costs the row no width, and `aria-hidden` because the
+ * popover's alert row is the sentence a screen reader should get.
+ */
+.piem-chat__extension-entry-failed-dot {
+	background: var(--text-error);
+	border-radius: 50%;
+	height: 0.5em;
+	pointer-events: none;
+	position: absolute;
+	inset-block-start: 0;
+	inset-inline-end: 0;
+	width: 0.5em;
+}
+
+/* The run-in-flight breath, on the shared curve the subagent icon uses. */
+@media (prefers-reduced-motion: no-preference) {
+
+	.piem-chat__extension-entry-button--running .piem-chat__extension-entry-icon {
+		animation: piem-breathe 1.8s ease-in-out infinite;
+	}
+}
+
+/*
+ * The hover/press list of shortcut actions. Same geometry and stacking as the
+ * subagent popover — both float above the composer from the same row, and one
+ * z-index token is how that stays true. Rows are quiet pressable text with the
+ * keybinding at the far end, the shape the old `<details>` strip carried.
+ */
+.piem-chat__extension-entry-popover {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	bottom: calc(100% + var(--size-4-2));
+	box-shadow: var(--shadow-s);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-height: 15rem;
+	max-width: 18rem;
+	min-width: 12rem;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: var(--size-4-1);
+	position: absolute;
+	inset-inline-end: 0;
+	text-align: start;
+	white-space: normal;
+	width: max-content;
+	z-index: var(--layer-menu, 65);
+}
+
+.piem-chat__extension-entry-action {
+	align-items: center;
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	color: var(--text-normal);
+	display: flex;
+	flex-wrap: wrap;
+	font: inherit;
+	gap: var(--size-2-1);
+	height: auto;
+	justify-content: space-between;
+	min-height: 36px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	padding: var(--size-4-2);
+	text-align: start;
+	white-space: normal;
+	width: 100%;
+}
+
+.piem-chat__extension-entry-action kbd {
+	font-size: var(--font-ui-smaller);
+	margin-inline-start: auto;
+}
+
+.piem-chat__extension-entry-action:disabled {
+	cursor: wait;
+	opacity: 0.6;
+}
+
+.piem-chat__extension-entry-action:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: 2px;
+}
+
+@media (hover: hover) {
+	.piem-chat__extension-entry-action:not(:disabled):hover {
+		background: var(--background-modifier-hover);
+	}
+}
+
+@media (any-pointer: coarse) {
+	.piem-chat__extension-entry-action {
+		min-height: 44px;
+	}
+}
+
+/* The pending and failure rows, under the actions. */
+.piem-chat__extension-entry-status {
+	color: var(--text-muted);
+	padding: var(--size-4-1) var(--size-4-2);
+}
+
+.piem-chat__extension-entry-popover .piem-native-extension__error {
+	margin: 0;
+	padding: var(--size-4-1) var(--size-4-2);
+}
+
 /* --- ask_user question (src/ui/AskUserForm.tsx, src/ui/AskUserCard.tsx) --- */
 
 /*
@@ -6157,27 +6304,6 @@ input.piem-ask-other::placeholder {
 	padding: var(--size-2-1);
 }
 
-.piem-native-extension button.piem-native-extension__option,
-.piem-chat__extension-actions button {
-	align-items: flex-start;
-	background: transparent;
-	border: none;
-	border-radius: var(--radius-s);
-	box-shadow: none;
-	color: var(--text-normal);
-	display: flex;
-	font: inherit;
-	gap: var(--size-2-1);
-	height: auto;
-	min-height: 36px;
-	min-width: 0;
-	overflow-wrap: anywhere;
-	padding: var(--size-4-2);
-	text-align: start;
-	white-space: normal;
-	width: 100%;
-}
-
 .piem-native-extension button.piem-native-extension__option {
 	flex-direction: column;
 	flex-shrink: 0;
@@ -6215,57 +6341,19 @@ input.piem-ask-other::placeholder {
 	min-width: 0;
 }
 
-.piem-chat__extension-actions {
-	white-space: normal;
-}
-
-.piem-chat__extension-actions summary {
-	color: var(--text-muted);
-	cursor: pointer;
-	padding: var(--size-4-2) var(--size-4-1);
-}
-
-.piem-chat__extension-actions ul {
-	list-style: none;
-	margin: var(--size-4-1) 0 0;
-	padding: 0;
-}
-
-.piem-chat__extension-actions button {
-	align-items: center;
-	flex-wrap: wrap;
-	justify-content: space-between;
-}
-
-.piem-chat__extension-actions kbd {
-	font-size: var(--font-ui-smaller);
-	margin-inline-start: auto;
-}
-
-.piem-chat__extension-actions button:disabled {
-	cursor: wait;
-	opacity: 0.6;
-}
-
-.piem-native-extension button:focus-visible,
-.piem-chat__extension-actions :is(summary, button):focus-visible {
+.piem-native-extension button:focus-visible {
 	outline: 2px solid var(--background-modifier-border-focus);
 	outline-offset: 2px;
 }
 
 @media (hover: hover) {
-	.piem-native-extension button.piem-native-extension__option:hover,
-	.piem-chat__extension-actions button:not(:disabled):hover {
+	.piem-native-extension button.piem-native-extension__option:hover {
 		background: var(--background-modifier-hover);
-	}
-	.piem-chat__extension-actions summary:hover {
-		color: var(--text-normal);
 	}
 }
 
 @media (any-pointer: coarse) {
-	.piem-native-extension button.piem-native-extension__option,
-	.piem-chat__extension-actions :is(summary, button) {
+	.piem-native-extension button.piem-native-extension__option {
 		min-height: 44px;
 	}
 }
