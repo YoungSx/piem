@@ -196,7 +196,10 @@ describe("original OTel in the default community host", () => {
 		expect(f.listenerCount).toBe(4);
 		const sent = current.receipts.length;
 		current.host.disableOtel(); current.host.disableOtel();
-		expect(f.listenerCount).toBe(0); expect(f.timers.size).toBe(0);
+		expect(f.listenerCount).toBe(0);
+		// The todo extension arms a 2s warm-up timer at registration, before any
+		// operation opens; opt-out retires OTel, not the whole background set.
+		await until(() => f.timers.size === 0);
 		f.hide();
 		await round(current.host);
 		await current.host.run("continue", "status");
