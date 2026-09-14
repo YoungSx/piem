@@ -4984,6 +4984,18 @@ export class ObsidianAgentService {
 			this.promptAccepted.delete(event.message);
 			accepted?.();
 		}
+		// Before the awaited extension dispatch, which can yield: pi has already
+		// claimed the streaming state when it emits `agent_start`, so a snapshot
+		// published while the dispatch is between two awaits would say "streaming
+		// and rewinding" — the replacement run and its predecessor's notice at
+		// once. Clearing first keeps the two states exclusive for any observer.
+		if (event.type === "agent_start") {
+			rt.extensionRunRevision += 1;
+			// pi has already claimed the streaming state. The replacement is now
+			// running, so its rewind notice and exclusive send guard must end here,
+			// not when the awaited prompt resolves after the entire reply.
+			rt.retryInFlight = false;
+		}
 		try { if (event.type !== "agent_end") await rt.communityHost?.emitAgentEvent(event); }
 		catch (error) {
 			// Observer errors must not skip persistence or leave the run ledger
@@ -4992,13 +5004,6 @@ export class ObsidianAgentService {
 				this.setError(rt, causeMessage(error));
 				this.log.error("Extension lifecycle handler failed", () => ({ event: event.type, error: causeMessage(error) }));
 			}
-		}
-		if (event.type === "agent_start") {
-			rt.extensionRunRevision += 1;
-			// pi has already claimed the streaming state. The replacement is now
-			// running, so its rewind notice and exclusive send guard must end here,
-			// not when the awaited prompt resolves after the entire reply.
-			rt.retryInFlight = false;
 		}
 		if (event.type === "tool_execution_start") {
 			rt.pendingToolNames.set(event.toolCallId, event.toolName);
