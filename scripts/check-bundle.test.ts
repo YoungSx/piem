@@ -27,6 +27,7 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 			["pi-scoped-extension:pi-clarify"]: { bytesInOutput: 100 },
 			["pi-scoped-extension:pi-context"]: { bytesInOutput: 100 },
 			["pi-scoped-extension:pi-otel"]: { bytesInOutput: 100 },
+			["pi-scoped-extension:@juicesharp/rpiv-todo"]: { bytesInOutput: 100 },
 			["node_modules/buffer/index.js"]: { bytesInOutput: 100 },
 			["node_modules/pi-assistant-provenance/extensions/assistant-provenance/index.ts"]: { bytesInOutput: 100 },
 			["node_modules/pi-model-switch/index.ts"]: { bytesInOutput: 100 },
