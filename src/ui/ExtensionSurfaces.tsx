@@ -2,6 +2,7 @@ import React from "react";
 import type { ExtensionUISnapshot } from "./ObsidianExtensionUI";
 import { useT } from "./TranslatorContext";
 import { NativeExtensionComponents } from "./NativeExtensionComponents";
+import { plainText } from "../extensions/compat/textMetrics";
 import { ExtensionStyledText, trimEdgeBlankLines } from "./extensionStyledText";
 
 /** Plain extension text follows the host theme and wraps inside a narrow leaf. */
@@ -17,13 +18,15 @@ export function ExtensionSurfaces({ snapshot, placement }: {
 	return (
 		<section className="piem-chat__extension-surfaces" aria-label={t.t("extensionUI.contentLabel")}>
 			{widgets.map((widget) => {
-				const lines = trimEdgeBlankLines(widget.lines);
+				// Same boundary as the native tree: palette sentinels survive, every
+				// raw terminal command (CSI, OSC, C1) is dropped before rendering.
+				const lines = trimEdgeBlankLines(widget.lines.map((line) => plainText(line, true)));
 				if (lines.length === 0) return null;
 				return <div key={widget.key} className="piem-chat__extension-widget"><ExtensionStyledText text={lines.join("\n")} /></div>;
 			})}
 			{components.map(widget => <NativeExtensionComponents key={widget.key} surface={widget.surface} />)}
 			{statuses.length > 0 ? <div className="piem-chat__extension-status" role="status">
-				{statuses.map((status) => <div key={status.key}><ExtensionStyledText text={status.text} /></div>)}
+				{statuses.map((status) => <div key={status.key}><ExtensionStyledText text={plainText(status.text, true)} /></div>)}
 			</div> : null}
 			{/*
 			 * Extension shortcut actions render nowhere here — they moved to the

@@ -1,6 +1,6 @@
 import React from "react";
 import { EXTENSION_FG_PALETTE } from "../extensions/compat/theme";
-import { paletteSentinel } from "../extensions/compat/textMetrics";
+import { isPaletteReset, paletteSentinel } from "../extensions/compat/textMetrics";
 
 /**
  * The host-side decoder for the compat theme's palette sentinels, and the one
@@ -24,19 +24,21 @@ export function parseExtensionStyledText(text: string): ExtensionStyledSegment[]
 	};
 	for (let index = 0; index < text.length;) {
 		const code = text.charCodeAt(index);
-		if (code === 27) {
+		if (code === 27 || code === 155 || code === 157 || code === 159) {
 			// The palette's own truecolor pair (see paletteSentinel): the opener
-			// starts a colored run, the reset closes it; anything else is dropped
-			// as an unknown escape below.
-			const sentinel = paletteSentinel(text, index);
-			if (sentinel === 4) { flush(); color = undefined; index += sentinel; continue; }
-			if (sentinel > 4) {
+			// starts a colored run, any SGR-zero reset closes it; anything else
+			// is dropped as an unknown escape below.
+			const reset = isPaletteReset(text, index);
+			if (reset > 0) { flush(); color = undefined; index += reset; continue; }
+			const sentinel = code === 27 || code === 155 ? paletteSentinel(text, index) : 0;
+			if (sentinel > 0) {
 				const name = EXTENSION_FG_PALETTE[Number(text.slice(index + 11, index + sentinel - 1))];
 				if (name) { flush(); color = name; index += sentinel; continue; }
 			}
 			// Unknown escape: drop the sequence itself (CSI to its final byte,
 			// OSC-style strings through their terminator, else just the ESC).
-			const introducer = text[index + 1];
+			const introducer = code === 27 || code === 155 ? text[index + 1]
+				: code === 157 ? "]" : "_";
 			if (introducer === "[") {
 				let end = index + 2;
 				while (end < text.length && !(text.charCodeAt(end) >= 64 && text.charCodeAt(end) <= 126)) end++;
@@ -78,7 +80,10 @@ export function parseExtensionStyledText(text: string): ExtensionStyledSegment[]
 export function trimEdgeBlankLines(lines: readonly string[]): string[] {
 	let start = 0;
 	let end = lines.length;
-	const blank = (line: string): boolean => /^\s*$/.test(line);
+	// Blank by visible shape: sentinels and unknown escapes carry no columns,
+	// so a spacer line wearing color is as blank as its bare twin.
+	const blank = (line: string): boolean =>
+		parseExtensionStyledText(line).every((segment) => /^\s*$/.test(segment.text));
 	while (start < end && blank(lines[start]!)) start++;
 	while (end > start && blank(lines[end - 1]!)) end--;
 	return lines.slice(start, end);

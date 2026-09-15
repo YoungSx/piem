@@ -107,8 +107,10 @@ function NativeText({ node }: { node: Extract<NativeComponentNode, { kind: "text
 	}, [node.paddingX, node.paddingY]);
 	// Edge spacers are the terminal's neighbour separation; the card above
 	// already spaces this widget from its siblings. Interior lines stay exact.
-	const text = trimEdgeBlankLines(node.text.split("\n")).join("\n");
-	return <div ref={ref} className="piem-native-extension__text"><ExtensionStyledText text={text} /></div>;
+	// An all-blank node is dropped, matching the surfaces path's empty widget.
+	const lines = trimEdgeBlankLines(node.text.split("\n"));
+	if (lines.length === 0) return null;
+	return <div ref={ref} className="piem-native-extension__text"><ExtensionStyledText text={lines.join("\n")} /></div>;
 }
 
 function NativeSelect({ node, t, run }: {

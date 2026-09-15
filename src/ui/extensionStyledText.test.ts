@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseExtensionStyledText, trimEdgeBlankLines } from "./extensionStyledText";
+import { plainText } from "../extensions/compat/textMetrics";
 import { theme } from "../extensions/compat/theme";
 
 describe("extension styled text decoding", () => {
@@ -35,6 +36,23 @@ describe("extension styled text decoding", () => {
 			{ text: "not-ours", color: undefined },
 		]);
 	});
+	it("closes a colored run on non-canonical SGR resets", () => {
+		const esc = String.fromCharCode(27);
+		expect(parseExtensionStyledText(`${theme.fg("accent", "Red")}${esc}[mEnd`)).toEqual([
+			{ text: "Red", color: "accent" },
+			{ text: "End", color: undefined },
+		]);
+		expect(parseExtensionStyledText(`${theme.fg("accent", "Red")}${esc}[0;0mEnd`)).toEqual([
+			{ text: "Red", color: "accent" },
+			{ text: "End", color: undefined },
+		]);
+	});
+
+	it("strips C1 CSI sequences with their parameters in both sanitization points", () => {
+		const raw = `${String.fromCharCode(155)}[31mRed${String.fromCharCode(27)}[2KTail`;
+		expect(plainText(raw)).toBe("RedTail");
+		expect(parseExtensionStyledText(raw)).toEqual([{ text: "RedTail", color: undefined }]);
+	});
 });
 
 describe("extension edge blank trimming", () => {
@@ -42,5 +60,10 @@ describe("extension edge blank trimming", () => {
 		expect(trimEdgeBlankLines(["", "  ", "top", "", "mid", "\t", "bottom", " "])).toEqual(["top", "", "mid", "\t", "bottom"]);
 		expect(trimEdgeBlankLines([""])).toEqual([]);
 		expect(trimEdgeBlankLines([])).toEqual([]);
+	});
+
+	it("counts a sentinel-wrapped spacer line as blank", () => {
+		expect(trimEdgeBlankLines([theme.fg("dim", "  "), "任务", theme.fg("dim", " ")]))
+			.toEqual(["任务"]);
 	});
 });
