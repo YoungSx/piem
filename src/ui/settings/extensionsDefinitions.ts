@@ -340,15 +340,13 @@ function unifiedSkillRow(host: SettingsPanelHost, state: SettingsPanelState, ent
 			const text = [entry.skill.description, vaultRow ? describeSkillRow(vaultRow) : undefined].filter(Boolean).join("\n");
 			if (text) setFoldableDescription(setting, text, t);
 			// The switch rides ahead of the file actions: on/off is the question a
-			// reader answers most often, and Open/Update/Delete are the rarer errands.
+			// reader answers most often, and Update/Delete are the rarer errands.
 			configureSkillToggle(setting, host, entry.skill.name);
+			// The name is the row's open affordance wherever the path is verifiable:
+			// built-ins and joined vault rows. A stranded row or a user-level skill
+			// has no file this panel can name, so its name stays plain text.
 			if (entry.source === "user" || (entry.source === "vault" && !vaultRow)) return;
-			// The path always names a real file: pi only reports skills it actually
-			// loaded, so opening it needs no existence check beyond TFile's own.
-			setting.addButton((button) => {
-				button.setButtonText(t.t("skills.open"));
-				button.onClick(() => void openVaultPath(host.app, entry.skill.filePath));
-			});
+			makeNameOpenable(setting, host, entry.skill.filePath);
 			if (!vaultRow) return;
 			if (vaultRow.provenance) {
 				setting.addButton((button) => {
@@ -764,6 +762,35 @@ async function openVaultPath(app: App, path: string): Promise<void> {
 	if (file instanceof TFile) {
 		await app.workspace.getLeaf("tab").openFile(file);
 	}
+}
+
+/**
+ * Makes a row's name the affordance that opens its skill file.
+ *
+ * The name is where the eye already is, so the dedicated Open button it
+ * replaces was one more control on a side of the row that belongs to the
+ * switch. `appendSettingBadge` has moved the name text into its own label span
+ * by the time this runs; that span takes the link class, the click, and the
+ * keyboard activation — a real activation order for what is visually just
+ * text, and the searchable name itself is untouched.
+ */
+function makeNameOpenable(setting: Setting, host: SettingsPanelHost, path: string): void {
+	const label = setting.nameEl.querySelector<HTMLElement>(".piem-badged-name__label");
+	if (!label) {
+		return;
+	}
+	label.addClass("piem-settings-name-link");
+	label.setAttribute("role", "button");
+	label.setAttribute("tabindex", "0");
+	label.setAttribute("aria-label", host.t.t("skills.open"));
+	const open = (): void => void openVaultPath(host.app, path);
+	label.addEventListener("click", open);
+	label.addEventListener("keydown", (event) => {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			open();
+		}
+	});
 }
 
 /**

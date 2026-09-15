@@ -577,9 +577,9 @@ describe("extension row badges", () => {
 		render(vault.items![0] as SettingDefinitionRender);
 		expect(container.querySelector(".setting-item-heading .setting-item-name")?.textContent).toBe("Skills2 problems");
 		const layered = [
-			{ name: "summarize", badge: "Built-in" },
-			{ name: "external", badge: "Global" },
-			{ name: "imported", badge: "Vault" },
+			{ name: "summarize", badge: "Built-in", openable: true },
+			{ name: "external", badge: "Global", openable: false },
+			{ name: "imported", badge: "Vault", openable: true },
 		];
 		for (const [index, expected] of layered.entries()) {
 			const definition = vault.items![index + 1] as SettingDefinitionRender;
@@ -587,6 +587,14 @@ describe("extension row badges", () => {
 			expect(definition.name).toBe(expected.name);
 			expect(setting.nameEl.querySelector(".piem-badge")?.textContent).toBe(expected.badge);
 			expect(setting.nameEl.firstElementChild?.textContent).toBe(definition.name);
+			// The name carries the open action wherever the row's file is real; a
+			// user-level skill keeps a plain-text name.
+			const link = setting.nameEl.querySelector<HTMLElement>(".piem-settings-name-link");
+			if (expected.openable) {
+				expect(link?.getAttribute("aria-label")).toBe(en.t("skills.open"));
+			} else {
+				expect(link).toBeNull();
+			}
 		}
 		// The vault row folds its source URL beneath the description, the fold
 		// button present because the combined text clears the fold limit.
@@ -622,7 +630,13 @@ describe("extension row badges", () => {
 			{ skill: { name: "custom", description: "Custom instructions", content: "body", filePath: "Piem/skills/custom/SKILL.md" }, source: "vault" },
 		];
 		const base = stubHost();
+		const { TFile } = await import("obsidian");
+		const opened: unknown[] = [];
 		const host = stubHost({
+			app: {
+				vault: { getAbstractFileByPath: () => new TFile() },
+				workspace: { getLeaf: () => ({ openFile: async (file: unknown) => { opened.push(file); } }) },
+			} as unknown as SettingsPanelHost["app"],
 			skills: { ...base.skills, catalog: skills, list: async () => ({ rows: [importedRow] }) },
 		});
 		const state = new SettingsPanelState();
@@ -637,20 +651,27 @@ describe("extension row badges", () => {
 		};
 
 		// Joined: a vault row whose name matches the panel's own read gets the file
-		// operations, in the order the reader reaches them — open, then the
-		// provenance update, then the directory delete.
+		// operations, in the order the reader reaches them — the provenance update,
+		// then the directory delete. Opening rides the name, not a button.
 		const joined = render("imported");
 		expect(joined.nameEl.querySelector(".piem-badge")?.textContent).toBe("Vault");
 		const buttons = (joined as unknown as { buttons: Array<{ text: string | undefined }> }).buttons.map((button) => button.text);
-		expect(buttons).toEqual([en.t("skills.open"), en.t("skills.update"), en.t("skills.delete")]);
+		expect(buttons).toEqual([en.t("skills.update"), en.t("skills.delete")]);
+		const link = joined.nameEl.querySelector<HTMLElement>(".piem-settings-name-link");
+		expect(link?.getAttribute("role")).toBe("button");
+		link!.click();
+		await settle();
+		expect(opened).toHaveLength(1);
 
 		// Stranded: the catalog row whose name joins nothing — the read has not
 		// caught up, or the layers disagree — still renders with badge and switch,
-		// but carries no file buttons: acting on a row the agent's own read does
-		// not confirm would fire an operation at a name that may not exist.
+		// but carries no file buttons and no openable name: acting on a row the
+		// agent's own read does not confirm would fire an operation at a name that
+		// may not exist.
 		const stranded = render("custom");
 		expect(stranded.nameEl.querySelector(".piem-badge")?.textContent).toBe("Vault");
 		expect((stranded as unknown as { buttons: unknown[] }).buttons).toEqual([]);
+		expect(stranded.nameEl.querySelector(".piem-settings-name-link")).toBeNull();
 		await settle();
 	});
 
