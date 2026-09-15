@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore }
 import type { NativeComponentNode } from "../extensions/compat/componentTree";
 import type { NativeExtensionSurface } from "../extensions/extensionUI";
 import type { Translator } from "../i18n";
+import { plainText } from "../extensions/compat/textMetrics";
 import { isComposing } from "./keyboard";
 import { useT } from "./TranslatorContext";
+import { ExtensionStyledText, trimEdgeBlankLines } from "./extensionStyledText";
 
 /** Renders the component contract, never infers controls from its text. */
 export function NativeExtensionComponents({ surface, translator }: {
@@ -87,14 +89,14 @@ function NativeComponent({ node, t, run }: { node: NativeComponentNode; t: Trans
 		case "loader": return <div className="piem-native-extension__loader">
 			<div role="status" aria-busy={!node.aborted}>
 				{!node.aborted ? <progress aria-label={t.t("extensionUI.loading")} /> : null}
-				<span>{node.aborted ? t.t("extensionUI.cancelled") : node.text}</span>
+				<span>{node.aborted ? t.t("extensionUI.cancelled") : plainText(node.text)}</span>
 			</div>
 			{node.cancellable ? <button type="button" disabled={node.aborted} onClick={() => run(node.onCancel)}>{t.t("extensionUI.cancel")}</button> : null}
 		</div>;
 	}
 }
 
-function NativeText({ node }: { node: Extract<NativeComponentNode, { kind: "text" }> }): React.JSX.Element {
+function NativeText({ node }: { node: Extract<NativeComponentNode, { kind: "text" }> }): React.JSX.Element | null {
 	const ref = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		const padding = (value: number): number => Number.isFinite(value) ? Math.max(0, Math.min(16, value)) : 0;
@@ -103,7 +105,10 @@ function NativeText({ node }: { node: Extract<NativeComponentNode, { kind: "text
 			"--piem-extension-padding-y": `${padding(node.paddingY)}em`,
 		});
 	}, [node.paddingX, node.paddingY]);
-	return <div ref={ref} className="piem-native-extension__text">{node.text}</div>;
+	// Edge spacers are the terminal's neighbour separation; the card above
+	// already spaces this widget from its siblings. Interior lines stay exact.
+	const text = trimEdgeBlankLines(node.text.split("\n")).join("\n");
+	return <div ref={ref} className="piem-native-extension__text"><ExtensionStyledText text={text} /></div>;
 }
 
 function NativeSelect({ node, t, run }: {
@@ -148,8 +153,9 @@ function NativeSelect({ node, t, run }: {
 		{node.items.map((item, index) => <button key={index} type="button" role="option" aria-selected={index === selected}
 			tabIndex={index === selected ? 0 : -1} className="piem-native-extension__option"
 			onClick={() => run(() => node.onSelect(index))}>
-			<span>{item.label}</span>
-			{item.description ? <span className="piem-native-extension__description">{item.description}</span> : null}
+			{/* Option labels are data, never a styling channel — terminal escapes stay stripped. */}
+			<span>{plainText(item.label)}</span>
+			{item.description ? <span className="piem-native-extension__description">{plainText(item.description)}</span> : null}
 		</button>)}
 	</div>;
 }
