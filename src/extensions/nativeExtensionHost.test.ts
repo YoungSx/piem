@@ -96,7 +96,8 @@ describe("native extension host", () => {
 			await host.start();
 			expect(context.mode).toBe("print");
 			expect(context.hasUI).toBe(false);
-			expect(context.ui.theme.fg("accent", "Hello")).toBe("Hello");
+			expect(context.ui.theme.fg("accent", "Hello")).toBe("\u001b[38;2;0;0;0mHello\u001b[0m");
+			expect(context.ui.theme.fg("text", "Hello")).toBe("Hello");
 			expect(() => context.ui.setWidget("terminal", () => ({ render: () => [], invalidate: () => {} }))).toThrow("not attached");
 			expect(() => context.ui.onTerminalInput(() => undefined)).toThrow("terminal-only");
 		} finally { host.dispose(); }

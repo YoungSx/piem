@@ -8,12 +8,25 @@ const spacingMark = /\p{Spacing_Mark}/u;
 const legacySpacingMark = /[\u065F\u0F7F\u102B\u102C\u1031\u1033-\u1035\u1038\u103A-\u103E]/u;
 const emoji = /\p{Emoji_Presentation}|\p{Regional_Indicator}|\uFE0F|\u20E3/u;
 
-/** Strip terminal commands, never interpret their colors, cursor moves or links. */
-export function plainText(text: string): string {
+/** Strip terminal commands, never interpret their colors, cursor moves or links.
+ *  Data callers get pure text; render-path callers pass `styled` so the compat
+ *  theme's own palette sentinels (theme.fg output) survive and are decoded by
+ *  the host renderer. */
+export function plainText(text: string, styled = false): string {
 	let result = "";
 	for (let i = 0; i < text.length; i++) {
 		const code = text.charCodeAt(i);
 		if (code === 27 || code === 155 || code === 157 || code === 159) {
+			if (code === 27) {
+				if (styled) {
+					const escape = paletteSentinel(text, i);
+					if (escape > 0) {
+						result += text.slice(i, i + escape);
+						i += escape - 1;
+						continue;
+					}
+				}
+			}
 			const type = code === 27 ? text[++i] : code === 155 ? "[" : code === 157 ? "]" : "_";
 			if (type === "[") {
 				while (++i < text.length && !(text.charCodeAt(i) >= 64 && text.charCodeAt(i) <= 126)) { /* discard CSI */ }
@@ -28,6 +41,20 @@ export function plainText(text: string): string {
 		if (code === 9 || code === 10 || (code >= 32 && (code < 127 || code > 159))) result += text[i];
 	}
 	return result;
+}
+
+/** The reset half of the sentinel pair, spelled without an escape literal. */
+const RESET = String.fromCharCode(27) + "[0m";
+
+/** Truecolor sentinels emitted by the compat theme and its reset, as their
+ *  length (0 when the escape is not one of ours; the reset is exactly 4). */
+export function paletteSentinel(text: string, index: number): number {
+	if (text[index + 1] !== "[") return 0;
+	if (text[index + 2] === "0" && text[index + 3] === "m") return 4;
+	if (text[index + 2] !== "3" || text[index + 3] !== "8") return 0;
+	let end = index + 4;
+	while (end < text.length && text[end] !== "m") end++;
+	return /^.\[38;2;0;0;\d{1,2}m$/.test(text.slice(index, end + 1)) ? end + 1 - index : 0;
 }
 
 function takesMarkColumn(point: string): boolean {
@@ -63,21 +90,43 @@ export function visibleWidth(text: string): number {
 	return width;
 }
 
+/** Slices at whole graphemes up to the column budget; palette sentinels ride
+ *  along free of charge, exactly as a terminal keeps escape codes through a
+ *  truncation. Everything is pre-sanitized, so the only escapes met here are
+ *  the palette's own. */
 function takeColumns(text: string, width: number): { text: string; width: number } {
 	let result = "";
 	let used = 0;
-	for (const { segment } of graphemes.segment(text)) {
-		const next = graphemeWidth(segment);
-		if (used + next > width) break;
-		result += segment;
-		used += next;
+	let index = 0;
+	// An opener copied before the break stays active; close it so the dropped
+	// tail's color never leaks onto whatever follows (e.g. the ellipsis).
+	let opened = false;
+	outer: while (index < text.length && used < width) {
+		if (text.charCodeAt(index) === 27) {
+			const sentinel = paletteSentinel(text, index);
+			if (sentinel === 4) opened = false;
+			else if (sentinel > 0) opened = true;
+			result += text.slice(index, index + sentinel);
+			index += Math.max(sentinel, 1);
+			continue;
+		}
+		let runEnd = index;
+		while (runEnd < text.length && text.charCodeAt(runEnd) !== 27) runEnd++;
+		for (const { segment } of graphemes.segment(text.slice(index, runEnd))) {
+			const next = graphemeWidth(segment);
+			if (used + next > width) break outer;
+			result += segment;
+			used += next;
+		}
+		index = runEnd;
 	}
+	if (opened) result += RESET;
 	return { text: result, width: used };
 }
 
 export function truncateToWidth(text: string, maxWidth: number, ellipsis = "...", pad = false): string {
 	const width = Number.isFinite(maxWidth) ? Math.max(0, Math.floor(maxWidth)) : 0;
-	const value = plainText(text);
+	const value = plainText(text, true);
 	const originalWidth = visibleWidth(value);
 	if (originalWidth <= width) return value + (pad ? " ".repeat(width - originalWidth) : "");
 	const suffix = takeColumns(plainText(ellipsis), width);

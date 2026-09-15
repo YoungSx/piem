@@ -2947,9 +2947,12 @@ button.piem-chat__latest--asking {
 	width: 100%;
 }
 
-/* Native extension text surfaces, bounded to the conversation leaf. */
+/* Native extension text surfaces, bounded to the conversation leaf.
+ * Monospace is load-bearing: extensions draw column layouts (todo tree rows)
+ * with space padding, which a proportional face cannot keep aligned. */
 .piem-chat__extension-surfaces {
 	color: var(--text-normal);
+	font-family: var(--font-monospace);
 	font-size: var(--font-ui-small);
 	max-height: 25vh;
 	min-width: 0;
@@ -6246,14 +6249,26 @@ input.piem-ask-other::placeholder {
 /*
  * Panel widgets (aboveEditor/belowEditor setWidget) sit in a quiet card so a
  * live status surface — the todo overlay — reads as a pinned note rather than
- * loose terminal spillover. Dialogs keep Obsidian's modal chrome instead.
+ * loose terminal spillover. Text widgets live in the same card as component
+ * widgets so both setWidget shapes read as one surface family. Dialogs keep
+ * Obsidian's modal chrome instead.
  */
-.piem-chat__extension-surfaces .piem-native-extension {
+.piem-chat__extension-surfaces .piem-native-extension,
+.piem-chat__extension-surfaces .piem-chat__extension-widget {
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	padding: var(--size-4-2) var(--size-4-3);
 }
+
+/* The compat theme's decoded palette (see EXTENSION_FG_PALETTE in
+ * src/extensions/compat/theme.ts), mapped to Obsidian's light/dark tokens. */
+.piem-ext-fg-accent { color: var(--text-accent); }
+.piem-ext-fg-dim { color: var(--text-faint); }
+.piem-ext-fg-muted { color: var(--text-muted); }
+.piem-ext-fg-success { color: var(--text-success, var(--color-green)); }
+.piem-ext-fg-error { color: var(--text-error); }
+.piem-ext-fg-warning { color: var(--text-warning, var(--color-yellow)); }
 
 .piem-chat__extension-surfaces .piem-native-extension__text {
 	line-height: var(--line-height-normal);

@@ -45,7 +45,9 @@ export function readNativeTree(lines: readonly string[]): NativeComponentNode | 
 }
 
 export function plainTextNode(lines: readonly string[]): NativeComponentNode {
-	return { kind: "text", text: plainText(lines.join("\n")), paddingX: 0, paddingY: 0 };
+	// Sentinels survive sanitization here and are decoded by the text renderer;
+	// every other terminal command is dropped exactly as before.
+	return { kind: "text", text: plainText(lines.join("\n"), true), paddingX: 0, paddingY: 0 };
 }
 
 export function renderNativeComponent(component: CompatComponent, width: number): NativeComponentNode {

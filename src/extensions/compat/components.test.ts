@@ -290,4 +290,16 @@ describe("native text metrics", () => {
 		expect(truncateToWidth("\u001b[31m中文\u001b[0m", 3, "")).toBe("中");
 		expect(plainText("a\u0000b\u001b[2Jc")).toBe("abc");
 	});
+
+	test("carries the compat theme's own sentinels through sanitization and truncation", () => {
+		const accent = theme.fg("accent", "中");
+		expect(plainText(accent)).toBe("中");
+		expect(visibleWidth(accent)).toBe(2);
+		expect(truncateToWidth(accent, 4)).toBe(accent);
+		const styled = `AB${theme.fg("accent", "长长")}CD`;
+		expect(visibleWidth(styled)).toBe(8);
+		expect(truncateToWidth(styled, 5)).toBe("AB...");
+		expect(truncateToWidth(styled, 7)).toBe(`AB${theme.fg("accent", "长")}...`);
+		expect(truncateToWidth(styled, 9, "")).toBe(styled);
+	});
 });

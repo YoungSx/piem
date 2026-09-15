@@ -54,6 +54,21 @@ describe("native extension surfaces", () => {
 		expect(host.querySelector("section")).toBeNull();
 	});
 
+	it("decodes palette sentinels into styled spans and drops blank-only widgets", async () => {
+		const { theme } = await import("../extensions/compat/theme");
+		const { ui, host } = await setup();
+		ui.setWidget("blank", ["", " ", "\t"]);
+		ui.setWidget("styled", ["", theme.fg("accent", "任务"), theme.fg("dim", "└─ 提示"), ""]);
+		await flushRender();
+		const widgets = host.querySelectorAll(".piem-chat__extension-widget");
+		// Blank-only lines are the terminal's spacer rows; here they render nothing.
+		expect(widgets).toHaveLength(1);
+		const styled = widgets[0]!;
+		expect(styled.querySelector(".piem-ext-fg-accent")?.textContent).toBe("任务");
+		expect(styled.querySelector(".piem-ext-fg-dim")?.textContent).toBe("└─ 提示");
+		expect(styled.textContent).not.toContain("\x1b");
+	});
+
 	it("renders no shortcut strip below the editor even while shortcuts and a failure are on the books", async () => {
 		const { ui, host } = await setup();
 		ui.setShortcuts([{ key: "ctrl+shift+r", description: "Review", run: async () => {} }]);
