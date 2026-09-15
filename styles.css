@@ -2964,6 +2964,22 @@ button.piem-chat__latest--asking {
 	white-space: pre-wrap;
 }
 
+/* The feed seat (aboveEditor remapped to the transcript tail) has no viewport
+ * of its own: the transcript is the scroller, and a bounded box here would
+ * scroll inside the scroll. */
+.piem-chat__extension-surfaces--feed {
+	max-height: none;
+	overflow-y: visible;
+}
+
+/* The feed seat (aboveEditor remapped to the transcript tail) has no viewport
+ * of its own: the transcript is the scroller, and a bounded box here would
+ * scroll inside the scroll. */
+.piem-chat__extension-surfaces--feed {
+	max-height: none;
+	overflow-y: visible;
+}
+
 .piem-chat__extension-widget + .piem-chat__extension-widget,
 .piem-chat__extension-status {
 	margin-top: var(--size-4-1);

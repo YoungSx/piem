@@ -63,7 +63,6 @@ interface ChatComposerProps {
 	/** Session-owned adapter for extension editor reads and writes. */
 	onEditorElement?: (element: HTMLTextAreaElement | null) => void;
 	extensionAutocomplete?: AutocompleteProvider;
-	aboveEditor?: React.ReactNode;
 	belowEditor?: React.ReactNode;
 	/**
 	 * The context chip row, rendered inside the composer shell above the textarea.
@@ -186,7 +185,6 @@ export function ChatComposer({
 	onAnchorIdChange,
 	onEditorElement,
 	extensionAutocomplete,
-	aboveEditor,
 	belowEditor,
 	contextRow,
 	modelSwitcher,
@@ -452,7 +450,6 @@ export function ChatComposer({
 
 	return (
 		<footer className="piem-chat__composer">
-			{aboveEditor}
 			<div className="piem-chat__composer-shell" onPointerDown={keepFocusOnPress}>
 				<div className="piem-chat__composer-top">
 					{contextRow}

@@ -15,8 +15,14 @@ export function ExtensionSurfaces({ snapshot, placement }: {
 	const components = snapshot.componentWidgets?.filter(widget => widget.placement === placement) ?? [];
 	const statuses = placement === "belowEditor" ? snapshot.statuses : [];
 	if (widgets.length === 0 && statuses.length === 0 && components.length === 0) return null;
+	// The feed seat grows with its content — the transcript is the scroller; a
+	// nested 25vh viewport here would scroll inside the scroll (see styles.css).
+	const inFeed = placement === "aboveEditor";
 	return (
-		<section className="piem-chat__extension-surfaces" aria-label={t.t("extensionUI.contentLabel")}>
+		<section
+			className={`piem-chat__extension-surfaces${inFeed ? " piem-chat__extension-surfaces--feed" : ""}`}
+			aria-label={t.t("extensionUI.contentLabel")}
+		>
 			{widgets.map((widget) => {
 				// Same boundary as the native tree: palette sentinels survive, every
 				// raw terminal command (CSI, OSC, C1) is dropped before rendering.
