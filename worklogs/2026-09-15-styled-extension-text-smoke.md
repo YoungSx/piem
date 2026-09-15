@@ -30,3 +30,12 @@ bundle 为本分支生产构建（SHA f1b7044f…，与工作区构建一致）�
 2. run.py 吞 smoke stderr 的路径：stdout 尾行 "{}" 也能被 json.loads 成功，
    失败原因全丢。手动直跑 node 脚本一眼看到真错。
 3. 拆台仍按 profile 路径精准匹配 pgrep，勿 `pkill -f` 裸跑（自杀两回的前科）。
+
+## Review 收口（b0ecbd9）
+
+代码评审四个 P2 已折进本分支：非典型 SGR 复位（`[m` / `[0;0m`）现在也能闭
+色（`isPaletteReset`）；C1 CSI（0x9B）在 `plainText` 与 DOM 解码器两处都带
+参数整段丢弃（C1 介绍符后还要跳过一个伪 `[`）；边缘空白行修剪改按解析后
+形状判定，哨兵包裹的空格行照样修掉；widget 原始行在 surfaces 入口统一走
+`plainText(text, true)`，与原生树同一消毒边界；全空白的原生 text 节点渲染
+为 null。视觉无变化，未再跑 smoke（rpiv-todo 只发典型形式）。
