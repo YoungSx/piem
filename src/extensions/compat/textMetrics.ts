@@ -29,6 +29,8 @@ export function plainText(text: string, styled = false): string {
 			}
 			const type = code === 27 ? text[++i] : code === 155 ? "[" : code === 157 ? "]" : "_";
 			if (type === "[") {
+				// C1 CSI hands us only the introducer byte; skip it too.
+				if (code === 155) i++;
 				while (++i < text.length && !(text.charCodeAt(i) >= 64 && text.charCodeAt(i) <= 126)) { /* discard CSI */ }
 			} else if (type === "]" || type === "_" || type === "P" || type === "^") {
 				while (++i < text.length) {
@@ -46,12 +48,23 @@ export function plainText(text: string, styled = false): string {
 /** The reset half of the sentinel pair, spelled without an escape literal. */
 const RESET = String.fromCharCode(27) + "[0m";
 
-/** Truecolor sentinels emitted by the compat theme and its reset, as their
- *  length (0 when the escape is not one of ours; the reset is exactly 4). */
-export function paletteSentinel(text: string, index: number): number {
+/** SGR-zero resets we honor (the theme's own plus the canonical short forms
+ *  a raw widget may embed); each must still close an open colored run. */
+export function isPaletteReset(text: string, index: number): number {
 	if (text[index + 1] !== "[") return 0;
-	if (text[index + 2] === "0" && text[index + 3] === "m") return 4;
-	if (text[index + 2] !== "3" || text[index + 3] !== "8") return 0;
+	let end = index + 2;
+	while (end < text.length && text[end] !== "m") end++;
+	if (end >= text.length) return 0;
+	const body = text.slice(index + 2, end);
+	return body === "" || body === "0" || body === "0;0" ? end + 1 - index : 0;
+}
+
+/** Truecolor sentinels emitted by the compat theme, as their length (0 when
+ *  the escape is not one of ours; resets are recognized by isPaletteReset). */
+export function paletteSentinel(text: string, index: number): number {
+	const reset = isPaletteReset(text, index);
+	if (reset > 0) return reset;
+	if (text[index + 1] !== "[" || text[index + 2] !== "3" || text[index + 3] !== "8") return 0;
 	let end = index + 4;
 	while (end < text.length && text[end] !== "m") end++;
 	return /^.\[38;2;0;0;\d{1,2}m$/.test(text.slice(index, end + 1)) ? end + 1 - index : 0;
@@ -104,8 +117,7 @@ function takeColumns(text: string, width: number): { text: string; width: number
 	outer: while (index < text.length && used < width) {
 		if (text.charCodeAt(index) === 27) {
 			const sentinel = paletteSentinel(text, index);
-			if (sentinel === 4) opened = false;
-			else if (sentinel > 0) opened = true;
+			if (sentinel > 0) opened = !isPaletteReset(text, index);
 			result += text.slice(index, index + sentinel);
 			index += Math.max(sentinel, 1);
 			continue;

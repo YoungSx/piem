@@ -289,6 +289,10 @@ describe("native text metrics", () => {
 		expect(visibleWidth("\u001b[31m中文\u001b[0m")).toBe(4);
 		expect(truncateToWidth("\u001b[31m中文\u001b[0m", 3, "")).toBe("中");
 		expect(plainText("a\u0000b\u001b[2Jc")).toBe("abc");
+		// C1 CSI: the introducer byte and its parameters vanish together.
+		const c1 = String.fromCharCode(155);
+		expect(plainText(`${c1}[31mRed`)).toBe("Red");
+		expect(plainText(`a${c1}31mb`)).toBe("ab");
 	});
 
 	test("carries the compat theme's own sentinels through sanitization and truncation", () => {
@@ -301,5 +305,10 @@ describe("native text metrics", () => {
 		expect(truncateToWidth(styled, 5)).toBe("AB...");
 		expect(truncateToWidth(styled, 7)).toBe(`AB${theme.fg("accent", "长")}...`);
 		expect(truncateToWidth(styled, 9, "")).toBe(styled);
+		// Non-canonical SGR resets close the run just like the theme's own;
+		// the truncated tail's color never leaks onto the ellipsis.
+		const esc = String.fromCharCode(27);
+		expect(truncateToWidth(`AB${theme.fg("accent", "长长")}${esc}[0;0mCD`, 7))
+			.toBe(`AB${theme.fg("accent", "长")}...`);
 	});
 });
