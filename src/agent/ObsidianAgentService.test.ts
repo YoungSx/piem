@@ -4875,6 +4875,17 @@ function createFakeApp(
 				file.stat.size = new TextEncoder().encode(content).byteLength;
 				file.stat.mtime = Date.now();
 			},
+			// Mirrors Obsidian's atomic read-modify-write; the write/edit tools
+			// reach overwrites through it (PR-B CAS). Obsidian hands the callback
+			// the file's current text; an unregistered path has none, so the stub
+			// passes the empty string the real vault would reject later anyway.
+			process: async (file: TFile, fn: (data: string) => string) => {
+				const result = fn(vaultFiles[file.path] ?? "");
+				vaultFiles[file.path] = result;
+				file.stat.size = new TextEncoder().encode(result).byteLength;
+				file.stat.mtime = Date.now();
+				return result;
+			},
 			createFolder: async (path: string) => folderAt(path),
 		},
 		metadataCache: {

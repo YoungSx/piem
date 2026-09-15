@@ -702,7 +702,7 @@ export class ObsidianAgentService {
 	 * env it was read through is not replaced underneath it. Stateless by design
 	 * — every call routes through the vault API — so one instance is safe to hold.
 	 */
-	private readonly env: ExecutionEnv;
+	private readonly env: VaultExecutionEnv;
 	/**
 	 * Delegation lives wholesale in the subagent extension; this service only
 	 * plays host — vault tools, live model/transport getters — and tears it

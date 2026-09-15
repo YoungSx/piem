@@ -103,6 +103,16 @@ class GateVault {
 		this.files.set(file.path, data);
 	}
 
+	/** Mirrors Obsidian's atomic read-modify-write; the write tool rides it. */
+	async process<T>(file: TFile, fn: (data: string) => T): Promise<T> {
+		if (!this.files.has(file.path)) {
+			throw new Error(`File not found: ${file.path}`);
+		}
+		const result = fn(this.files.get(file.path)!);
+		this.files.set(file.path, result as unknown as string);
+		return result;
+	}
+
 	readonly adapter = {
 		exists: async (path: string) => this.files.has(path),
 	};

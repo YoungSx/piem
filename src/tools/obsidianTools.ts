@@ -1,7 +1,9 @@
 import type { App } from "obsidian";
-import type { AgentTool, ExecutionEnv, Skill } from "@earendil-works/pi-agent-core";
+import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
+import type { VaultExecutionEnv } from "../vault/VaultExecutionEnv";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
+import { withContentLedger } from "../vault/contentLedger";
 import { createNoteLinksTool, createNoteMetadataTool } from "./linkTools";
 import { createUpdateFrontmatterTool } from "./frontmatterTools";
 import { createActiveNoteTool } from "./noteTools";
@@ -22,11 +24,12 @@ import type { PiemSettings } from "../settings";
  * The three execution tools — read, write, edit — are pi's native harness
  * tools ({@link createReadTool} / {@link createWriteTool} /
  * {@link createEditTool}), adapted onto the shared {@link VaultExecutionEnv}
- * passed in as `env`. Sharing one env instance across all three is what lets
- * pi's file mutation queue interlock their mutations (it keys per-path locks
- * off env object identity, so separate envs would each get their own queue);
- * the explicit `executionMode: "sequential"` pins below are the primary
- * serialization now that the agent runs batches of read-only tools in
+ * passed in as `env` through a per-call {@link withContentLedger} view (write
+ * conflict detection needs per-session last-seen content). Sharing one
+ * underlying env instance across all three keeps pi's file mutation queue
+ * interlocked for the session (it keys per-path locks off env object
+ * identity); the explicit `executionMode: "sequential"` pins below are the
+ * primary serialization now that the agent runs batches of read-only tools in
  * parallel — the queue stays as the per-path backstop. The same env is reused
  * to load prompt templates, so a reload never hands the loader a different
  * object than the tools queue on.
@@ -77,16 +80,20 @@ export interface ObsidianToolDeps {
 
 export function createObsidianTools(
 	app: App,
-	env: ExecutionEnv,
+	env: VaultExecutionEnv,
 	settings: PiemSettings,
 	deps: ObsidianToolDeps = {},
 ): AgentTool[] {
+	// One ledger view per call site — createObsidianTools runs per session, so
+	// the wrapper (and its last-seen ledger) is per session too. The write tool's
+	// baseline staleness check rides it; the underlying env stays shared.
+	const trackedEnv = withContentLedger(env);
 	const tools: AgentTool[] = [
 		// pi's native harness tools ship without an `executionMode`, so the pin
 		// happens here, at the one place they are adapted into the agent's list.
-		adaptHarnessTool(createReadTool(), { context: { env }, executionMode: "parallel" }),
-		adaptHarnessTool(createWriteTool(), { context: { env }, executionMode: "sequential" }),
-		adaptHarnessTool(createEditTool(), { context: { env }, executionMode: "sequential" }),
+		adaptHarnessTool(createReadTool(), { context: { env: trackedEnv }, executionMode: "parallel" }),
+		adaptHarnessTool(createWriteTool(), { context: { env: trackedEnv }, executionMode: "sequential" }),
+		adaptHarnessTool(createEditTool(), { context: { env: trackedEnv }, executionMode: "sequential" }),
 		createLsTool(app),
 		createFindTool(app),
 		createGrepTool(app),

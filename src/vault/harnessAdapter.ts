@@ -78,7 +78,7 @@ export function adaptHarnessTool<TContext extends object | undefined, TParameter
  * identity (`states.get(env)`), so sharing one instance across read/write/edit
  * is what actually serializes their mutations.
  */
-export function createVaultHarnessContext(app: App): { env: ExecutionEnv } {
+export function createVaultHarnessContext(app: App): { env: VaultExecutionEnv } {
 	return { env: new VaultExecutionEnv(app) };
 }
 
