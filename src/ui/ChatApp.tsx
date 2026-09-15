@@ -164,6 +164,19 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 	inputRef.current = input;
 	const extensionUI = useExtensionUI(service, snapshot.session?.path, snapshot.language, snapshot.availableCommands, inputRef, setInput, draftReady);
+	/*
+	 * Widgets that asked for "aboveEditor" render at the feed's tail, not over
+	 * the composer. The placement name is the extension-facing vocabulary; where
+	 * the host puts the seat is the host's call, and a panel like rpiv-todo's
+	 * todo list reads as conversation content — it belongs at the bottom of the
+	 * stream, scrolling with it, not pinned where messages slide under it.
+	 * Memoized on the snapshot so the transcript's follow effect sees a fresh
+	 * node only when a widget actually appeared or changed.
+	 */
+	const extensionFeedTail = useMemo(
+		() => <ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" />,
+		[extensionUI.snapshot],
+	);
 	const isExtensionBusy = snapshot.isExtensionBusy ?? false;
 	const isRewinding = snapshot.isRewinding || isExtensionBusy;
 
@@ -824,6 +837,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					queuedQuestions={pendingQuestion ? ask.queued : 0}
 					onAnswerQuestion={askUserBroker ? (id, answers) => askUserBroker.answer(id, answers) : undefined}
 					onDismissQuestion={askUserBroker ? (id) => askUserBroker.dismiss(id) : undefined}
+					extensionTail={extensionFeedTail}
 				/>
 
 				{/*
@@ -857,7 +871,6 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					commands={snapshot.availableCommands}
 					onEditorElement={extensionUI.bindEditor}
 					extensionAutocomplete={extensionUI.snapshot.autocomplete}
-					aboveEditor={<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" />}
 					belowEditor={<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="belowEditor" />}
 					modelSwitcher={
 						<ModelSwitcher

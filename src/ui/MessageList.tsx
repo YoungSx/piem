@@ -199,6 +199,14 @@ export interface MessageListProps {
 	queuedQuestions?: number;
 	onAnswerQuestion?: (id: string, answers: AskUserAnswer[]) => void;
 	onDismissQuestion?: (id: string) => void;
+	/**
+	 * Extension widgets that asked for the "aboveEditor" seat, rendered here at
+	 * the feed's tail — below the follow-up strip — instead of docked over the
+	 * composer. The host remaps that placement: a panel like rpiv-todo's todo
+	 * list is conversation content, so it scrolls with the transcript rather
+	 * than holding a fixed seat the messages slide under.
+	 */
+	extensionTail?: React.ReactNode;
 }
 
 /**
@@ -462,6 +470,7 @@ export function MessageList({
 	queuedQuestions = 0,
 	onAnswerQuestion,
 	onDismissQuestion,
+	extensionTail,
 }: MessageListProps): React.JSX.Element {
 	const t = useT();
 	// Neither changing notes nor replacing a callback changes historical prose.
@@ -538,8 +547,10 @@ export function MessageList({
 		// follow-up strip does too, and for a further reason: it mounts a beat
 		// *after* the settle this effect already scrolled for — the suggestion
 		// request resolves late — so a row that grew in below the fold after the
-		// one scroll that covered `messages` would otherwise stay there.
-	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, followUpActions]);
+		// one scroll that covered `messages` would otherwise stay there. The
+		// extension tail likewise: `ChatApp` memoizes it on the widget snapshot,
+		// so a fresh node means a widget appeared or changed below the fold.
+	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, followUpActions, extensionTail]);
 
 	const updateFollowState = (): void => {
 		const transcript = transcriptRef.current;
@@ -690,6 +701,7 @@ export function MessageList({
 					 */
 					<QuickActions actions={followUpActions} onSelect={onQuickAction} layout="strip" />
 				) : null}
+				{extensionTail}
 			</main>
 			{!isAtLatest ? (
 				/*

@@ -465,6 +465,11 @@ describe("ChatApp × real service (issue #168)", () => {
 		await flushRender();
 		expect(document.querySelector("textarea")?.value).toBe("A draft");
 		expect(document.querySelector(".piem-chat__extension-widget")?.textContent).toBe("A native suggestion");
+		// The "aboveEditor" seat is remapped to the transcript tail: the widget is
+		// conversation content, so it renders inside the scroller below the
+		// follow-up strip — never docked inside the composer.
+		expect(document.querySelector(".piem-chat__extension-widget")?.closest(".piem-chat__messages")).not.toBeNull();
+		expect(document.querySelector(".piem-chat__composer .piem-chat__extension-widget")).toBeNull();
 		expect(document.querySelector(".piem-chat__extension-status")?.textContent).toBe("A is ready");
 		const editor = document.querySelector("textarea")!;
 		editor.setSelectionRange(2, 7);
