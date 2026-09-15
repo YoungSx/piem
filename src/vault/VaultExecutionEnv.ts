@@ -115,7 +115,11 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			await ensureParentFolders(this.vault, inner);
 			if (typeof content === "string") {
 				if (existing instanceof TFile) {
-					await this.vault.modify(existing, content);
+					// Read-modify-write in one vault call rather than a bare
+					// `modify`, so Obsidian serializes the read+write against any
+					// concurrent `process` on the same file (the CAS in
+					// {@linkcode compareAndWriteFile} rides the same primitive).
+					await this.vault.process(existing, () => content);
 				} else {
 					await this.vault.create(inner, content);
 				}
@@ -126,6 +130,61 @@ export class VaultExecutionEnv implements ExecutionEnv {
 				await this.vault.modifyBinary(existing, data);
 			} else {
 				await this.vault.createBinary(inner, data);
+			}
+			return ok(undefined);
+		});
+	}
+
+	/**
+	 * Compare-and-swap overwrite: replaces the file's text only if the vault's
+	 * current content still equals `expected` — what the calling session last
+	 * observed. The comparison runs inside {@link Vault.process}'s callback, so
+	 * the read and the write are the same vault operation and no concurrent
+	 * `process` can slip between them; a mismatch throws inside the callback
+	 * and the file is left untouched.
+	 *
+	 * Returns an `invalid` {@link FileError} on mismatch (pi's error vocabulary
+	 * is a closed union; the message carries the conflict semantics and tells
+	 * the model to re-read), `not_found` when the file vanished since it was
+	 * observed.
+	 */
+	async compareAndWriteFile(
+		path: string,
+		content: string,
+		expected: string,
+		abortSignal?: AbortSignal,
+	): Promise<Result<void, FileError>> {
+		return this.run(path, async () => {
+			const failure = abortedFailure(abortSignal, path);
+			if (failure) {
+				return failure;
+			}
+			const existing = this.vault.getAbstractFileByPath(toVaultRelative(path));
+			if (existing instanceof TFolder) {
+				return err(new FileError("is_directory", `Cannot write over folder: ${path}`, path));
+			}
+			if (!(existing instanceof TFile)) {
+				return err(new FileError("not_found", `File was removed after it was read: ${path}`, path));
+			}
+			try {
+				await this.vault.process(existing, (data) => {
+					if (data !== expected) {
+						throw new WriteConflictError();
+					}
+					return content;
+				});
+			} catch (error) {
+				if (error instanceof WriteConflictError) {
+					return err(
+						new FileError(
+							"invalid",
+							`Write conflict: ${path} changed since this session last read it. Re-read the file and merge your changes before writing again.`,
+							path,
+							error instanceof Error ? error : undefined,
+						),
+					);
+				}
+				throw error;
 			}
 			return ok(undefined);
 		});
@@ -349,6 +408,9 @@ function abortedFailure(abortSignal: AbortSignal | undefined, path: string): Res
 	}
 	return null;
 }
+
+/** Thrown inside the `vault.process` callback when the CAS expectation fails. */
+class WriteConflictError extends Error {}
 
 function truncateCommand(command: string): string {
 	return command.length > 60 ? `${command.slice(0, 57)}...` : command;

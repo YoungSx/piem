@@ -29,6 +29,9 @@ class MemoryVault {
 	/** Paths sent to `fileManager.trashFile`, in order, for assertions. */
 	readonly trashed: string[] = [];
 
+	/** Paths sent through the atomic `process` primitive, in order, for assertions. */
+	readonly processCalls: string[] = [];
+
 	constructor(fixtures: VaultFixture[] = []) {
 		for (const fixture of fixtures) {
 			if (fixture.kind === "folder") {
@@ -114,6 +117,20 @@ class MemoryVault {
 	async modify(file: TFile, data: string): Promise<void> {
 		this.requireEntry(file.path);
 		this.files.set(file.path, { content: data, mtime: Date.now() });
+	}
+
+	/**
+	 * Mirrors Obsidian's atomic read-modify-write: the callback receives the
+	 * content read at operation time, and a throw from it rejects the whole
+	 * call without writing anything.
+	 */
+	async process<T>(file: TFile, fn: (data: string) => T): Promise<T> {
+		const entry = this.requireEntry(file.path);
+		this.processCalls.push(file.path);
+		const result = fn(entry.content);
+		entry.content = result as unknown as string;
+		entry.mtime = Date.now();
+		return result;
 	}
 
 	async append(file: TFile, data: string): Promise<void> {
@@ -285,7 +302,7 @@ describe("VaultExecutionEnv", () => {
 		expect(((result as { error: FileError }).error.code)).toBe("not_found");
 	});
 
-	it("writeFile creates parents and overwrites existing notes through vault.modify", async () => {
+	it("writeFile creates parents and overwrites existing notes through the atomic process primitive", async () => {
 		const vault = new MemoryVault([{ kind: "file", path: "Notes/Existing.md", content: "old" }]);
 		const env = new VaultExecutionEnvClass(createApp(vault));
 
@@ -478,6 +495,234 @@ describe("native harness tools over VaultExecutionEnv (issue #16 spike)", () => 
 
 		expect((read.content[0] as { text: string }).text).toContain("after edit");
 		expect(vault.readText("Loop2.md")).toBe("second note\n");
+	});
+});
+
+describe("write CAS (content ledger, PR-B)", () => {
+	it("overwrites existing files through the atomic process primitive", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "old" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.writeFile("/Note.md", "new");
+		expect(result.ok).toBe(true);
+		expect(vault.readText("Note.md")).toBe("new");
+		expect(vault.processCalls).toEqual(["Note.md"]);
+	});
+
+	it("compareAndWriteFile writes when the vault still matches the expectation", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "observed" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.compareAndWriteFile("/Note.md", "written", "observed");
+		expect(result.ok).toBe(true);
+		expect(vault.readText("Note.md")).toBe("written");
+	});
+
+	it("compareAndWriteFile refuses with an explicit conflict when content moved on, leaving the file untouched", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "changed by someone else" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.compareAndWriteFile("/Note.md", "stale write", "what I saw earlier");
+		expect(result.ok).toBe(false);
+		const failure = (result as { error: FileError }).error;
+		expect(failure.message).toContain("Write conflict");
+		expect(failure.message).toContain("Re-read");
+		expect(vault.readText("Note.md")).toBe("changed by someone else");
+	});
+
+	it("compareAndWriteFile reports not_found when the observed file vanished", async () => {
+		const vault = new MemoryVault([]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.compareAndWriteFile("/Gone.md", "text", "observed");
+		expect(result.ok).toBe(false);
+		expect((result as { error: { code: string } }).error.code).toBe("not_found");
+	});
+
+	it("a stale concurrent write fails loudly instead of silently clobbering the other session", async () => {
+		// Two sessions, two ledger views, one shared env — the shape the service
+		// builds per conversation. Both observe v1; A writes; B's write must be
+		// rejected on its stale baseline, never overwrite A's change.
+		const vault = new MemoryVault([{ kind: "file", path: "Shared.md", content: "v1" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const sessionA = ledger(env);
+		const sessionB = ledger(env);
+
+		await sessionA.readTextFile("/Shared.md");
+		await sessionB.readTextFile("/Shared.md");
+
+		const writeA = await sessionA.writeFile("/Shared.md", "v2 from A");
+		const writeB = await sessionB.writeFile("/Shared.md", "v2 from B");
+
+		expect(writeA.ok).toBe(true);
+		expect(writeB.ok).toBe(false);
+		expect((writeB as { error: { message: string } }).error.message).toContain("Write conflict");
+		expect(vault.readText("Shared.md")).toBe("v2 from A");
+	});
+
+	it("a session may keep writing its own freshly written file without re-reading", async () => {
+		const vault = new MemoryVault([]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const session = ledger(env);
+
+		const first = await session.writeFile("/Draft.md", "first");
+		const second = await session.writeFile("/Draft.md", "second");
+
+		expect(first.ok).toBe(true);
+		expect(second.ok).toBe(true);
+		expect(vault.readText("Draft.md")).toBe("second");
+	});
+
+	it("runs pi's native write tool end-to-end on a stale baseline through the ledger", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Tool.md", content: "v1" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const writeTool = adaptHarnessTool(core.createWriteTool(), { context: { env: ledger(env) } });
+
+		await writeTool.execute("cas-r", { path: "/Tool.md", content: "v1" });
+		// Someone else edits after the model's read.
+		await vault.modify(vault.getFileByPath("Tool.md")!, "edited elsewhere");
+		vault.processCalls.length = 0;
+
+		let thrown: unknown;
+		try {
+			await writeTool.execute("cas-c", { path: "/Tool.md", content: "full overwrite from stale read" });
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(Error);
+		expect((thrown as Error).message).toContain("Write conflict");
+		expect(vault.readText("Tool.md")).toBe("edited elsewhere");
+	});
+
+	it("runs pi's native edit tool end-to-end through the ledger", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "LedgerEdit.md", content: "alpha\nbeta\n" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const editTool = adaptHarnessTool(core.createEditTool(), { context: { env: ledger(env) } });
+
+		const result = await editTool.execute("cas-e", {
+			path: "/LedgerEdit.md",
+			edits: [{ oldText: "beta", newText: "BETA" }],
+		});
+		expect((result.content[0] as { text: string }).text).toContain("Successfully replaced");
+		expect(vault.readText("LedgerEdit.md")).toBe("alpha\nBETA\n");
+	});
+});
+
+describe("write CAS (content ledger, PR-B)", () => {
+	it("overwrites existing files through the atomic process primitive", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "old" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.writeFile("/Note.md", "new");
+		expect(result.ok).toBe(true);
+		expect(vault.readText("Note.md")).toBe("new");
+		expect(vault.processCalls).toEqual(["Note.md"]);
+	});
+
+	it("compareAndWriteFile writes when the vault still matches the expectation", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "observed" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.compareAndWriteFile("/Note.md", "written", "observed");
+		expect(result.ok).toBe(true);
+		expect(vault.readText("Note.md")).toBe("written");
+	});
+
+	it("compareAndWriteFile refuses with an explicit conflict when content moved on, leaving the file untouched", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "changed by someone else" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.compareAndWriteFile("/Note.md", "stale write", "what I saw earlier");
+		expect(result.ok).toBe(false);
+		const failure = (result as { error: FileError }).error;
+		expect(failure.message).toContain("Write conflict");
+		expect(failure.message).toContain("Re-read");
+		expect(vault.readText("Note.md")).toBe("changed by someone else");
+	});
+
+	it("compareAndWriteFile reports not_found when the observed file vanished", async () => {
+		const vault = new MemoryVault([]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+
+		const result = await env.compareAndWriteFile("/Gone.md", "text", "observed");
+		expect(result.ok).toBe(false);
+		expect((result as { error: { code: string } }).error.code).toBe("not_found");
+	});
+
+	it("a stale concurrent write fails loudly instead of silently clobbering the other session", async () => {
+		// Two sessions, two ledger views, one shared env — the shape the service
+		// builds per conversation. Both observe v1; A writes; B's write must be
+		// rejected on its stale baseline, never overwrite A's change.
+		const vault = new MemoryVault([{ kind: "file", path: "Shared.md", content: "v1" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const sessionA = ledger(env);
+		const sessionB = ledger(env);
+
+		await sessionA.readTextFile("/Shared.md");
+		await sessionB.readTextFile("/Shared.md");
+
+		const writeA = await sessionA.writeFile("/Shared.md", "v2 from A");
+		const writeB = await sessionB.writeFile("/Shared.md", "v2 from B");
+
+		expect(writeA.ok).toBe(true);
+		expect(writeB.ok).toBe(false);
+		expect((writeB as { error: { message: string } }).error.message).toContain("Write conflict");
+		expect(vault.readText("Shared.md")).toBe("v2 from A");
+	});
+
+	it("a session may keep writing its own freshly written file without re-reading", async () => {
+		const vault = new MemoryVault([]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const session = ledger(env);
+
+		const first = await session.writeFile("/Draft.md", "first");
+		const second = await session.writeFile("/Draft.md", "second");
+
+		expect(first.ok).toBe(true);
+		expect(second.ok).toBe(true);
+		expect(vault.readText("Draft.md")).toBe("second");
+	});
+
+	it("runs pi's native write tool end-to-end on a stale baseline through the ledger", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "Tool.md", content: "v1" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const writeTool = adaptHarnessTool(core.createWriteTool(), { context: { env: ledger(env) } });
+
+		await writeTool.execute("cas-r", { path: "/Tool.md", content: "v1" });
+		// Someone else edits after the model's read.
+		await vault.modify(vault.getFileByPath("Tool.md")!, "edited elsewhere");
+		vault.processCalls.length = 0;
+
+		let thrown: unknown;
+		try {
+			await writeTool.execute("cas-c", { path: "/Tool.md", content: "full overwrite from stale read" });
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(Error);
+		expect((thrown as Error).message).toContain("Write conflict");
+		expect(vault.readText("Tool.md")).toBe("edited elsewhere");
+	});
+
+	it("runs pi's native edit tool end-to-end through the ledger", async () => {
+		const vault = new MemoryVault([{ kind: "file", path: "LedgerEdit.md", content: "alpha\nbeta\n" }]);
+		const env = new VaultExecutionEnvClass(createApp(vault));
+		const { withContentLedger: ledger } = await import("./contentLedger");
+		const editTool = adaptHarnessTool(core.createEditTool(), { context: { env: ledger(env) } });
+
+		const result = await editTool.execute("cas-e", {
+			path: "/LedgerEdit.md",
+			edits: [{ oldText: "beta", newText: "BETA" }],
+		});
+		expect((result.content[0] as { text: string }).text).toContain("Successfully replaced");
+		expect(vault.readText("LedgerEdit.md")).toBe("alpha\nBETA\n");
 	});
 });
 
