@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_PROVIDER } from "./constants";
+import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./constants";
 import { installObsidianStub } from "./testUtils/obsidianStub";
 import type { PiemSettings } from "./settings";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
@@ -153,7 +153,7 @@ describe("getSelectedModel priority", () => {
 	it("uses the builtin catalog when no configured model is active", () => {
 		const model = getSelectedModel(builtinSettings());
 		expect(model.provider).toBe(DEFAULT_PROVIDER);
-		expect(model.id).toBe("deepseek-v4-pro");
+		expect(model.id).toBe(DEFAULT_MODEL_ID);
 	});
 });
 
@@ -177,7 +177,7 @@ describe("getConfiguredApiKey", () => {
 
 describe("describeModelTarget", () => {
 	it("names provider and model for builtin configurations", () => {
-		expect(describeModelTarget(builtinSettings(), t)).toBe("Deepseek/deepseek-v4-pro");
+		expect(describeModelTarget(builtinSettings(), t)).toBe(`Deepseek/${DEFAULT_MODEL_ID}`);
 	});
 });
 

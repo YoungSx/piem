@@ -51,13 +51,13 @@ import type { WireProtocol } from "../modelConfig";
  */
 const FALLBACK_MODEL: Model<WireProtocol> = {
 	id: DEFAULT_MODEL_ID,
-	name: "DeepSeek V4 Pro",
+	name: "DeepSeek V4 Flash",
 	api: "openai-completions",
 	baseUrl: "https://api.deepseek.com",
 	provider: DEFAULT_PROVIDER,
 	reasoning: true,
 	input: ["text"],
-	cost: { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 },
+	cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
 	contextWindow: 1_000_000,
 	maxTokens: 384_000,
 	compat: {
@@ -67,7 +67,7 @@ const FALLBACK_MODEL: Model<WireProtocol> = {
 		requiresReasoningContentOnAssistantMessages: true,
 		thinkingFormat: "deepseek",
 	},
-	thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", max: "max" },
+	thinkingLevelMap: { minimal: null, low: "low", medium: null, high: "high", max: "max" },
 };
 
 /**
