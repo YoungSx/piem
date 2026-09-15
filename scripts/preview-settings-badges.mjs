@@ -14,7 +14,14 @@ export async function settingsBadgesPreview({ document, styles, tokens, lightTok
 		{ name: "daily-review", description: "Review daily notes", path: "Piem/skills/daily-review/SKILL.md", dirName: "daily-review" },
 		{ name: "reading-list", description: "Keep a reading list", path: "Piem/skills/reading-list.md", dirName: "" },
 	];
+	const longDescription = "Read Piem/memory/MEMORY.md at the start of every conversation with substantive work. Save lasting preferences and verified lessons as the work proceeds, so the next session starts warm.".repeat(2);
+	const catalog = [
+		{ skill: { name: "link-graph", description: "Analyze the active note's backlinks, outgoing links, and missing connections.", content: "body", filePath: "Piem/skills/link-graph/SKILL.md" }, source: "vault" },
+		{ skill: { name: "summarize", description: "Summarize the active note or selection without changing it.", content: "body", filePath: "/Piem/builtin-skills/summarize/SKILL.md" }, source: "builtin" },
+		{ skill: { name: "vault-memory", description: longDescription, content: "body", filePath: "/Piem/builtin-skills/vault-memory/SKILL.md" }, source: "builtin" },
+	];
 	const report = {
+		builtin: { install: { status: "ready", removed: [], modified: [], problems: [] } },
 		vault: [0, 1].map((n) => ({ path: `Piem/skills/broken-${n}.md`, type: "warning", code: "file_info_failed", message: "Missing description" })),
 		templates: [],
 		user: {
@@ -46,7 +53,7 @@ export async function settingsBadgesPreview({ document, styles, tokens, lightTok
 		const host = {
 			app: {}, t, settings: { ...DEFAULT_SETTINGS, mcpServers: servers }, logger: NOOP_LOGGER,
 			refresh() {}, save: async () => {},
-			skills: { list: async () => ({ rows }), lastSkillLoad: () => report, refreshAgent: async () => {}, catalog: () => [], userSkillsAvailable: true },
+			skills: { list: async () => ({ rows }), lastSkillLoad: () => report, refreshAgent: async () => {}, catalog: () => catalog, userSkillsAvailable: true },
 			mcp: { states: () => servers, reconnect: () => pending },
 		};
 		const root = document.createElement("div");

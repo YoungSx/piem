@@ -3940,9 +3940,27 @@ button.piem-chat__latest--asking {
 	flex-wrap: wrap;
 }
 
+/*
+ * The info column grows into the leftover line but *starts* at zero: a wrapped
+ * flex row sizes its lines from the items' hypothetical widths, and a long
+ * description's hypothetical width would push the toggle to the next line
+ * before any shrinking could happen. Basis zero keeps the description a
+ * shrinkable, wrapping column and the switch on its right.
+ */
 .piem-settings-badged-row > .setting-item-info {
-	flex-grow: 1;
+	flex: 1 1 0;
 	min-width: 0;
+}
+
+/* The skill name doubles as the row's open action; it reads as a link. */
+.piem-settings-name-link {
+	color: var(--text-accent);
+	cursor: pointer;
+}
+
+.piem-settings-name-link:hover,
+.piem-settings-name-link:focus-visible {
+	text-decoration: underline;
 }
 
 .piem-settings-badged-row > .setting-item-control {
