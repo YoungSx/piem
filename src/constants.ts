@@ -3,7 +3,7 @@ export const VIEW_TYPE_PIEM_CHAT = `${PLUGIN_ID}-chat-view`;
 export const VIEW_TYPE_PIEM_LOGS = `${PLUGIN_ID}-logs-view`;
 export const VIEW_TYPE_PIEM_SUBAGENTS = `${PLUGIN_ID}-subagents-view`;
 export const DEFAULT_PROVIDER = "deepseek";
-export const DEFAULT_MODEL_ID = "deepseek-v4-pro";
+export const DEFAULT_MODEL_ID = "deepseek-v4-flash";
 /**
  * The thinking level a brand-new session starts on when nothing better is
  * known. The level belongs to the conversation (the composer's thinking
