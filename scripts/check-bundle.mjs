@@ -116,6 +116,12 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 19. The rpiv-todo scoped factory, generic compat bridge and scoped globals
  *     measured 2,197,264 B (+~34 KiB over the previous baseline). The ceiling
  *     follows to 2.11 MiB. No terminal runtime or filesystem image was added.
+ * 20. The audited @geminixiang/pi-agent-team scoped factory — the team runtime
+ *     and domain graph, the memberBridge substitution (recorder loaders plus
+ *     host-forwarded member session specs) and the compat wrapTextWithAnsi /
+ *     Markdown additions — measured 2,287,228 B (+~86 KiB). The ceiling
+ *     follows to 2.19 MiB. The user waived the byte gate for this feature;
+ *     the notch keeps the ruler reading honestly.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -130,7 +136,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.11 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.19 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

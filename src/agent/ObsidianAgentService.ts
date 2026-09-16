@@ -19,7 +19,6 @@ import {
 	type AgentMessage,
 	type AgentTool,
 	type Entry,
-	type ExecutionEnv,
 	type OperationStartedRecord,
 	type ShouldStopAfterTurnContext,
 	type PromptTemplate,

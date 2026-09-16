@@ -162,3 +162,15 @@ export function wrapPlainText(text: string, width: number): string[] {
 	}
 	return lines;
 }
+
+/**
+ * pi-tui's ANSI-carrying wrap, reached only from community widget decoration
+ * (`team-roster-widget` / `team-chat-view`) that piem never renders — tool
+ * cards go through the React layer. Column arithmetic already measures the
+ * plain text, so the standalone sentinels would ride along invisibly; the
+ * ponytail ceiling is that styles are dropped, not mismeasured, and the
+ * upgrade path is a sentinel-aware variant of the loop above.
+ */
+export function wrapTextWithAnsi(text: string, width: number): string[] {
+	return wrapPlainText(text, width);
+}

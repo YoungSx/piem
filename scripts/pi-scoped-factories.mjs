@@ -66,9 +66,34 @@ function closeOverPlatform(code, allowedImports, ts) {
 }
 
 const LOADERS = new Map([[".ts", "ts"], [".mts", "ts"], [".cts", "ts"], [".tsx", "tsx"], [".js", "js"], [".mjs", "js"], [".cjs", "js"], [".jsx", "jsx"], [".json", "json"]]);
+const MEMBER_BRIDGE = "member-bridge";
+
+/**
+ * Per-package import substitution: specifiers that reach pi internals piem
+ * does not ship get one replacement module, compiled into the graph and
+ * colored by the build-time platform like any other scoped shim. Listed as
+ * code, not audit data, for the same reason the compatibility table in
+ * `pi-extensions.mjs` is: the replacement is reviewed code, versioned with
+ * the compiler that inlines it.
+ */
+const SUBSTITUTIONS = new Map([
+	["@geminixiang/pi-agent-team", new Map([
+		["@earendil-works/pi-coding-agent", "src/extensions/team/memberBridge.ts"],
+	])],
+]);
 
 export async function buildScopedFactory(root, name, audit) {
 	root = path.resolve(root);
+	const rawSubstitutions = SUBSTITUTIONS.get(name);
+	const substitutions = rawSubstitutions
+		? new Map([...rawSubstitutions].map(([specifier, replacement]) => [specifier, path.resolve(root, replacement)]))
+		: undefined;
+	// One reviewed source file per substituted package — the bridge is the
+	// single shared replacement module for it, so a lookup keyed by namespace
+	// is enough today; a second entry needs its own namespace key.
+	const substitutionBridgeSource = substitutions?.size
+		? await readFile([...substitutions.values()][0], "utf8")
+		: undefined;
 	const graph = await auditedGraph(root, name, audit);
 	// Unrelated standalone tests only read the registry, without starting compilers.
 	const [{ default: esbuild }, { default: ts }] = await Promise.all([import("esbuild"), import("typescript")]);
@@ -93,7 +118,7 @@ export async function buildScopedFactory(root, name, audit) {
 	for (const scope of ["@earendil-works", "@mariozechner"]) {
 		for (const suffix of ["", "/compat"]) modules.set(`${scope}/pi-ai${suffix}`, `export { Type } from "typebox"; export { StringEnum } from ${JSON.stringify(path.join(compatibility, "piAI.ts"))}; ${platformExport(["complete", "getEnvApiKey"])}`);
 		modules.set(`${scope}/pi-coding-agent`, `export { DynamicBorder, theme, getSelectListTheme } from ${JSON.stringify(codingAgent)}; ${platformExport(["getAgentDir", "BorderedLoader"])} export { truncateHead, truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from ${JSON.stringify(truncate)};`);
-		modules.set(`${scope}/pi-tui`, `export { Container, SelectList, Key, matchesKey, parseKey, getKeybindings, visibleWidth, truncateToWidth } from ${JSON.stringify(tui)}; ${platformExport(["Text"])}`);
+		modules.set(`${scope}/pi-tui`, `export { Container, Markdown, SelectList, Key, matchesKey, parseKey, getKeybindings, visibleWidth, truncateToWidth, wrapTextWithAnsi } from ${JSON.stringify(tui)}; ${platformExport(["Text"])}`);
 	}
 	const built = await esbuild.build({
 		stdin: { contents: `export { default } from ${JSON.stringify(graph.entry.entry)};`, resolveDir: root, loader: "js" },
@@ -113,6 +138,7 @@ export async function buildScopedFactory(root, name, audit) {
 						return { path: relativeSource(owner, args.importer, args.path) };
 					}
 					if (args.path === PLATFORM || pureImports.has(args.path)) return { path: args.path, external: true, sideEffects: false };
+					if (substitutions?.has(args.path)) return { path: args.path, namespace: MEMBER_BRIDGE };
 					const builtin = args.path.replace(/^node:/, "");
 					if (modules.has(builtin)) return { path: builtin, namespace: BINDINGS };
 					if (pureModules.has(builtin)) return { path: pureModules.get(builtin), external: true, sideEffects: false };
@@ -127,8 +153,15 @@ export async function buildScopedFactory(root, name, audit) {
 					throw new Error(`Unaudited scoped extension dependency: ${args.path}`);
 				});
 				build.onLoad({ filter: /.*/, namespace: BINDINGS }, args => ({ contents: modules.get(args.path), loader: "js" }));
+				// The substituted bridge is real reviewed TS, styled like any piem
+				// module; it stays self-contained so only its platform import
+				// escapes into the closeOverPlatform bindings.
+				build.onLoad({ filter: /.*/, namespace: MEMBER_BRIDGE }, () => ({
+					contents: substitutionBridgeSource,
+					loader: "ts",
+				}));
 				build.onLoad({ filter: /.*/, namespace: "file" }, args => {
-					const owner = [...graph.packages.values()].find(item => item.files.has(args.path));
+						const owner = [...graph.packages.values()].find(item => item.files.has(args.path));
 					if (!owner) throw new Error(`Unaudited extension source: ${args.path}`);
 					const loader = LOADERS.get(path.extname(args.path));
 					if (!loader) throw new Error(`Unsupported audited source type: ${args.path}`);

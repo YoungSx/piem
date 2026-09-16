@@ -5,6 +5,7 @@ import { unavailable } from "./node/unavailable";
 import { EXTENSION_CONFIG_ROOT, type ExtensionConfigStore } from "./extensionConfigStore";
 import { createExtensionRequestPool, createExtensionResources } from "./extensionResources";
 import { createScopedProcess } from "./node/scopedProcess";
+import type { MemberSessionHandle, MemberSessionSpec } from "./team/memberTypes";
 
 export interface ExtensionPlatformCallbacks {
 	fetch: FetchFn;
@@ -16,6 +17,13 @@ export interface ExtensionPlatformCallbacks {
 	 * one — the operations fail visibly rather than reading an empty store.
 	 */
 	config?: ExtensionConfigStore;
+	/**
+	 * One member session for the agent-team bridge (decision 3 of five: the
+	 * member session must open and continue like any ordinary conversation,
+	 * so it belongs to the conversation host's runtime pool). Optional until
+	 * the host supplies it; absent means the tool fails visibly, not silently.
+	 */
+	createMemberSession?(spec: MemberSessionSpec): Promise<MemberSessionHandle>;
 	onError(error: unknown): void;
 	activityChanged?(busy: boolean): void;
 	beforeTimer?(): Promise<void>;
@@ -37,6 +45,8 @@ export interface ExtensionPlatform {
 	chmodSync(path: string, mode: unknown): void;
 	Text: new (...args: unknown[]) => object;
 	BorderedLoader: new (...args: unknown[]) => object;
+	/** Member session construction for the agent-team bridge; always resolvable, visibly fails without a host. */
+	createMemberSession(spec: MemberSessionSpec): Promise<MemberSessionHandle>;
 	process: Readonly<{ env: Readonly<Record<string, string | undefined>> }>;
 	setTimeout(callback: (...args: unknown[]) => unknown, delay?: number, ...args: unknown[]): number;
 	clearTimeout(id?: number): void;
@@ -263,6 +273,9 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		...configView(undefined),
 		Text: UnsupportedTerminal,
 		BorderedLoader: UnsupportedTerminal,
+		createMemberSession: spec => callbacks.createMemberSession
+			? callbacks.createMemberSession(spec)
+			: Promise.reject(new Error("Member sessions require the conversation host to implement createMemberSession.")),
 		process: Object.freeze({ env: Object.freeze({}) }),
 		setTimeout: (callback, delay = 0, ...args) => {
 			const scope = requireScope();
