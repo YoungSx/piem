@@ -211,7 +211,7 @@ about the case `pre-wrap` fails on.
 
 ### Pre-releases (the BRAT track)
 
-- **To ship a beta to testers without the community store following it, do not touch `master`'s version files.** The store bot reads the *default branch's* `manifest.json` and serves the release tagged with that version — a beta that never lands there is invisible to it. The same bump on a side branch is exactly what BRAT wants: since 1.1.0 BRAT tracks GitHub releases directly and picks the latest release or pre-release by semver, independent of the default branch.
+- **To ship a beta to testers without the community store following it, do not touch `master`'s version files.** The store bot reads the *default branch's* `manifest.json` and serves the release tagged with that version — a beta that never lands there is invisible to it. The same bump on a side branch is exactly what BRAT wants: BRAT (current) tracks GitHub releases directly and picks the latest release or pre-release by semver, independent of the default branch.
 - **The flow, by hand (`release.mjs` is stable-track only — it always commits the bump to `master`):**
     1. Cut a `release/x.y.z-beta.N` branch off `master` (or off the feature branch under test).
     2. Bump all three homes — `manifest.json`, `package.json`, `versions.json` — to the beta version. The release workflow verifies each against the tag and fails otherwise; `release.mjs` normally stamps them for you, so by hand this is the step to get right.
