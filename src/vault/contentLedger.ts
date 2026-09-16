@@ -89,8 +89,8 @@ export function withContentLedger(env: VaultExecutionEnv): ExecutionEnv {
 						return result;
 					};
 				default: {
-					const value = Reflect.get(target, property, target);
-					return typeof value === "function" ? value.bind(target) : value;
+					const value: unknown = Reflect.get(target, property, target);
+					return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
 				}
 			}
 		},

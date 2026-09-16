@@ -1,4 +1,4 @@
-import type { AgentHarnessTool, ExecutionEnv, ExecutionToolContext, ToolExecutionMode } from "@earendil-works/pi-agent-core";
+import type { AgentHarnessTool, ExecutionToolContext, ToolExecutionMode } from "@earendil-works/pi-agent-core";
 import type { AgentTool, AgentToolUpdateCallback, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "typebox";
 import { VaultExecutionEnv } from "./VaultExecutionEnv";

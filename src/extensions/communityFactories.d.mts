@@ -8,4 +8,5 @@ export function createClarify(platform: ExtensionPlatform): ExtensionFactory;
 export function createContext(platform: ExtensionPlatform): ExtensionFactory;
 export function createRpivTodo(platform: BackgroundExtensionPlatform): ExtensionFactory;
 export function createOtel(platform: BackgroundExtensionPlatform): ExtensionFactory;
+export function createAgentTeam(platform: ExtensionPlatform): ExtensionFactory;
 export function hasClarifyMarker(text: string): boolean;

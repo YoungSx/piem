@@ -5119,5 +5119,22 @@
 				}
 			}
 		}
+	},
+	"@geminixiang/pi-agent-team": {
+		"entry": "src/extension.ts",
+		"version": "0.3.0",
+		"virtualRoot": "/extensions/@geminixiang/pi-agent-team",
+		"files": {
+			"src/domain.ts": "6335b8904708ce70ed8dd1558cea8392a6e581a0c1552dc39aab6d242cd101a8",
+			"src/extension.ts": "4a94379ef311bb56805459c74c05968f662756300ccdf599cd520ceae6b225d0",
+			"src/index.ts": "241c24d1eecadcab16fc27b4cd4f3ac01f9ab69738ad1472ad9d69fa695fe0c5",
+			"src/member-colors.ts": "9d8c4d3d510bf6022d92b3b752795fd1d5e5332e4236f93bfb0c07532a523bd5",
+			"src/pi-agent.ts": "33cc6829cc92f6283292302d522519a40cc244619cc79cc372cd315e4171f4b5",
+			"src/run-manager.ts": "a839adaf0f04ffdda411fb2e9f70e37103843c49655cf80ae5d688617807cad6",
+			"src/runtime.ts": "9bf59d7786defeeada3894156feb1bbc2add618a9692e22747302d5c1e419096",
+			"src/team-chat-view.ts": "18032a8fb97705de456c00521d2b26c825d7f9f1d77bdcc8aabc8aac540a107e",
+			"src/team-roster-widget.ts": "a1898196d96d986292d89216a33850cbe2a3f2f01d2e4607426e9c5538acf1df",
+			"src/turn-state.ts": "c41b0bbcb0ebae8e951241921016cec122ffb20c8295a5112af6be213c9a75ae"
+		}
 	}
 }

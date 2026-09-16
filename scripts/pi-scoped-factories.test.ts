@@ -4,6 +4,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import vm from "node:vm";
 import { buildScopedFactory } from "./pi-scoped-factories.mjs";
 
@@ -333,5 +334,127 @@ describe("generic scoped extension compiler", () => {
 				await expect(buildScopedFactory(setup.directory, "contract", audit)).rejects.toThrow(error);
 			}
 		} finally { setup.dispose(); }
+	});
+});
+
+describe("agent team member bridge (scoped substitution)", () => {
+	/**
+	 * The real audited package, compiled the way the production build does, is
+	 * the acceptance surface for the bridge: its pi-coding-agent face must come
+	 * from the member bridge inside this repo (the audited graph compiles with
+	 * the substitution, not pi's own creators), and the package's team
+	 * machinery must reach the host for each member session — through one
+	 * normalized spec — without touching real pi internals.
+	 */
+	const audit = JSON.parse(readFileSync("scripts/pi-extension-packages.json", "utf8"))["@geminixiang/pi-agent-team"];
+
+	/**
+	 * A host stand-in that records every member spec and rejects the session,
+	 * so the run settles on member errors instead of looping turns. Members
+	 * surfaced as errored are exactly the scaffold's way of keeping the probe
+	 * synchronous with the first coordination round.
+	 */
+	function teamHost() {
+		const tools = new Map<string, { name: string; execute: unknown }>();
+		const events = new Map<string, () => unknown>();
+		const specs: Array<Record<string, unknown>> = [];
+		const platform = {
+			fetch: () => Promise.reject(new Error("not reached")),
+			complete: () => Promise.reject(new Error("not reached")),
+			getAgentDir: () => "/extensions/config",
+			readFileSync: () => undefined, existsSync: () => false, mkdirSync: () => {}, writeFileSync: () => {}, unlinkSync: () => {}, readdirSync: () => [], chmodSync: () => {},
+			Text: class {}, BorderedLoader: class {},
+			// Team pacing sleeps through timers; firing each immediately keeps the
+			// run moving without wall-clock waits.
+			process: { env: {} }, setTimeout: (callback: () => void) => { queueMicrotask(callback); return 0; }, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {},
+			createMemberSession: async (spec: Record<string, unknown>) => {
+				specs.push(spec);
+				throw new Error("test-scaffold-no-session");
+			},
+		};
+		const pi = {
+			registerTool(tool: { name: string; execute: unknown }): void { void tools.set(tool.name, tool); },
+			on(event: string, handler: () => unknown): void { void events.set(event, handler); },
+		};
+		return {
+			tools, events, specs, platform, pi,
+			runTeamStart: async (context: Record<string, unknown>) =>
+				await (tools.get("team_start")!.execute as never as (
+					id: string, params: unknown, signal: undefined, onUpdate: undefined, context: unknown,
+				) => Promise<{ content: Array<{ type: string; text: string }> }>)("call-1", {
+					objective: "write one haiku",
+					members: [{ id: "m1", name: "Alice" }, { id: "m2", name: "Bob" }],
+					initialMessage: "begin",
+				}, undefined, undefined, context),
+		};
+	}
+
+	const memberContext = () => ({
+		mode: "rpc",
+		cwd: "/vault",
+		model: { id: "parent-model" },
+		modelRegistry: { runtime: { id: "runtime" } },
+		thinkingLevel: "max",
+		sessionManager: { getSessionFile: () => "parent-session.jsonl" },
+		ui: undefined,
+	});
+
+	it("compiles with the member bridge substituted and platform bindings closed over", async () => {
+		const { contents } = await buildScopedFactory(process.cwd(), "@geminixiang/pi-agent-team", audit);
+		expect(contents).toContain("createMemberSession, getAgentDir");
+		expect(contents).toContain("agent team");
+		// Every platform import was lifted into the closure; none stays ambient.
+		expect(contents).not.toContain('"piem:extension-platform"');
+	});
+
+	it("registers the control tools and forwards one normalized spec per member to the host", async () => {
+		const { contents } = await buildScopedFactory(process.cwd(), "@geminixiang/pi-agent-team", audit);
+		// The generated module keeps `typebox` external, so the temp directory
+		// lives inside the repo tree, where bun's resolution can see node_modules.
+		const directory = mkdtempSync(path.join(root, "node_modules", "pi-agent-team-factory-"));
+		const fileName = path.join(directory, "factory.mjs");
+		writeFileSync(fileName, contents);
+		// The injected global document layer reaches `window.crypto` for member ids.
+		const previousWindow = globalThis.window;
+		globalThis.window = { crypto: webcrypto } as unknown as typeof window;
+		try {
+			const module = await import(pathToFileURL(fileName).href);
+			const host = teamHost();
+			module.createFactory(host.platform)(host.pi);
+
+			expect([...host.tools.keys()].sort()).toEqual([
+				"team_cancel", "team_get", "team_prompt", "team_start", "team_wait",
+			]);
+			expect(host.events.has("session_shutdown")).toBe(true);
+
+			const result = await host.runTeamStart(memberContext());
+			// Every member reached the bridge; the run settled quiescent with both
+			// members errored by the scaffold.
+			expect(result.content.map(part => part.text).join("\n")).toContain("errored-members-remain");
+			// One spec per member, in member order, each a faithful echo of the
+			// request piem answers with its own runtime pool session.
+			expect(host.specs).toHaveLength(2);
+			const alice = host.specs[0]!;
+			expect(alice).toMatchObject({
+				cwd: "/vault",
+				model: { id: "parent-model" },
+				modelRuntime: { id: "runtime" },
+				thinkingLevel: "medium",
+				parentSession: "parent-session.jsonl",
+			});
+			expect(String(alice.systemPrompt)).toContain("one symmetric worker");
+			expect(Array.from(alice.customTools as { name: string }[]).map(tool => tool.name)).toContain("team_say");
+			// The skill filter the package supplies must withhold its operator skill.
+			const filtered = (alice.skillsOverride as (base: { skills: { name: string }[] }) => { skills: { name: string }[] })({
+				skills: [{ name: "pi-agent-team" }, { name: "vault-memory" }],
+			});
+			expect(filtered.skills.map(skill => skill.name)).toEqual(["vault-memory"]);
+			// The failed run is closed down with the host's own shutdown chain.
+			host.events.get("session_shutdown")!();
+		} finally {
+			if (previousWindow === undefined) delete (globalThis as { window?: Window }).window;
+			else globalThis.window = previousWindow;
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 });

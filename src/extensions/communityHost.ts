@@ -7,7 +7,7 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type BackgroundExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { createClarify, createContext, createOtel, createRpivTodo, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
+import { createAgentTeam, createClarify, createContext, createOtel, createRpivTodo, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMessage" | "sendUserMessage"> {
 	platform: Omit<ExtensionPlatformCallbacks, "complete">;
@@ -88,6 +88,10 @@ export class CommunityHost {
 			// during registration itself, before any chat operation opens, and its
 			// event handlers outlive the operation that emitted the event.
 			{ id: "@juicesharp/rpiv-todo", createFactory: platform => createRpivTodo(platform) },
+			// Session-bound like the scope above: its member sessions must anchor
+			// to the conversation that started the team, so a static closure over
+			// one extension's config view would be the wrong owner.
+			{ id: "@geminixiang/pi-agent-team", factory: createAgentTeam(scoped("@geminixiang/pi-agent-team")) },
 			{ id: "pi-otel", createFactory: platform => {
 				Object.assign(platform.process.env, this.otelDisabled ? {} : callbacks.otelEnvironment?.() ?? {});
 				return createOtel(platform);

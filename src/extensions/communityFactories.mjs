@@ -8,5 +8,6 @@ export { createFactory as createClarify } from "pi-scoped-factory:pi-clarify";
 export { createFactory as createContext } from "pi-scoped-factory:pi-context";
 export { createFactory as createRpivTodo } from "pi-scoped-factory:@juicesharp/rpiv-todo";
 export { createFactory as createOtel } from "pi-scoped-factory:pi-otel";
+export { createFactory as createAgentTeam } from "pi-scoped-factory:@geminixiang/pi-agent-team";
 // Reuse the upstream input grammar at the composer routing boundary too.
 export { hasClarifyMarker } from "../../node_modules/pi-clarify/src/marker.ts";

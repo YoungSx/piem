@@ -56,3 +56,15 @@ export class Text implements CompatComponent {
 	}
 	dispose(): void { this.disposed = true; this.text = ""; this.customBgFn = undefined; }
 }
+
+/**
+ * pi-tui's markdown component, constructed only by the agent-team chat view
+ * (its fourth argument is a markdown theme the compat surface carries but a
+ * plain-text render never reads). Rendering plain keeps the widget's body in
+ * one place and leaves the terminal renderer unbundled.
+ */
+export class Markdown extends Text {
+	constructor(text = "", paddingX = 0, paddingY = 0) {
+		super(text, paddingX, paddingY);
+	}
+}
