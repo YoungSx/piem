@@ -152,8 +152,29 @@ describe("Obsidian extension UI ownership", () => {
 		expect(() => ui.setEditorText("Leak")).toThrow("inactive conversation");
 		expect(() => ui.pasteToEditor("Leak")).toThrow("inactive conversation");
 		expect(() => ui.setWidget("x", ["Leak"])).toThrow("inactive conversation");
+		expect(() => ui.setWorkingMessage("Leak")).toThrow("inactive conversation");
+		expect(() => ui.setToolsExpanded(true)).toThrow("inactive conversation");
 		await expect(ui.input("Old question")).rejects.toThrow("inactive conversation");
 		ui.dispose();
 		expect(() => ui.setStatus("x", "Leak")).toThrow("inactive conversation");
+	});
+
+	it("manages working message and tool expansion state, resetting on rebuild", async () => {
+		const { ui } = setup();
+		expect(ui.getToolsExpanded()).toBe(false);
+		expect(ui.getWorkingMessage()).toBeUndefined();
+
+		ui.setToolsExpanded(true);
+		expect(ui.getToolsExpanded()).toBe(true);
+		expect(ui.getSnapshot().toolsExpanded).toBe(true);
+
+		ui.setWorkingMessage("Working on vault...");
+		expect(ui.getWorkingMessage()).toBe("Working on vault...");
+		expect(ui.getSnapshot().workingMessage).toBe("Working on vault...");
+
+		ui.reset();
+		expect(ui.getSnapshot()).toEqual({ widgets: [], statuses: [] });
+		expect(ui.getToolsExpanded()).toBe(false);
+		expect(ui.getWorkingMessage()).toBeUndefined();
 	});
 });

@@ -96,4 +96,17 @@ describe("native extension surfaces", () => {
 		expect(host.querySelector("section")).toBeNull();
 		expect(ui.getSnapshot()).toEqual({ widgets: [], statuses: [] });
 	});
+
+	it("renders working message below the editor when set and clears on undefined", async () => {
+		const { ui, host } = await setup();
+		ui.setWorkingMessage("Indexing vault notes...");
+		await flushRender();
+
+		const below = host.querySelector("[data-position=below]")!;
+		expect(below.querySelector(".piem-chat__extension-status")?.textContent).toContain("Indexing vault notes...");
+
+		ui.setWorkingMessage(undefined);
+		await flushRender();
+		expect(below.querySelector(".piem-chat__extension-status")).toBeNull();
+	});
 });

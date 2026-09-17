@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { MarkdownRenderer, type App, type Component } from "obsidian";
+import type { MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import { resolveTextFace, resolveTextRenderMode, type TextBlockKind } from "./markdownPolicy";
 import { markUnresolvedLinks, routeMarkdownLinkClick } from "./markdownLinks";
 import { useT } from "./TranslatorContext";
@@ -24,6 +25,8 @@ export interface MarkdownTextProps {
 	 * block the model is still writing. Absent for every settled block.
 	 */
 	className?: string;
+	/** Optional extension-registered Markdown transformation pipeline. */
+	transformMarkdown?: (markdown: string, context: MarkdownTransformContext) => string;
 }
 
 /**
@@ -44,13 +47,16 @@ export interface MarkdownTextProps {
  * did not. The class states the typeface either way rather than leaving it to one
  * blanket rule.
  */
-export function MarkdownText({ text, kind, isStreaming = false, app, component, sourcePath, className }: MarkdownTextProps): React.JSX.Element {
+export function MarkdownText({ text, kind, isStreaming = false, app, component, sourcePath, className, transformMarkdown }: MarkdownTextProps): React.JSX.Element {
 	const faceClass = `piem-chat__text--${resolveTextFace(kind)}`;
 	const blockClass = className ? `${faceClass} ${className}` : faceClass;
+	const messageType: MarkdownTransformContext["messageType"] =
+		kind === "thinking" ? "assistant-thinking" : (kind === "user" ? "user" : "assistant");
+	const renderedText = transformMarkdown ? transformMarkdown(text, { messageType, isStreaming, availableWidth: 80 }) : text;
 	if (resolveTextRenderMode(kind, isStreaming) === "plain") {
-		return <pre className={`piem-chat__text ${blockClass}`}>{text}</pre>;
+		return <pre className={`piem-chat__text ${blockClass}`}>{renderedText}</pre>;
 	}
-	return <MarkdownContainer markdown={text} faceClass={blockClass} app={app} component={component} sourcePath={sourcePath} />;
+	return <MarkdownContainer markdown={renderedText} faceClass={blockClass} app={app} component={component} sourcePath={sourcePath} />;
 }
 
 /**

@@ -75,14 +75,24 @@ export function createNativeExtensionUI(
 			adapter().addAutocompleteProvider(scopedFactory);
 			autocomplete.push({ factory: scopedFactory, scope });
 		},
-		onTerminalInput: deny, setWorkingMessage: deny, setWorkingVisible: deny,
+		onTerminalInput: deny,
+		setWorkingMessage: message => {
+			lifetime.assertActive();
+			adapter().setWorkingMessage?.(message);
+		},
+		setWorkingVisible: deny,
 		setWorkingIndicator: deny, setHiddenThinkingLabel: deny, setFooter: deny,
 		setHeader: deny, setTitle: deny, custom: components.custom, setEditorComponent: deny,
 		getEditorComponent: deny, get theme() { lifetime.assertActive(); return theme as ExtensionUIContext["theme"]; },
-		// Upstream widgets read this on every render; this host always shows the
-		// collapsed tool view, so a visible false is truthful rather than denied.
-		getToolsExpanded: () => false,
-		getAllThemes: deny, getTheme: deny, setTheme: deny, setToolsExpanded: deny,
+		getToolsExpanded: () => {
+			lifetime.assertActive();
+			return adapter().getToolsExpanded?.() ?? false;
+		},
+		getAllThemes: deny, getTheme: deny, setTheme: deny,
+		setToolsExpanded: expanded => {
+			lifetime.assertActive();
+			adapter().setToolsExpanded?.(expanded);
+		},
 	};
 	return {
 		ui,

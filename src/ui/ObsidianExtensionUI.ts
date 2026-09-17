@@ -15,6 +15,8 @@ export interface ExtensionUISnapshot {
 	shortcuts?: readonly ExtensionShortcutAction[];
 	shortcutPending?: string;
 	shortcutError?: string;
+	workingMessage?: string;
+	toolsExpanded?: boolean;
 }
 
 export const EMPTY_EXTENSION_UI: ExtensionUISnapshot = { widgets: [], statuses: [] };
@@ -107,6 +109,24 @@ export class ObsidianExtensionUI implements ExtensionUIAdapter {
 		this.publish({ ...this.snapshot, shortcutError: undefined, shortcutPending: undefined,
 			shortcuts: shortcuts.map(action => ({ ...action, run: () => this.runShortcut(action, revision) })),
 		});
+	}
+
+	setWorkingMessage(message?: string): void {
+		this.assertActive();
+		this.publish({ ...this.snapshot, workingMessage: message });
+	}
+
+	getWorkingMessage(): string | undefined {
+		return this.snapshot.workingMessage;
+	}
+
+	setToolsExpanded(expanded: boolean): void {
+		this.assertActive();
+		this.publish({ ...this.snapshot, toolsExpanded: expanded });
+	}
+
+	getToolsExpanded(): boolean {
+		return this.snapshot.toolsExpanded ?? false;
 	}
 
 	/** The panel calls this only from its own textarea; no global hotkeys. */

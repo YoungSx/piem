@@ -19,13 +19,13 @@ behavior.
 | --- | --- |
 | Loading | Original `loadExtensionFromFactory`, static sources only |
 | Execution | Original `ExtensionRunner` and tool wrapper; tools run sequentially |
-| Registration | Commands, tools, shortcuts, handlers and private event bus; unsupported events and conflicting names skip that extension; ignored renderers/Markdown transformers are logged; flags retain registered defaults |
+| Registration | Commands, tools, shortcuts, handlers and private event bus; Markdown transformers chain across chat blocks; unsupported events and conflicting names skip that extension; ignored renderers are logged; flags retain registered defaults |
 | Context | Original `context` pipeline, in order; a failed handler aborts the request |
 | Tool interception | Original `tool_call` / `tool_result` emitters through pi's own agent hooks; a blocked call does not run, in-place `input` patches reach the tool, and a failed handler becomes that one call's error |
 | Session | Read views refreshed from the owning Vault session and lane; custom entries and labels flush before success and summary branches publish through an awaited Vault adapter |
 | Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth |
 | Messages | Operation-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 pending messages; private `/acm` stays inside the host |
-| UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete and shortcut actions; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
+| UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete, shortcuts, working message and tool expansion state; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
 | Node | Virtual path/URL/environment, EventEmitter, browser Buffer, Web Crypto randomness, synchronous SHA-256, immutable UTF-8 package resources |
 | Lifetime | One host per conversation; stop invalidates pending work, reload invalidates old APIs, and owned timers and requests are tracked to completion |
 
@@ -67,8 +67,9 @@ can discard this temporary state.
 
 `registerFlag` retains Pi's declared default, which `getFlag` returns. An unknown
 flag, or one without a value, returns `undefined`; Obsidian supplies no CLI
-arguments. Message/entry renderers and Markdown transformers are currently
-registered but not rendered, with a diagnostic in the extension load report.
+arguments. Markdown transformers chain across registered extensions to transform
+chat text before rendering. Message and entry renderers are currently registered
+but not rendered, with a diagnostic in the extension load report.
 
 ## Package imports
 
@@ -98,9 +99,11 @@ Stop, panel closure and conversation changes dismiss pending dialogs. Timed
 dialogs display a countdown and release their timer when closed.
 
 `setWidget` accepts text lines or a supported component factory above or below
-the composer. `setStatus` displays text beneath it. `addAutocompleteProvider`
-wraps native completion data; users can type or select **Show suggestions**,
-then choose with touch or the keyboard.
+the composer. `setStatus` displays text beneath it, and `setWorkingMessage` sets
+an ephemeral working message below the composer. `getToolsExpanded` and
+`setToolsExpanded` read and control trace tool expansion for the conversation.
+`addAutocompleteProvider` wraps native completion data; users can type or
+select **Show suggestions**, then choose with touch or the keyboard.
 Suggestions fill the draft; they do not send it. Existing slash commands and Tab
 focus navigation are preserved. Reopening a panel restores its extension text
 and completion providers without repeating `session_start`.
