@@ -13,6 +13,7 @@ import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
 import type { PiemSettings } from "../settings";
 import type { ObsidianAgentService as ObsidianAgentServiceType } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
+import { withRunawayGuard, createBoundedCollector } from "../testUtils/runawayGuard";
 
 // The obsidian stub is process-global and must be registered before any module
 // that imports `obsidian` is evaluated — same ordering the service tests use.
@@ -330,14 +331,14 @@ function multiSessionStreamFn(): {
 		[HANG_A, false],
 		[HANG_B, false],
 	]);
-	const streamFn: StreamFn = (model, context, options) => {
+	const streamFn: StreamFn = withRunawayGuard((model, context, options) => {
 		const prompt = lastUserPromptText(context);
 		if (prompt === HANG_A || prompt === HANG_B) {
 			entered.set(prompt, true);
 			return hangingStream(model, options, () => aborted.set(prompt, true));
 		}
 		return scriptedTextStream(model, `pong:${prompt}`);
-	};
+	}, { maxCalls: 100, label: "multiSessionStreamFn" });
 	return { streamFn, entered, aborted };
 }
 
@@ -356,7 +357,7 @@ function deferredStreamFn(): {
 } {
 	const started = new Set<string>();
 	const held = new Map<string, { stream: ReturnType<typeof createAssistantMessageEventStream>; model: Model<Api> }>();
-	const streamFn: StreamFn = (model, context) => {
+	const streamFn: StreamFn = withRunawayGuard((model, context) => {
 		const prompt = lastUserPromptText(context);
 		if (!prompt.startsWith("slow-")) {
 			return scriptedTextStream(model, `pong:${prompt}`);
@@ -365,7 +366,7 @@ function deferredStreamFn(): {
 		held.set(prompt, { stream, model });
 		started.add(prompt);
 		return stream;
-	};
+	}, { maxCalls: 100, label: "deferredStreamFn" });
 	const finish = (prompt: string, text: string): void => {
 		const pending = held.get(prompt);
 		if (!pending) {
@@ -436,7 +437,7 @@ function delegatingStreamFn(): {
 } {
 	let spawned = false;
 	let child: { stream: ReturnType<typeof createAssistantMessageEventStream>; model: Model<Api> } | undefined;
-	const streamFn: StreamFn = (model, context) => {
+	const streamFn: StreamFn = withRunawayGuard((model, context) => {
 		// The subagent system prompt is the only thing that names a delegated task —
 		// same discriminator the service's own delegation test uses.
 		if (context.systemPrompt?.includes("delegated task") ?? false) {
@@ -449,7 +450,7 @@ function delegatingStreamFn(): {
 			return scriptedToolCallStream(model, "spawn_1", "spawn_subagent", { task: "Sweep the vault", role: "scout" });
 		}
 		return scriptedTextStream(model, "delegated");
-	};
+	}, { maxCalls: 100, label: "delegatingStreamFn" });
 	const finishChild = (text: string): void => {
 		if (!child) {
 			throw new Error("No child run is waiting");
@@ -915,25 +916,28 @@ describe("agent-team member sessions through the service", () => {
 			},
 		);
 		try {
-			const contexts: Context[] = [];
+			const contexts = createBoundedCollector<Context>(50);
 			let parentRequests = 0;
 			let memberCalls = 0;
-			const streamFn: StreamFn = (model, context) => {
-				contexts.push({ ...context, messages: [...context.messages] });
-				if (String(context.systemPrompt ?? "").includes("one symmetric worker")) {
-					memberCalls += 1;
-					return scriptedToolCallStream(model, `member-${memberCalls}`, "team_finish", { summary: "scripted member is done" });
-				}
-				parentRequests += 1;
-				if (parentRequests === 1) {
-					return scriptedToolCallStream(model, "team_start_1", "team_start", {
-						objective: "each member finishes at once",
-						members: [{ id: "m1", name: "Alice" }, { id: "m2", name: "Bob" }],
-						initialMessage: "begin",
-					});
-				}
-				return scriptedTextStream(model, "team settled");
-			};
+			const streamFn: StreamFn = withRunawayGuard(
+				(model, context) => {
+					contexts.push({ ...context, messages: [...context.messages] });
+					if (String(context.systemPrompt ?? "").includes("one symmetric worker")) {
+						memberCalls += 1;
+						return scriptedToolCallStream(model, `member-${memberCalls}`, "team_finish", { summary: "scripted member is done" });
+					}
+					parentRequests += 1;
+					if (parentRequests === 1) {
+						return scriptedToolCallStream(model, "team_start_1", "team_start", {
+							objective: "each member finishes at once",
+							members: [{ id: "m1", name: "Alice" }, { id: "m2", name: "Bob" }],
+							initialMessage: "begin",
+						});
+					}
+					return scriptedTextStream(model, "team settled");
+				},
+				{ maxCalls: 50, label: "multiSession.teamStreamFn" },
+			);
 			const service = createService(new MemoryAdapter(), streamFn);
 			try {
 				expect(await service.sendPrompt("Start a two-member team")).toBe(true);
