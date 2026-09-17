@@ -6,8 +6,14 @@ import { unavailable } from "./unavailable";
 export function randomUUID(options?: unknown): string {
 	if (options !== undefined) return unavailable("crypto.randomUUID options");
 	const crypto = window.crypto;
-	if (!crypto?.randomUUID) return unavailable("crypto.randomUUID without Web Crypto");
-	return crypto.randomUUID();
+	if (crypto?.randomUUID) return crypto.randomUUID();
+	if (!crypto?.getRandomValues) return unavailable("crypto.randomUUID without Web Crypto");
+	const bytes = Buffer.alloc(16);
+	crypto.getRandomValues(bytes);
+	bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+	bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+	const hex = bytes.toString("hex");
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 /** Synchronous Node shape, with Web Crypto's per-call 64 KiB quota respected. */

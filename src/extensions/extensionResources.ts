@@ -45,17 +45,23 @@ export function createExtensionResources(options: { fetch: FetchFn; onError(erro
 		if (lifetime.signal.aborted) return;
 		try { options.onError(error); } catch { /* Error reporting must not leak a rejected callback. */ }
 	};
+	let scheduled = 0;
 	const clear = (id?: number): void => {
 		if (id === undefined) return;
 		const timer = timers.get(id);
 		if (!timer) return;
 		timers.delete(id);
-		if (timer.native !== undefined) window.clearTimeout(timer.native);
+		if (timer.native !== undefined) {
+			window.clearTimeout(timer.native);
+			timer.native = undefined;
+			scheduled--;
+		}
 		timer.cancel?.();
 	};
 	const schedule = (id: number, timer: Timer): void => {
 		timer.native = window.setTimeout(() => {
 			timer.native = undefined;
+			scheduled--;
 			if (lifetime.signal.aborted || timers.get(id) !== timer) return;
 			const task = Promise.resolve().then(() => {
 				assertActive();
@@ -69,12 +75,13 @@ export function createExtensionResources(options: { fetch: FetchFn; onError(erro
 				else clear(id);
 			});
 		}, timer.delay);
+		scheduled++;
 	};
 	const addTimer = (interval: boolean, callback: (...args: unknown[]) => unknown, delay = 0, args: unknown[] = []): number => {
 		assertActive();
 		if (typeof callback !== "function") throw new TypeError("Extension timers require a function callback.");
 		if (closing && interval) throw new Error("Cannot start an interval while an extension is closing.");
-		if (timers.size + tasks.size >= MAX_TIMERS) throw new Error(`At most ${MAX_TIMERS} extension timers or pending callbacks are supported.`);
+		if (scheduled + tasks.size >= MAX_TIMERS) throw new Error(`At most ${MAX_TIMERS} extension timers or pending callbacks are supported.`);
 		// Match Node's finite timer range. Intervals never overlap async callbacks.
 		const timeout = !Number.isFinite(delay) || delay < 1 || delay > 2_147_483_647 ? 1 : Math.trunc(delay);
 		const id = ++nextTimer;

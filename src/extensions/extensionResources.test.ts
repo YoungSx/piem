@@ -124,4 +124,20 @@ describe("background extension resources", () => {
 		controller.abort();
 		expect(await owner.timersPromises.setTimeout(1, "next")).toBe("next");
 	});
+
+	it("does not double-count active callbacks against timer bounds when scheduling next work", async () => {
+		const { owner } = setup();
+		const scheduledInCallback = deferred<number>();
+		const ids = Array.from({ length: 63 }, () => owner.setTimeout(() => {}, 60_000));
+		owner.setTimeout(() => {
+			expect(() => owner.setTimeout(() => {}, 60_000)).toThrow("64 extension timers");
+			owner.clearTimeout(ids[0]);
+			const nextId = owner.setTimeout(() => {}, 60_000);
+			scheduledInCallback.resolve(nextId);
+		}, 1);
+		const nextId = await scheduledInCallback.promise;
+		expect(nextId).toBeGreaterThan(0);
+		for (const id of ids) owner.clearTimeout(id);
+		owner.clearTimeout(nextId);
+	});
 });
