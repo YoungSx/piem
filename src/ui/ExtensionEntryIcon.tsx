@@ -112,7 +112,7 @@ export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot
 				onMouseOver={suppressOwnTooltip}
 				onClick={() => setIsOpen((open) => !open)}
 			>
-				<ObsidianIcon name={entryIcon(actions) as never} className="piem-chat__extension-entry-icon" />
+				<ObsidianIcon name={entryIcon(actions)} className="piem-chat__extension-entry-icon" />
 				{failed ? <span className="piem-chat__extension-entry-failed-dot" aria-hidden="true" /> : null}
 			</button>
 			{isOpen ? (
