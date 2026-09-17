@@ -81,18 +81,22 @@ export interface ModelModalOptions {
  * id typed into it, and a suggestion for a model that endpoint does not serve
  * would be worse than an empty list.
  *
- * Suggestions are never filtered to the selected provider, for two reasons. A
- * gateway commonly serves models it did not originate — an OpenAI-compatible
- * proxy fronting Claude, say — so filtering would hide exactly the ids a BYOK
- * user needs. And `modelConfig.ts` reserves a many-to-many future: fallback
- * chains "only reorder model references", so a model will eventually name more
- * than one provider, and a list scoped to a single selection would have to be
- * torn down to get there.
+ * Suggestions are scoped to the selected provider. The listing is a per-endpoint
+ * answer — an OpenAI-compatible proxy fronts Claude and lists the Claude ids
+ * under itself — so the selected provider's listing already carries every id
+ * that endpoint accepts, and another provider's listing names ids its own
+ * endpoint may not serve. Leaving those in made the list ignore a provider
+ * switch, which read as the suggest being broken.
+ *
+ * The builtin fallback pair stays unscoped: it answers when no endpoint did.
  *
  * An id offered by several sources appears once, with every source named in the
  * description, rather than being attributed to whichever was probed first.
  */
-export function buildModelSuggestions(listings: readonly ProviderListing[] = []): CatalogSuggestion[] {
+export function buildModelSuggestions(
+	listings: readonly ProviderListing[] = [],
+	selectedProviderId?: string,
+): CatalogSuggestion[] {
 	const sourcesById = new Map<string, string[]>();
 
 	const add = (id: string, source: string): void => {
@@ -107,6 +111,9 @@ export function buildModelSuggestions(listings: readonly ProviderListing[] = [])
 	};
 
 	for (const listing of listings) {
+		if (selectedProviderId !== undefined && listing.provider.id !== selectedProviderId) {
+			continue;
+		}
 		for (const id of listing.modelIds) {
 			add(id, describeProviderConfig(listing.provider));
 		}
@@ -237,9 +244,10 @@ export class ModelModal extends Modal {
 					this.refreshCatalogAdvice();
 				});
 				// Read through a closure rather than passed as a snapshot, so a probe
-				// that lands after this field was built still shows up: the suggest
-				// re-reads on every keystroke, and never triggers a request itself.
-				new CatalogSuggest(this.app, text.inputEl, () => buildModelSuggestions(this.listings), (value) => {
+				// that lands after this field was built still shows up, and so a
+				// provider switch re-scopes the list: the suggest re-reads on every
+				// keystroke, and never triggers a request itself.
+				new CatalogSuggest(this.app, text.inputEl, () => buildModelSuggestions(this.listings, this.draft.providerId), (value) => {
 					this.draft.modelApiId = value;
 					this.onEdit();
 					this.testRow?.reset();
