@@ -98,4 +98,18 @@ describe("extension Web globals", () => {
 		expect(one.global).toBe(one);
 		expect(one.XMLHttpRequest).toBeUndefined();
 	});
+
+	it("falls back to getRandomValues when randomUUID is absent on mobile WebViews", () => {
+		cleanups.push(stubWindowMembers({
+			crypto: {
+				getRandomValues: (array: Uint8Array) => {
+					for (let i = 0; i < array.length; i++) array[i] = (i * 31) & 0xff;
+					return array;
+				},
+				randomUUID: undefined,
+			},
+		}));
+		const crypto = createExtensionCrypto();
+		expect(crypto.randomUUID()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+	});
 });

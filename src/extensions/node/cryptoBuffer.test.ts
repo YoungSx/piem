@@ -93,6 +93,25 @@ describe("browser Buffer and crypto bridge", () => {
 		} finally { restore(); }
 	});
 
+	it("falls back to getRandomValues when crypto.randomUUID is absent on older WebViews", () => {
+		const restore = stubWindowMembers({
+			crypto: {
+				getRandomValues(bytes: Uint8Array) {
+					for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37) & 0xff;
+					return bytes;
+				},
+				randomUUID: undefined,
+			},
+		});
+		try {
+			const uuid = randomUUID();
+			expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+			const parts = uuid.split("-");
+			expect(parts[2]?.startsWith("4")).toBe(true);
+			expect(["8", "9", "a", "b"].includes(parts[3]?.[0] ?? "")).toBe(true);
+		} finally { restore(); }
+	});
+
 	it("bundles and runs with permanently absent Node globals", async () => {
 		const built = await build({
 			stdin: { contents: 'export { Buffer } from "./src/extensions/node/buffer"; export * from "./src/extensions/node/crypto";', resolveDir: process.cwd() },
