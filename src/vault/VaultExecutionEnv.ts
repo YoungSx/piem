@@ -25,6 +25,14 @@ import { trashOrDelete } from "./trash";
  * {@link normalizeVaultPath} — the same traversal (`..`) and plugin-internals
  * guards our hand-written tools enforce.
  *
+ * Config directory, read-only: Obsidian indexes neither the config directory
+ * (`.obsidian`) nor dot-folders, so `getFileByPath` answers null for files the
+ * adapter reads without complaint — which made `read` fail on the settings the
+ * user can see in their own file manager. Reads fall back to the adapter
+ * ({@linkcode readOutsideIndex}); every mutation refuses a config path outright
+ * ({@linkcode refuseMutation}). The agent may inspect settings, hotkeys and
+ * plugin data, and it may never rewrite them.
+ *
  * Failure contract: the FileSystem interface requires that operations never
  * throw; every failure, including backend surprises, comes back as a
  * {@link Result} carrying a {@link FileError}. Abort signals are honored
@@ -64,12 +72,12 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			if (failure) {
 				return failure;
 			}
-			const abstract = this.requireFile(path);
-			if (!abstract.ok) {
-				return abstract;
+			const inner = toVaultRelative(path);
+			const file = this.vault.getFileByPath(inner);
+			if (file) {
+				return ok(await this.vault.read(file));
 			}
-			const text = await this.vault.read(abstract.value.file);
-			return ok(text);
+			return this.readOutsideIndex(inner, path, (target) => this.vault.adapter.read(target));
 		});
 	}
 
@@ -96,12 +104,16 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			if (failure) {
 				return failure;
 			}
-			const abstract = this.requireFile(path);
-			if (!abstract.ok) {
-				return abstract;
+			const inner = toVaultRelative(path);
+			const file = this.vault.getFileByPath(inner);
+			if (file) {
+				return ok(new Uint8Array(await this.vault.readBinary(file)));
 			}
-			const buffer = await this.vault.readBinary(abstract.value.file);
-			return ok(new Uint8Array(buffer));
+			return this.readOutsideIndex(
+				inner,
+				path,
+				async (target) => new Uint8Array(await this.vault.adapter.readBinary(target)),
+			);
 		});
 	}
 
@@ -112,6 +124,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 				return failure;
 			}
 			const inner = toVaultRelative(path);
+			const refusal = this.refuseMutation(inner, path);
+			if (refusal) {
+				return refusal;
+			}
 			const existing = this.vault.getAbstractFileByPath(inner);
 			if (existing instanceof TFolder) {
 				return err(new FileError("is_directory", `Cannot write over folder: ${path}`, path));
@@ -163,7 +179,12 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			if (failure) {
 				return failure;
 			}
-			const existing = this.vault.getAbstractFileByPath(toVaultRelative(path));
+			const inner = toVaultRelative(path);
+			const refusal = this.refuseMutation(inner, path);
+			if (refusal) {
+				return refusal;
+			}
+			const existing = this.vault.getAbstractFileByPath(inner);
 			if (existing instanceof TFolder) {
 				return err(new FileError("is_directory", `Cannot write over folder: ${path}`, path));
 			}
@@ -204,6 +225,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 				return err(new FileError("not_supported", "Appending binary content is not supported.", path));
 			}
 			const inner = toVaultRelative(path);
+			const refusal = this.refuseMutation(inner, path);
+			if (refusal) {
+				return refusal;
+			}
 			const existing = this.vault.getAbstractFileByPath(inner);
 			if (existing instanceof TFolder) {
 				return err(new FileError("is_directory", `Cannot append to folder: ${path}`, path));
@@ -226,6 +251,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			}
 			const sourceInner = toVaultRelative(sourcePath);
 			const destinationInner = toVaultRelative(destinationPath);
+			const refusal = this.refuseMutation(sourceInner, sourcePath) ?? this.refuseMutation(destinationInner, destinationPath);
+			if (refusal) {
+				return refusal;
+			}
 			const source = this.vault.getAbstractFileByPath(sourceInner);
 			if (!(source instanceof TFile) && !(source instanceof TFolder)) {
 				return err(new FileError("not_found", `File not found: ${sourcePath}`, sourcePath));
@@ -259,7 +288,11 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			if (folder) {
 				return ok({ name: folder.name, path: absolute, kind: "directory", size: 0, mtimeMs: 0 });
 			}
-			return err(new FileError("not_found", `File not found: ${absolute}`, absolute));
+			const stat = await this.vault.adapter.stat(inner);
+			if (!stat) {
+				return err(new FileError("not_found", `File not found: ${absolute}`, absolute));
+			}
+			return ok(childInfo(inner, stat.type === "folder" ? "directory" : "file", stat));
 		});
 	}
 
@@ -271,6 +304,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 			if (!folder) {
 				if (this.vault.getFileByPath(inner)) {
 					return err(new FileError("not_directory", `Not a folder: ${absolute}`, absolute));
+				}
+				const stat = await this.vault.adapter.stat(inner);
+				if (stat?.type === "folder") {
+					return ok(await this.listOutsideIndex(inner));
 				}
 				return err(new FileError("not_found", `Folder not found: ${absolute}`, absolute));
 			}
@@ -314,6 +351,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 				return failure;
 			}
 			const inner = toVaultRelative(path);
+			const refusal = this.refuseMutation(inner, path);
+			if (refusal) {
+				return refusal;
+			}
 			if (inner === "" || (await this.pathExists(inner))) {
 				return ok(undefined);
 			}
@@ -337,6 +378,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 				return failure;
 			}
 			const inner = toVaultRelative(path);
+			const refusal = this.refuseMutation(inner, path);
+			if (refusal) {
+				return refusal;
+			}
 			if (inner === "") {
 				return err(new FileError("permission_denied", "Refusing to remove the vault root.", path));
 			}
@@ -389,16 +434,64 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		return parent === "" || this.vault.getFolderByPath(parent) !== null;
 	}
 
-	private requireFile(path: string): Result<{ file: TFile }, FileError> {
-		const inner = toVaultRelative(path);
-		const existing = this.vault.getAbstractFileByPath(inner);
-		if (existing instanceof TFolder) {
+	/**
+	 * Reads a file the vault index does not know about.
+	 *
+	 * Obsidian indexes neither the config directory nor dot-folders, so
+	 * `.obsidian/app.json` is invisible to `getFileByPath` while the adapter
+	 * reads it without complaint. The `stat` is what distinguishes a file from a
+	 * folder here — `adapter.exists` answers true for both.
+	 */
+	private async readOutsideIndex<T>(
+		inner: string,
+		path: string,
+		read: (inner: string) => Promise<T>,
+	): Promise<Result<T, FileError>> {
+		const stat = await this.vault.adapter.stat(inner);
+		if (stat?.type === "folder") {
 			return err(new FileError("is_directory", `Path is a folder: ${path}`, path));
 		}
-		if (existing instanceof TFile) {
-			return ok({ file: existing });
+		if (!stat) {
+			return err(new FileError("not_found", `File not found: ${path}`, path));
 		}
-		return err(new FileError("not_found", `File not found: ${path}`, path));
+		return ok(await read(inner));
+	}
+
+	/** Direct children of a folder the vault index does not track. */
+	private async listOutsideIndex(inner: string): Promise<FileInfo[]> {
+		const listing = await this.vault.adapter.list(inner);
+		const entries: FileInfo[] = listing.folders.map((path) => childInfo(path, "directory", null));
+		for (const path of listing.files) {
+			entries.push(childInfo(path, "file", await this.vault.adapter.stat(path)));
+		}
+		return entries.sort((left, right) => left.name.localeCompare(right.name));
+	}
+
+	/**
+	 * Refuses any mutation under the config directory.
+	 *
+	 * That directory (`.obsidian` unless the vault renamed it) holds the user's
+	 * settings, hotkeys, workspace layout and every installed plugin's data —
+	 * this plugin's included. The agent may read all of it (see
+	 * {@linkcode readOutsideIndex}) and may write none of it: a stray edit there
+	 * is a configuration the user repairs by hand.
+	 *
+	 * Checked per method rather than in one choke point because the mutators do
+	 * not share one — `write` and `append` reach the adapter path, `rename`
+	 * only its destination.
+	 */
+	private refuseMutation(inner: string, path: string): Result<never, FileError> | null {
+		const configDir = this.vault.configDir;
+		if (!configDir || (inner !== configDir && !inner.startsWith(`${configDir}/`))) {
+			return null;
+		}
+		return err(
+			new FileError(
+				"permission_denied",
+				`Refusing to modify ${path}: the Obsidian configuration directory (${configDir}) is read-only for the agent.`,
+				path,
+			),
+		);
 	}
 
 	private async trash(target: TFile | TFolder, force = false): Promise<void> {
@@ -453,6 +546,29 @@ function toFileError(error: unknown, path: string): FileError {
 
 function toEnvironmentPath(path: string): string {
 	return `/${normalizeVaultPath(stripLeadingSlash(path.trim()))}`;
+}
+
+/**
+ * One listing row for a path the adapter reported.
+ *
+ * The path is prefixed rather than run through {@linkcode toEnvironmentPath}
+ * because it came off the filesystem, not from a model argument — re-running the
+ * plugin-internals guard over it would abort the whole listing of
+ * `.obsidian/plugins` on our own folder's row.
+ */
+function childInfo(inner: string, kind: "file" | "directory", stat: { size: number; mtime: number } | null): FileInfo {
+	return {
+		name: baseName(inner),
+		path: `/${inner}`,
+		kind,
+		size: kind === "file" ? stat?.size ?? 0 : 0,
+		mtimeMs: kind === "file" ? stat?.mtime ?? 0 : 0,
+	};
+}
+
+function baseName(path: string): string {
+	const index = path.lastIndexOf("/");
+	return index === -1 ? path : path.slice(index + 1);
 }
 
 function toVaultRelative(path: string): string {

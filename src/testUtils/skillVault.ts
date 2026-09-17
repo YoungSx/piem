@@ -23,7 +23,22 @@ export function createSkillVault(host: { TFile: new () => HostFile; TFolder: new
 	};
 	const vault = {
 		configDir: ".obsidian",
-		adapter: { exists: async (path: string) => entries.has(path) },
+		adapter: {
+			exists: async (path: string) => entries.has(path),
+			// `VaultExecutionEnv.readOutsideIndex` answers "is this a file or a
+			// folder?" through the adapter for anything the index skips — dotfiles
+			// like the `.gitignore` a skill folder may carry. A stub without `stat`
+			// turns that question into a TypeError.
+			stat: async (path: string) => {
+				const entry = entries.get(path);
+				if (!entry) {
+					return null;
+				}
+				return entry instanceof host.TFile
+					? { type: "file" as const, ctime: entry.stat.ctime, mtime: entry.stat.mtime, size: entry.stat.size }
+					: { type: "folder" as const, ctime: 0, mtime: 0, size: 0 };
+			},
+		},
 		getName: () => "Test",
 		getAbstractFileByPath: (path: string) => entries.get(path) ?? null,
 		getFileByPath: (path: string) => { const file = entries.get(path); return file instanceof host.TFile ? file : null; },

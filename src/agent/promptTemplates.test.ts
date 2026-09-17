@@ -78,6 +78,22 @@ class InMemoryVault {
 		return this.content.get(file.path) ?? "";
 	}
 
+	/**
+	 * The config directory and dot-folders live outside the index, so the env asks
+	 * the adapter whether such a path is a file, a folder, or nothing at all.
+	 */
+	get adapter() {
+		return {
+			stat: async (path: string) => {
+				const file = this.files.get(path);
+				if (file) {
+					return { type: "file" as const, ctime: file.stat.ctime, mtime: file.stat.mtime, size: file.stat.size };
+				}
+				return this.folders.has(path) ? { type: "folder" as const, ctime: 0, mtime: 0, size: 0 } : null;
+			},
+		};
+	}
+
 	asApp(): App {
 		return { vault: this } as unknown as App;
 	}

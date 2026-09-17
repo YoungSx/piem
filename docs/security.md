@@ -94,6 +94,12 @@ internal subagent call.
 The agent can `write`, `edit`, `move_note`, and `trash_note` immediately. No
 dialog, no diff to approve, no "are you sure".
 
+One exception, enforced in code rather than drawn as a dialog: the
+configuration directory (`.obsidian/`) is read-only. The agent can read your
+settings and installed plugins' data — see
+[the agent's tools](tools.md#the-agents-tools) — and every attempt to write
+there comes back as an explicit refusal.
+
 This is a deliberate product decision, not a missing feature. What to do about
 it:
 
