@@ -2,11 +2,12 @@ import { describe, expect, it } from "bun:test";
 import {
 	collectEntriesForBranchSummary,
 	generateBranchSummary,
-	InMemorySessionStorage,
-	Session,
+	MemorySessionRepo,
 	type AgentMessage,
+	type Session,
 } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Model, Models, Usage } from "@earendil-works/pi-ai";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 
 const EMPTY_USAGE: Usage = {
 	input: 0,
@@ -26,13 +27,13 @@ describe("generateBranchSummary", () => {
 		]);
 		// The whole branch is the dead fork: old leaf is the last entry, the fork
 		// point is the root, so every entry between them is what gets summarized.
-		const { entries } = await collectEntriesForBranchSummary(session, ids[ids.length - 1]!, ids[0]!);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries } = await collectEntriesForBranchSummary(branch, session, ids[ids.length - 1]!, ids[0]!, BACKGROUND_CONTEXT);
 
 		const result = await generateBranchSummary(entries, {
 			models: createModels("## Goal\nRefactor parseNode"),
 			model: createModel(),
-			signal: new AbortController().signal,
-		});
+		}, BACKGROUND_CONTEXT);
 
 		expect(result.ok).toBe(true);
 		if (!result.ok) {
@@ -48,13 +49,15 @@ describe("generateBranchSummary", () => {
 
 	it("reports an abort as a typed error instead of throwing", async () => {
 		const { session, ids } = await buildSession([userMessage("q"), assistantMessage("a", EMPTY_USAGE)]);
-		const { entries } = await collectEntriesForBranchSummary(session, ids[1]!, ids[0]!);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries } = await collectEntriesForBranchSummary(branch, session, ids[1]!, ids[0]!, BACKGROUND_CONTEXT);
 
+		const controller = new AbortController();
+		controller.abort();
 		const result = await generateBranchSummary(entries, {
 			models: createAbortedModels(),
 			model: createModel(),
-			signal: new AbortController().signal,
-		});
+		}, withAbortSignal(controller.signal, BACKGROUND_CONTEXT));
 
 		expect(result.ok).toBe(false);
 		if (result.ok) {
@@ -65,13 +68,13 @@ describe("generateBranchSummary", () => {
 
 	it("reports a summarization failure as a typed error instead of throwing", async () => {
 		const { session, ids } = await buildSession([userMessage("q"), assistantMessage("a", EMPTY_USAGE)]);
-		const { entries } = await collectEntriesForBranchSummary(session, ids[1]!, ids[0]!);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries } = await collectEntriesForBranchSummary(branch, session, ids[1]!, ids[0]!, BACKGROUND_CONTEXT);
 
 		const result = await generateBranchSummary(entries, {
 			models: createErrorModels("provider exploded"),
 			model: createModel(),
-			signal: new AbortController().signal,
-		});
+		}, BACKGROUND_CONTEXT);
 
 		expect(result.ok).toBe(false);
 		if (result.ok) {
@@ -83,14 +86,14 @@ describe("generateBranchSummary", () => {
 
 	it("retries a transient failure and still summarizes", async () => {
 		const { session, ids } = await buildSession([userMessage("q"), assistantMessage("a", EMPTY_USAGE), userMessage("q2")]);
-		const { entries } = await collectEntriesForBranchSummary(session, ids[2]!, ids[0]!);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries } = await collectEntriesForBranchSummary(branch, session, ids[2]!, ids[0]!, BACKGROUND_CONTEXT);
 
 		const result = await generateBranchSummary(entries, {
 			models: createFlakyModels("## Goal\nRecovered"),
 			model: createModel(),
-			signal: new AbortController().signal,
 			retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
-		});
+		}, BACKGROUND_CONTEXT);
 
 		expect(result.ok).toBe(true);
 		if (!result.ok) {
@@ -112,7 +115,8 @@ describe("collectEntriesForBranchSummary", () => {
 		]);
 		const [, fork, dead, leaf] = [ids[0]!, ids[1]!, ids[2]!, ids[3]!];
 
-		const { entries, commonAncestorId } = await collectEntriesForBranchSummary(session, leaf, fork);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries, commonAncestorId } = await collectEntriesForBranchSummary(branch, session, leaf, fork, BACKGROUND_CONTEXT);
 
 		expect(entries.map((entry) => entry.id)).toEqual([dead, leaf]);
 		expect(commonAncestorId).toBe(fork);
@@ -124,7 +128,8 @@ describe("collectEntriesForBranchSummary", () => {
 
 		// Rewinding to the entry we are already on: both paths start at the same
 		// id, so the fork point is that id and nothing sits between them.
-		const { entries, commonAncestorId } = await collectEntriesForBranchSummary(session, leaf, leaf);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries, commonAncestorId } = await collectEntriesForBranchSummary(branch, session, leaf, leaf, BACKGROUND_CONTEXT);
 
 		expect(entries).toEqual([]);
 		expect(commonAncestorId).toBe(leaf);
@@ -133,7 +138,8 @@ describe("collectEntriesForBranchSummary", () => {
 	it("collects nothing without an old leaf", async () => {
 		const { session, ids } = await buildSession([userMessage("only")]);
 
-		const { entries, commonAncestorId } = await collectEntriesForBranchSummary(session, null, ids[0]!);
+		const branch = (await session.branch("main", BACKGROUND_CONTEXT))!;
+		const { entries, commonAncestorId } = await collectEntriesForBranchSummary(branch, session, null, ids[0]!, BACKGROUND_CONTEXT);
 
 		expect(entries).toEqual([]);
 		expect(commonAncestorId).toBeNull();
@@ -142,17 +148,13 @@ describe("collectEntriesForBranchSummary", () => {
 
 /** Creates a native in-memory pi session and returns its root-to-leaf ids. */
 async function buildSession(messages: AgentMessage[]): Promise<{ session: Session; ids: string[] }> {
-	const storage = new InMemorySessionStorage({ id: "branch-summary-test", createdAt: 0 });
-	// `new Session(storage)` already provisions the "main" lane; creating it
-	// again throws `already_exists`.
-	const session = new Session(storage);
+	const repo = new MemorySessionRepo();
+	const session = await repo.create({ id: "branch-summary-test" }, BACKGROUND_CONTEXT);
+	const branch = (await session.branch("main", BACKGROUND_CONTEXT)) ?? (await session.createBranch("main", null, BACKGROUND_CONTEXT));
 	const ids: string[] = [];
 	for (let index = 0; index < messages.length; index += 1) {
-		const entry = await session.appendEntry(
-			{ type: "message", id: `m${index + 1}`, message: messages[index]! },
-			"main",
-		);
-		ids.push(entry.id);
+		const id = await branch.appendMessage(messages[index]!, BACKGROUND_CONTEXT);
+		ids.push(id);
 	}
 	return { session, ids };
 }

@@ -177,7 +177,7 @@ describe("shipped community extensions in a permanently Node-free mobile realm",
 		const gate = new Promise<void>(resolve => { release = resolve; });
 		const append = f.memory.append.bind(f.memory);
 		f.memory.append = async (file, value) => {
-			if (value.includes('"type":"operation_started"')) { entered(); await gate; }
+			if (value.includes('"type":"operation_started"') || value.includes('"pi.op.meta"')) { entered(); await gate; }
 			return append(file, value);
 		};
 		const continuing = f.service.runExtensionCommand("continue");

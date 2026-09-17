@@ -1,5 +1,5 @@
 import type { PromptTemplateDiagnostic, SkillDiagnostic, Skill } from "@earendil-works/pi-agent-core";
-import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "@earendil-works/pi-agent-core";
 import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 // Type-only, and it must stay that way: `../skills/userSkills` reaches the node
 // filesystem through a lazy NodeExecutionEnv bridge, and `src/subagent/` is
@@ -49,7 +49,7 @@ export async function loadBuiltinSkills(env: ExecutionEnv): Promise<{ skills: Sk
 }
 
 async function loadSkillsWithResources(env: ExecutionEnv, directory: string): Promise<{ skills: Skill[]; diagnostics: SkillDiagnostic[] }> {
-	const result = await loadSkills(env, directory);
+	const result = await loadSkills(env, directory, BACKGROUND_CONTEXT);
 	for (const skill of result.skills) {
 		try {
 			// Vault paths have no filesystem symlinks; avoid a second disk probe

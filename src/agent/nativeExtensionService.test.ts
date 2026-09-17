@@ -128,8 +128,8 @@ describe("native extension writes reach the owning conversation", () => {
 			pi.registerCommand("think", { handler: async () => { pi.setThinkingLevel("medium"); } });
 		}, { reasoning: true });
 		const recorded = async () => (await sessions.getSession().findEntries({ order: "oldestFirst" }))
-			.filter(entry => entry.type === "thinking_level_change")
-			.map(entry => (entry as { thinkingLevel: string }).thinkingLevel);
+			.filter(entry => (entry as any).type === "thinking_level_change")
+			.map(entry => (entry as unknown as { thinkingLevel: string }).thinkingLevel);
 		try {
 			await service.initialize();
 			expect(await service.runExtensionCommand("think")).toBe(true);

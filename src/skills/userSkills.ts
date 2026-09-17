@@ -1,5 +1,4 @@
-import type { ExecutionEnv, Skill, SkillDiagnostic } from "@earendil-works/pi-agent-core";
-import { loadSourcedSkills } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, type ExecutionEnv, type Skill, type SkillDiagnostic, loadSourcedSkills } from "@earendil-works/pi-agent-core";
 import { createUserSkillsEnv, nodeSkillsHome } from "./nodeSkillsHost";
 import { normalizeUserSkillsDir } from "./userSkillsDir";
 import { bindSkillResources } from "./skillResources";
@@ -194,10 +193,15 @@ export async function loadUserSkillsFromEnv(env: ExecutionEnv, customDir?: strin
 	// as a conflict with another folder that does not exist.
 	const dirs = userSkillsDirs(customDir);
 	const inputs = dirs.map((path) => ({ path, source: path }));
-	const { skills: sourced, diagnostics } = await loadSourcedSkills<string, UserSkill>(env, inputs, (skill, source) => ({
-		...skill,
-		sourceDir: source,
-	}));
+	const { skills: sourced, diagnostics } = await loadSourcedSkills<string, UserSkill>(
+		env,
+		inputs,
+		(skill, source) => ({
+			...skill,
+			sourceDir: source,
+		}),
+		BACKGROUND_CONTEXT,
+	);
 	// First occurrence wins — same precedence as the directory order, and it
 	// keeps two same-named skills from both reaching the prompt as one command.
 	const seen = new Set<string>();

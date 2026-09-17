@@ -11,6 +11,7 @@ import {
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models, RetryPolicy } from "@earendil-works/pi-ai";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from "./compactionSettings";
 import { retainSkillContext } from "./skillContext";
 
@@ -132,14 +133,16 @@ export async function compactIfNeeded(request: CompactionRequest): Promise<Compa
 	// error propagates as a thrown exception, so both paths need handling.
 	let compacted;
 	try {
+		const ctx = request.signal ? withAbortSignal(request.signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
 		compacted = await compact(
 			prepared.value,
 			request.models,
 			request.model,
 			undefined,
-			request.signal,
 			request.thinkingLevel,
 			request.retry ?? DEFAULT_COMPACTION_RETRY,
+			undefined,
+			ctx,
 		);
 	} catch (error) {
 		return {
@@ -194,6 +197,7 @@ function toHarnessEntries(messages: AgentMessage[], previous?: CompactResult): E
 		summary: previous.summary,
 		tokensBefore: previous.tokensBefore,
 		retainedTail: previous.retainedTail,
+		fromHook: false,
 		...(previous.details === undefined ? {} : { details: previous.details }),
 		...(previous.usage === undefined ? {} : { usage: previous.usage }),
 	};

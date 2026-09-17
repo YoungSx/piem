@@ -1,4 +1,5 @@
 import { TFile, TFolder, type App } from "obsidian";
+import type { Context } from "@earendil-works/chord";
 import {
 	err,
 	ExecutionError,
@@ -8,6 +9,7 @@ import {
 	type FileInfo,
 	type Result,
 	type ShellExecOptions,
+	type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
 import { getParentPath, normalizeVaultPath } from "./path";
 import { trashOrDelete } from "./trash";
@@ -48,17 +50,17 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		return this.app.vault;
 	}
 
-	async absolutePath(path: string): Promise<Result<string, FileError>> {
+	async absolutePath(path: string, _context?: Context): Promise<Result<string, FileError>> {
 		return this.run(path, async () => ok(toEnvironmentPath(path)));
 	}
 
-	async joinPath(parts: string[]): Promise<Result<string, FileError>> {
+	async joinPath(parts: string[], _context?: Context): Promise<Result<string, FileError>> {
 		return this.run(parts.join("/"), async () => ok(toEnvironmentPath(parts.filter((part) => part !== "").join("/"))));
 	}
 
-	async readTextFile(path: string, abortSignal?: AbortSignal): Promise<Result<string, FileError>> {
+	async readTextFile(path: string, contextOrSignal?: Context | AbortSignal): Promise<Result<string, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(abortSignal, path);
+			const failure = abortedFailure(contextOrSignal, path);
 			if (failure) {
 				return failure;
 			}
@@ -74,9 +76,11 @@ export class VaultExecutionEnv implements ExecutionEnv {
 	async readTextLines(
 		path: string,
 		options?: { maxLines?: number; abortSignal?: AbortSignal },
+		contextOrSignal?: Context | AbortSignal,
 	): Promise<Result<string[], FileError>> {
 		return this.run(path, async () => {
-			const read = await this.readTextFile(path, options?.abortSignal);
+			const signal = options?.abortSignal ?? signalFrom(contextOrSignal);
+			const read = await this.readTextFile(path, signal);
 			if (!read.ok) {
 				return read;
 			}
@@ -86,9 +90,9 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async readBinaryFile(path: string, abortSignal?: AbortSignal): Promise<Result<Uint8Array, FileError>> {
+	async readBinaryFile(path: string, contextOrSignal?: Context | AbortSignal): Promise<Result<Uint8Array, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(abortSignal, path);
+			const failure = abortedFailure(contextOrSignal, path);
 			if (failure) {
 				return failure;
 			}
@@ -101,9 +105,9 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async writeFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal): Promise<Result<void, FileError>> {
+	async writeFile(path: string, content: string | Uint8Array, contextOrSignal?: Context | AbortSignal): Promise<Result<void, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(abortSignal, path);
+			const failure = abortedFailure(contextOrSignal, path);
 			if (failure) {
 				return failure;
 			}
@@ -152,10 +156,10 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		path: string,
 		content: string,
 		expected: string,
-		abortSignal?: AbortSignal,
+		contextOrSignal?: Context | AbortSignal,
 	): Promise<Result<void, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(abortSignal, path);
+			const failure = abortedFailure(contextOrSignal, path);
 			if (failure) {
 				return failure;
 			}
@@ -190,9 +194,9 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async appendFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal): Promise<Result<void, FileError>> {
+	async appendFile(path: string, content: string | Uint8Array, contextOrSignal?: Context | AbortSignal): Promise<Result<void, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(abortSignal, path);
+			const failure = abortedFailure(contextOrSignal, path);
 			if (failure) {
 				return failure;
 			}
@@ -214,9 +218,9 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async renameFile(sourcePath: string, destinationPath: string, abortSignal?: AbortSignal): Promise<Result<void, FileError>> {
+	async renameFile(sourcePath: string, destinationPath: string, contextOrSignal?: Context | AbortSignal): Promise<Result<void, FileError>> {
 		return this.run(sourcePath, async () => {
-			const failure = abortedFailure(abortSignal, sourcePath);
+			const failure = abortedFailure(contextOrSignal, sourcePath);
 			if (failure) {
 				return failure;
 			}
@@ -240,7 +244,7 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async fileInfo(path: string): Promise<Result<FileInfo, FileError>> {
+	async fileInfo(path: string, _context?: Context): Promise<Result<FileInfo, FileError>> {
 		return this.run(path, async () => {
 			const absolute = toEnvironmentPath(path);
 			const inner = toVaultRelative(absolute);
@@ -259,7 +263,7 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async listDir(path: string): Promise<Result<FileInfo[], FileError>> {
+	async listDir(path: string, _context?: Context): Promise<Result<FileInfo[], FileError>> {
 		return this.run(path, async () => {
 			const absolute = toEnvironmentPath(path);
 			const inner = toVaultRelative(absolute);
@@ -281,7 +285,7 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async canonicalPath(path: string): Promise<Result<string, FileError>> {
+	async canonicalPath(path: string, _context?: Context): Promise<Result<string, FileError>> {
 		return this.run(path, async () => {
 			// The vault namespace has no symlinks, so the canonical form of an
 			// existing path is the path itself. Missing paths report not_found,
@@ -294,13 +298,18 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async exists(path: string): Promise<Result<boolean, FileError>> {
+	async exists(path: string, _context?: Context): Promise<Result<boolean, FileError>> {
 		return this.run(path, async () => ok(await this.pathExists(toVaultRelative(path))));
 	}
 
-	async createDir(path: string, options?: { recursive?: boolean; abortSignal?: AbortSignal }): Promise<Result<void, FileError>> {
+	async createDir(
+		path: string,
+		options?: { recursive?: boolean; abortSignal?: AbortSignal },
+		contextOrSignal?: Context | AbortSignal,
+	): Promise<Result<void, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(options?.abortSignal, path);
+			const signal = options?.abortSignal ?? signalFrom(contextOrSignal);
+			const failure = abortedFailure(signal, path);
 			if (failure) {
 				return failure;
 			}
@@ -319,9 +328,11 @@ export class VaultExecutionEnv implements ExecutionEnv {
 	async remove(
 		path: string,
 		options?: { recursive?: boolean; force?: boolean; abortSignal?: AbortSignal },
+		contextOrSignal?: Context | AbortSignal,
 	): Promise<Result<void, FileError>> {
 		return this.run(path, async () => {
-			const failure = abortedFailure(options?.abortSignal, path);
+			const signal = options?.abortSignal ?? signalFrom(contextOrSignal);
+			const failure = abortedFailure(signal, path);
 			if (failure) {
 				return failure;
 			}
@@ -345,22 +356,23 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async createTempDir(prefix?: string): Promise<Result<string, FileError>> {
+	async createTempDir(prefix?: string, _context?: Context): Promise<Result<string, FileError>> {
 		return Promise.resolve(err(new FileError("not_supported", `Temp directories are not supported${prefix ? ` (prefix ${prefix})` : ""}.`)));
 	}
 
-	async createTempFile(options?: { prefix?: string; suffix?: string }): Promise<Result<string, FileError>> {
+	async createTempFile(options?: { prefix?: string; suffix?: string }, _context?: Context): Promise<Result<string, FileError>> {
 		return Promise.resolve(err(new FileError("not_supported", "Temp files are not supported.")));
 	}
 
-	async cleanup(): Promise<void> {
+	async cleanup(_context?: Context): Promise<void> {
 		// Nothing to release: every call goes straight through the vault API.
 	}
 
 	async exec(
 		command: string,
 		options?: ShellExecOptions,
-	): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, ExecutionError>> {
+		_context?: Context,
+	): Promise<Result<ShellExecResult, ExecutionError>> {
 		void options;
 		return Promise.resolve(err(new ExecutionError("shell_unavailable", `Shell is not available in Obsidian (command rejected: ${truncateCommand(command)}).`)));
 	}
@@ -402,8 +414,16 @@ export class VaultExecutionEnv implements ExecutionEnv {
 	}
 }
 
-function abortedFailure(abortSignal: AbortSignal | undefined, path: string): Result<never, FileError> | null {
-	if (abortSignal?.aborted) {
+function signalFrom(contextOrSignal?: Context | AbortSignal): AbortSignal | undefined {
+	if (!contextOrSignal) return undefined;
+	if ("abortSignal" in contextOrSignal) return contextOrSignal.abortSignal;
+	if (contextOrSignal instanceof AbortSignal) return contextOrSignal;
+	return undefined;
+}
+
+function abortedFailure(contextOrSignal: Context | AbortSignal | undefined, path: string): Result<never, FileError> | null {
+	const signal = signalFrom(contextOrSignal);
+	if (signal?.aborted) {
 		return err(new FileError("aborted", "Operation aborted", path));
 	}
 	return null;

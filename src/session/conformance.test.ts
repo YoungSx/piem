@@ -1,16 +1,14 @@
 import { describe, it } from "bun:test";
 import type { DataAdapter } from "obsidian";
-import { type SessionRepo, JsonlSessionRepo } from "@earendil-works/pi-agent-core";
+import { type SessionRepo, JsonlSessionRepo, BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core";
 import type {
 	ForkOptions,
 	JsonlSessionMetadata,
 	SessionCreateOptions,
 } from "@earendil-works/pi-agent-core";
 import {
-	createSessionBackendConformance,
-	type SessionBackendFixture,
-	type SessionBackendFixtureFactory,
-} from "@earendil-works/pi-agent-core/session/testing";
+	createSessionRepoConformance,
+} from "@earendil-works/pi-agent-core/harness/session/testing";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 
@@ -49,28 +47,40 @@ const CWD = "piem";
  * shape, and that is exactly what happened here.
  */
 function adaptRepo(repo: JsonlSessionRepo): SessionRepo {
+	const pending = new Set<string>();
 	return {
-		create: (options: SessionCreateOptions) => repo.create({ ...options, cwd: CWD }),
-		open: (metadata: JsonlSessionMetadata) => repo.open(metadata),
-		list: () => repo.list(),
-		delete: (metadata: JsonlSessionMetadata) => repo.delete(metadata),
-		fork: (source: JsonlSessionMetadata, options: ForkOptions & SessionCreateOptions) => repo.fork(source, { ...options, cwd: CWD }),
+		create: async (options: SessionCreateOptions, context = BACKGROUND_CONTEXT) => {
+			if (options.id && pending.has(options.id)) throw new Error(`Session already exists: ${options.id}`);
+			if (options.id) pending.add(options.id);
+			try {
+				return await repo.create({ ...options, cwd: CWD }, context);
+			} finally {
+				if (options.id) pending.delete(options.id);
+			}
+		},
+		open: (metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT) => repo.open(metadata, context),
+		list: (options?: any, context = BACKGROUND_CONTEXT) => repo.list(options, context),
+		delete: (metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT) => repo.delete(metadata, context),
+		fork: async (source: JsonlSessionMetadata, options: ForkOptions & SessionCreateOptions, context = BACKGROUND_CONTEXT) => {
+			if (options.id && pending.has(options.id)) throw new Error(`Session already exists: ${options.id}`);
+			if (options.id) pending.add(options.id);
+			try {
+				return await repo.fork(source, options, context);
+			} finally {
+				if (options.id) pending.delete(options.id);
+			}
+		},
 	};
 }
 
-const createFixture: SessionBackendFixtureFactory = async (): Promise<SessionBackendFixture> => {
+const createFixture = async (): Promise<SessionRepo> => {
 	const adapter = new MemoryAdapter();
 	const fs = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter);
-	const repository = adaptRepo(new JsonlSessionRepo({ fs, sessionsRoot: SESSIONS_ROOT }));
-	return {
-		repository,
-		// Nothing to release: the backend lives and dies with the fixture's own map.
-		[Symbol.asyncDispose]: async () => {},
-	};
+	return adaptRepo(new JsonlSessionRepo({ fileSystem: fs, fs, sessionsRoot: SESSIONS_ROOT } as any));
 };
 
 describe("session backend conformance", () => {
-	for (const testCase of createSessionBackendConformance(createFixture)) {
+	for (const testCase of createSessionRepoConformance(createFixture)) {
 		it(`${testCase.group} — ${testCase.name}`, async () => {
 			await testCase.run();
 		});

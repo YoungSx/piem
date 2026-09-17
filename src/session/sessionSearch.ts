@@ -1,10 +1,11 @@
-import type { Entry, JsonlSessionMetadata, ScanningSessionSearchHit } from "@earendil-works/pi-agent-core";
+import type { Entry, EntrySearchHit, JsonlSessionMetadata } from "@earendil-works/pi-agent-core";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 /** A pi entry hit with the stable vault path needed by the picker. */
-export interface StoredSessionSearchHit extends ScanningSessionSearchHit {
+export interface StoredSessionSearchHit extends EntrySearchHit {
 	readonly path: string;
 	readonly entryType: Entry["type"];
+	readonly snippet: string;
 }
 
 /** One picker row, folded from all matching entries in a session. */

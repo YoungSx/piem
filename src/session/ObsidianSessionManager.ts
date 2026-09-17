@@ -1,32 +1,18 @@
 import type { App, DataAdapter, Plugin } from "obsidian";
 import {
-	buildContextEntries,
-	buildSessionContext as buildPiSessionContext,
 	type BranchSummaryResult,
 	type FileError,
-	InMemorySessionStorage,
 	JsonlSessionRepo,
+	MemorySessionRepo,
 	type Result,
-	sessionEntryToContextMessages,
 	type AgentMessage,
 	type CompactResult,
 	type Entry,
 	type JsonlSessionMetadata,
-	type JsonlV4Header,
-	type OperationFinishedRecord,
-	type OperationStartedRecord,
-	Session,
+	type Session,
 	type ThinkingLevel,
-	createScanningSessionSearch,
-	type SessionSearch,
-	type SessionSearchOptions,
 } from "@earendil-works/pi-agent-core";
 import { uuidv7 } from "@earendil-works/pi-ai";
-// Deep imports past pi's package `exports` map, same precedent as
-// `sessionMutationLine.ts`: the JSONL codec is not re-exported at the package
-// root, and the header writer below needs pi's own encoder to guarantee a
-// header pi's loader will validate.
-import { encodeHeader } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js";
 import type { LoggerLike } from "../logging/Logger";
 import { normalizeFolderPath } from "../vault/path";
 import { sanitizeMessageForLog } from "../vault/image";
@@ -37,6 +23,42 @@ import { mergeSessions, serializeLogLines } from "./sessionMerge";
 import { collapseSkillInvocation, parseSkillInvocation } from "../agent/skillInvocation";
 import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
 import { readSessionMetadata } from "./sessionMetadata";
+import {
+	BACKGROUND_CONTEXT,
+	laneConfig,
+	buildContextEntries,
+	sessionEntryToContextMessages,
+} from "./sessionCompat";
+
+export interface SessionSearchOptions {
+	limit?: number;
+	signal?: AbortSignal;
+}
+
+export interface SessionSearch<T> {
+	search(query: string, options?: SessionSearchOptions): AsyncIterable<T>;
+}
+
+function encodeHeader(header: Record<string, unknown>): string {
+	return `${JSON.stringify(header)}\n`;
+}
+
+// Backward-compat shim types for pre-0.85.1 API consumers
+export interface OperationStartedRecord {
+	id: string;
+	lane: string;
+	sourceLeafId: string | null;
+	intent: Record<string, unknown>;
+	timestamp?: number;
+}
+
+export interface OperationFinishedRecord {
+	id?: string;
+	runId: string;
+	lane: string;
+	outcome: "completed" | "failed" | "aborted" | "declined";
+	error?: { code: string; message: string };
+}
 
 export interface SessionDefaults {
 	provider: string;
@@ -260,7 +282,7 @@ export class ObsidianSessionManager {
 		const sessionDir = `${this.resolveSessionDir()}/${reservedSessionDirectoryName(this.cwd)}`;
 		const path = `${sessionDir}/${reservedSessionFileName(createdAt, id)}`;
 		const metadata: JsonlSessionMetadata = {
-			id, createdAt, cwd: this.cwd, path, modifiedAt: createdAt, sourceFormat: 4,
+			id, createdAt, cwd: this.cwd, path, modifiedAt: createdAt, storageVersion: 1,
 			// The sheet carries the lineage so materialization writes it into the
 			// header; everything else about it stays in-memory-only on the sheet.
 			...(defaults.parentSessionId ? { parentSessionId: defaults.parentSessionId } : {}),
@@ -272,7 +294,7 @@ export class ObsidianSessionManager {
 		// carries that shape, so the session is cast to match the registry it
 		// lives in. Every read goes through the registry entry, never the
 		// session-borne metadata, so the widened metadata inside pi is harmless.
-		const session = new Session(new InMemorySessionStorage({ id, createdAt })) as unknown as PiSession;
+		const session = (await new MemorySessionRepo().create({ id }, BACKGROUND_CONTEXT)) as unknown as PiSession;
 		this.hydrated.set(path, { session, metadata });
 		this.blankPaths.add(path);
 		if (focus) this.activePath = path;
@@ -333,18 +355,19 @@ export class ObsidianSessionManager {
 		// the reserved path, and `repo.open` re-loads it as the durable session
 		// (deep-imported `encodeHeader` is pi's own encoder; the header shape is
 		// the v4 one pi validates on load).
-		const header: JsonlV4Header = {
+		const header: Record<string, unknown> = {
 			kind: "header",
-			version: 4,
+			v: 4,
 			id: blank.metadata.id,
 			createdAt: blank.metadata.createdAt,
+			storageVersion: 1,
 			cwd: this.cwd,
 			// pi derives this field only on forks; member sessions are the other
 			// writer. Absent means an ordinary chat, exactly as before.
 			...(blank.metadata.parentSessionId ? { parentSessionId: blank.metadata.parentSessionId } : {}),
 		};
 		fileResultOrThrow(await this.fs.writeFile(path, encodeHeader(header)), `Failed to initialize session ${path}`);
-		const session = await this.repo(sessionDir).open({ ...blank.metadata, sourceFormat: 4 });
+		const session = await this.repo(sessionDir).open(blank.metadata);
 		const metadata = await session.getMetadata();
 		const items = await blank.session.getLog();
 		const lanes = await blank.session.getLanes();
@@ -525,9 +548,9 @@ export class ObsidianSessionManager {
 		}
 		const forked = await this.repo(this.resolveSessionDir()).fork(source.metadata, {
 			scope: "branch",
+			branch: "main",
 			entryId,
 			position: "at",
-			cwd: this.cwd,
 		});
 		const metadata = await forked.getMetadata();
 		this.hydrated.set(metadata.path, { session: forked, metadata });
@@ -604,17 +627,38 @@ export class ObsidianSessionManager {
 	}
 
 	createStoredSessionSearch(): SessionSearch<StoredSessionSearchHit> {
-		return createScanningSessionSearch((options?: SessionSearchOptions) => this.openStoredSessions(options), {
-			// Hands the caller's signal to the source so a superseded query stops
-			// before opening the next JSONL file; pi only checks it between sessions.
-			sourceOptions: (_text, options) => options,
-			pageSize: 64,
-			projectText: projectSessionEntryText,
-			createHit: (metadata, candidate) => ({
-				sessionId: metadata.id, path: metadata.path, entryId: candidate.entryId,
-				entryType: candidate.type, timestamp: candidate.timestamp, snippet: candidate.text,
-			}),
-		});
+		return {
+			search: async function* (this: ObsidianSessionManager, query: string, options?: SessionSearchOptions) {
+				const lowerQuery = query.toLowerCase();
+				let count = 0;
+				const limit = options?.limit ?? Infinity;
+				for await (const session of this.openStoredSessions(options)) {
+					try {
+						if (options?.signal?.aborted) return;
+						const metadata = session.metadata;
+						const entries = await session.findEntries(undefined, BACKGROUND_CONTEXT);
+						for (const entry of entries) {
+							if (options?.signal?.aborted) return;
+							const text = projectSessionEntryText(metadata, entry);
+							if (text.toLowerCase().includes(lowerQuery)) {
+								yield {
+									sessionId: metadata.id,
+									path: metadata.path,
+									entryId: entry.id,
+									entryType: entry.type,
+									timestamp: entry.timestamp,
+									snippet: text,
+								};
+								count++;
+								if (count >= limit) return;
+							}
+						}
+					} finally {
+						await session.close(BACKGROUND_CONTEXT).catch(() => undefined);
+					}
+				}
+			}.bind(this),
+		};
 	}
 
 	getSessionDir(): string {
@@ -682,8 +726,22 @@ export class ObsidianSessionManager {
 			return undefined;
 		}
 		const previous = await this.repo(this.resolveSessionDir()).open(metadata);
-		const entries = await previous.findEntriesOnBranch({ order: "oldestFirst" });
-		return buildPiSessionContext(entries).thinkingLevel as ThinkingLevel | undefined;
+		try {
+			const config = (await previous.getValue(laneConfig("main"), BACKGROUND_CONTEXT))?.value;
+			if (config?.thinkingLevel) {
+				return config.thinkingLevel;
+			}
+			const entries = await previous.findEntriesOnBranch({ order: "newestFirst" });
+			for (const e of entries) {
+				const rec = e as unknown as Record<string, unknown>;
+				if (rec.type === "thinking_level_change" && typeof rec.thinkingLevel === "string") {
+					return rec.thinkingLevel as ThinkingLevel;
+				}
+			}
+			return undefined;
+		} finally {
+			await previous.close(BACKGROUND_CONTEXT);
+		}
 	}
 
 	async appendCompaction(result: CompactResult, lane = "main"): Promise<string> {
@@ -874,21 +932,35 @@ export class ObsidianSessionManager {
 	}
 
 	async buildSessionContextFor(path: string, lane = "main"): Promise<SessionContext> {
-		const entries = await this.getSessionFor(path).view(lane).findEntriesOnBranch({ order: "oldestFirst" });
-		const piContext = buildPiSessionContext(entries);
+		const session = this.getSessionFor(path);
+		const entries = await session.view(lane).findEntriesOnBranch({ order: "oldestFirst" });
 		const contextEntries = buildContextEntries(entries);
 		const messages: AgentMessage[] = [];
 		const messageOrigins: (string | null)[] = [];
-		contextEntries.forEach((entry, index) => {
-			const projected = sessionEntryToContextMessages(entry, index, contextEntries);
+		contextEntries.forEach((entry) => {
+			const projected = sessionEntryToContextMessages(entry) ?? [];
 			messages.push(...projected);
 			messageOrigins.push(...projected.map(() => (entry.type === "message" ? entry.id : null)));
 		});
+		const config = (await session.getValue(laneConfig(lane), BACKGROUND_CONTEXT))?.value;
+		let model = config?.model ?? null;
+		let thinkingLevel = config?.thinkingLevel ?? "off";
+		if (!model || thinkingLevel === "off") {
+			for (let i = entries.length - 1; i >= 0; i--) {
+				const rec = entries[i] as unknown as Record<string, unknown>;
+				if (!model && rec.type === "model_change" && typeof rec.provider === "string" && typeof rec.modelId === "string") {
+					model = { provider: rec.provider, modelId: rec.modelId };
+				}
+				if (thinkingLevel === "off" && rec.type === "thinking_level_change" && typeof rec.thinkingLevel === "string") {
+					thinkingLevel = rec.thinkingLevel as ThinkingLevel;
+				}
+			}
+		}
 		return {
 			messages,
 			messageOrigins,
-			model: piContext.model,
-			thinkingLevel: piContext.thinkingLevel as ThinkingLevel,
+			model,
+			thinkingLevel,
 		};
 	}
 
@@ -1079,7 +1151,7 @@ export class ObsidianSessionManager {
 			// not change. The live instance is also still current, so no rebuild.
 			return { action: "skipped" };
 		}
-		const fresh = await this.repo(this.resolveSessionDir()).open(live.metadata);
+		const fresh = await this.repo(this.resolveSessionDir()).open(live.metadata, BACKGROUND_CONTEXT);
 		this.hydrated.set(target, { session: fresh, metadata: await fresh.getMetadata() });
 		return { action: "merged" };
 	}
@@ -1145,7 +1217,7 @@ export class ObsidianSessionManager {
 	}
 
 	private repo(sessionDir: string): JsonlSessionRepo {
-		return new JsonlSessionRepo({ fs: this.fs, sessionsRoot: sessionDir });
+		return new JsonlSessionRepo({ fileSystem: this.fs, sessionsRoot: sessionDir });
 	}
 
 	private resolveSessionDir(): string {

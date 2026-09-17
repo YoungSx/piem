@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import type { AgentTool, ExecutionEnv } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, type AgentTool, type Context, type ExecutionEnv } from "@earendil-works/pi-agent-core";
 import { createReadSkillTool } from "../tools/skillTools";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import { createSkillVault } from "../testUtils/skillVault";
@@ -46,7 +46,7 @@ describe("skill resources", () => {
 			created++;
 			const env = new NodeExecutionEnv({ cwd: home });
 			const cleanup = env.cleanup.bind(env);
-			env.cleanup = async () => { cleaned++; await cleanup(); };
+			env.cleanup = async (context: Context = BACKGROUND_CONTEXT) => { cleaned++; await cleanup(context); };
 			return env;
 		};
 		const loaded = await loadUserSkills(join(home, "skills"), { createEnv });

@@ -98,9 +98,9 @@ describe("provider event bridge", () => {
 
 	it("exposes saved compaction data and explicitly refuses a CLI-only cursor", () => {
 		const entry = extensionCompactionEntry({ type: "compaction", id: "saved-id", parentId: "parent", seq: 3,
-			timestamp: 0, summary: "Summary", tokensBefore: 100, retainedTail: [] });
+			timestamp: 0, summary: "Summary", tokensBefore: 100, retainedTail: [], fromHook: false });
 		expect(JSON.parse(JSON.stringify(entry))).toEqual({ type: "compaction", id: "saved-id", parentId: "parent", seq: 3,
-			timestamp: "1970-01-01T00:00:00.000Z", summary: "Summary", tokensBefore: 100, retainedTail: [] });
+			timestamp: "1970-01-01T00:00:00.000Z", summary: "Summary", tokensBefore: 100, retainedTail: [], fromHook: false });
 		expect(() => entry.firstKeptEntryId).toThrow("CLI compaction cursors");
 	});
 });

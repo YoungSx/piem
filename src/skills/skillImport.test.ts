@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
 	err,
+	ExecutionError,
 	FileError,
 	ok,
 	type ExecutionEnv,
@@ -9,6 +10,7 @@ import {
 	type FileKind,
 	type Result,
 	type ShellExecOptions,
+	type ShellExecResult,
 } from "@earendil-works/pi-agent-core";
 
 import {
@@ -325,7 +327,7 @@ class MemoryEnv implements ExecutionEnv {
 		// stateless
 	}
 
-	async exec(_command: string, _options?: ShellExecOptions): Promise<Result<{ stdout: string; stderr: string; exitCode: number }, never>> {
+	async exec(_command: string, _options?: ShellExecOptions): Promise<Result<ShellExecResult, ExecutionError>> {
 		throw new Error("unused in tests");
 	}
 }

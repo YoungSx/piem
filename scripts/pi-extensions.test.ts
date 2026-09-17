@@ -54,7 +54,7 @@ describe("static official extension bundle", () => {
 	});
 	it("the integration pin remains explicit and carries the official factory unchanged", () => {
 		const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies: Record<string, string> };
-		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("0.84.3");
+		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("0.85.1");
 		expect(readFileSync("src/extensions/bookmarkFactory.mjs", "utf8")).toContain("examples/extensions/bookmark.ts");
 	});
 });

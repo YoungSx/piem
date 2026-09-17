@@ -1,7 +1,25 @@
-import type { LogItem } from "@earendil-works/pi-agent-core";
-import type { Entry } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/types.js";
-import { parseHeader } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js";
-import { encodeMutation, parseMutationLine, scanDiskLines } from "./sessionMutationLine";
+import type { Entry } from "@earendil-works/pi-agent-core";
+import { encodeMutation, parseMutationFromObject, scanDiskLines } from "./sessionMutationLine";
+
+export type LogItem =
+	| { kind: "entry"; seq: number; entry: Entry }
+	| { kind: "fact"; seq: number; fact: "name"; name?: string }
+	| { kind: "fact"; seq: number; fact: "label"; targetId: string; label?: string }
+	| { kind: "lane"; seq: number; lane: string; leafId: string | null }
+	| { kind: "record"; seq: number; [key: string]: unknown };
+
+function parseHeader(line: string): { ok: true; value: { id: string } } | { ok: false } {
+	try {
+		const parsed = JSON.parse(line) as Record<string, unknown>;
+		if (typeof parsed !== "object" || parsed === null) return { ok: false };
+		if ((parsed.kind === "header" || (parsed.type === "session" && parsed.version === 3)) && typeof parsed.id === "string") {
+			return { ok: true, value: { id: parsed.id } };
+		}
+		return { ok: false };
+	} catch {
+		return { ok: false };
+	}
+}
 
 /**
  * Union merge of two device-local views of one chat log.
@@ -96,28 +114,48 @@ function parseSide(lines: string[]): Side {
 				continue;
 			}
 		}
-		const mutation = parseMutationLine(line);
-		if (!mutation) {
+		if (!line.trim()) continue;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(line);
+		} catch {
 			continue;
 		}
-		switch (mutation.kind) {
-			case "entry": {
-				const entry = mutation.entry;
-				if (!side.entriesById.has(entry.id)) {
-					side.entriesById.set(entry.id, entry);
-				}
-				break;
+		const items = Array.isArray(parsed) ? parsed : [parsed];
+		for (const item of items) {
+			if (typeof item !== "object" || item === null) continue;
+			const mutation = parseMutationFromObject(item as Record<string, unknown>);
+			if (!mutation) {
+				continue;
 			}
-			case "fact":
-				if (mutation.fact === "name") {
-					side.nameFact = { name: mutation.name };
-				} else {
-					side.labels.set(mutation.targetId, mutation.label);
+			switch (mutation.kind) {
+				case "entry": {
+					const entry = mutation.entry;
+					if (!side.entriesById.has(entry.id)) {
+						side.entriesById.set(entry.id, entry);
+					}
+					break;
 				}
-				break;
-			case "lane":
-				if (mutation.lane === "main") hasMainPointer = true;
-				break;
+				case "fact":
+					if (mutation.fact === "name") {
+						side.nameFact = { name: mutation.name };
+					} else {
+						side.labels.set(mutation.targetId, mutation.label);
+					}
+					break;
+				case "value":
+					if (mutation.namespace === "pi.session.name" && typeof mutation.value === "string") {
+						side.nameFact = { name: mutation.value };
+					} else if (mutation.namespace === "pi.entry.label" && typeof mutation.value === "string") {
+						side.labels.set(mutation.key, mutation.value);
+					} else if (mutation.namespace === "pi.branch.tip" && mutation.key === "main") {
+						hasMainPointer = true;
+					}
+					break;
+				case "lane":
+					if (mutation.lane === "main") hasMainPointer = true;
+					break;
+			}
 		}
 	}
 	const disk = scanDiskLines(lines);
@@ -150,7 +188,7 @@ function parseSide(lines: string[]): Side {
  * safely — to a quarantine, never to a silently accepted divergent entry.
  */
 function contentKey(entry: Entry): string {
-	const { seq: _seq, parentId: _parentId, ...content } = entry;
+	const { seq: _seq, parentId: _parentId, lane: _lane, kind: _kind, ...content } = entry as unknown as Record<string, unknown>;
 	return JSON.stringify(content);
 }
 

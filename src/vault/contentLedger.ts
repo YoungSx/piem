@@ -1,3 +1,4 @@
+import type { Context } from "@earendil-works/chord";
 import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
 import type { VaultExecutionEnv } from "./VaultExecutionEnv";
 
@@ -55,16 +56,16 @@ export function withContentLedger(env: VaultExecutionEnv): ExecutionEnv {
 		get(target, property) {
 			switch (property) {
 				case "readTextFile":
-					return async (path: string, abortSignal?: AbortSignal) => {
-						const result = await target.readTextFile(path, abortSignal);
+					return async (path: string, contextOrSignal?: Context | AbortSignal) => {
+						const result = await target.readTextFile(path, contextOrSignal);
 						if (result.ok) {
 							remember(path, result.value);
 						}
 						return result;
 					};
 				case "readBinaryFile":
-					return async (path: string, abortSignal?: AbortSignal) => {
-						const result = await target.readBinaryFile(path, abortSignal);
+					return async (path: string, contextOrSignal?: Context | AbortSignal) => {
+						const result = await target.readBinaryFile(path, contextOrSignal);
 						// Decoding images into garbage strings is harmless here: the
 						// write tool only emits text, so a text write over a binary
 						// path fails the CAS it could never honestly pass.
@@ -74,15 +75,15 @@ export function withContentLedger(env: VaultExecutionEnv): ExecutionEnv {
 						return result;
 					};
 				case "writeFile":
-					return async (path: string, content: string | Uint8Array, abortSignal?: AbortSignal) => {
+					return async (path: string, content: string | Uint8Array, contextOrSignal?: Context | AbortSignal) => {
 						if (typeof content !== "string") {
-							return target.writeFile(path, content, abortSignal);
+							return target.writeFile(path, content, contextOrSignal);
 						}
 						const expected = lastSeen.get(path);
 						const result =
 							expected !== undefined
-								? await target.compareAndWriteFile(path, content, expected, abortSignal)
-								: await target.writeFile(path, content, abortSignal);
+								? await target.compareAndWriteFile(path, content, expected, contextOrSignal)
+								: await target.writeFile(path, content, contextOrSignal);
 						if (result.ok) {
 							remember(path, content);
 						}

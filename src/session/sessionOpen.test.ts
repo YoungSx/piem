@@ -181,7 +181,7 @@ describe("ObsidianSessionManager cold open", () => {
 		const path = await seed(adapter, "Unreadable conversation");
 		const original = adapter.contentOf(path)!;
 		const broken = corruption === "header"
-			? original.replace('"version":4', '"version":3')
+			? original.replace('"v":4', '"v":999')
 			: `${original}{"kind":"entry","seq":999,"type":"unknown"}\n`;
 		await adapter.write(path, broken);
 		adapter.reset();

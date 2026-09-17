@@ -1,5 +1,7 @@
-import type { CustomEntry, ProvisionedEntry, Session } from "@earendil-works/pi-agent-core";
+import type { CustomEntry, Entry, JsonValue, Session } from "@earendil-works/pi-agent-core";
 import { ContextSnapshot } from "./contextSnapshot";
+
+export type ProvisionedEntry<T extends Entry = Entry> = Omit<T, "seq" | "timestamp" | "parentId">;
 
 export interface ContextNavigation {
 	/** Reserved by this authoritative Session's id generator; not yet persisted. */
@@ -88,7 +90,7 @@ export class ContextSession {
 		if (typeof customType !== "string") throw new Error("Extension entry type must be a string.");
 		// Match the CLI's JSON wire shape and detach data before the caller can
 		// mutate it. Cycles and bigint fail here, before a staged entry exists.
-		const persisted = JSON.parse(JSON.stringify({ customType, ...(data === undefined ? {} : { data }) })) as { customType: string; data?: unknown };
+		const persisted = JSON.parse(JSON.stringify({ customType, ...(data === undefined ? {} : { data }) })) as { customType: string; data?: JsonValue };
 		const entry: ProvisionedEntry<CustomEntry> = { type: "custom", id: this.session!.idGenerator.next(), ...persisted };
 		this.entries.push(entry);
 		snapshot.appendCustomEntry(entry);

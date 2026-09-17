@@ -11,7 +11,7 @@ const CWD = "piem";
 
 /** A flat header line, as pi's codec emits it — createdAt is epoch ms, not ISO. */
 function header(id: string): string {
-	return `${JSON.stringify({ kind: "header", version: 4, id, createdAt: 1767225600000, cwd: CWD })}\n`;
+	return `${JSON.stringify({ kind: "header", v: 4, storageVersion: 1, id, createdAt: 1767225600000, cwd: CWD })}\n`;
 }
 
 /**
@@ -222,7 +222,7 @@ describe("mergeSessions", () => {
 	it("produces a file pi's JsonlSessionRepo loads and reads back", async () => {
 		const adapter = new MemoryAdapter();
 		const fs = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter);
-		const repo = new JsonlSessionRepo({ fs, sessionsRoot: SESSIONS_ROOT });
+		const repo = new JsonlSessionRepo({ fileSystem: fs, fs, sessionsRoot: SESSIONS_ROOT } as any);
 
 		const local = [header("sess-1"), ...SHARED, ...chain(["l4", "l5"], 1100, "s3")];
 		const foreign = [header("sess-1"), ...SHARED, ...chain(["f6", "f7"], 1050, "s3")];
