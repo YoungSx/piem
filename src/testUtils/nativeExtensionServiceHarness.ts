@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { MemoryAdapter } from "./memoryAdapter";
+import { withRunawayGuard } from "./runawayGuard";
 import { ObsidianAgentService } from "../agent/ObsidianAgentService";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { DEFAULT_SETTINGS } from "../settings";
@@ -30,8 +31,10 @@ export function harness(factory: ExtensionFactory, options: { reasoning?: boolea
 		workspace: { getActiveViewOfType: () => null, getActiveFile: () => null },
 	} as unknown as App;
 	const requests: Context[] = [];
-	const streamFn: StreamFn = (model, context) => {
-		requests.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+	const streamFn: StreamFn = withRunawayGuard((model, context) => {
+		if (requests.length < 50) {
+			requests.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+		}
 		const message: AssistantMessage = {
 			role: "assistant", content: [{ type: "text", text: `Reply ${requests.length}` }],
 			api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), stopReason: "stop",
@@ -42,7 +45,7 @@ export function harness(factory: ExtensionFactory, options: { reasoning?: boolea
 		stream.push({ type: "done", reason: "stop", message });
 		stream.end(message);
 		return stream;
-	};
+	}, { maxCalls: 50, label: "nativeExtensionServiceHarness.streamFn" });
 	const service = new ObsidianAgentService(app, () => settings, sessions, {
 		streamFn, extensionFactories: [{ id: "bridge-test", factory }],
 		loadUserSkills: async () => ({ skills: [], diagnostics: [], searched: [] }),
