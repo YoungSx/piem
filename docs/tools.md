@@ -11,6 +11,14 @@ escapes are rejected, and the plugin's own folder
 (`.obsidian/plugins/piem`) is blocked by default — the agent cannot rewrite
 itself mid-turn.
 
+The configuration directory is **readable, never writable**. Obsidian's index
+does not track `.obsidian/` — the folder is invisible to the file explorer, to
+search, and to the vault API — so `ls` and `read` fall back to the filesystem
+for it. The agent can list your settings, hotkeys, workspace layout, and the
+manifests and `data.json` of every installed plugin, and can answer questions
+about them. Nothing under `.obsidian/` can be written, edited, moved or deleted
+by the agent.
+
 ## Model selection
 
 `switch_model` lists, searches and switches models with configured API keys. A

@@ -41,22 +41,49 @@ export function createLsTool(app: App): AgentTool<typeof LsParameters> {
 		// so it is safe beside any other call in the same batch. See `move_note` in
 		// organizeTools for the sequential counterpart of this mark.
 		executionMode: "parallel",
-		description: "List files and folders at a vault-relative folder path.",
+		// The second sentence is the disclosure that matters for a folder the model
+		// would otherwise not think to look in: the config directory is readable by
+		// name (`read .obsidian/app.json`) and never writable.
+		description: "List files and folders at a vault-relative folder path. The Obsidian configuration directory can be listed and read, but never written.",
 		parameters: LsParameters,
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
 			const path = normalizeFolderPath(params.path ?? "");
 			const folder = path ? app.vault.getFolderByPath(path) : app.vault.getRoot();
-			if (!folder) {
-				throw new Error(`Folder not found: ${path || "/"}`);
-			}
-			const rows = folder.children
-				.slice()
-				.sort((left, right) => left.path.localeCompare(right.path))
-				.map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
+			const rows = folder ? indexedRows(folder) : await unindexedRows(app, path);
 			return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), { path, count: rows.length });
 		},
 	};
+}
+
+/** `kind\tpath` rows for a folder in the vault index, ordered by path. */
+function indexedRows(folder: TFolder): string[] {
+	return folder.children
+		.slice()
+		.sort((left, right) => left.path.localeCompare(right.path))
+		.map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
+}
+
+/**
+ * Rows for a folder the vault index does not track.
+ *
+ * Obsidian indexes neither the config directory nor dot-folders, so `ls
+ * .obsidian` answered "Folder not found" for a folder plainly sitting on disk.
+ * The adapter sees it, and the agent may read through it — `VaultExecutionEnv`
+ * is where writing there is refused.
+ */
+async function unindexedRows(app: App, path: string): Promise<string[]> {
+	const stat = await app.vault.adapter.stat(path);
+	if (stat?.type !== "folder") {
+		throw new Error(`Folder not found: ${path || "/"}`);
+	}
+	const listing = await app.vault.adapter.list(path);
+	return [
+		...listing.folders.map((child) => ({ path: child, kind: "folder" })),
+		...listing.files.map((child) => ({ path: child, kind: "file" })),
+	]
+		.sort((left, right) => left.path.localeCompare(right.path))
+		.map((child) => `${child.kind}\t${child.path}`);
 }
 
 export function createFindTool(app: App): AgentTool<typeof FindParameters> {
