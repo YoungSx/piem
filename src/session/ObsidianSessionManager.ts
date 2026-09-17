@@ -47,6 +47,14 @@ export interface SessionDefaults {
 	 * value over an existing conversation — so it is a seed, not a setting.
 	 */
 	thinkingLevel?: ThinkingLevel;
+	/**
+	 * Session id this one descends from, carried as the v4 header's
+	 * `parentSessionId` once the file materializes. pi fills the same field on
+	 * every fork; agents-team member sessions are the other writer — decision 1
+	 * keeps the team's upstream link in the same lineage field so member
+	 * history stays discoverable from the conversation that started it.
+	 */
+	parentSessionId?: string;
 }
 
 export interface ActiveSessionInfo {
@@ -253,6 +261,9 @@ export class ObsidianSessionManager {
 		const path = `${sessionDir}/${reservedSessionFileName(createdAt, id)}`;
 		const metadata: JsonlSessionMetadata = {
 			id, createdAt, cwd: this.cwd, path, modifiedAt: createdAt, sourceFormat: 4,
+			// The sheet carries the lineage so materialization writes it into the
+			// header; everything else about it stays in-memory-only on the sheet.
+			...(defaults.parentSessionId ? { parentSessionId: defaults.parentSessionId } : {}),
 		};
 		// The sheet's Session runs on the in-memory storage, whose metadata has
 		// no path of its own — the reserved path above is the only path it will
@@ -328,6 +339,9 @@ export class ObsidianSessionManager {
 			id: blank.metadata.id,
 			createdAt: blank.metadata.createdAt,
 			cwd: this.cwd,
+			// pi derives this field only on forks; member sessions are the other
+			// writer. Absent means an ordinary chat, exactly as before.
+			...(blank.metadata.parentSessionId ? { parentSessionId: blank.metadata.parentSessionId } : {}),
 		};
 		fileResultOrThrow(await this.fs.writeFile(path, encodeHeader(header)), `Failed to initialize session ${path}`);
 		const session = await this.repo(sessionDir).open({ ...blank.metadata, sourceFormat: 4 });

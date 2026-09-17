@@ -3,6 +3,7 @@ import { type Usage } from "@earendil-works/pi-ai";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactionOutcome, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
+import type { MemberSessionSpec } from "../extensions/team/memberTypes";
 import type { CommunityHost } from "../extensions/communityHost";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 import type { BookmarkHost } from "../extensions/bookmarkHost";
@@ -76,6 +77,16 @@ export class SessionRuntime {
 	skills: readonly Skill[] = [];
 	/** Event-subscription teardown for `agent.subscribe(...)`. Must travel with `agent`. */
 	unsubscribeAgent: (() => void) | null = null;
+
+	/**
+	 * Set only for agent-team member sessions: the normalized request the team
+	 * bridge (PR) built them from. It steers the lean member build — package
+	 * doctrine prompt, filtered skills, the package's team tools beside the
+	 * vault tools minus `write` — and survives an agent rebuild for the same
+	 * reason every other per-conversation field does: a runtime is a
+	 * conversation, not one construction of it.
+	 */
+	memberSpec: MemberSessionSpec | undefined = undefined;
 
 	/** Per-chat original Pi extension, created only when a bookmark command is used. */
 	bookmarkHost?: BookmarkHost;

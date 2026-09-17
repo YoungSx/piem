@@ -372,6 +372,13 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 		const cancel = (): void => { revokeAuth(); lifetime.cancel(); callbacks.session?.cancel(); };
 		const models = limited({
 			...publicModelMembers,
+			// Pi's ModelRuntime streams inside pi's own createAgentSession. Piem
+			// does not run that machinery — member sessions stream through piem's
+			// own transport — but the agent-team package reads
+			// `modelRegistry.runtime` to hand it back to its (bridged) creator, so
+			// it must resolve to an inert placeholder instead of an unavailable
+			// throw. The value is never invoked here.
+			runtime: { piemPlaceholder: true },
 			...(callbacks.getAuth ? { getApiKeyAndHeaders: (model: Model<string>) => requireCallback("getAuth")(model) } : {}),
 			complete: async (...args: Parameters<typeof modelMembers.complete>) => {
 				assertActive();
