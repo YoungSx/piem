@@ -1,4 +1,11 @@
-import type { CustomEntry, Entry, LogItem, ProvisionedEntry } from "@earendil-works/pi-agent-core";
+import type { CustomEntry, Entry } from "@earendil-works/pi-agent-core";
+import type { ProvisionedEntry } from "./contextSession";
+
+export type LogItem =
+	| { kind: "entry"; seq: number; entry: Entry }
+	| { kind: "fact"; seq: number; fact: "label"; targetId: string; label?: string }
+	| { kind: "lane"; seq: number; lane: string; leafId: string | null }
+	| { kind: "record"; seq: number; record: { seq: number; type: string; [key: string]: unknown } };
 
 type DatedEntry<T extends Entry> = T extends Entry ? Omit<T, "timestamp" | "seq"> & { timestamp: string; seq?: number } : never;
 /** The audited extension's read view, not a second CLI SessionManager. */

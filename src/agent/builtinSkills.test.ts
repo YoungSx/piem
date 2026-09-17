@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
-import { loadSkills } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, loadSkills } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 
 const root = resolve(import.meta.dir, "../../skills");
 const env = new NodeExecutionEnv({ cwd: root });
-const { skills, diagnostics } = await loadSkills(env, root);
-await env.cleanup();
+const { skills, diagnostics } = await loadSkills(env, root, BACKGROUND_CONTEXT);
+await env.cleanup(BACKGROUND_CONTEXT);
 expect(diagnostics).toEqual([]);
 
 describe("builtinSkills", () => {

@@ -121,8 +121,9 @@ describe("ObsidianSessionManager", () => {
 		expect(info.path).toContain(`${SESSION_DIR}/`);
 		expect(content.split("\n")[0]).toContain('"kind":"header"');
 		expect(content).toContain('"kind":"entry"');
-		expect(content).toContain('"type":"model_change"');
-		expect(content).toContain('"type":"thinking_level_change"');
+		expect(content).toContain('"pi.lane.config"');
+		expect(content).toContain('"deepseek-v4-pro"');
+		expect(content).toContain('"thinkingLevel":"high"');
 		expect(content).toContain('"role":"user"');
 	});
 
@@ -253,8 +254,9 @@ describe("ObsidianSessionManager", () => {
 		expect((await manager.getActiveSessionInfo()).name).toBe("Named before the first word");
 		// And the configuration the first run speaks is durable in the file.
 		const content = await adapter.read(blank.path);
-		expect(content).toContain('"type":"model_change"');
-		expect(content).toContain('"type":"thinking_level_change"');
+		expect(content).toContain('"pi.lane.config"');
+		expect(content).toContain('"deepseek-v4-pro"');
+		expect(content).toContain('"thinkingLevel":"high"');
 		// Appends after materialization land in the file directly.
 		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
 		expect(await adapter.read(blank.path)).toContain("Hello");
@@ -271,7 +273,7 @@ describe("ObsidianSessionManager", () => {
 		const removed = await session.appendCustomEntry("checkpoint", { phase: 2 });
 		await session.setLabel(removed, "Temporary");
 		await session.setLabel(removed, undefined);
-		const labels = (await session.getLog()).filter(item => item.kind === "fact" && item.fact === "label")
+		const labels = (await session.getLog()).filter((item): item is { kind: "fact"; seq: number; fact: "label"; targetId: string; label?: string } => item.kind === "fact" && item.fact === "label")
 			.map(item => ({ targetId: item.targetId, label: item.label }));
 		expect(await manager.listSessions()).toEqual([]);
 		await manager.materializeIfBlank(blank.path, DEFAULTS);
@@ -281,7 +283,7 @@ describe("ObsidianSessionManager", () => {
 		expect(await saved.getEntry(checkpoint)).toMatchObject({ type: "custom", customType: "checkpoint", data: { phase: 1 } });
 		expect(await saved.getLabel(checkpoint)).toBe("Revised research");
 		expect(await saved.getLabel(removed)).toBeUndefined();
-		expect((await saved.getLog()).filter(item => item.kind === "fact" && item.fact === "label")
+		expect((await saved.getLog()).filter((item): item is { kind: "fact"; seq: number; fact: "label"; targetId: string; label?: string } => item.kind === "fact" && item.fact === "label")
 			.map(item => ({ targetId: item.targetId, label: item.label }))).toEqual(labels);
 	});
 });
@@ -525,10 +527,11 @@ describe("ObsidianSessionManager open-zero-write contract", () => {
 		await next.continueRecentSession({ provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" });
 		const baseline = (await adapter.read(info.path)).length;
 
-		// First run start after the divergence: exactly one `model_change`.
+		// First run start after the divergence: exactly one model change configuration write.
 		await next.ensureConfigurationFor(info.path, { provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" }, "main");
 		const withChange = await adapter.read(info.path);
-		expect(withChange.slice(baseline)).toContain('"type":"model_change"');
+		expect(withChange.slice(baseline)).toContain('"pi.lane.config"');
+		expect(withChange.slice(baseline)).toContain('"gpt-5.2"');
 		const afterFirst = withChange.length;
 
 		// Idempotent: the file's model now matches the defaults, so a second run

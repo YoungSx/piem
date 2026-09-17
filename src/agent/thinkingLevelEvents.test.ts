@@ -25,7 +25,7 @@ describe("thinking level observations", () => {
 
 	async function levels(sessions: ObsidianSessionManager, path = sessions.getActiveSessionPath()!) {
 		return (await sessions.getSessionFor(path).findEntries({ order: "oldestFirst" }))
-			.flatMap(entry => entry.type === "thinking_level_change" ? [entry.thinkingLevel] : []);
+			.flatMap(entry => (entry as any).type === "thinking_level_change" ? [(entry as any).thinkingLevel] : []);
 	}
 
 	function gate() {

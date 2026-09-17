@@ -1,4 +1,4 @@
-import { getOrThrow, type ExecutionEnv, type Skill } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, getOrThrow, withAbortSignal, type ExecutionEnv, type Skill } from "@earendil-works/pi-agent-core";
 
 export const MAX_SKILL_RESOURCE_BYTES = 1024 * 1024;
 type EnvAccess = <T>(read: (env: ExecutionEnv) => Promise<T>) => Promise<T>;
@@ -27,22 +27,23 @@ function isInside(root: string, path: string): boolean {
 /** Pin the canonical root at discovery so retargeting a symlink cannot widen access. */
 export async function bindSkillResources(skill: Skill, env: ExecutionEnv, access: EnvAccess = (read) => read(env), vaultRoot?: string): Promise<void> {
 	const directory = skill.filePath.replace(/[/\\][^/\\]+$/, "");
-	const root = vaultRoot ?? getOrThrow(await env.canonicalPath(directory));
+	const root = vaultRoot ?? getOrThrow(await env.canonicalPath(directory, BACKGROUND_CONTEXT));
 	readers.set(skill, async (path, signal) => {
 		validateSkillResourcePath(path);
 		signal?.throwIfAborted();
+		const ctx = signal ? withAbortSignal(signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
 		return access(async (current) => {
-			const currentRoot = getOrThrow(await current.canonicalPath(root));
+			const currentRoot = getOrThrow(await current.canonicalPath(root, ctx));
 			if (normalized(currentRoot) !== normalized(root)) throw new Error("Skill directory changed. Reload skills and try again.");
-			const filePath = getOrThrow(await current.canonicalPath(getOrThrow(await current.joinPath([currentRoot, path]))));
+			const filePath = getOrThrow(await current.canonicalPath(getOrThrow(await current.joinPath([currentRoot, path], ctx)), ctx));
 			if (!isInside(root, filePath)) throw new Error("Skill resource escapes its directory.");
 			const relative = filePath.replace(/\\/g, "/").slice(currentRoot.replace(/\\/g, "/").replace(/\/+$/, "").length + 1);
 			validateSkillResourcePath(relative);
-			const info = getOrThrow(await current.fileInfo(filePath));
+			const info = getOrThrow(await current.fileInfo(filePath, ctx));
 			if (info.kind !== "file") throw new Error("Skill resource must be a file.");
 			if (info.size > MAX_SKILL_RESOURCE_BYTES) throw new Error("Skill resource exceeds the 1 MiB limit.");
 			signal?.throwIfAborted();
-			const bytes = getOrThrow(await current.readBinaryFile(filePath, signal));
+			const bytes = getOrThrow(await current.readBinaryFile(filePath, ctx));
 			if (bytes.byteLength > MAX_SKILL_RESOURCE_BYTES) throw new Error("Skill resource exceeds the 1 MiB limit.");
 			signal?.throwIfAborted();
 			try {

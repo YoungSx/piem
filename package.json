@@ -36,9 +36,10 @@
 		"typescript-eslint": "8.70.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-agent-core": "^0.84.3",
-		"@earendil-works/pi-ai": "^0.84.3",
-		"@earendil-works/pi-coding-agent": "0.84.3",
+		"@earendil-works/chord": "0.85.1",
+		"@earendil-works/pi-agent-core": "^0.85.1",
+		"@earendil-works/pi-ai": "^0.85.1",
+		"@earendil-works/pi-coding-agent": "0.85.1",
 		"@geminixiang/pi-agent-team": "^0.3.0",
 		"@juicesharp/rpiv-todo": "2.9.0",
 		"@modelcontextprotocol/client": "^2.0.0",
@@ -64,11 +65,12 @@
 		"@opentelemetry/resources": "2.10.0",
 		"@opentelemetry/sdk-metrics": "2.10.0",
 		"@opentelemetry/sdk-trace-base": "2.10.0",
-		"@earendil-works/pi-agent-core": "0.84.3",
-		"@earendil-works/pi-ai": "0.84.3",
-		"@earendil-works/pi-tui": "0.84.3",
-		"@earendil-works/pi-client": "0.84.3",
-		"@earendil-works/pi-protocol": "0.84.3",
-		"@earendil-works/pi-telemetry": "0.84.3"
+		"@earendil-works/chord": "0.85.1",
+		"@earendil-works/pi-agent-core": "0.85.1",
+		"@earendil-works/pi-ai": "0.85.1",
+		"@earendil-works/pi-tui": "0.85.1",
+		"@earendil-works/pi-client": "0.85.1",
+		"@earendil-works/pi-protocol": "0.85.1",
+		"@earendil-works/pi-telemetry": "0.85.1"
 	}
 }

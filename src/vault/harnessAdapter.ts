@@ -1,5 +1,6 @@
-import type { AgentHarnessTool, ExecutionToolContext, ToolExecutionMode } from "@earendil-works/pi-agent-core";
+import type { AgentHarnessTool, AgentHarnessToolInvocation, AgentHarnessToolUpdateCallback, ExecutionToolContext, ToolExecutionMode } from "@earendil-works/pi-agent-core";
 import type { AgentTool, AgentToolUpdateCallback, AgentToolResult } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "typebox";
 import { VaultExecutionEnv } from "./VaultExecutionEnv";
 import type { App } from "obsidian";
@@ -11,8 +12,8 @@ import type { App } from "obsidian";
  * pi ships two execute contracts:
  * - {@link AgentTool} (what the low-level `Agent` runs): four parameters.
  * - {@link AgentHarnessTool} (what `createReadTool` / `createWriteTool` /
- *   `createEditTool` produce): five parameters — the extra trailing
- *   `context` carries the turn's `{ env }`.
+ *   `createEditTool` produce): six parameters — onUpdate is 3rd, context carries
+ *   the turn's `{ env }`, plus invocation memo and chord Context.
  *
  * The low-level agent loop (`agent-loop.js`, `executePreparedToolCall`) always
  * calls `execute(id, args, signal, onUpdate)`; there is no hook to inject a
@@ -38,7 +39,7 @@ export interface HarnessToolContextOptions<TContext> {
 }
 
 /**
- * Wraps a 5-parameter harness tool as a 4-parameter {@link AgentTool}.
+ * Wraps a 6-parameter harness tool as a 4-parameter {@link AgentTool}.
  *
  * Everything except `execute` is carried over verbatim (name, label,
  * description, parameters schema, `prepareArguments`, `executionMode`), so
@@ -66,7 +67,16 @@ export function adaptHarnessTool<TContext extends object | undefined, TParameter
 			onUpdate?: AgentToolUpdateCallback<TDetails>,
 		): Promise<AgentToolResult<TDetails>> => {
 			const resolved = await resolveContext();
-			return await tool.execute(toolCallId, params, signal, onUpdate, resolved);
+			const chordContext = signal ? withAbortSignal(signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
+			const invocation: AgentHarnessToolInvocation = {
+				invocationId: toolCallId,
+				operationId: toolCallId,
+				turnId: toolCallId,
+				getMemo: async () => undefined,
+				setMemo: async () => {},
+			};
+			const updateCallback: AgentHarnessToolUpdateCallback<TDetails> = onUpdate ?? (() => {});
+			return await tool.execute(toolCallId, params, updateCallback, resolved, invocation, chordContext);
 		},
 	};
 }

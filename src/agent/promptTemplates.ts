@@ -1,4 +1,5 @@
 import {
+	BACKGROUND_CONTEXT,
 	formatPromptTemplateInvocation,
 	loadPromptTemplates,
 	parseCommandArgs,
@@ -66,7 +67,7 @@ export interface LoadedTemplates {
  * templates and no diagnostics — the same shape as an empty folder.
  */
 export async function loadVaultPromptTemplates(env: ExecutionEnv): Promise<LoadedTemplates> {
-	const { promptTemplates, diagnostics } = await loadPromptTemplates(env, VAULT_PROMPT_TEMPLATES_DIR);
+	const { promptTemplates, diagnostics } = await loadPromptTemplates(env, VAULT_PROMPT_TEMPLATES_DIR, BACKGROUND_CONTEXT);
 	return { templates: promptTemplates, diagnostics };
 }
 

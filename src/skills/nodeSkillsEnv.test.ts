@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, chmodSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSkills, type ExecutionEnv } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, loadSkills, type ExecutionEnv } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { createNodeSkillsEnv } from "./nodeSkillsEnv";
 
@@ -48,7 +48,7 @@ describe("Pi's filesystem behind the user-skills bridge", () => {
 		writeFileSync(join(home, "skills/.gitignore"), "ignored/\n");
 		symlinkSync(join(home, "elsewhere/linked"), join(home, "skills/linked"));
 		symlinkSync(join(home, "missing"), join(home, "skills/dangling"));
-		const result = await loadSkills(env, "skills");
+		const result = await loadSkills(env, "skills", BACKGROUND_CONTEXT);
 		// Pi diagnoses root markdown whose name differs from the containing
 		// folder while still loading it. Preserve that upstream diagnostic.
 		expect(result.diagnostics).toEqual([expect.objectContaining({ code: "invalid_metadata", path: root })]);
@@ -73,7 +73,7 @@ describe("Pi's filesystem behind the user-skills bridge", () => {
 		const missing = await env.readTextFile("missing.md");
 		expect(missing.ok).toBe(false);
 		if (!missing.ok) expect(missing.error.code).toBe("not_found");
-		expect(await loadSkills(env, "missing")).toEqual({ skills: [], diagnostics: [] });
+		expect(await loadSkills(env, "missing", BACKGROUND_CONTEXT)).toEqual({ skills: [], diagnostics: [] });
 	});
 
 	it("reports an unreadable skill instead of claiming a clean empty folder", async () => {
@@ -81,7 +81,7 @@ describe("Pi's filesystem behind the user-skills bridge", () => {
 		const file = skill(home, "skills/blocked/SKILL.md", "blocked");
 		chmodSync(file, 0);
 		try {
-			const result = await loadSkills(env, "skills");
+			const result = await loadSkills(env, "skills", BACKGROUND_CONTEXT);
 			expect(result.skills).toEqual([]);
 			expect(result.diagnostics).toEqual([expect.objectContaining({ code: "read_failed", path: file })]);
 		} finally {

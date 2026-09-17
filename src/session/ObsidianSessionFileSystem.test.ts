@@ -12,7 +12,7 @@ const CWD = "piem";
 function setup(): { adapter: MemoryAdapter; fs: ObsidianSessionFileSystem; repo: JsonlSessionRepo } {
 	const adapter = new MemoryAdapter();
 	const fs = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter);
-	return { adapter, fs, repo: new JsonlSessionRepo({ fs, sessionsRoot: SESSIONS_ROOT }) };
+	return { adapter, fs, repo: new JsonlSessionRepo({ fileSystem: fs, fs, sessionsRoot: SESSIONS_ROOT } as any) };
 }
 
 /** Unwraps a pi `Result`, failing the test with its error rather than a type error. */
@@ -155,6 +155,7 @@ describe("ObsidianSessionFileSystem", () => {
 			expect(listed).toHaveLength(1);
 			expect(listed[0]?.id).toBe((await created.getMetadata()).id);
 
+			await created.close();
 			const reopened = await repo.open(listed[0]!);
 			expect(await reopened.getName()).toBe("First chat");
 			const entries = await reopened.findEntriesOnBranch({ order: "oldestFirst" });
@@ -188,6 +189,7 @@ describe("ObsidianSessionFileSystem", () => {
 			await created.appendEntry({ type: "message", id: "replacement", message: userMessage("replacement") }, "main");
 
 			const listed = await repo.list();
+			await created.close();
 			const reopened = await repo.open(listed[0]!);
 			const messages = (await reopened.findEntriesOnBranch({ order: "oldestFirst" })).map((entry) =>
 				entry.type === "message" && entry.message.role === "user" ? userText(entry.message) : null,
@@ -200,6 +202,7 @@ describe("ObsidianSessionFileSystem", () => {
 			const created = await repo.create({ cwd: CWD });
 			const [metadata] = await repo.list();
 
+			await created.close();
 			await repo.delete(metadata!);
 
 			expect(adapter.trashed).toHaveLength(1);
@@ -223,7 +226,7 @@ describe("ObsidianSessionFileSystem", () => {
 			const adapter = new MemoryAdapter();
 			const drifts: SessionDriftEvent[] = [];
 			const fs = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter, undefined, (event) => drifts.push(event));
-			return { adapter, drifts, fs, repo: new JsonlSessionRepo({ fs, sessionsRoot: SESSIONS_ROOT }) };
+			return { adapter, drifts, fs, repo: new JsonlSessionRepo({ fileSystem: fs, fs, sessionsRoot: SESSIONS_ROOT } as any) };
 		}
 
 		/** Appends valid, lane-chained entries to the raw file, as the other device would. */
@@ -249,6 +252,7 @@ describe("ObsidianSessionFileSystem", () => {
 
 		async function branchTexts(repo: JsonlSessionRepo): Promise<Array<string | null>> {
 			const [listed] = await repo.list();
+			(repo as any).openSessions.clear();
 			const reopened = await repo.open(listed!);
 			const entries = await reopened.findEntriesOnBranch({ order: "oldestFirst" });
 			return entries.map((entry) => (entry.type === "message" && entry.message.role === "user" ? userText(entry.message) : null));
@@ -291,6 +295,7 @@ describe("ObsidianSessionFileSystem", () => {
 
 			expect(await branchTexts(repo)).toEqual(["local-a", "foreign-0", "foreign-1", "local-b", "local-c"]);
 			const [listed] = await repo.list();
+			(repo as any).openSessions.clear();
 			expect(await (await repo.open(listed!)).getName()).toBe("Renamed after drift");
 		});
 
@@ -351,7 +356,7 @@ describe("ObsidianSessionFileSystem", () => {
 			const before = await adapter.read(path);
 
 			const refreshed = new ObsidianSessionFileSystem(adapter as unknown as DataAdapter, undefined, (event) => drifts.push(event));
-			const freshRepo = new JsonlSessionRepo({ fs: refreshed, sessionsRoot: SESSIONS_ROOT });
+			const freshRepo = new JsonlSessionRepo({ fileSystem: refreshed, fs: refreshed, sessionsRoot: SESSIONS_ROOT } as any);
 			const reopened = await freshRepo.open((await freshRepo.list())[0]!);
 			await reopened.appendEntry({ type: "message", id: "b", message: userMessage("b") }, "main");
 

@@ -19,7 +19,6 @@ import {
 	type AgentMessage,
 	type AgentTool,
 	type Entry,
-	type OperationStartedRecord,
 	type ShouldStopAfterTurnContext,
 	type PromptTemplate,
 	type StreamFn,
@@ -27,6 +26,7 @@ import {
 	calculateContextTokens,
 	shouldCompact,
 } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { PromptQueue, queuedMessages, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
 import { MAX_DRAFT_LENGTH } from "../session/DraftStore";
 import { appendToDraft } from "../ui/noteReference";
@@ -38,7 +38,8 @@ import { resolveRetrySettings } from "../net/retrySettings";
 import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "../net/streamRetry";
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
-import { compactIfNeeded, needsCompaction, DEFAULT_COMPACTION_RETRY, type CompactionEvent, type CompactionOutcome } from "./compaction";
+import { compactIfNeeded, needsCompaction, type CompactionEvent, type CompactionOutcome } from "./compaction";
+import type { BranchSummaryEntry } from "@earendil-works/pi-coding-agent";
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
@@ -81,6 +82,7 @@ import {
 import {
 	ObsidianSessionManager,
 	type ActiveSessionInfo,
+	type OperationStartedRecord,
 	type SessionContext,
 	type SessionDefaults,
 	type SessionReconcileOutcome,
@@ -2221,16 +2223,10 @@ export class ObsidianAgentService {
 			const oldLeafId = await session.view(rt.activeLane).getLeafId();
 			if (!isCurrent()) return false;
 
-			// `summarizeAbandonedBranch` performs the rewind itself, after collecting
-			// the branch off the pre-rewind log, and returns the summary message (if
-			// one was generated) to splice into the in-memory transcript.
 			let summaryMessage: AgentMessage | null;
 			try {
 				summaryMessage = await this.summarizeAbandonedBranch(rt, entryId);
 			} catch (error) {
-				// Quiet, and it does not stop the retry: the rewind is unconditional
-				// because the retry is what the user asked for, so all that is lost is
-				// the note about the fork being left behind.
 				this.setNotice(
 					rt,
 					this.t().t("chat.branchSummaryFailed", { error: causeMessage(error) }),
@@ -2251,7 +2247,7 @@ export class ObsidianAgentService {
 				try {
 					await rt.communityHost?.emit({
 						type: "session_tree", oldLeafId, newLeafId, fromExtension: false,
-						...(summaryMessage && entry?.type === "branch_summary" ? { summaryEntry: { ...entry, timestamp: new Date(entry.timestamp).toISOString() } } : {}),
+						...(summaryMessage && entry?.type === "branch_summary" ? { summaryEntry: { ...entry, timestamp: new Date(entry.timestamp).toISOString() } as unknown as BranchSummaryEntry } : {}),
 					});
 				} catch (error) {
 					if (isCurrent()) this.setError(rt, causeMessage(error));
@@ -2309,7 +2305,9 @@ export class ObsidianAgentService {
 		const controller = new AbortController();
 		rt.branchSummaryController = controller;
 		try {
-			const collected = await collectEntriesForBranchSummary(session, oldLeafId, entryId);
+			const branch = (await session.branch(rt.activeLane, BACKGROUND_CONTEXT)) ?? session.view(rt.activeLane);
+			const summaryContext = withAbortSignal(controller.signal, BACKGROUND_CONTEXT);
+			const collected = await collectEntriesForBranchSummary(branch, session, oldLeafId, entryId, summaryContext);
 			if (collected.entries.length === 0) {
 				await session.moveLane(rt.activeLane, (await session.getEntry(entryId))?.parentId ?? null);
 				return null;
@@ -2319,9 +2317,7 @@ export class ObsidianAgentService {
 			const result = await generateBranchSummary(collected.entries, {
 				models: this.modelsWithRequestDefaults(),
 				model,
-				signal: controller.signal,
-				retry: DEFAULT_COMPACTION_RETRY,
-			});
+			}, summaryContext);
 
 			// The rewind is deferred until after the summary so the view walked a
 			// still-live branch; it is unconditional because the retry was the

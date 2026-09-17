@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Entry, JsonlSessionMetadata } from "@earendil-works/pi-agent-core";
 import { aggregateSessionSearchHits, makeSnippet, projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
 
-const META = { id: "s1", path: "chats/s1.jsonl", cwd: "piem", createdAt: 0, modifiedAt: 0, sourceFormat: 4 } as JsonlSessionMetadata;
+const META = { id: "s1", path: "chats/s1.jsonl", cwd: "piem", createdAt: 0, modifiedAt: 0, storageVersion: 1 } as JsonlSessionMetadata;
 
 function messageEntry(message: unknown): Entry {
 	return { type: "message", id: "e1", seq: 1, parentId: null, timestamp: 0, message } as Entry;
@@ -33,13 +33,13 @@ describe("projectSessionEntryText", () => {
 	});
 
 	test("indexes summaries and appends a label", () => {
-		const compaction = { type: "compaction", id: "c1", seq: 2, parentId: null, timestamp: 0, summary: "earlier work", retainedTail: [], tokensBefore: 10 } as Entry;
+		const compaction = { type: "compaction", id: "c1", seq: 2, parentId: null, timestamp: 0, summary: "earlier work", retainedTail: [], tokensBefore: 10 } as unknown as Entry;
 		expect(projectSessionEntryText(META, compaction)).toBe("earlier work");
 		expect(projectSessionEntryText(META, messageEntry({ role: "user", content: "body", timestamp: 0 }), "pinned")).toBe("body pinned");
 	});
 
 	test("configuration entries carry no searchable body", () => {
-		const modelChange = { type: "model_change", id: "m1", seq: 3, parentId: null, timestamp: 0, provider: "anthropic", modelId: "claude" } as Entry;
+		const modelChange = { type: "model_change", id: "m1", seq: 3, parentId: null, timestamp: 0, provider: "anthropic", modelId: "claude" } as unknown as Entry;
 		expect(projectSessionEntryText(META, modelChange)).toBe("");
 	});
 });

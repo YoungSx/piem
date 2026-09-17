@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model, ProviderResponse } from "@earendil-works/pi-ai";
-import type { ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { BranchSummaryEntry, ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
@@ -507,7 +507,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 					// whose reads and writes can use this same ContextSession.
 					await invoke(() => runner.emit({
 						type: "session_tree", oldLeafId, newLeafId: session.getLeafId(), fromExtension: true,
-						...(summaryEntry?.type === "branch_summary" ? { summaryEntry } : {}),
+						...(summaryEntry?.type === "branch_summary" ? { summaryEntry: summaryEntry as unknown as BranchSummaryEntry } : {}),
 					}));
 				}
 				return result;

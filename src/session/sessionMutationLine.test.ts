@@ -138,6 +138,33 @@ describe("repairMutationLine", () => {
 		expect(repairMutationLine(`${JSON.stringify({ kind: "fact", seq: 2, fact: "name", name: "N" })}\n`, disk).action).toBe("kept");
 	});
 
+	it("renumbers an array transaction without entries when seq stopped continuing", () => {
+		const disk = scanDiskLines([entryLine({ seq: 1, id: "a" }), entryLine({ seq: 2, id: "b" })]);
+		const raw = [
+			{ kind: "value", op: "set", seq: 1, namespace: "pi.result", key: "op1", value: { status: "completed" } },
+			{ kind: "value", op: "set", seq: 2, namespace: "pi.lane.state", key: "main", value: { currentOperationId: null } },
+		];
+		const repaired = repairMutationLine(`${JSON.stringify(raw)}\n`, disk);
+		expect(repaired.action).toBe("repaired");
+		if (repaired.action === "repaired") {
+			expect(repaired.seq).toBe(4);
+			const parsed = JSON.parse(repaired.line) as { seq: number }[];
+			expect(parsed[0]?.seq).toBe(3);
+			expect(parsed[1]?.seq).toBe(4);
+		}
+	});
+
+	it("keeps an array transaction when sequences continue monotonically", () => {
+		const disk = scanDiskLines([entryLine({ seq: 1, id: "a" }), entryLine({ seq: 2, id: "b" })]);
+		const raw = [
+			{ kind: "value", op: "set", seq: 3, namespace: "pi.result", key: "op1", value: { status: "completed" } },
+			{ kind: "value", op: "set", seq: 4, namespace: "pi.lane.state", key: "main", value: { currentOperationId: null } },
+		];
+		const line = `${JSON.stringify(raw)}\n`;
+		const repaired = repairMutationLine(line, disk);
+		expect(repaired).toEqual({ action: "kept", line, seq: 4 });
+	});
+
 	it("passes non-mutation content through untouched", () => {
 		const header = `{"kind":"header","version":4,"id":"s","createdAt":"t","cwd":""}\n`;
 		expect(repairMutationLine(header, emptyDisk)).toEqual({ action: "kept", line: header, seq: 0 });

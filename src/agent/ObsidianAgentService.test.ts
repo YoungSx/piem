@@ -7,11 +7,11 @@ import { DEFAULT_MODEL_CONTEXT_WINDOW } from "../modelConfig";
 import type { ProviderConfig } from "../modelConfig";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { AgentMessage, OperationStartedRecord, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { PromptQueue } from "./promptQueue";
 import { createReferenceMessage, messageReferences, type ContextReference } from "./contextReference";
 import type { SessionRuntime } from "./SessionRuntime";
-import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
+import { ObsidianSessionManager, type OperationStartedRecord } from "../session/ObsidianSessionManager";
 import { DEFAULT_SESSION_RETENTION } from "../session/retention";
 import { DEFAULT_SESSION_DIR } from "../session/sessionDir";
 import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
@@ -559,7 +559,7 @@ describe("ObsidianAgentService", () => {
 		await service.renameSession("Release notes");
 
 		const content = await adapter.read(session?.path ?? "");
-		expect(content).toContain('"kind":"fact"');
+		expect(content).toContain('"namespace":"pi.session.name"');
 		expect(content).toContain("First conversation");
 		expect(content.split("\n")[0]).toContain('"kind":"header"');
 	});
@@ -1809,10 +1809,11 @@ describe("ObsidianAgentService", () => {
 			// then replay the tool result twice: once from retainedTail, once as its
 			// own entry.
 			const sessionPath = (await service.listSessions())[0]?.path ?? "";
-			const entries = (await adapter.read(sessionPath))
+			const raw = (await adapter.read(sessionPath))
 				.split("\n")
 				.filter((line) => line.trim() !== "")
-				.map((line) => JSON.parse(line) as { kind: string; type?: string; id?: string; parentId?: string });
+				.map((line) => JSON.parse(line));
+			const entries = raw.flatMap((item) => (Array.isArray(item) ? item : [item])) as { kind: string; type?: string; id?: string; parentId?: string }[];
 			const compaction = entries.filter((e) => e.kind === "entry" && e.type === "compaction");
 			expect(compaction).toHaveLength(1);
 			const entryIndex = entries.findIndex((e) => e.kind === "entry" && e.type === "compaction");
@@ -3164,10 +3165,11 @@ describe("exporting a session as a note", () => {
 describe("recording a reply's duration", () => {
 	/** The message entries of a session log, in order. */
 	async function loggedMessages(adapter: MemoryAdapter, sessionPath: string): Promise<AssistantMessage[]> {
-		const entries = (await adapter.read(sessionPath))
+		const raw = (await adapter.read(sessionPath))
 			.split("\n")
 			.filter((line) => line.trim() !== "")
-			.map((line) => JSON.parse(line) as { type?: string; message?: AssistantMessage });
+			.map((line) => JSON.parse(line));
+		const entries = raw.flatMap((item) => (Array.isArray(item) ? item : [item])) as { type?: string; message?: AssistantMessage }[];
 		return entries.filter((entry) => entry.type === "message").map((entry) => entry.message!) as AssistantMessage[];
 	}
 
@@ -5644,7 +5646,7 @@ describe("original bookmark extension integration", () => {
 			const entered = new Promise<void>(resolve => { started = resolve; });
 			const append = adapter.append.bind(adapter);
 			adapter.append = async (target, data) => {
-				if (data.includes('"fact":"label"')) { started(); await gate; }
+				if (data.includes('"pi.entry.label"') || data.includes('"fact":"label"')) { started(); await gate; }
 				await append(target, data);
 			};
 			const saving = service.runBookmark(path, "bookmark", "Wait for disk");
@@ -5668,7 +5670,7 @@ describe("original bookmark extension integration", () => {
 			const entered = new Promise<void>(resolve => { started = resolve; });
 			const append = adapter.append.bind(adapter);
 			adapter.append = async (target, data) => {
-				if (data.includes('"fact":"label"')) { started(); await gate; }
+				if (data.includes('"pi.entry.label"') || data.includes('"fact":"label"')) { started(); await gate; }
 				await append(target, data);
 			};
 			const saving = service.runBookmark(path, "bookmark", "To delete");
