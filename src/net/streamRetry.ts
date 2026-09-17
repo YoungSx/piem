@@ -146,6 +146,10 @@ async function driveTurn(
 	// read by the scheduled callback and the abort-during-sleep report.
 	let lastError = "unknown error";
 	for (let attempt = 0; ; attempt++) {
+		if (signal?.aborted) {
+			output.end(synthesizeMessage(model, "aborted", undefined));
+			return;
+		}
 		if (attempt > 0) {
 			const delayMs = Math.min(policy.baseDelayMs * 2 ** (attempt - 1), maxDelay);
 			await callbacks.onRetryScheduled?.(attempt, maxRetries, delayMs, lastError);
@@ -307,6 +311,9 @@ async function consumeAttempt(
 	function outcome(message: AssistantMessage): AttemptOutcome {
 		const aborted = message.stopReason === "aborted" || signal?.aborted === true;
 		const failed = message.stopReason === "error" && !aborted;
+		const finalMessage = aborted && message.stopReason !== "aborted"
+			? synthesizeMessage(model, "aborted", undefined, lastPartial)
+			: message;
 		return {
 			released,
 			failed,
@@ -314,7 +321,7 @@ async function consumeAttempt(
 			// A released attempt can never be retried — its content is already
 			// on the record; replaying it would duplicate everything shown.
 			retryable: !released && failed && !aborted && isRetryable(message),
-			message,
+			message: finalMessage,
 		};
 	}
 }

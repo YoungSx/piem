@@ -5,6 +5,8 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
+import { stubWindowMembers } from "../testUtils/windowStub";
+import { webcrypto } from "node:crypto";
 import { DEFAULT_SESSION_RETENTION } from "../session/retention";
 import { DEFAULT_SESSION_DIR } from "../session/sessionDir";
 import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
@@ -885,4 +887,104 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 
 		await stopRun(service, pathA!);
 	});
+});
+
+/** The runtime shape this test inspects, as a narrow cast alias. */
+interface MemberRuntimeProbe {
+	sessionPath: string;
+	memberSpec: { parentSession?: string; customTools: unknown[] } | undefined;
+	agent: { state: { tools: Array<{ name: string }> } } | null;
+}
+
+describe("agent-team member sessions through the service", () => {
+	/**
+	 * The production seam, driven end to end: the parent conversation's model
+	 * calls `team_start`, the community host's factory reaches the bridge, and
+	 * the bridge reaches the service's own `createMemberSession` — the real
+	 * one. Members receive real session files (decision 3), the v4 header
+	 * carries `parentSessionId` (decision 1), the naming is the package's field
+	 * (decision 1), and the tool set drops the full-content writer and the
+	 * delegation pair (decision 5A and the layers rule).
+	 */
+	it("creates named, lineage-linked member sessions with a write-free tool set", async () => {
+		const restore = stubWindowMembers(
+			{
+				crypto: webcrypto as unknown as Crypto,
+				setTimeout: (callback: () => void, delay?: number) => globalThis.setTimeout(callback, delay),
+				clearTimeout: (id?: number) => { if (id !== undefined) globalThis.clearTimeout(id); },
+			},
+		);
+		try {
+			const contexts: Context[] = [];
+			let parentRequests = 0;
+			let memberCalls = 0;
+			const streamFn: StreamFn = (model, context) => {
+				contexts.push({ ...context, messages: [...context.messages] });
+				if (String(context.systemPrompt ?? "").includes("one symmetric worker")) {
+					memberCalls += 1;
+					return scriptedToolCallStream(model, `member-${memberCalls}`, "team_finish", { summary: "scripted member is done" });
+				}
+				parentRequests += 1;
+				if (parentRequests === 1) {
+					return scriptedToolCallStream(model, "team_start_1", "team_start", {
+						objective: "each member finishes at once",
+						members: [{ id: "m1", name: "Alice" }, { id: "m2", name: "Bob" }],
+						initialMessage: "begin",
+					});
+				}
+				return scriptedTextStream(model, "team settled");
+			};
+			const service = createService(new MemoryAdapter(), streamFn);
+			try {
+				expect(await service.sendPrompt("Start a two-member team")).toBe(true);
+
+				// Poll: member naming and the tool result land asynchronously.
+				const deadline = Date.now() + 20_000;
+				const runtimes = () => {
+					const serviceRuntimes = (service as unknown as { runtimes: Map<string, MemberRuntimeProbe> }).runtimes;
+					return [...serviceRuntimes.values()];
+				};
+				while (Date.now() < deadline) {
+					if (runtimes().filter(rt => rt.memberSpec).length >= 2) break;
+					await Bun.sleep(50);
+				}
+				const members = runtimes().filter(rt => rt.memberSpec);
+				expect(members).toHaveLength(2);
+
+				// Decision 5A + the layers rule: no `write`, no delegation pair.
+				for (const member of members) {
+					const names = member.agent!.state.tools.map(tool => tool.name);
+					expect(names).toContain("read");
+					expect(names).toContain("edit");
+					expect(names).toContain("team_say");
+					expect(names).not.toContain("write");
+					expect(names).not.toContain("spawn_subagent");
+					expect(names).not.toContain("wait_subagent");
+				}
+
+				// Decision 1: lineage through the ordinary v4 header field, and the
+				// author's exact member naming in the session list.
+				const parentId = service.getSnapshot().session!.id;
+				const sessions = (service as unknown as { sessionManager: {
+					listSessions(): Promise<Array<{ id: string; name?: string; parentSessionId?: string }>>;
+					claimed: Set<string>;
+				} }).sessionManager;
+				while (Date.now() < deadline) {
+					const listed = await sessions.listSessions();
+					if (listed.filter(entry => entry.parentSessionId === parentId && entry.name).length >= 2) break;
+					await Bun.sleep(50);
+				}
+				const listed = await sessions.listSessions();
+				const linked = listed.filter(entry => entry.parentSessionId === parentId);
+				expect(linked).toHaveLength(2);
+				expect(linked.map(entry => entry.name).sort()).toEqual([
+					"agent team · Alice (m1)", "agent team · Bob (m2)",
+				]);
+				// Decision 2: the team-run claim holds while the retained run lives.
+				for (const member of members) {
+					expect(sessions.claimed.has((member as { sessionPath: string }).sessionPath)).toBe(true);
+				}
+			} finally { service.dispose(); }
+		} finally { restore(); }
+	}, 30_000);
 });

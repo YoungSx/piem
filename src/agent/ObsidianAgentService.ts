@@ -94,6 +94,8 @@ import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
 import { createSubagentExtension } from "../subagent/extension";
+import { adaptHarnessTool } from "../vault/harnessAdapter";
+import type { MemberSessionHandle, MemberSessionSpec } from "../extensions/team/memberTypes";
 import { OBSIDIAN_AGENT_SYSTEM_PROMPT } from "./systemPrompt";
 import {
 	composeSystemPrompt,
@@ -1926,7 +1928,10 @@ export class ObsidianAgentService {
 		// Released before the ledger close: the run is over either way, and a
 		// close that fails below (a session deleted mid-run has no file to write
 		// to) must not leave a claim pinned on a chat that no longer exists.
-		this.sessionManager.releaseSession(rt.sessionPath);
+		// Member session claims belong to the team's lifetime (dispose releases).
+		if (!rt.memberSpec) {
+			this.sessionManager.releaseSession(rt.sessionPath);
+		}
 		if (!ledger) {
 			return;
 		}
@@ -4459,6 +4464,15 @@ export class ObsidianAgentService {
 					})],
 				}),
 				onError: error => { if (!rt.bookmarkClosing && rt.communityHost === community) this.setError(rt, causeMessage(error)); },
+				// The agent-team bridge's host half (design decision 3 of five): a
+				// member session is a first-class pool session, anchored to this
+				// conversation through parentSessionId and claimed for the team's
+				// lifetime. The bridge normalizes what pi's own createAgentSession
+				// machinery would have done; this host is what answers it.
+				createMemberSession: spec => {
+					assertOwner();
+					return this.createTeamMemberSession(rt, spec);
+				},
 				activityChanged: busy => { if (rt.communityHost === community) { rt.extensionBusy = busy; this.notify(); } },
 			},
 			getEntries: () => { assertOwner(); return view.getEntries(); },
@@ -4581,7 +4595,20 @@ export class ObsidianAgentService {
 				return { tokens: fill.tokens, contextWindow: fill.contextWindow, percent: fill.ratio * 100 };
 			},
 			abort: () => { assertOwner(); if (this.extensionFactories) void this.abortSession(rt.sessionPath); else { rt.compactionPending = false; rt.extensionStopAfterTurn = true; } },
-			waitForIdle: async () => { assertOwner(); await rt.agent?.waitForIdle(); community.assertActive(); assertOwner(); },
+			waitForIdle: async () => {
+				assertOwner();
+				// The only caller is the extension timer gate (`beforeTimer`). A timer
+				// scheduled by this session's own in-flight run — the team runtime's
+				// reaction pacing runs inside its `team_start` tool call — must not
+				// gate on that same run's idleness: waiting for yourself is the one
+				// deadlock this guard exists to omit. pi runs timer bodies while the
+				// scheduling operation is open; piem's idle gate is the extra, and
+				// the extra is what turns self-scheduling into a lock-up.
+				if (rt.agent?.state.isStreaming) return;
+				await rt.agent?.waitForIdle();
+				community.assertActive();
+				assertOwner();
+			},
 			deliver: pending => {
 				assertOwner();
 				for (const message of pending) rt.promptQueue.add({ text: "/continue", imageCount: 0, stagedImages: [], message });
@@ -4790,6 +4817,175 @@ export class ObsidianAgentService {
 	 */
 	private async buildToolsAsync(rt: SessionRuntime): Promise<AgentTool[]> {
 		return this.buildTools(rt);
+	}
+
+	/**
+	 * The agent-team bridge's host half (PR-team, decision 3 of five).
+	 *
+	 * A member session is a first-class pool session, not a subagent: it gets a
+	 * real session file in the same directory (decision 3 — the acceptance line
+	 * is that the user can open it from the session list and keep chatting),
+	 * the parent link rides ordinary lineage (`parentSessionId`, decision 1 —
+	 * the same v4 header field pi's fork fills), and the team-run claim
+	 * (decision 2) anchors to the package's own retain/shutdown lifecycle:
+	 * creation claims, the handle's dispose releases. `focus: false` and a
+	 * very explicit no-`createSession` are what keep the member from stealing
+	 * the panel's focus or the reopen-on-launch record — members are not what
+	 * the user is looking at.
+	 */
+	private async createTeamMemberSession(parent: SessionRuntime, spec: MemberSessionSpec): Promise<MemberSessionHandle> {
+		const settings = this.getSettings();
+		const parentModel = parent.agent?.state.model;
+		const selected = getSelectedModel(settings);
+		const parentSessionId = parent.sessionInfo?.id ?? spec.parentSession;
+		const defaults: SessionDefaults = {
+			provider: parentModel?.provider ?? selected.provider,
+			modelId: parentModel?.id ?? selected.id,
+			...(parentSessionId ? { parentSessionId } : {}),
+		};
+		const info = await this.sessionManager.createBlankSession(defaults, false);
+		// Member history must survive a mid-run crash, and the prompt path of a
+		// member run bypasses the focused send pipeline that materializes blank
+		// sheets — so the file comes into existence here, before the first turn.
+		await this.sessionManager.materializeIfBlank(info.path, defaults);
+		const rt = this.runtimeFor(info.path);
+		rt.memberSpec = spec;
+		this.sessionManager.retainSession(info.path);
+		await this.replaceMemberAgent(rt);
+		this.log.info("Agent-team member session created", () => ({
+			path: rt.sessionPath,
+			parent: parent.sessionPath,
+			tools: spec.customTools.length,
+		}));
+		return this.memberSessionHandle(rt);
+	}
+
+	/**
+	 * The lean build for a member runtime (no community extensions, no context
+	 * injection — members work on the vault, not on the panel).
+	 */
+	private async replaceMemberAgent(rt: SessionRuntime): Promise<void> {
+		const spec = rt.memberSpec;
+		if (!spec) {
+			throw new Error("Member agent build requires a member spec.");
+		}
+		rt.skills = this.memberSkills(spec);
+		rt.unsubscribeAgent?.();
+		rt.promptQueue.clear();
+		rt.steeredPrompts = [];
+		rt.queueInterrupt = false;
+		rt.compactionPending = false;
+		rt.compactionGate = null;
+		rt.stopEpoch += 1;
+		this.forgetPendingToolCalls(rt);
+		const settings = this.getSettings();
+		const model = (spec.model as Model<string> | undefined) ?? getSelectedModel(settings);
+		// The package already lowered `max` to `medium`; anything left is cast
+		// through unchanged, with the plugin's default guarding an absent level.
+		const memberLevel = (spec.thinkingLevel ?? DEFAULT_THINKING_LEVEL) as ThinkingLevel;
+		const stream = this.resolveStreamFn();
+		const agent: Agent = new Agent({
+			// Same retry wrapper as the focused build: a member turn rides the
+			// same transport policy as every other provider request in the plugin.
+			streamFn: withTurnRetry((requestModel, context, options) => stream(requestModel, context, options), {
+				policy: (): TurnRetryPolicy => ({
+					...resolveRetrySettings(this.getSettings().retry),
+					maxDelayMs: DEFAULT_TURN_MAX_DELAY_MS,
+				}),
+				callbacks: this.retryCallbacksFor(rt),
+			}),
+			convertToLlm,
+			initialState: {
+				// The package's member doctrine replaces the Obsidian agent prompt;
+				// skills ride after it, pre-filtered by the package (its own operator
+				// skill must not reach a member).
+				systemPrompt: composeSystemPrompt(spec.systemPrompt ?? "", rt.skills),
+				model,
+				thinkingLevel: clampThinkingLevel(model, memberLevel),
+				tools: this.buildMemberTools(rt, spec),
+				messages: [],
+			},
+			getApiKey: provider => this.getApiKey(provider),
+			prepareNextTurn: () => ({ model: agent.state.model, thinkingLevel: agent.state.thinkingLevel }),
+			sessionId: rt.sessionInfo?.id,
+			toolExecution: "parallel",
+		});
+		rt.agent = agent;
+		rt.unsubscribeAgent = agent.subscribe((event) => this.handleAgentEvent(rt, event));
+	}
+
+	/** piem's skill list through the package's filter — no override means all. */
+	private memberSkills(spec: MemberSessionSpec): readonly Skill[] {
+		const base = this.skills;
+		if (!spec.skillsOverride) {
+			return base;
+		}
+		return spec.skillsOverride({ skills: base }).skills as readonly Skill[];
+	}
+
+	/**
+	 * The member tool set: the vault-facing tools, minus the blind
+	 * full-content `write` tool (decision 5A — members edit; edit's exact
+	 * match against a fresh read is the collision-safe mutation) and the
+	 * subagent delegation pair (the two hierarchy layers stay separate — a
+	 * member is not a delegation host, exactly as the parent is not a team
+	 * member), plus the package's team coordination tools as 4-parameter
+	 * agent tools.
+	 */
+	private buildMemberTools(rt: SessionRuntime, spec: MemberSessionSpec): AgentTool[] {
+		const excluded = new Set(["write", "spawn_subagent", "wait_subagent"]);
+		// The shared build wraps every execute with this member runtime as the
+		// current one, so read_skill's snapshot and ask_user's ownership resolve
+		// against the member conversation, not the panel's.
+		const vaultTools = this.buildTools(rt).filter(tool => tool.name && !excluded.has(tool.name));
+		const coordination = (spec.customTools as unknown as Parameters<typeof adaptHarnessTool>[0][]).map(def =>
+			adaptHarnessTool(def, { context: {} }));
+		return [...vaultTools, ...coordination];
+	}
+
+	/**
+	 * The handle the bridge drives per member, over the pool session piem just
+	 * built. Shape is the package's own SessionLike contract.
+	 */
+	private memberSessionHandle(rt: SessionRuntime): MemberSessionHandle {
+		return {
+			sessionId: rt.sessionInfo?.id ?? rt.sessionPath,
+			sessionFile: rt.sessionPath,
+			prompt: async (text: string): Promise<void> => {
+				const agent = rt.agent;
+				if (!agent) {
+					throw new Error("Member session was disposed before its turn ran.");
+				}
+				await agent.prompt(text);
+			},
+			abort: async (): Promise<void> => { rt.agent?.abort(); },
+			dispose: async (): Promise<void> => {
+				if (this.runtimes.get(rt.sessionPath) === rt) {
+					this.removeRuntime(rt);
+				}
+			},
+			setSessionName: (name: string): void => {
+				// Decision 1: the author's exact member naming. A failed write is
+				// logged, not swallowed: the member keeps working, but the list
+				// must show what it is named, and silently keeping the unnamed
+				// file would hide the linkage the manifest points at.
+				void this.sessionManager.appendSessionInfoFor(rt.sessionPath, name).catch(
+					error => this.log.warn("Member session naming failed", () => ({ path: rt.sessionPath, error: causeMessage(error) })),
+				);
+			},
+			getLastAssistantText: (): string | undefined => {
+				const messages = rt.agent?.state.messages ?? [];
+				for (let index = messages.length - 1; index >= 0; index--) {
+					const message = messages[index];
+					if (message?.role !== "assistant") continue;
+					return message.content.filter((part): part is { type: "text"; text: string } => part.type === "text")
+						.map(part => part.text)
+						.join("\n")
+						.trim() || undefined;
+				}
+				return undefined;
+			},
+		};
 	}
 
 	/**
