@@ -105,10 +105,29 @@ describe("buildModelSuggestions", () => {
 		expect(builtin).toBeGreaterThan(reported);
 	});
 
-	it("is unaffected by which provider is selected, since it takes no selection", () => {
-		// A gateway commonly serves models it did not originate, and `modelConfig.ts`
-		// reserves a many-to-many future. Scoping this list to one provider would
-		// have to be undone for both.
+	it("follows the provider switch: only the selected provider's listing is offered", () => {
+		// The listing is a per-endpoint answer, so the selected provider's own list
+		// already names everything that endpoint accepts. Another provider's ids
+		// left in would ignore the switch entirely.
+		const both = buildModelSuggestions(
+			[listing(["from-a"], { id: "prov-1", name: "Gateway A" }), listing(["from-b"], { id: "prov-2", name: "Gateway B" })],
+			"prov-2",
+		);
+		expect(find(both, "from-b")).toBeDefined();
+		expect(find(both, "from-a")).toBeUndefined();
+	});
+
+	it("keeps the builtin fallback under a selected provider with no listing", () => {
+		// An endpoint that implements no listing still leaves a field to fill, and
+		// the fallback pair is what it offers — never the other endpoint's ids.
+		const suggestions = buildModelSuggestions([listing(["from-b"], { id: "prov-2", name: "Gateway B" })], "prov-1");
+		expect(find(suggestions, "from-b")).toBeUndefined();
+		expect(find(suggestions, someBuiltinId())).toBeDefined();
+	});
+
+	it("shows every listing when no provider is selected", () => {
+		// The dropdown is empty only before a provider exists, and then scoping to
+		// one would hide every endpoint answer in favour of none.
 		const both = buildModelSuggestions([
 			listing(["from-a"], { id: "prov-1", name: "Gateway A" }),
 			listing(["from-b"], { id: "prov-2", name: "Gateway B" }),
