@@ -4,7 +4,6 @@ import { Type } from "typebox";
 import { VIEW_TYPE_PIEM_CHAT } from "../constants";
 import { textResult, throwIfAborted } from "./toolResult";
 import type { AskUserBroker } from "./askUserBroker";
-import type { AskUserQuestion } from "./askUserQuestion";
 
 /**
  * Tools through which the agent reaches the user directly, rather than the
@@ -121,7 +120,7 @@ export function createAskUserTool(app: App, broker: AskUserBroker, ownerId?: str
 				);
 			}
 
-			const answers = await broker.ask(params.questions as readonly AskUserQuestion[], signal, ownerId);
+			const answers = await broker.ask(params.questions, signal, ownerId);
 			if (answers === null) {
 				return textResult(
 					"The user handed the decision back without answering. Do not re-ask the same thing; make the most reasonable choice yourself and say that you did.",

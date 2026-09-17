@@ -15,7 +15,7 @@ export interface SessionDraft {
 /** Text and references share one adoption, revision, and persisted draft file. */
 export function useSessionDraft(store: DraftStore | undefined, scope: string | undefined): SessionDraft {
 	const adoption = useMemo(() => ({ store, scope, revision: 0,
-		value: { text: "", references: [] } as DraftContent,
+		value: { text: "", references: [] as ContextReference[] },
 	}), [store, scope]);
 	const active = useRef<typeof adoption>();
 	const [loaded, setLoaded] = useState<typeof adoption>();
