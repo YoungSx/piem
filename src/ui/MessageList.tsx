@@ -5,6 +5,7 @@ import { AttachmentCard } from "./AttachmentCard";
 import type { AgentMessage, CustomMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { AssistantMessage, ImageContent, ThinkingContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import type { App, Component, IconName } from "obsidian";
 import type { TextBlockKind } from "./markdownPolicy";
 import { MarkdownText } from "./MarkdownText";
@@ -207,6 +208,8 @@ export interface MessageListProps {
 	 * than holding a fixed seat the messages slide under.
 	 */
 	extensionTail?: React.ReactNode;
+	/** Optional extension-registered Markdown transformation pipeline. */
+	transformMarkdown?: (markdown: string, context: MarkdownTransformContext) => string;
 }
 
 /**
@@ -471,6 +474,7 @@ export function MessageList({
 	onAnswerQuestion,
 	onDismissQuestion,
 	extensionTail,
+	transformMarkdown,
 }: MessageListProps): React.JSX.Element {
 	const t = useT();
 	// Neither changing notes nor replacing a callback changes historical prose.
@@ -646,6 +650,7 @@ export function MessageList({
 					compactionEvent={compactionEvent}
 					compactionRetained={compactionRetained}
 					contextWindow={contextWindow}
+					transformMarkdown={transformMarkdown}
 				/>
 				{/*
 				 * The question sits at the tail, below the last thing said and above the
@@ -771,7 +776,7 @@ function focusAnchor(event: React.MouseEvent<HTMLAnchorElement>, anchorId: strin
 
 interface MessageHistoryProps extends Pick<MessageListProps,
 	"messages" | "isStreaming" | "pendingToolCalls" | "unpersistedMessages" | "app" | "component" |
-	"compactionEvent" | "compactionRetained" | "contextWindow"> {
+	"compactionEvent" | "compactionRetained" | "contextWindow" | "transformMarkdown"> {
 	/** Pi appends in place; capture the length before that same array grows again. */
 	messageCount: number;
 	showAgentDetails: boolean;
@@ -794,6 +799,7 @@ const MessageHistory = memo(function MessageHistory({
 	messages, isStreaming, pendingToolCalls, unpersistedMessages, app, component,
 	sourcePathRef, actionsRef, canRetry, canEdit, canFork, runSettled,
 	showAgentDetails, traceExpand, compactionEvent, compactionRetained, contextWindow,
+	transformMarkdown,
 }: MessageHistoryProps): React.JSX.Element {
 	const t = useT();
 	const activeIndex = streamingIndex(isStreaming, messages);
@@ -805,6 +811,7 @@ const MessageHistory = memo(function MessageHistory({
 	const context: MessageContext = {
 		app, component, sourcePath: sourcePathRef.current, showAgentDetails, traceExpand,
 		foldPlan, pairPlan, liveRow, runningToolCalls, streamingMessageIndex: activeIndex, contextWindow, t,
+		transformMarkdown,
 	};
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
@@ -1385,6 +1392,8 @@ interface MessageContext {
 	 * hook of their own.
 	 */
 	t: Translator;
+	/** Optional extension-registered Markdown transformation pipeline. */
+	transformMarkdown?: (markdown: string, context: MarkdownTransformContext) => string;
 }
 
 /**
@@ -1419,7 +1428,7 @@ interface TextBlockProps {
  * Markdown-vs-plain decision lives in exactly one place (`markdownPolicy.ts`).
  */
 function Block({ text, kind, isStreaming, context, className }: TextBlockProps): React.JSX.Element {
-	return <MarkdownText text={text} kind={kind} isStreaming={isStreaming} app={context.app} component={context.component} sourcePath={context.sourcePath} className={className} />;
+	return <MarkdownText text={text} kind={kind} isStreaming={isStreaming} app={context.app} component={context.component} sourcePath={context.sourcePath} className={className} transformMarkdown={context.transformMarkdown} />;
 }
 
 function renderUserMessage(message: UserMessage, args: RenderArgs): React.ReactNode {
@@ -1477,7 +1486,7 @@ function SkillInvocationPill({ invocation, context }: { invocation: SkillInvocat
 	const pill = (
 		<AttachmentCard icon="book-open" label={invocation.name} kind={t.t("chat.commandKindSkill")}
 			title={invocation.location} className="piem-chat__skill-pill">
-			<MarkdownText text={invocation.body} kind="user" isStreaming={false} app={context.app} component={context.component} sourcePath={context.sourcePath} />
+			<MarkdownText text={invocation.body} kind="user" isStreaming={false} app={context.app} component={context.component} sourcePath={context.sourcePath} transformMarkdown={context.transformMarkdown} />
 		</AttachmentCard>
 	);
 	if (invocation.trailing === "") {

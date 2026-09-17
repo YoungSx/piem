@@ -32,5 +32,9 @@ export interface ExtensionUIAdapter extends Pick<ExtensionUIContext,
 	setComponentWidget?(key: string, surface: NativeExtensionSurface | undefined, options?: ExtensionWidgetOptions): void;
 	showComponent?(surface: NativeExtensionSurface, signal: AbortSignal): Promise<void>;
 	setShortcuts?(shortcuts: readonly ExtensionShortcutAction[]): void;
+	setWorkingMessage?(message?: string): void;
+	getWorkingMessage?(): string | undefined;
+	setToolsExpanded?(expanded: boolean): void;
+	getToolsExpanded?(): boolean;
 	reset(): void;
 }

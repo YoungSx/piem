@@ -20,6 +20,8 @@ function nativeUI() {
 	let text = "";
 	let registrations = 0;
 	let resets = 0;
+	let workingMessage: string | undefined;
+	let toolsExpanded = false;
 	let autocomplete: AutocompleteProvider = {
 		getSuggestions: async () => null,
 		applyCompletion: lines => ({ lines, cursorLine: 0, cursorCol: 0 }),
@@ -32,13 +34,22 @@ function nativeUI() {
 		getEditorText: () => text, setEditorText: value => { text = value; }, pasteToEditor: value => { text += value; },
 		setStatus: (key, value) => { if (value === undefined) statuses.delete(key); else statuses.set(key, value); },
 		setWidget: (key, value) => { if (value === undefined) widgets.delete(key); else widgets.set(key, value); },
+		setWorkingMessage: message => { workingMessage = message; },
+		getWorkingMessage: () => workingMessage,
+		setToolsExpanded: expanded => { toolsExpanded = expanded; },
+		getToolsExpanded: () => toolsExpanded,
 		addAutocompleteProvider: factory => {
 			autocomplete = factory(autocomplete);
 			registrations++;
 		},
-		reset: () => { statuses.clear(); widgets.clear(); resets++; },
+		reset: () => { statuses.clear(); widgets.clear(); resets++; workingMessage = undefined; toolsExpanded = false; },
 	};
-	return { adapter, statuses, widgets, autocomplete: () => autocomplete, text: () => text, registrations: () => registrations, resets: () => resets };
+	return {
+		adapter, statuses, widgets,
+		autocomplete: () => autocomplete, text: () => text,
+		workingMessage: () => workingMessage, toolsExpanded: () => toolsExpanded,
+		registrations: () => registrations, resets: () => resets,
+	};
 }
 
 async function makeHost(factory: ExtensionFactory, callbacks: Partial<ExtensionHostCallbacks> = {}) {
@@ -473,5 +484,36 @@ describe("native extension host", () => {
 			await finished.promise;
 			expect(delayedFailure).toBeInstanceOf(Error);
 		} finally { release.resolve(); host.dispose(); restore(); }
+	});
+
+	it("bridges setWorkingMessage and tools expansion state to attached UI adapter", async () => {
+		let context!: ExtensionContext;
+		const host = await makeHost(pi => {
+			pi.on("session_start", (_event, ctx) => {
+				context = ctx;
+			});
+		});
+		const ui = nativeUI();
+		try {
+			host.attachUI(ui.adapter);
+			await host.start();
+
+			expect(context.ui.getToolsExpanded()).toBe(false);
+			context.ui.setToolsExpanded(true);
+			expect(ui.toolsExpanded()).toBe(true);
+			expect(context.ui.getToolsExpanded()).toBe(true);
+
+			context.ui.setWorkingMessage("Analyzing vault...");
+			expect(ui.workingMessage()).toBe("Analyzing vault...");
+			context.ui.setWorkingMessage(undefined);
+			expect(ui.workingMessage()).toBeUndefined();
+
+			host.attachUI(undefined);
+			expect(() => context.ui.setWorkingMessage("orphaned")).toThrow("not attached");
+			expect(() => context.ui.setToolsExpanded(true)).toThrow("not attached");
+			expect(() => context.ui.getToolsExpanded()).toThrow("not attached");
+		} finally {
+			host.dispose();
+		}
 	});
 });

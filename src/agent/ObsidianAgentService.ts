@@ -39,7 +39,7 @@ import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
 import { compactIfNeeded, needsCompaction, type CompactionEvent, type CompactionOutcome } from "./compaction";
-import type { BranchSummaryEntry } from "@earendil-works/pi-coding-agent";
+import type { BranchSummaryEntry, MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
@@ -3813,6 +3813,13 @@ export class ObsidianAgentService {
 	/** The active session's vault path, or null when no chat is open. */
 	getActiveSessionPath(): string | null {
 		return this.sessionManager.getActiveSessionPath();
+	}
+
+	/** Passes markdown text through registered extension transformers in order. */
+	transformMarkdown(markdown: string, context: MarkdownTransformContext, path?: string): string {
+		const targetPath = path ?? this.getActiveSessionPath();
+		const rt = targetPath ? this.runtimes.get(targetPath) : this.current();
+		return rt?.communityHost?.transformMarkdown(markdown, context) ?? markdown;
 	}
 
 	getSnapshot(): ChatSnapshot {

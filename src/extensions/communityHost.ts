@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
 import type { ImageContent, ProviderResponse } from "@earendil-works/pi-ai";
-import type { SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { MarkdownTransformContext, SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
@@ -188,6 +188,9 @@ export class CommunityHost {
 		}));
 	}
 	get commands() { return this.host.commands.filter(command => command.name !== "acm"); }
+	transformMarkdown(markdown: string, context: MarkdownTransformContext): string {
+		return this.host.transformMarkdown(markdown, context);
+	}
 	get busy() { return this.platform.busy; }
 	get isStarting() { return this.host.isStarting; }
 	/** A selection can arrive while another handler awaits input; never wait for that handler's own idle. */

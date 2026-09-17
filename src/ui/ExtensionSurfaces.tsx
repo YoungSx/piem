@@ -14,7 +14,8 @@ export function ExtensionSurfaces({ snapshot, placement }: {
 	const widgets = snapshot.widgets.filter((widget) => widget.placement === placement);
 	const components = snapshot.componentWidgets?.filter(widget => widget.placement === placement) ?? [];
 	const statuses = placement === "belowEditor" ? snapshot.statuses : [];
-	if (widgets.length === 0 && statuses.length === 0 && components.length === 0) return null;
+	const workingMessage = placement === "belowEditor" ? snapshot.workingMessage : undefined;
+	if (widgets.length === 0 && statuses.length === 0 && components.length === 0 && !workingMessage) return null;
 	// The feed seat grows with its content — the transcript is the scroller; a
 	// nested 25vh viewport here would scroll inside the scroll (see styles.css).
 	const inFeed = placement === "aboveEditor";
@@ -31,7 +32,8 @@ export function ExtensionSurfaces({ snapshot, placement }: {
 				return <div key={widget.key} className="piem-chat__extension-widget"><ExtensionStyledText text={lines.join("\n")} /></div>;
 			})}
 			{components.map(widget => <NativeExtensionComponents key={widget.key} surface={widget.surface} />)}
-			{statuses.length > 0 ? <div className="piem-chat__extension-status" role="status">
+			{statuses.length > 0 || workingMessage ? <div className="piem-chat__extension-status" role="status">
+				{workingMessage ? <div className="piem-chat__extension-working-message"><ExtensionStyledText text={plainText(workingMessage, true)} /></div> : null}
 				{statuses.map((status) => <div key={status.key}><ExtensionStyledText text={plainText(status.text, true)} /></div>)}
 			</div> : null}
 			{/*

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { flushSync } from "react-dom";
 import { Notice, type Component } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
+import type { MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
 import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import { continueAfterFailureQuickAction, lastReplyFailed, type QuickAction } from "./quickActionSuggestions";
@@ -176,6 +177,14 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	const extensionFeedTail = useMemo(
 		() => <ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" />,
 		[extensionUI.snapshot],
+	);
+	const effectiveTraceExpand = extensionUI.snapshot.toolsExpanded !== undefined
+		? (extensionUI.snapshot.toolsExpanded ? "expanded" : "collapsed")
+		: snapshot.traceExpand;
+	const transformMarkdown = useCallback(
+		(markdown: string, ctx: MarkdownTransformContext) =>
+			service.transformMarkdown?.(markdown, ctx, snapshot.session?.path) ?? markdown,
+		[service, snapshot.session?.path],
 	);
 	const isExtensionBusy = snapshot.isExtensionBusy ?? false;
 	const isRewinding = snapshot.isRewinding || isExtensionBusy;
@@ -811,7 +820,8 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					isInitializing={isInitializing}
 					isConfigured={snapshot.isConfigured ?? false}
 					showAgentDetails={snapshot.showAgentDetails}
-					traceExpand={snapshot.traceExpand}
+					traceExpand={effectiveTraceExpand}
+					transformMarkdown={transformMarkdown}
 					onOpenSettings={canOpenSettings ? () => openPluginSettings(app) : undefined}
 					onRetry={
 						snapshot.isStreaming || snapshot.isCompacting || isRewinding

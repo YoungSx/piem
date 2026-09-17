@@ -55,12 +55,13 @@ async function renderBlock(props: {
 	text: string;
 	kind: "user" | "assistant" | "thinking" | "toolArguments" | "toolResult" | "harness";
 	isStreaming?: boolean;
+	transformMarkdown?: (markdown: string, context: import("@earendil-works/pi-coding-agent").MarkdownTransformContext) => string;
 }): Promise<{ host: HTMLElement; markdown: HTMLElement }> {
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	const root = createRootSync(host);
 	roots.set(host, root);
-	root.render(<MarkdownText text={props.text} kind={props.kind} isStreaming={props.isStreaming} app={app} component={component} sourcePath={sourcePath} />);
+	root.render(<MarkdownText text={props.text} kind={props.kind} isStreaming={props.isStreaming} app={app} component={component} sourcePath={sourcePath} transformMarkdown={props.transformMarkdown} />);
 	if (!props.isStreaming && (props.kind === "user" || props.kind === "assistant" || props.kind === "thinking")) {
 		await flushRender(() => host.querySelector(".stub-rendered") !== null || markdownRenderMock.mock.calls.length > 0);
 	} else {
@@ -214,6 +215,38 @@ describe("MarkdownText", () => {
 		// newer path rather than a stale captured one.
 		const latest = markdownRenderMock.mock.calls.at(-1)?.[0] as { sourcePath: string };
 		expect(latest.sourcePath).toBe("Notes/elsewhere.md");
+	});
+
+	it("transforms rendered markdown through transformMarkdown callback", async () => {
+		const transformMarkdown = (text: string, ctx: import("@earendil-works/pi-coding-agent").MarkdownTransformContext) =>
+			`${text} (transformed:${ctx.messageType}:${ctx.isStreaming})`;
+		await renderBlock({ text: "Hello", kind: "assistant", transformMarkdown });
+
+		expect(markdownRenderMock).toHaveBeenCalledTimes(1);
+		const call = markdownRenderMock.mock.calls[0]![0] as { markdown: string };
+		expect(call.markdown).toBe("Hello (transformed:assistant:false)");
+	});
+
+	it("maps kind to messageType correctly for user, thinking, and assistant", async () => {
+		const contexts: import("@earendil-works/pi-coding-agent").MarkdownTransformContext[] = [];
+		const transformMarkdown = (text: string, ctx: import("@earendil-works/pi-coding-agent").MarkdownTransformContext) => {
+			contexts.push(ctx);
+			return text;
+		};
+
+		await renderBlock({ text: "user message", kind: "user", transformMarkdown });
+		await renderBlock({ text: "thought", kind: "thinking", transformMarkdown });
+		await renderBlock({ text: "tool output", kind: "toolResult", transformMarkdown });
+
+		expect(contexts.map(c => c.messageType)).toEqual(["user", "assistant-thinking", "assistant"]);
+	});
+
+	it("applies transformMarkdown to streaming plain text", async () => {
+		const transformMarkdown = (text: string) => text.toUpperCase();
+		const { host } = await renderBlock({ text: "streaming token", kind: "assistant", isStreaming: true, transformMarkdown });
+
+		const pre = host.querySelector("pre.piem-chat__text");
+		expect(pre?.textContent).toBe("STREAMING TOKEN");
 	});
 });
 

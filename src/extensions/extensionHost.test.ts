@@ -161,7 +161,7 @@ describe("static extension host contract", () => {
 			expect(host.commands.map(command => command.name)).toEqual(["still-here"]);
 			const report = reportFor(host, "renderer");
 			expect(report.error).toBeUndefined();
-			expect(report.ignored).toEqual(["message renderers", "entry renderers", "markdown transformer"]);
+			expect(report.ignored).toEqual(["message renderers", "entry renderers"]);
 		} finally { host.dispose(); }
 	});
 
@@ -203,5 +203,40 @@ describe("static extension host contract", () => {
 		await expect(host.run("read")).rejects.toThrow("disposed");
 		expect(() => captured!.events.emit("tick", undefined)).toThrow();
 		expect(heard).toBe(1);
+	});
+
+	it("chains registered markdown transformers and catches throwing transformer", async () => {
+		const host = await createExtensionHost([
+			{
+				id: "transformer-1",
+				factory: pi => {
+					pi.registerMarkdownTransformer((markdown, ctx) => `${markdown} [${ctx.messageType}]`);
+				},
+			},
+			{
+				id: "transformer-faulty",
+				factory: pi => {
+					pi.registerMarkdownTransformer(() => {
+						throw new Error("Boom");
+					});
+				},
+			},
+			{
+				id: "transformer-2",
+				factory: pi => {
+					pi.registerMarkdownTransformer(markdown => markdown.toUpperCase());
+				},
+			},
+		], callbacks);
+		try {
+			const transformed = host.transformMarkdown("hello", {
+				messageType: "assistant",
+				isStreaming: false,
+				availableWidth: 80,
+			});
+			expect(transformed).toBe("HELLO [ASSISTANT]");
+		} finally {
+			host.dispose();
+		}
 	});
 });

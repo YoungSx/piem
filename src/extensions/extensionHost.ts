@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model, ProviderResponse } from "@earendil-works/pi-ai";
-import type { BranchSummaryEntry, ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { BranchSummaryEntry, ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, MarkdownTransformContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
@@ -161,7 +161,6 @@ function validateRegistration(extension: Extension): string[] {
 	// ever asks for the result.
 	if (extension.messageRenderers.size) ignored.push("message renderers");
 	if (extension.entryRenderers?.size) ignored.push("entry renderers");
-	if (extension.markdownTransformer) ignored.push("markdown transformer");
 	return ignored;
 }
 
@@ -644,6 +643,17 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			},
 			commands: runner.getRegisteredCommands().map(command => ({ name: command.invocationName, description: command.description })),
 			tools: registeredTools,
+			transformMarkdown: (markdown: string, context: MarkdownTransformContext): string => {
+				let current = markdown;
+				for (const transformer of runner.getMarkdownTransformers()) {
+					try {
+						current = transformer(current, context);
+					} catch (error) {
+						console.error("piem: markdown transformer failed", error);
+					}
+				}
+				return current;
+			},
 			run: async (name: string, args = ""): Promise<void> => {
 				await start();
 				const command = runner.getCommand(name);
