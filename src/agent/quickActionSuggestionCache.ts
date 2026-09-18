@@ -36,6 +36,8 @@ export interface SuggestionCacheKey {
 	modelKey: string;
 	/** The workspace facts the prompt quotes, already flattened by {@link workspaceKeyPart}. */
 	workspace: string;
+	/** Note facts (daily, orphan, empty), already flattened by {@link noteFactsKeyPart}. */
+	noteFacts?: string;
 }
 
 /**
@@ -57,7 +59,7 @@ const MAX_ENTRIES = 32;
 
 /** Builds the map key from a cache key's parts. */
 function cacheKeyString(key: SuggestionCacheKey): string {
-	return [key.modelKey, key.language, key.notePath ?? "", key.workspace].join("\0");
+	return [key.modelKey, key.language, key.notePath ?? "", key.workspace, key.noteFacts ?? ""].join("\0");
 }
 
 /**

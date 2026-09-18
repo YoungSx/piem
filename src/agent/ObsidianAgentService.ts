@@ -98,6 +98,7 @@ import { arrayBufferToBase64, extractImageRefs, mimeTypeForPath, sanitizeMessage
 import { EMPTY_RUN_CONTEXT, injectContext, type FrozenRunContext, type InjectedNote } from "./contextInjection";
 import { probeEnvironment, probeRunContext, probeWorkspaceContext } from "./contextProbe";
 import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
+import { probeNoteFacts, noteFactsKeyPart, type NoteFacts } from "./noteFacts";
 import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "./exportNote";
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
@@ -2392,23 +2393,29 @@ export class ObsidianAgentService {
 		if (!model) {
 			return undefined;
 		}
-		const { notePath, workspace } = this.suggestionSubject(rt);
+		const { notePath, workspace, noteFacts } = this.suggestionSubject(rt);
 		return this.suggestionCache.get(
-			this.suggestionCacheKey(resolveLanguage(this.app.vault as LanguageHost, settings.language), notePath, workspace, model),
+			this.suggestionCacheKey(
+				resolveLanguage(this.app.vault as LanguageHost, settings.language),
+				notePath,
+				workspace,
+				model,
+				noteFacts,
+			),
 		);
 	}
 
 	/**
-	 * The subject and workspace facts a blank-screen suggestion is built from.
+	 * The subject, workspace facts, and note facts a blank-screen suggestion is built from.
 	 *
-	 * Both the peek and the request path derive the same pair, so the cache key
+	 * Both the peek and the request path derive the same tuple, so the cache key
 	 * written at request time is the one the next visit reads. The probe is the
 	 * same one the main conversation's `<context>` block uses, with the active
 	 * note's ref list as its scope; a throw degrades to an empty context rather
 	 * than breaking the side channel — the request path must never throw, and
 	 * the peek path runs inside React's commit phase.
 	 */
-	private suggestionSubject(rt: SessionRuntime | null): { notePath: string | null; workspace: WorkspaceContext } {
+	private suggestionSubject(rt: SessionRuntime | null): { notePath: string | null; workspace: WorkspaceContext; noteFacts: NoteFacts | null } {
 		const refs = this.contextRefList(rt);
 		const notePath = refs.find((ref) => ref.kind === "active")?.path ?? null;
 		let workspace: WorkspaceContext;
@@ -2418,12 +2425,30 @@ export class ObsidianAgentService {
 			this.log.debug("workspace probe for suggestions failed", () => ({ error: String(error) }));
 			workspace = EMPTY_WORKSPACE_CONTEXT;
 		}
-		return { notePath, workspace };
+		let noteFacts: NoteFacts | null = null;
+		try {
+			noteFacts = probeNoteFacts(this.app, notePath);
+		} catch (error) {
+			this.log.debug("note facts probe for suggestions failed", () => ({ error: String(error) }));
+		}
+		return { notePath, workspace, noteFacts };
 	}
 
 	/** The full cache key — every input the prompt quotes keys the entry. */
-	private suggestionCacheKey(language: string, notePath: string | null, workspace: WorkspaceContext, model: Model<string>): SuggestionCacheKey {
-		return { language, notePath, modelKey: suggestionModelKey(model), workspace: workspaceKeyPart(workspace) };
+	private suggestionCacheKey(
+		language: string,
+		notePath: string | null,
+		workspace: WorkspaceContext,
+		model: Model<string>,
+		noteFacts?: NoteFacts | null,
+	): SuggestionCacheKey {
+		return {
+			language,
+			notePath,
+			modelKey: suggestionModelKey(model),
+			workspace: workspaceKeyPart(workspace),
+			noteFacts: noteFactsKeyPart(noteFacts ?? null),
+		};
 	}
 
 	/**
@@ -2460,10 +2485,11 @@ export class ObsidianAgentService {
 		if (scope === "reply" && !subject) {
 			return null;
 		}
-		// The empty placements quote the workspace; the reply placement's subject
+		// The empty placements quote the workspace and note facts; the reply placement's subject
 		// is the reply itself, and probing would be waste there.
-		const { workspace } = this.suggestionSubject(rt);
+		const { workspace, noteFacts } = this.suggestionSubject(rt);
 		const workspaceForPrompt = scope === "empty" ? workspace : undefined;
+		const noteFactsForPrompt = scope === "empty" ? noteFacts : undefined;
 
 		// One suggestion request at a time: a new call supersedes the previous
 		// one, which the abort also marks so the request stops billing.
@@ -2485,6 +2511,7 @@ export class ObsidianAgentService {
 				scope,
 				subject,
 				workspace: workspaceForPrompt,
+				noteFacts: noteFactsForPrompt,
 				language,
 				apiKey: this.getApiKey(model.provider),
 				signal: controller.signal,
@@ -2496,12 +2523,12 @@ export class ObsidianAgentService {
 			}
 			this.recordOverheadUsage(rt, result.usage);
 			// Only the empty screen caches: its key is the (language, note path,
-			// workspace) tuple the next blank visit will reproduce, so the answer
+			// workspace, noteFacts) tuple the next blank visit will reproduce, so the answer
 			// stays worth showing again. A reply's subject is that conversation's
 			// newest text — no future request will ask for it, so caching it would
 			// be dead weight.
 			if (scope === "empty" && result.actions) {
-				this.suggestionCache.set(this.suggestionCacheKey(language, subject, workspace, model), result.actions);
+				this.suggestionCache.set(this.suggestionCacheKey(language, subject, workspace, model, noteFacts), result.actions);
 			}
 			return result.actions;
 		} catch (error) {

@@ -98,6 +98,30 @@ describe("buildSuggestionPrompt", () => {
 		expect(prompt).toContain("Also in this folder: piem.md, archive/ (+3 more)");
 	});
 
+	it("quotes note facts alongside the note path when available", () => {
+		const noteFacts = {
+			path: "2026-09-18.md",
+			isDailyNote: true,
+			isPeriodicNote: true,
+			isEmpty: true,
+			isOrphan: true,
+			backlinkCount: 0,
+			unresolvedLinkCount: 2,
+		};
+		const prompt = buildSuggestionPrompt("empty", "2026-09-18.md", "en", undefined, noteFacts);
+		expect(prompt).toContain("2026-09-18.md");
+		expect(prompt).toContain("Note type: Daily journal note.");
+		expect(prompt).toContain("Note state: Blank / empty draft.");
+		expect(prompt).toContain("Note graph: Isolated note with 0 backlinks.");
+		expect(prompt).toContain("Note graph: Contains 2 unresolved link(s).");
+	});
+
+	it("instructs the model to offer distillation when a workflow was established", () => {
+		const prompt = buildSuggestionPrompt("reply", "Finished the workflow.", "en");
+		expect(prompt).toContain("/distill-skill");
+		expect(prompt).toContain("MEMORY.md");
+	});
+
 	it("stays byte-identical to the pre-workspace prompt when the probed context is empty", () => {
 		// The empty-vault case must not regress: no intro, no lines, same bytes.
 		for (const workspace of [undefined, EMPTY_WORKSPACE_CONTEXT]) {

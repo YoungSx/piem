@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { getT } from "../i18n";
-import { continueAfterFailureQuickAction, emptyScreenQuickActions, lastReplyFailed } from "./quickActionSuggestions";
+import { continueAfterFailureQuickAction, distillSkillQuickAction, emptyScreenQuickActions, lastReplyFailed } from "./quickActionSuggestions";
 
 const t = getT("en");
 
@@ -33,6 +33,51 @@ describe("emptyScreenQuickActions", () => {
 		expect(actions[0]?.prompt).toContain("note");
 	});
 
+	it("suggests daily note-centred prompts for daily or periodic notes", () => {
+		const dailyFacts = {
+			path: "2026-09-18.md",
+			isDailyNote: true,
+			isPeriodicNote: true,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 2,
+			unresolvedLinkCount: 0,
+		};
+		const actions = emptyScreenQuickActions(true, t, dailyFacts);
+		expect(actions.map((action) => action.id)).toEqual(["todayTasks", "planDay", "reviewDay"]);
+		expect(actions[0]?.prompt).toContain("list_tasks");
+	});
+
+	it("suggests scaffold-centred prompts for empty draft notes", () => {
+		const emptyFacts = {
+			path: "Draft.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: true,
+			isOrphan: true,
+			backlinkCount: 0,
+			unresolvedLinkCount: 0,
+		};
+		const actions = emptyScreenQuickActions(true, t, emptyFacts);
+		expect(actions.map((action) => action.id)).toEqual(["scaffoldOutline", "researchTopic", "brainstorm"]);
+		expect(actions[0]?.prompt).toContain("outline");
+	});
+
+	it("suggests link-graph prompts for orphan notes with 0 backlinks", () => {
+		const orphanFacts = {
+			path: "Isolated.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: true,
+			backlinkCount: 0,
+			unresolvedLinkCount: 1,
+		};
+		const actions = emptyScreenQuickActions(true, t, orphanFacts);
+		expect(actions.map((action) => action.id)).toEqual(["linkGraph", "findMentions", "summarizeNote"]);
+		expect(actions[0]?.prompt).toContain("/link-graph");
+	});
+
 	it("turns to the vault as a whole when nothing is open", () => {
 		const actions = emptyScreenQuickActions(false, t);
 		expect(actions.map((action) => action.id)).toEqual(["draftNote", "mapVault", "capabilities"]);
@@ -48,6 +93,15 @@ describe("emptyScreenQuickActions", () => {
 				expect(action.prompt.length).toBeGreaterThan(0);
 			}
 		}
+	});
+});
+
+describe("distillSkillQuickAction", () => {
+	it("offers the distill-skill prompt chip", () => {
+		const action = distillSkillQuickAction(t);
+		expect(action.id).toBe("distillSkill");
+		expect(action.prompt).toContain("/distill-skill");
+		expect(action.label.length).toBeGreaterThan(0);
 	});
 });
 

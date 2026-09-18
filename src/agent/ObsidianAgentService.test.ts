@@ -5139,6 +5139,27 @@ describe("quick-action suggestions", () => {
 		expect(prompts[0]).not.toContain("Current folder:");
 	});
 
+	it("quotes note facts in suggestion prompt when an active note is open", async () => {
+		const prompts: string[] = [];
+		const capturingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+			prompts.push(context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n"));
+			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
+		};
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			streamFn: capturingStreamFn,
+			vaultFiles: { "Journal/2026-09-18.md": "" },
+		});
+		await service.initialize();
+		service.setActiveNotePath("Journal/2026-09-18.md");
+
+		expect(await service.suggestQuickActions("empty")).not.toBeNull();
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain("Journal/2026-09-18.md");
+		expect(prompts[0]).toContain("Note type: Daily journal note.");
+		expect(prompts[0]).toContain("Note state: Blank / empty draft.");
+		expect(prompts[0]).toContain("Note graph: Isolated note with 0 backlinks.");
+	});
+
 	it("keeps the request alive when the workspace probe throws", async () => {
 		const { service } = createServiceWithSettings(new MemoryAdapter(), {
 			streamFn: suggestionReplyStreamFn(SUGGESTION_JSON),

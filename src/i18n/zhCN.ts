@@ -362,6 +362,34 @@ export const zhCN: DeepPartial<EnCopy> = {
 				label: "头脑风暴",
 				prompt: "基于当前笔记，给我五个可以延伸的方向。",
 			},
+			todayTasks: {
+				label: "今日待办简报",
+				prompt: "调用 list_tasks 梳理全库未完成的任务，汇总出我今天的重点待办。",
+			},
+			planDay: {
+				label: "规划今日安排",
+				prompt: "查看我最近的笔记和待办事项，帮我规划今天的日程与安排。",
+			},
+			reviewDay: {
+				label: "总结与复盘",
+				prompt: "总结这篇日记中的要点，整理今日的关键成果与心得。",
+			},
+			scaffoldOutline: {
+				label: "生成大纲结构",
+				prompt: "根据这篇笔记的标题和所在目录上下文，生成一份结构化大纲以供动笔。",
+			},
+			researchTopic: {
+				label: "探索相关主题",
+				prompt: "在笔记库中查找与此主题相关的笔记，并提出值得展开的核心概念。",
+			},
+			linkGraph: {
+				label: "分析双链网络",
+				prompt: "使用 /link-graph 分析这篇笔记的反向链接、出链及潜在的知识关联。",
+			},
+			findMentions: {
+				label: "寻找暗提及",
+				prompt: "在全库中寻找提及此笔记名称但未建立双链的地方，建议在哪里建立链接。",
+			},
 			draftNote: {
 				label: "起草新笔记",
 				prompt: "帮我起草一篇新笔记：先问我主题，然后先列提纲再动笔。",
@@ -373,6 +401,16 @@ export const zhCN: DeepPartial<EnCopy> = {
 			capabilities: {
 				label: "你能做什么？",
 				prompt: "在我的笔记库里你能帮我做什么？举三个具体的例子。",
+			},
+		},
+		reply: {
+			distillSkill: {
+				label: "沉淀为技能",
+				prompt: "运行 /distill-skill 将此流程保存为可复用技能。",
+			},
+			rememberPreference: {
+				label: "记住此偏好",
+				prompt: "将此偏好记录到 MEMORY.md 中，供后续任务使用。",
 			},
 		},
 		/**

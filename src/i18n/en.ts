@@ -706,6 +706,34 @@ export const en = {
 				label: "Brainstorm next ideas",
 				prompt: "Based on the active note, suggest five ideas to extend it.",
 			},
+			todayTasks: {
+				label: "Today's tasks",
+				prompt: "Review open tasks across the vault using list_tasks and summarize my priorities for today.",
+			},
+			planDay: {
+				label: "Plan my day",
+				prompt: "Look at my recent notes and upcoming tasks to help plan my schedule for today.",
+			},
+			reviewDay: {
+				label: "Review & reflect",
+				prompt: "Summarize this daily note and organize the key accomplishments and takeaways.",
+			},
+			scaffoldOutline: {
+				label: "Generate outline",
+				prompt: "Based on the note title and folder context, generate a structured outline to start writing.",
+			},
+			researchTopic: {
+				label: "Research topic",
+				prompt: "Find notes in the vault related to this topic and suggest key concepts to cover.",
+			},
+			linkGraph: {
+				label: "Analyze link graph",
+				prompt: "Analyze this note's backlinks, outgoing links, and missing connections using /link-graph.",
+			},
+			findMentions: {
+				label: "Find unlinked mentions",
+				prompt: "Search the vault for unlinked mentions of this note's title and recommend where to link it.",
+			},
 			draftNote: {
 				label: "Draft a new note",
 				prompt: "Help me draft a new note: ask me for the topic, then outline it before writing.",
@@ -717,6 +745,16 @@ export const en = {
 			capabilities: {
 				label: "What can you do?",
 				prompt: "What can you help me with in my vault? Give three concrete examples.",
+			},
+		},
+		reply: {
+			distillSkill: {
+				label: "Save as skill",
+				prompt: "Run /distill-skill to save this procedure as a reusable skill.",
+			},
+			rememberPreference: {
+				label: "Save preference",
+				prompt: "Save this preference to MEMORY.md for future tasks.",
 			},
 		},
 		/**
