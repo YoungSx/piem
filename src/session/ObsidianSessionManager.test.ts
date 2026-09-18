@@ -310,9 +310,9 @@ describe("ObsidianSessionManager last-opened record", () => {
 	async function seedTwoSessions(adapter: DataAdapter): Promise<{ first: string; second: string }> {
 		const writer = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
 		const first = (await writer.createSession(DEFAULTS)).path;
-		await writer.appendMessage({ role: "user", content: [{ type: "text", text: "First" }], timestamp: 1 });
+		await writer.appendMessage({ role: "user", content: [{ type: "text", text: "First" }], timestamp: FUTURE_MS });
 		const second = (await writer.createSession(DEFAULTS)).path;
-		await writer.appendMessage({ role: "user", content: [{ type: "text", text: "Second" }], timestamp: 2 });
+		await writer.appendMessage({ role: "user", content: [{ type: "text", text: "Second" }], timestamp: FUTURE_MS + 1_000 });
 		return { first, second };
 	}
 
