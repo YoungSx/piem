@@ -66,6 +66,7 @@ export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot
 	const [isOpen, setIsOpen] = useState(false);
 	const wrapperRef = useRef<HTMLSpanElement | null>(null);
 	const buttonRef = useRef<HTMLButtonElement | null>(null);
+	const popoverRef = useRef<HTMLDivElement | null>(null);
 	// Wires the icon to the popover it opens, for assistive tech that announces
 	// what a toggle controls. `useId` because two chat panels could mount at once.
 	const popoverId = useId();
@@ -86,7 +87,65 @@ export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot
 		return null;
 	}
 
-	const label = t.t("extensionUI.entryAria");
+	const hasMultipleActions = actions.length > 1;
+	const singleAction = actions.length === 1 ? actions[0] : undefined;
+
+	const singleActionLabel = singleAction
+		? (singleAction.description ? `${singleAction.description} (${singleAction.key})` : singleAction.key)
+		: undefined;
+	const label = singleActionLabel ?? t.t("extensionUI.entryAria");
+
+	const handleButtonClick = () => {
+		if (hasMultipleActions || pending || failed) {
+			setIsOpen((open) => !open);
+			return;
+		}
+		if (singleAction) {
+			void singleAction.run();
+		}
+	};
+
+	const handleButtonMouseOver = (event: React.MouseEvent<HTMLElement>) => {
+		// Single action without error: let Obsidian's native hover tooltip display the
+		// action description and hotkey.
+		// Multiple actions or error popover: suppress the container tooltip so it doesn't
+		// compete with the popover.
+		if (hasMultipleActions || isOpen) {
+			suppressOwnTooltip(event);
+		}
+	};
+
+	const handleRunAction = (action: ExtensionShortcutAction) => {
+		setIsOpen(false);
+		buttonRef.current?.focus();
+		void action.run();
+	};
+
+	const handlePopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+		if (event.key === "Escape") {
+			// The composer and the transcript have their own Escape handlers;
+			// this press is about the popover and stops here.
+			event.stopPropagation();
+			setIsOpen(false);
+			buttonRef.current?.focus();
+			return;
+		}
+		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			event.stopPropagation();
+			const buttons = popoverRef.current?.querySelectorAll<HTMLButtonElement>("button.piem-chat__extension-entry-action:not(:disabled)");
+			if (!buttons || buttons.length === 0) return;
+			const list = Array.from(buttons);
+			const activeIndex = list.indexOf(document.activeElement as HTMLButtonElement);
+			let nextIndex = 0;
+			if (event.key === "ArrowDown") {
+				nextIndex = activeIndex === -1 || activeIndex === list.length - 1 ? 0 : activeIndex + 1;
+			} else {
+				nextIndex = activeIndex <= 0 ? list.length - 1 : activeIndex - 1;
+			}
+			list[nextIndex]?.focus();
+		}
+	};
 
 	return (
 		<span className="piem-chat__extension-entry" ref={wrapperRef}>
@@ -100,50 +159,54 @@ export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot
 				 * glyph to the theme's button chrome rather than freeing it from it.
 				 */
 				className={`clickable-icon piem-chat__icon-button piem-chat__extension-entry-button${pending ? " piem-chat__extension-entry-button--running" : ""}${failed ? " piem-chat__extension-entry-button--failed" : ""}`}
-				aria-expanded={isOpen}
-				aria-controls={popoverId}
+				aria-expanded={hasMultipleActions || isOpen ? isOpen : undefined}
+				aria-controls={hasMultipleActions || isOpen ? popoverId : undefined}
 				aria-label={label}
 				/*
-				 * Swallows the tooltip Obsidian hangs off this label on hover: the
-				 * popover already says more than it would, and on a pointer device
-				 * both would open at once. The accessible name survives — the event
-				 * stops here, the attribute is never touched.
+				 * Swallows the tooltip Obsidian hangs off this label on hover when a popover
+				 * menu is attached or open: the popover already says more than it would, and on a
+				 * pointer device both would open at once. For a single action without an open popover,
+				 * the tooltip is permitted so hover surfaces the action name and hotkey.
 				 */
-				onMouseOver={suppressOwnTooltip}
-				onClick={() => setIsOpen((open) => !open)}
+				onMouseOver={handleButtonMouseOver}
+				onClick={handleButtonClick}
 			>
 				<ObsidianIcon name={entryIcon(actions)} className="piem-chat__extension-entry-icon" />
 				{failed ? <span className="piem-chat__extension-entry-failed-dot" aria-hidden="true" /> : null}
 			</button>
 			{isOpen ? (
 				<div
+					ref={popoverRef}
 					id={popoverId}
 					className="piem-chat__extension-entry-popover"
-					role="group"
-					aria-label={label}
+					role="menu"
+					aria-label={t.t("extensionUI.entryAria")}
 					onMouseOver={suppressOwnTooltip}
-					onKeyDown={(event) => {
-						if (event.key === "Escape") {
-							// The composer and the transcript have their own Escape handlers;
-							// this press is about the popover and stops here.
-							event.stopPropagation();
-							setIsOpen(false);
-							buttonRef.current?.focus();
-						}
-					}}
+					onKeyDown={handlePopoverKeyDown}
 				>
-					{actions.map((action) => (
-						<button
-							key={action.key}
-							type="button"
-							className="piem-chat__extension-entry-action"
-							disabled={Boolean(pending)}
-							onClick={() => { void action.run(); }}
-						>
-							<span>{action.description || action.key}</span>
-							<kbd>{action.key}</kbd>
-						</button>
-					))}
+					{hasMultipleActions ? (
+						<div className="piem-chat__extension-entry-header">
+							<ObsidianIcon name="zap" className="piem-chat__extension-entry-header-icon" />
+							<span className="piem-chat__extension-entry-header-title">{t.t("extensionUI.actionsLabel")}</span>
+						</div>
+					) : null}
+					<div className="piem-chat__extension-entry-list" role="none">
+						{actions.map((action) => (
+							<button
+								key={action.key}
+								type="button"
+								role="menuitem"
+								className="piem-chat__extension-entry-action"
+								disabled={Boolean(pending)}
+								onClick={() => handleRunAction(action)}
+							>
+								<span className="piem-chat__extension-entry-action-label" title={action.description || action.key}>
+									{action.description || action.key}
+								</span>
+								<kbd className="piem-chat__extension-entry-kbd">{action.key}</kbd>
+							</button>
+						))}
+					</div>
 					{pending ? <div className="piem-chat__extension-entry-status" role="status">{t.t("extensionUI.runningAction")}</div> : null}
 					{failed ? <p className="piem-native-extension__error" role="alert">{failed}</p> : null}
 				</div>
