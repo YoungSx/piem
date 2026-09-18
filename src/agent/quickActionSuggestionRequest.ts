@@ -80,6 +80,8 @@ export const SUGGESTION_STREAM_OPTIONS: SimpleStreamOptions = {
 /** The instruction is authored in English; the output language is named in words the model reads. */
 const LANGUAGE_NAMES: Record<Language, string> = { en: "English", "zh-cn": "简体中文" };
 
+import { renderNoteFactLines, type NoteFacts } from "./noteFacts";
+
 /**
  * The instruction half of the request, authored once in English — the output
  * language is named inside it, so the instruction itself is not translated and
@@ -95,6 +97,13 @@ Example (the shape, not the content — yours must fit the material below):
 [{"label": "Compare notes", "prompt": "Compare the weekly review note with last month's and list what changed."}]
 
 The suggestions must each do a different thing, name concrete material from the material below rather than speaking in general, and never ask what the material already answers.`;
+
+/**
+ * The post-reply instruction variant. Same JSON contract, but reminds the model
+ * that if a useful procedure or preference was established, one suggestion may
+ * offer to distill it into a reusable skill or memory.
+ */
+const REPLY_SUGGESTION_INSTRUCTION = `${SUGGESTION_INSTRUCTION} If the assistant reply established a repeatable multi-step procedure, guideline, or workflow, one suggestion may offer to save or distill it (e.g. using /distill-skill or saving to MEMORY.md).`;
 
 /**
  * The empty screen's framing lines, joined with the workspace block into the
@@ -138,14 +147,27 @@ export interface SuggestionResult {
  * reply placement omits them — its subject is the reply itself, and workspace
  * noise there would only dilute it.
  */
-export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | null, language: Language, workspace?: WorkspaceContext): string {
+export function buildSuggestionPrompt(
+	scope: SuggestionScope,
+	subject: string | null,
+	language: Language,
+	workspace?: WorkspaceContext,
+	noteFacts?: NoteFacts | null,
+): string {
 	const materials: string[] = [];
 	if (scope === "empty") {
 		// No probed workspace means an empty one: the guard reads a real context either way.
 		const quoted = workspace ?? EMPTY_WORKSPACE_CONTEXT;
 		const workspaceQuoted = hasWorkspaceFacts(quoted);
 		if (subject) {
-			materials.push(EMPTY_WITH_NOTE.replace("{path}", subject));
+			let noteIntro = EMPTY_WITH_NOTE.replace("{path}", subject);
+			if (noteFacts) {
+				const factLines = renderNoteFactLines(noteFacts);
+				if (factLines.length > 0) {
+					noteIntro += `\n${factLines.join("\n")}`;
+				}
+			}
+			materials.push(noteIntro);
 		} else {
 			materials.push(workspaceQuoted ? EMPTY_NO_NOTE_WORKSPACE : EMPTY_NO_NOTE);
 		}
@@ -156,7 +178,8 @@ export function buildSuggestionPrompt(scope: SuggestionScope, subject: string | 
 		materials.push(REPLY_INTRO);
 		materials.push(String(subject ?? ""));
 	}
-	return `<subject>\n${materials.join("\n\n")}\n</subject>\n\n${SUGGESTION_INSTRUCTION.replace("{count}", String(CAPS[scope])).replace("{language}", LANGUAGE_NAMES[language])}`;
+	const instruction = scope === "reply" ? REPLY_SUGGESTION_INSTRUCTION : SUGGESTION_INSTRUCTION;
+	return `<subject>\n${materials.join("\n\n")}\n</subject>\n\n${instruction.replace("{count}", String(CAPS[scope])).replace("{language}", LANGUAGE_NAMES[language])}`;
 }
 
 /**
@@ -263,6 +286,8 @@ export async function fetchQuickActionSuggestions(options: {
 	language: Language;
 	/** The probed workspace facts; quoted by the empty placements, ignored by reply. */
 	workspace?: WorkspaceContext;
+	/** The probed note facts; quoted by the empty placements with active note. */
+	noteFacts?: NoteFacts | null;
 	signal?: AbortSignal;
 	apiKey?: string;
 }): Promise<SuggestionResult> {
@@ -270,7 +295,7 @@ export async function fetchQuickActionSuggestions(options: {
 		messages: [
 			{
 				role: "user",
-				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.workspace),
+				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.workspace, options.noteFacts),
 				timestamp: Date.now(),
 			} satisfies UserMessage,
 		],

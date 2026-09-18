@@ -15,6 +15,7 @@ import { assistantText, copyToClipboard, notifyActionResult, userText } from "./
 import { QuickActions } from "./QuickActions";
 import { ReplyActions } from "./ReplyActions";
 import { emptyScreenQuickActions, type QuickAction } from "./quickActionSuggestions";
+import type { NoteFacts } from "../agent/noteFacts";
 import { describeReplyCutoff, type ReplyCutoff } from "./replyCutoff";
 import { durationBadgeVisible, isFinalReply, replyDurationMs } from "./replyDuration";
 import { useT } from "./TranslatorContext";
@@ -189,6 +190,8 @@ export interface MessageListProps {
 	 * suggested them.
 	 */
 	suggestedActions?: QuickAction[];
+	/** Probed note facts for context-aware empty-screen quick actions. */
+	noteFacts?: NoteFacts | null;
 	/**
 	 * The question `ask_user` is waiting on, when the panel is the surface for it.
 	 *
@@ -473,6 +476,7 @@ export function MessageList({
 	contextWindow,
 	onQuickAction,
 	suggestedActions = [],
+	noteFacts = null,
 	pendingQuestion = null,
 	queuedQuestions = 0,
 	onAnswerQuestion,
@@ -502,7 +506,7 @@ export function MessageList({
 			? []
 			: suggestedActions.length > 0
 				? suggestedActions
-				: emptyScreenQuickActions(hasActiveNote, t);
+				: emptyScreenQuickActions(hasActiveNote, t, noteFacts);
 	/*
 	 * Whether the run has fully settled — no turn streaming, no tidy in flight,
 	 * no tool call still out. This is the whole-run verdict, not a per-row one:

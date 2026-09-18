@@ -92,6 +92,15 @@ describe("QuickActionSuggestionCache", () => {
 		expect(cache.get(key("en", "notes/32.md"))?.[0]?.label).toBe("Note 32");
 	});
 
+	it("separates entries by noteFacts, so changing from empty to written note misses cache", () => {
+		const cache = new QuickActionSuggestionCache();
+		const emptyKey: SuggestionCacheKey = { ...key("en", "notes/a.md"), noteFacts: "empty|orphan" };
+		const writtenKey: SuggestionCacheKey = { ...key("en", "notes/a.md"), noteFacts: "has-content|bl:1" };
+		cache.set(emptyKey, chips("Empty"));
+		expect(cache.get(writtenKey)).toBeUndefined();
+		expect(cache.get(emptyKey)?.[0]?.label).toBe("Empty");
+	});
+
 	it("clears every entry", () => {
 		const cache = new QuickActionSuggestionCache();
 		cache.set(key("en", "notes/a.md"), chips("First"));

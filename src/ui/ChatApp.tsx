@@ -11,6 +11,7 @@ import { MAX_DRAFT_LENGTH, type DraftStore } from "../session/DraftStore";
 import { snapshotSubagents, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
 import type { ChatInputController } from "./ChatInputController";
 import { getActiveNotePath } from "./activeNotePath";
+import { probeNoteFacts } from "../agent/noteFacts";
 import { ChatBanner } from "./ChatBanner";
 import { ChatComposer } from "./ChatComposer";
 import { ChatHeader } from "./ChatHeader";
@@ -206,6 +207,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// screen's suggestion effect must key on: a switch from note A to note B
 	// never flips presence, yet changes what the chips should be about.
 	const activeNotePath = snapshot.contextRefs.find((ref) => ref.kind === "active")?.path ?? null;
+	const noteFacts = useMemo(() => probeNoteFacts(app, activeNotePath), [app, activeNotePath]);
 	/*
 	 * The runs this conversation ordered, which is what the entry icon may count.
 	 *
@@ -837,6 +839,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					sourcePath={sourcePath}
 					composerAnchorId={composerAnchorId}
 					hasActiveNote={hasActiveNote}
+					noteFacts={noteFacts}
 					isCompacting={snapshot.isCompacting}
 					compactionEvent={snapshot.compactionEvent}
 					compactionRetained={snapshot.compactionRetained}

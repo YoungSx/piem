@@ -1619,6 +1619,54 @@ describe("MessageList quick actions", () => {
 		await flushRender();
 		expect(withNote.querySelector(".piem-chat__empty")?.textContent).toContain("Summarize this note");
 
+		const withDaily = renderMessages([], {
+			hasActiveNote: true,
+			noteFacts: {
+				path: "2026-09-18.md",
+				isDailyNote: true,
+				isPeriodicNote: true,
+				isEmpty: false,
+				isOrphan: false,
+				backlinkCount: 1,
+				unresolvedLinkCount: 0,
+			},
+			onQuickAction: () => undefined,
+		});
+		await flushRender();
+		expect(withDaily.querySelector(".piem-chat__empty")?.textContent).toContain("Today's tasks");
+
+		const withEmptyDraft = renderMessages([], {
+			hasActiveNote: true,
+			noteFacts: {
+				path: "New.md",
+				isDailyNote: false,
+				isPeriodicNote: false,
+				isEmpty: true,
+				isOrphan: true,
+				backlinkCount: 0,
+				unresolvedLinkCount: 0,
+			},
+			onQuickAction: () => undefined,
+		});
+		await flushRender();
+		expect(withEmptyDraft.querySelector(".piem-chat__empty")?.textContent).toContain("Generate outline");
+
+		const withOrphan = renderMessages([], {
+			hasActiveNote: true,
+			noteFacts: {
+				path: "Isolated.md",
+				isDailyNote: false,
+				isPeriodicNote: false,
+				isEmpty: false,
+				isOrphan: true,
+				backlinkCount: 0,
+				unresolvedLinkCount: 0,
+			},
+			onQuickAction: () => undefined,
+		});
+		await flushRender();
+		expect(withOrphan.querySelector(".piem-chat__empty")?.textContent).toContain("Analyze link graph");
+
 		const withoutNote = renderMessages([], { onQuickAction: () => undefined });
 		await flushRender();
 		expect(withoutNote.querySelector(".piem-chat__empty")?.textContent).toContain("Draft a new note");

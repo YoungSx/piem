@@ -14,6 +14,7 @@
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Translator } from "../i18n";
+import type { NoteFacts } from "../agent/noteFacts";
 
 /** One suggested prompt. `id` keys the row; `label` names the chip; `prompt` is what a tap sends. */
 export interface QuickAction {
@@ -92,15 +93,39 @@ export function continueAfterFailureQuickAction(t: Translator): QuickAction[] {
 /**
  * The empty screen's first moves, shaped by what is open.
  *
- * With an active note the note itself is the subject — the context injection
- * puts its text in front of the model, so "summarize this note" answers as
- * asked. Without one the suggestions turn to the vault as a whole. The caller
- * passes `hasActiveNote` rather than deriving it: the same
- * `snapshot.contextRefs` list the context row renders decides, so a chip can
- * never name a note the model was not given.
+ * When an active note is in context, the note facts (daily note, empty draft,
+ * or orphan note with 0 backlinks) tailor the immediate suggestions to the note's
+ * specific role in the vault:
+ * - Daily journal notes offer task extraction, daily planning, and review.
+ * - Empty drafts offer structured outline generation, topic research, and brainstorming.
+ * - Orphan notes offer link-graph analysis, finding unlinked mentions, and summarization.
+ * - Populated connected notes offer summarization, review improvements, and brainstorming.
+ *
+ * Without an active note, the suggestions turn to the vault as a whole.
  */
-export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator): QuickAction[] {
+export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, noteFacts?: NoteFacts | null): QuickAction[] {
 	if (hasActiveNote) {
+		if (noteFacts?.isDailyNote || noteFacts?.isPeriodicNote) {
+			return [
+				{ id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
+				{ id: "planDay", label: t.t("quickActions.empty.planDay.label"), prompt: t.t("quickActions.empty.planDay.prompt") },
+				{ id: "reviewDay", label: t.t("quickActions.empty.reviewDay.label"), prompt: t.t("quickActions.empty.reviewDay.prompt") },
+			];
+		}
+		if (noteFacts?.isEmpty) {
+			return [
+				{ id: "scaffoldOutline", label: t.t("quickActions.empty.scaffoldOutline.label"), prompt: t.t("quickActions.empty.scaffoldOutline.prompt") },
+				{ id: "researchTopic", label: t.t("quickActions.empty.researchTopic.label"), prompt: t.t("quickActions.empty.researchTopic.prompt") },
+				{ id: "brainstorm", label: t.t("quickActions.empty.brainstorm.label"), prompt: t.t("quickActions.empty.brainstorm.prompt") },
+			];
+		}
+		if (noteFacts?.isOrphan) {
+			return [
+				{ id: "linkGraph", label: t.t("quickActions.empty.linkGraph.label"), prompt: t.t("quickActions.empty.linkGraph.prompt") },
+				{ id: "findMentions", label: t.t("quickActions.empty.findMentions.label"), prompt: t.t("quickActions.empty.findMentions.prompt") },
+				{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
+			];
+		}
 		return [
 			{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
 			{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
@@ -113,3 +138,15 @@ export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator): 
 		{ id: "capabilities", label: t.t("quickActions.empty.capabilities.label"), prompt: t.t("quickActions.empty.capabilities.prompt") },
 	];
 }
+
+/**
+ * Quick action to distill the settled conversation into a reusable skill.
+ */
+export function distillSkillQuickAction(t: Translator): QuickAction {
+	return {
+		id: "distillSkill",
+		label: t.t("quickActions.reply.distillSkill.label"),
+		prompt: t.t("quickActions.reply.distillSkill.prompt"),
+	};
+}
+
