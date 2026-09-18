@@ -131,38 +131,90 @@ describe("ExtensionEntryIcon visibility", () => {
 	});
 });
 
-describe("ExtensionEntryIcon popover", () => {
-	it("lists each action with its description and keybinding, and runs it on press", async () => {
+describe("ExtensionEntryIcon single action", () => {
+	it("runs single shortcut directly on button press without opening popover", async () => {
 		let calls = 0;
 		const host = await renderIcon(snapshot({
 			shortcuts: [{ key: "ctrl+shift+t", description: "Collapse or expand the todo overlay", run: async () => { calls++; } }],
 			componentWidgets: [{ key: "rpiv-todos", surface: {}, placement: "aboveEditor" }],
 		}));
+		const btn = button(host);
+		expect(btn).not.toBeNull();
+		expect(btn!.getAttribute("aria-label")).toBe("Collapse or expand the todo overlay (ctrl+shift+t)");
+		expect(popover(host)).toBeNull();
+		btn!.click();
+		await flushRender();
+		expect(calls).toBe(1);
+		expect(popover(host)).toBeNull();
+	});
+});
+
+describe("ExtensionEntryIcon popover", () => {
+	it("lists each action with its description and keybinding, and runs it on press", async () => {
+		let calls = 0;
+		const host = await renderIcon(snapshot({
+			shortcuts: [
+				{ key: "ctrl+shift+t", description: "Collapse or expand the todo overlay", run: async () => { calls++; } },
+				{ key: "ctrl+shift+c", description: "Clear completed tasks", run: async () => { calls += 10; } },
+			],
+			componentWidgets: [{ key: "rpiv-todos", surface: {}, placement: "aboveEditor" }],
+		}));
 		expect(button(host)).not.toBeNull();
+		expect(button(host)!.getAttribute("aria-label")).toBe("Extension actions");
 		expect(popover(host)).toBeNull();
 		button(host)!.click();
 		await flushRender();
 		const list = popover(host)!;
+		expect(list.querySelector(".piem-chat__extension-entry-header-title")?.textContent).toBe("Extension actions");
+		expect(list.querySelectorAll(".piem-chat__extension-entry-action").length).toBe(2);
 		expect(list.querySelector("button")?.textContent).toContain("Collapse or expand the todo overlay");
 		expect(list.querySelector("kbd")?.textContent).toBe("ctrl+shift+t");
 		list.querySelector<HTMLButtonElement>("button")!.click();
 		await flushRender();
 		expect(calls).toBe(1);
+		expect(popover(host)).toBeNull();
 	});
 
 	it("disables actions and shows a status line while a run is pending", async () => {
 		let release!: (error: Error) => void;
 		let calls = 0;
 		const host = await renderIcon(snapshot({
-			shortcuts: [{ key: "ctrl+shift+t", description: "Toggle", run: () => { calls++; return new Promise((_resolve, reject) => { release = reject; }); } }],
+			shortcuts: [
+				{ key: "ctrl+shift+t", description: "Toggle", run: () => { calls++; return new Promise((_resolve, reject) => { release = reject; }); } },
+				{ key: "ctrl+shift+c", description: "Clear", run: async () => {} },
+			],
+			shortcutPending: "ctrl+shift+t",
 			componentWidgets: [{ key: "rpiv-todos", surface: {}, placement: "aboveEditor" }],
 		}));
 		button(host)!.click();
 		await flushRender();
 		const list = popover(host)!;
 		const action = list.querySelector<HTMLButtonElement>("button")!;
-		const first = action.click(), pending = release as never;
-		expect(calls).toBe(1);
+		expect(action.disabled).toBe(true);
+		expect(list.querySelector("[role=status]")?.textContent).toBe("Running action…");
+	});
+
+	it("navigates action buttons with ArrowDown and ArrowUp", async () => {
+		const host = await renderIcon(snapshot({
+			shortcuts: [
+				{ key: "ctrl+shift+t", description: "Toggle", run: async () => {} },
+				{ key: "ctrl+shift+c", description: "Clear", run: async () => {} },
+			],
+			componentWidgets: [{ key: "rpiv-todos", surface: {}, placement: "aboveEditor" }],
+		}));
+		button(host)!.click();
+		await flushRender();
+		const list = popover(host)!;
+		const buttons = list.querySelectorAll<HTMLButtonElement>("button.piem-chat__extension-entry-action");
+		expect(buttons.length).toBe(2);
+		buttons[0]!.focus();
+		expect(document.activeElement).toBe(buttons[0]!);
+		list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		expect(document.activeElement).toBe(buttons[1]!);
+		list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		expect(document.activeElement).toBe(buttons[0]!);
+		list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+		expect(document.activeElement).toBe(buttons[1]!);
 	});
 
 	it("keeps the icon visible on its own while a run is pending, even after the panel unmounts", async () => {
@@ -189,7 +241,10 @@ describe("ExtensionEntryIcon popover", () => {
 
 	it("closes through Escape without reaching the composer's own handler", async () => {
 		const host = await renderIcon(snapshot({
-			shortcuts: [{ key: "k", run: async () => {} }],
+			shortcuts: [
+				{ key: "k", run: async () => {} },
+				{ key: "j", run: async () => {} },
+			],
 			componentWidgets: [{ key: "rpiv-todos", surface: {}, placement: "aboveEditor" }],
 		}));
 		button(host)!.click();
@@ -207,7 +262,10 @@ describe("ExtensionEntryIcon in a live panel adapter", () => {
 		mounted.push(() => ui.dispose());
 		let calls = 0;
 		let fail!: (error: Error) => void;
-		ui.setShortcuts([{ key: "ctrl+shift+t", description: "Toggle", run: () => { calls++; return new Promise((resolve, reject) => { fail = reject; }); } }]);
+		ui.setShortcuts([
+			{ key: "ctrl+shift+t", description: "Toggle", run: () => { calls++; return new Promise((resolve, reject) => { fail = reject; }); } },
+			{ key: "ctrl+shift+r", description: "Review", run: async () => {} },
+		]);
 		const host = document.createElement("div");
 		document.body.appendChild(host);
 		const root = createRoot(host);
@@ -227,8 +285,6 @@ describe("ExtensionEntryIcon in a live panel adapter", () => {
 		const first = action.click();
 		await flushRender();
 		expect(calls).toBe(1);
-		expect(action.disabled).toBe(true);
-		expect(popover(host)!.querySelector("[role=status]")?.textContent).toBe("Running action…");
 		fail(new Error("Private failure details"));
 		await first; await flushRender();
 		expect(host.querySelector("[role=alert]")?.textContent).toBe("This action failed. Try again.");
