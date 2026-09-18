@@ -11,7 +11,7 @@
  */
 
 import type { App } from "obsidian";
-import { collectBacklinks, toLinkReferences } from "../vault/links";
+import { hasAnyBacklink, toLinkReferences } from "../vault/links";
 
 /** The structural facts probed about an active note. */
 export interface NoteFacts {
@@ -25,7 +25,11 @@ export interface NoteFacts {
 	isEmpty: boolean;
 	/** Whether the note has zero incoming backlinks from other resolved notes. */
 	isOrphan: boolean;
-	/** Total count of incoming backlinks from other notes. */
+	/**
+	 * Incoming backlink indicator: 0 when orphan, 1 when at least one backlink
+	 * exists. Not the exact count — exact counting requires a full-vault scan
+	 * inappropriate for the render path this probe runs in.
+	 */
 	backlinkCount: number;
 	/** Count of broken / unresolved links inside this note pointing to missing targets. */
 	unresolvedLinkCount: number;
@@ -98,10 +102,13 @@ export function probeNoteFacts(app: App, activePath: string | null): NoteFacts |
 		const isDaily = isDailyNotePath(activePath);
 		const isPeriodic = isPeriodicNotePath(activePath);
 		const isEmpty = file !== null ? file.stat.size === 0 : false;
-		const backlinkCount = file !== null ? collectBacklinks(app, file).length : 0;
+		// Early-exit check: only the orphan/connected distinction matters for
+		// suggestions, so avoid the full-vault scan + sort + allocation that
+		// collectBacklinks pays for.
+		const isOrphan = file !== null ? !hasAnyBacklink(app, file) : true;
+		const backlinkCount = isOrphan ? 0 : 1;
 		const unresolvedMap = app.metadataCache.unresolvedLinks?.[activePath];
 		const unresolvedLinkCount = unresolvedMap ? toLinkReferences(unresolvedMap).length : 0;
-		const isOrphan = backlinkCount === 0;
 
 		return {
 			path: activePath,

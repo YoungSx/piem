@@ -100,7 +100,7 @@ describe("probeNoteFacts", () => {
 	});
 
 	it("probes file stat, backlinks, and unresolved links accurately", () => {
-		const mockFile = { stat: { size: 0 } } as TFile;
+		const mockFile = { path: "2026-09-18.md", stat: { size: 0 } } as TFile;
 		const app = {
 			vault: {
 				getFileByPath: (path: string) => (path === "2026-09-18.md" ? mockFile : null),
@@ -120,5 +120,26 @@ describe("probeNoteFacts", () => {
 		expect(facts?.isOrphan).toBe(true);
 		expect(facts?.backlinkCount).toBe(0);
 		expect(facts?.unresolvedLinkCount).toBe(1);
+	});
+
+	it("identifies connected notes when backlinks exist", () => {
+		const mockFile = { path: "Topic.md", stat: { size: 500 } } as TFile;
+		const app = {
+			vault: {
+				getFileByPath: (path: string) => (path === "Topic.md" ? mockFile : null),
+			},
+			metadataCache: {
+				resolvedLinks: {
+					"Index.md": { "Topic.md": 2 },
+				},
+				unresolvedLinks: {},
+			},
+		} as unknown as App;
+
+		const facts = probeNoteFacts(app, "Topic.md");
+		expect(facts).not.toBeNull();
+		expect(facts?.isEmpty).toBe(false);
+		expect(facts?.isOrphan).toBe(false);
+		expect(facts?.backlinkCount).toBe(1);
 	});
 });

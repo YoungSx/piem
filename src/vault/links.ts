@@ -70,6 +70,25 @@ export function collectBacklinks(app: App, file: TFile, signal?: AbortSignal): L
 }
 
 /**
+ * Whether the file has at least one resolved backlink from another note.
+ *
+ * Early-exit variant of {@link collectBacklinks}: returns as soon as the first
+ * backlink is found, avoiding the full-vault scan, array allocation, and sort
+ * that the count variant pays for. Safe for render-path code where only the
+ * orphan/connected distinction matters, not the exact count.
+ */
+export function hasAnyBacklink(app: App, file: TFile): boolean {
+	const resolvedLinks = app.metadataCache.resolvedLinks;
+	const candidates = backlinkSources(app, file) ?? Object.keys(resolvedLinks);
+	for (const sourcePath of candidates) {
+		if (resolvedLinks[sourcePath]?.[file.path] !== undefined) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
  * The undocumented runtime shape behind Obsidian's backlinks panel: the internal
  * `CustomArrayDict`, whose `data` maps backlink source paths to their link
  * caches. Declared nowhere in `obsidian.d.ts`, so typed locally; a version that
