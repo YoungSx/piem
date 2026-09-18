@@ -16,13 +16,13 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 | --- | --- |
 | 加载 | 原版 `loadExtensionFromFactory`，只加载静态源码 |
 | 执行 | 原版 `ExtensionRunner` 和工具包装器，工具串行执行 |
-| 注册 | 命令、工具、快捷键、处理器和内部事件总线；Markdown 变换按注册顺序作用于聊天文本渲染；不支持事件或名称冲突时跳过该扩展；忽略的渲染器有日志；flag 保留注册默认值 |
+| 注册 | 命令、工具、快捷键、处理器和内部事件总线；自定义消息和条目渲染器在聊天块中显示并剥离 ANSI 终端代码；Markdown 变换按注册顺序作用于聊天文本渲染；动态服务商在宿主释放时注销；不支持事件或名称冲突时跳过该扩展；flag 保留注册默认值 |
 | 上下文 | 按顺序运行原版 `context` 管线；处理器失败则终止请求 |
 | 工具拦截 | 通过 pi 自带的 agent 钩子调用原版 `tool_call` / `tool_result`；被拦截的调用不执行，就地修改 `input` 会传给工具，处理器失败只让该次调用报错 |
 | 会话 | 从所属 Vault 会话及分支刷新读视图；自定义条目和标签保存后返回成功，摘要分支通过可等待的 Vault 适配发布 |
-| 模型 | 已配凭据且标识唯一的模型；目录及 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调；已审核搜索/改写工厂另外可解析当前服务商凭据 |
+| 模型 | 已配凭据且标识唯一的模型；目录及 `complete` 使用 Piem 网络通道，真实密钥和认证头不进入回调；已审核搜索/改写工厂另外可解析当前服务商凭据；动态服务商在宿主释放时注销 |
 | 消息 | 操作内的 `sendMessage`，要求 `triggerTurn` 和 `followUp`，最多 16 条待发消息；内部 `/acm` 不发给模型 |
-| 界面 | Obsidian 原生弹窗、支持的组件工厂、草稿、组件及状态、工作状态、工具折叠、补全和快捷操作；面板连接时为 `rpc`/`hasUI:true`，未连接时为 `print`/`false` |
+| 界面 | Obsidian 原生弹窗、支持的组件工厂、草稿、组件及状态、标题、页眉/页脚组件、工作状态、工具折叠、补全和快捷操作；面板连接时为 `rpc`/`hasUI:true`，未连接时为 `print`/`false` |
 | Node | 虚拟路径、URL、环境、EventEmitter、浏览器 Buffer、Web Crypto 随机数、同步 SHA-256、不可变 UTF-8 包资源 |
 | 生命周期 | 每段聊天拥有独立宿主；停止使待执行工作失效，重载使旧接口失效，自有定时器和请求跟踪到结束 |
 
@@ -56,7 +56,7 @@ Piem 把审核过的 Pi 原版工厂编译进发布包。书签与社区扩展�
 
 `registerFlag` 保留 Pi 声明的默认值，`getFlag` 可读到该值。未知或尚无值的
 flag 返回 `undefined`；Obsidian 不提供命令行参数。已注册的 Markdown 变换
-会在聊天块渲染前链式调用。消息/条目渲染器目前只注册、不实际渲染，扩展加载报告会记录降级诊断。
+会在聊天块渲染前链式调用。自定义消息和条目渲染器会渲染进消息流中，剥离 ANSI 终端控制字符并具备 React 错误边界隔离，标记为隐藏的自定义消息（`display: false`）保持不显示。
 
 ## 包导入
 
@@ -81,7 +81,7 @@ flag 返回 `undefined`；Obsidian 不提供命令行参数。已注册的 Markd
 选中文字。每段聊天同时允许一个弹窗；取消信号、有限超时、停止、关闭面板或
 切换聊天都会关闭待回答的弹窗。超时弹窗显示倒计时，关闭后释放计时器。
 
-`setWidget` 在输入框上方或下方显示文本行或支持的组件工厂，`setStatus` 在下方显示状态，`setWorkingMessage` 在下方显示临时工作消息。`getToolsExpanded` 与 `setToolsExpanded` 读取和控制工具追踪展开状态。
+`setWidget` 在输入框上方或下方显示文本行或支持的组件工厂，`setStatus` 在下方显示状态，`setWorkingMessage` 在下方显示临时工作消息。`setTitle` 更新当前会话标题，`setHeader` 与 `setFooter` 在页眉和页脚边界挂载原生组件，且在无界面时平滑降级。`getToolsExpanded` 与 `setToolsExpanded` 读取和控制工具追踪展开状态。
 `addAutocompleteProvider` 扩展原生补全数据；用户输入或选择 **显示建议** 后，
 可以触摸或用键盘选择。建议只填入草稿，不会自动发送。原有斜杠菜单和 Tab 焦点
 导航保留。重新打开面板会恢复扩展文本与补全，不重复发送 `session_start`。
@@ -115,7 +115,7 @@ flag 返回 `undefined`；Obsidian 不提供命令行参数。已注册的 Markd
 `message_update`、`message_end`、三种 `tool_execution_*`、`tool_call` 和
 `tool_result`，以及 `context`、`input`、`model_select`、`thinking_level_select`、
 `before_provider_request`、`after_provider_response`、`session_tree`、`session_compact`、
-`session_compact_failed`、`session_before_fork`、`session_before_switch`。
+`session_compact_failed`、`session_before_fork`、`session_before_switch`、`session_before_compact` 和 `session_before_tree`。
 首次连接面板或执行时启动一次。原版 Runner 负责处理器顺序和结果合并。
 `before_agent_start` 的系统提示只用于该轮；自定义消息和 `message_end` 改写
 走现有持久化流程。`agent_settled` 等排队续跑和自动整理完成后触发。流式增量
@@ -135,24 +135,21 @@ flag 返回 `undefined`；Obsidian 不提供命令行参数。已注册的 Markd
 额外调用是独立路径。
 
 `session_compact` 在手动或达到阈值的整理成功保存后触发。`compactionEntry`
-包含真实保存的 ID、摘要、token 数、ISO 时间和 Piem 的 `retainedTail`。
-Piem 没有 CLI 的 `firstKeptEntryId` 游标：直接读取该成员会明确报错，序列化
-条目则只包含真实字段。观察者失败不能回滚已保存的整理。成功和失败事件都在
+包含真实保存的 ID、摘要、token 数、ISO 时间、Piem 的 `retainedTail`，以及
+从保留消息条目来源真实追踪到的 `firstKeptEntryId`。观察者失败不能回滚已保存的整理。成功和失败事件都在
 释放单次整理占用后发出，观察者可以再次整理，不会等到自己卡住。
 
-`session_compact_failed` 覆盖手动和达到阈值的整理失败或取消。取消时
-`aborted:true`，不带错误文字。Piem 没有溢出恢复或扩展提供摘要的压缩路径，
-所以 `willRetry`、`fromExtension` 均为 false。`ctx.compact({onError})` 能收到
-真实失败；成功事件、`session_before_compact`、自定义指令和结果回调仍不支持，
-其完整契约需要能在真实日志中定位的压缩切点。
+`session_before_compact` 在上下文总结前运行，提供包含消息血统的准备数据。
+处理器返回 `{ cancel: true }` 会终止压缩整理，返回自定义 `compaction` 结果则直接采纳该摘要。
+`ctx.compact({ onComplete, onError })` 接收最终结果，`customInstructions` 可指导摘要生成。
+`session_compact_failed` 覆盖失败或已取消的压缩整理（`aborted: true`）。
 
 `session_tree` 在扩展摘要跳转、重试或编辑重发保存后触发，携带真实的新旧叶子
-编号，以及这次创建的摘要条目。跳转失败不发成功事件。`session_before_fork`
-在复制回复前触发，`position:"at"`；`session_before_switch` 在新建或打开
-聊天前触发，`reason` 为 `"new"` 或 `"resume"`。返回 `{cancel:true}` 或抛错
-都会阻止该操作，用户后来的选择会取代仍在等待的处理器。这些事件不代表通用
-`ctx.fork`、`ctx.switchSession`、`ctx.newSession` 或 `session_before_tree`
-已支持；摘要导航仍只允许选中本次准备的摘要编号。
+编号，以及这次创建的摘要条目。跳转失败不发成功事件。`session_before_tree`
+在写入前拦截树导航并支持通过 `{ cancel: true }` 取消。`session_before_fork`
+在复制回复前触发（`position: "at"`）；`session_before_switch` 在新建或打开
+聊天前触发（`reason: "new"` 或 `"resume"`）。返回 `{ cancel: true }` 或抛错
+都会阻止该操作。命令上下文还额外暴露出连接到当前会话生命周期的 `newSession`、`fork` 和 `switchSession`。
 
 `tool_call` 和 `tool_result` 是拦截而非观察，因此走代理自身的工具调用路径，
 不走 `tool_execution_*` 三兄弟所用的事件流。`tool_call` 处理器返回
