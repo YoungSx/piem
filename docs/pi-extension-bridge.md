@@ -19,13 +19,13 @@ behavior.
 | --- | --- |
 | Loading | Original `loadExtensionFromFactory`, static sources only |
 | Execution | Original `ExtensionRunner` and tool wrapper; tools run sequentially |
-| Registration | Commands, tools, shortcuts, handlers and private event bus; Markdown transformers chain across chat blocks; unsupported events and conflicting names skip that extension; ignored renderers are logged; flags retain registered defaults |
+| Registration | Commands, tools, shortcuts, handlers and private event bus; custom message and entry renderers display in chat blocks with ANSI stripping; Markdown transformers chain across chat blocks; dynamic providers unregister on disposal; unsupported events and conflicting names skip that extension; flags retain registered defaults |
 | Context | Original `context` pipeline, in order; a failed handler aborts the request |
 | Tool interception | Original `tool_call` / `tool_result` emitters through pi's own agent hooks; a blocked call does not run, in-place `input` patches reach the tool, and a failed handler becomes that one call's error |
 | Session | Read views refreshed from the owning Vault session and lane; custom entries and labels flush before success and summary branches publish through an awaited Vault adapter |
-| Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth |
+| Models | Configured, credentialed, unambiguous models; registry and imported `complete` use Piem's transport; real keys and authentication headers never enter callbacks, and audited search/clarify factories additionally resolve their current provider's auth; dynamic providers unregister on disposal |
 | Messages | Operation-scoped `sendMessage` with `triggerTurn` and `followUp`; at most 16 pending messages; private `/acm` stays inside the host |
-| UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, autocomplete, shortcuts, working message and tool expansion state; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
+| UI | Native Obsidian dialogs, supported component factories, composer text, widgets/status, title, header/footer components, autocomplete, shortcuts, working message and tool expansion state; `rpc`/`hasUI:true` with a panel, `print`/`false` without one |
 | Node | Virtual path/URL/environment, EventEmitter, browser Buffer, Web Crypto randomness, synchronous SHA-256, immutable UTF-8 package resources |
 | Lifetime | One host per conversation; stop invalidates pending work, reload invalidates old APIs, and owned timers and requests are tracked to completion |
 
@@ -68,8 +68,9 @@ can discard this temporary state.
 `registerFlag` retains Pi's declared default, which `getFlag` returns. An unknown
 flag, or one without a value, returns `undefined`; Obsidian supplies no CLI
 arguments. Markdown transformers chain across registered extensions to transform
-chat text before rendering. Message and entry renderers are currently registered
-but not rendered, with a diagnostic in the extension load report.
+chat text before rendering. Custom message and entry renderers are rendered into
+the message stream with ANSI terminal control codes stripped and React error
+isolation, while hidden custom messages (`display: false`) stay concealed.
 
 ## Package imports
 
@@ -100,8 +101,11 @@ dialogs display a countdown and release their timer when closed.
 
 `setWidget` accepts text lines or a supported component factory above or below
 the composer. `setStatus` displays text beneath it, and `setWorkingMessage` sets
-an ephemeral working message below the composer. `getToolsExpanded` and
-`setToolsExpanded` read and control trace tool expansion for the conversation.
+an ephemeral working message below the composer. `setTitle` updates the active
+conversation title, while `setHeader` and `setFooter` mount native components at
+the header and footer boundaries with graceful headless fallback.
+`getToolsExpanded` and `setToolsExpanded` read and control trace tool expansion
+for the conversation.
 `addAutocompleteProvider` wraps native completion data; users can type or
 select **Show suggestions**, then choose with touch or the keyboard.
 Suggestions fill the draft; they do not send it. Existing slash commands and Tab
@@ -143,7 +147,7 @@ Supported events are `session_start`, `session_shutdown`, `before_agent_start`,
 `message_start`, `message_update`, `message_end`, the three
 `tool_execution_*` events, `tool_call` and `tool_result`, plus `context`, `input`,
 `model_select`, `thinking_level_select`, `before_provider_request`, `after_provider_response`, `session_tree`, `session_compact`, `session_compact_failed`,
-`session_before_fork` and `session_before_switch`. Startup happens once on first panel
+`session_before_fork`, `session_before_switch`, `session_before_compact` and `session_before_tree`. Startup happens once on first panel
 attachment or execution. The original Runner orders handlers and combines
 their results. A `before_agent_start` system prompt applies to that run; custom
 messages and `message_end` replacements follow the existing persistence path.
@@ -168,27 +172,27 @@ extra compaction and `ctx.modelRegistry.complete` calls are separate paths.
 
 `session_compact` fires after manual or threshold compaction has been saved.
 Its `compactionEntry` contains the real saved ID, summary, token count, ISO
-timestamp and Piem's `retainedTail`. Piem has no CLI `firstKeptEntryId` cursor:
-reading that member throws explicitly, while serializing the entry includes
-only real stored fields. An observer failure cannot undo a saved compaction.
-Both compaction outcomes dispatch after the single-flight slot is released, so
-an observer can start another compaction without waiting on itself.
+timestamp, Piem's `retainedTail`, and truthful `firstKeptEntryId` tracked
+from retained message entry origins. An observer failure cannot undo a saved
+compaction. Both compaction outcomes dispatch after the single-flight slot is
+released, so an observer can start another compaction without waiting on itself.
 
-`session_compact_failed` covers failed or cancelled manual and threshold
-compactions. Cancellations set `aborted:true` without an error message. Piem has no
-overflow-recovery or extension-supplied compaction, so `willRetry` and
-`fromExtension` are false. `ctx.compact({onError})` receives actual failures;
-success events, `session_before_compact`, custom instructions and result callbacks
-remain unsupported because their full compaction contract needs a real log cut.
+`session_before_compact` runs ahead of context summarization, providing
+preparation data with message lineage. Handlers returning `{ cancel: true }`
+abort compaction, while returning a custom `compaction` result adopts that
+summary directly. `ctx.compact({ onComplete, onError })` receives the settled
+outcome, and `customInstructions` steers summarization. `session_compact_failed`
+covers failed or cancelled compactions (`aborted: true`).
 
 `session_tree` follows a saved extension summary navigation, retry or edit-resend,
 with real old/new leaf IDs and the saved summary when one was created. Failed
-navigation emits no success event. `session_before_fork` runs before a reply is
-copied (`position:"at"`); `session_before_switch` runs before creating or opening
-a chat (`reason:"new"` or `"resume"`). Returning `{cancel:true}` or throwing
-prevents that operation. A later user selection supersedes a waiting handler.
-These hooks do not enable general `ctx.fork`, `ctx.switchSession`, `ctx.newSession`
-or `session_before_tree`; summary navigation remains restricted to its prepared ID.
+navigation emits no success event. `session_before_tree` intercepts tree
+navigation before writes and supports cancellation via `{ cancel: true }`.
+`session_before_fork` runs before a reply is copied (`position: "at"`);
+`session_before_switch` runs before creating or opening a chat (`reason: "new"`
+or `"resume"`). Returning `{ cancel: true }` or throwing prevents that operation.
+Command contexts additionally expose `newSession`, `fork`, and `switchSession`
+wired to the active session lifecycle.
 
 `tool_call` and `tool_result` intercept rather than observe, so they run through
 the agent's own tool-call path instead of the event stream the `tool_execution_*`
