@@ -1,7 +1,38 @@
 import type { AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
 import type { ImageContent, ProviderResponse } from "@earendil-works/pi-ai";
-import type { MarkdownTransformContext, SessionBeforeForkEvent, SessionBeforeSwitchEvent, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type {
+	CompactionResult,
+	EntryRenderer,
+	MarkdownTransformContext,
+	MessageRenderer,
+	SessionBeforeCompactEvent,
+	SessionBeforeForkEvent,
+	SessionBeforeSwitchEvent,
+	SessionBeforeTreeEvent,
+	SessionShutdownEvent,
+	SessionStartEvent,
+	ToolCallEvent,
+	ToolCallEventResult,
+	ToolResultEvent,
+} from "@earendil-works/pi-coding-agent";
+
+export interface SessionBeforeCompactResult {
+	cancel?: boolean;
+	compaction?: CompactionResult;
+}
+
+export interface SessionBeforeTreeResult {
+	cancel?: boolean;
+	summary?: {
+		summary: string;
+		details?: unknown;
+		usage?: unknown;
+	};
+	customInstructions?: string;
+	replaceInstructions?: boolean;
+	label?: string;
+}
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
@@ -188,6 +219,12 @@ export class CommunityHost {
 		}));
 	}
 	get commands() { return this.host.commands.filter(command => command.name !== "acm"); }
+	getMessageRenderer(type: string): MessageRenderer | undefined {
+		return this.host.getMessageRenderer?.(type);
+	}
+	getEntryRenderer(type: string): EntryRenderer | undefined {
+		return this.host.getEntryRenderer?.(type);
+	}
 	transformMarkdown(markdown: string, context: MarkdownTransformContext): string {
 		return this.host.transformMarkdown(markdown, context);
 	}
@@ -214,6 +251,49 @@ export class CommunityHost {
 			// but the upstream fork path only consumes cancel.
 			return result?.cancel === true;
 		} finally { this.navigationDispatches--; }
+	}
+	hasHandlers(type: string): boolean {
+		return this.host?.hasHandlers(type) ?? false;
+	}
+	async beforeCompact(event: SessionBeforeCompactEvent): Promise<SessionBeforeCompactResult | undefined> {
+		if (!this.host.hasHandlers("session_before_compact")) return undefined;
+		this.assertActive();
+		if (this.host.isStarting) return undefined;
+		const emit = async () => { await this.host.start(); return this.host.emit(event, false); };
+		this.navigationDispatches++;
+		try {
+			let result: SessionBeforeCompactResult | undefined;
+			if (this.platform.busy) {
+				const work = emit().then(async res => { await this.flushWrites(); this.assertActive(); return res; });
+				this.platform.trackRequest(work.then(() => undefined));
+				result = await work;
+			} else {
+				result = await this.operate(emit);
+			}
+			return result;
+		} finally {
+			this.navigationDispatches--;
+		}
+	}
+	async beforeTree(event: SessionBeforeTreeEvent): Promise<SessionBeforeTreeResult | undefined> {
+		if (!this.host.hasHandlers("session_before_tree")) return undefined;
+		this.assertActive();
+		if (this.host.isStarting) return undefined;
+		const emit = async () => { await this.host.start(); return this.host.emit(event, false); };
+		this.navigationDispatches++;
+		try {
+			let result: SessionBeforeTreeResult | undefined;
+			if (this.platform.busy) {
+				const work = emit().then(async res => { await this.flushWrites(); this.assertActive(); return res; });
+				this.platform.trackRequest(work.then(() => undefined));
+				result = await work;
+			} else {
+				result = await this.operate(emit);
+			}
+			return result;
+		} finally {
+			this.navigationDispatches--;
+		}
 	}
 	async syncModel(): Promise<void> {
 		if (!this.host.hasHandlers("model_select")) return;

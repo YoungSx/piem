@@ -1,5 +1,6 @@
 import { type Agent, type Skill, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Usage } from "@earendil-works/pi-ai";
+import type { CompactionResult } from "@earendil-works/pi-coding-agent";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { type CompactionEvent, type CompactionOutcome, type CompactResult } from "./compaction";
 import { type FrozenRunContext } from "./contextInjection";
@@ -213,7 +214,13 @@ export class SessionRuntime {
 	 */
 	overheadUsage: Usage[] = [];
 	/** The storage work finishes before observers may request another compaction. */
-	compaction: { result: Promise<CompactionOutcome>; notified: Promise<void> } | null = null;
+	compaction: {
+		result: Promise<CompactionOutcome>;
+		notified: Promise<void>;
+		customInstructions?: string;
+		onCompleteCallbacks?: Array<(result: CompactionResult) => void>;
+		onErrorCallbacks?: Array<(error: Error) => void>;
+	} | null = null;
 	/**
 	 * The attempt the transcript draws: running from launch until it settles, then
 	 * either gone (a success leaves pi's summary message behind instead) or held as

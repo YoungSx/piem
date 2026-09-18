@@ -125,6 +125,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 21. Upgrading @earendil-works/pi-agent-core, pi-ai, pi-coding-agent, and chord
  *     to 0.85.1 (Phase 4 of #395: session storage architecture migration)
  *     measured 2,345,645 B (+~58 KiB). The ceiling follows to 2.25 MiB.
+ * 22. The Pi extension compat bridge P2 (issue #419: compaction lineage,
+ *     session tree navigation, custom renderers, provider lifecycle, native
+ *     UI widgets) measured 2,359,579 B (+~12 KiB). The ceiling follows to
+ *     2.26 MiB.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -139,7 +143,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.25 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.26 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

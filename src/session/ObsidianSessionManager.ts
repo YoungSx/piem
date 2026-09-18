@@ -39,6 +39,11 @@ export interface SessionSearch<T> {
 	search(query: string, options?: SessionSearchOptions): AsyncIterable<T>;
 }
 
+export interface PersistedCompactResult extends CompactResult {
+	firstKeptEntryId?: string;
+	retainedMessageOrigins?: (string | null)[];
+}
+
 function encodeHeader(header: Record<string, unknown>): string {
 	return `${JSON.stringify(header)}\n`;
 }
@@ -744,22 +749,24 @@ export class ObsidianSessionManager {
 		}
 	}
 
-	async appendCompaction(result: CompactResult, lane = "main"): Promise<string> {
+	async appendCompaction(result: PersistedCompactResult, lane = "main"): Promise<string> {
 		return this.appendCompactionFor(this.requireActivePath(), result, lane);
 	}
 
-	async appendCompactionFor(path: string, result: CompactResult, lane = "main"): Promise<string> {
+	async appendCompactionFor(path: string, result: PersistedCompactResult, lane = "main"): Promise<string> {
 		const session = this.getSessionFor(path);
 		// Agent messages may carry optional fields as explicit `undefined`; pi's
 		// durable payload contract rejects those even though JSON.stringify would
 		// silently omit them. Normalize to the wire shape before appending.
-		const persisted = JSON.parse(JSON.stringify(result)) as CompactResult;
+		const persisted = JSON.parse(JSON.stringify(result)) as PersistedCompactResult;
 		const entry = {
 			type: "compaction" as const,
 			id: session.idGenerator.next(),
 			summary: persisted.summary,
 			tokensBefore: persisted.tokensBefore,
 			retainedTail: persisted.retainedTail,
+			...(persisted.firstKeptEntryId ? { firstKeptEntryId: persisted.firstKeptEntryId } : {}),
+			...(Array.isArray(persisted.retainedMessageOrigins) ? { retainedMessageOrigins: persisted.retainedMessageOrigins } : {}),
 			...(persisted.usage === undefined ? {} : { usage: persisted.usage }),
 			...(persisted.details === undefined ? {} : { details: persisted.details }),
 		};
@@ -940,7 +947,22 @@ export class ObsidianSessionManager {
 		contextEntries.forEach((entry) => {
 			const projected = sessionEntryToContextMessages(entry) ?? [];
 			messages.push(...projected);
-			messageOrigins.push(...projected.map(() => (entry.type === "message" ? entry.id : null)));
+			if (entry.type === "message") {
+				messageOrigins.push(...projected.map(() => entry.id));
+			} else if (entry.type === "compaction") {
+				const origins: (string | null)[] = [null];
+				const compactionEntry = entry as unknown as { retainedMessageOrigins?: (string | null)[] };
+				const retainedOrigins = Array.isArray(compactionEntry.retainedMessageOrigins)
+					? compactionEntry.retainedMessageOrigins
+					: [];
+				const tailLength = Math.max(0, projected.length - 1);
+				for (let i = 0; i < tailLength; i++) {
+					origins.push(retainedOrigins[i] ?? null);
+				}
+				messageOrigins.push(...origins);
+			} else {
+				messageOrigins.push(...projected.map(() => null));
+			}
 		});
 		const config = (await session.getValue(laneConfig(lane), BACKGROUND_CONTEXT))?.value;
 		let model = config?.model ?? null;

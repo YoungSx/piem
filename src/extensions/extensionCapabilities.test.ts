@@ -243,30 +243,28 @@ describe("compaction is triggered without being awaited", () => {
 		} finally { host.dispose(); }
 	});
 
-	it("refuses the options it cannot honour rather than ignoring them", async () => {
-		let calls = 0;
-		let instructions: unknown;
-		let results: unknown;
+	it("honours custom instructions and notifies onComplete with compaction result", async () => {
+		let capturedOptions: any;
+		let completedResult: any;
 		const host = await makeHost(pi => {
 			pi.registerCommand("instructed", { handler: async (_args, ctx) => {
-				try { ctx.compact({ customInstructions: "Keep the API notes." }); }
-				catch (error) { instructions = error; }
+				ctx.compact({
+					customInstructions: "Keep the API notes.",
+					onComplete: (result) => { completedResult = result; },
+				});
 			} });
-			pi.registerCommand("watched", { handler: async (_args, ctx) => {
-				try { ctx.compact({ onComplete: () => {} }); }
-				catch (error) { results = error; }
-			} });
-		}, { compact: async () => { calls++; return true; } });
+		}, {
+			compact: async (options) => {
+				capturedOptions = options;
+				return { firstKeptEntryId: "entry-123", summary: "summary", tokensBefore: 100 };
+			},
+		});
 		try {
 			await host.run("instructed");
-			await host.run("watched");
-			// Both fail loudly: piem's pipeline has nowhere truthful to put custom
-			// instructions, and its compaction entry has no `firstKeptEntryId` for
-			// Pi's CompactionResult. A silently ignored option is worse than an
-			// explicit refusal — the extension would believe its summary honoured it.
-			expect(String(instructions)).toContain("does not support");
-			expect(String(results)).toContain("does not support");
-			expect(calls).toBe(0);
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(capturedOptions?.customInstructions).toBe("Keep the API notes.");
+			expect(completedResult).toEqual({ firstKeptEntryId: "entry-123", summary: "summary", tokensBefore: 100 });
 		} finally { host.dispose(); }
 	});
 

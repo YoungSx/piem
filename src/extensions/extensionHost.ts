@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model, ProviderResponse } from "@earendil-works/pi-ai";
-import type { BranchSummaryEntry, ContextUsage, Extension, ExtensionActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, MarkdownTransformContext, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { BranchSummaryEntry, CompactOptions, CompactionResult, ContextUsage, EntryRenderer, Extension, ExtensionActions, ExtensionCommandContextActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, MarkdownTransformContext, MessageRenderer, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ContextSession } from "./contextSession";
 import { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
@@ -62,14 +62,17 @@ export interface ExtensionHostCallbacks {
 	/** Renames the owning conversation; rejects rather than reporting a write that did not happen. */
 	setSessionName?(name: string): Promise<void>;
 	/**
-	 * Compacts the owning conversation, resolving to whether anything was summarized.
-	 *
-	 * Piem's own guards decide whether a compaction runs at all, and the promise
-	 * says which happened: `false` is "nothing needed tidying", a rejection is a
-	 * real failure. The bridge routes failure through `onError`; result callbacks
-	 * remain unsupported because the CLI requires a retained-entry pointer.
+	 * Compacts the owning conversation, resolving to whether anything was summarized or CompactionResult.
 	 */
-	compact?(): Promise<boolean>;
+	compact?(options?: CompactOptions): Promise<boolean | CompactionResult>;
+	/** Session management actions for command context */
+	newSession?: ExtensionCommandContextActions["newSession"];
+	fork?: ExtensionCommandContextActions["fork"];
+	switchSession?: ExtensionCommandContextActions["switchSession"];
+	/** Dynamic provider lifecycle */
+	registerProvider?(name: string, config: unknown): void;
+	registerNativeProvider?(provider: unknown): void;
+	unregisterProvider?(name: string): void;
 	/**
 	 * Every tool the owning conversation's agent is currently holding.
 	 *
@@ -273,7 +276,9 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				// after the loop, so the extension that queued one is the extension
 				// that pays for it. Checked before the name reservations below so a
 				// rejected extension has claimed no names.
-				if (claimed.registeredProvider()) unavailable("extension provider registration");
+				if (claimed.registeredProvider() && !callbacks.registerProvider && !callbacks.registerNativeProvider) {
+					unavailable("extension provider registration");
+				}
 				const keys = new Set<string>();
 				for (const shortcut of extension.shortcuts.values()) {
 					const key = parseKey(shortcut.shortcut);
@@ -368,7 +373,16 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			onRequest: settled => callbacks.trackRequest?.(settled),
 		});
 		const { snapshot: snapshotModel, revokeAuth, ...publicModelMembers } = modelMembers;
-		const cancel = (): void => { revokeAuth(); lifetime.cancel(); callbacks.session?.cancel(); };
+		const registeredProviders = new Set<string>();
+		const cancel = (): void => {
+			for (const name of registeredProviders) {
+				try { callbacks.unregisterProvider?.(name); } catch { /* ignore on teardown */ }
+			}
+			registeredProviders.clear();
+			revokeAuth();
+			lifetime.cancel();
+			callbacks.session?.cancel();
+		};
 		const models = limited({
 			...publicModelMembers,
 			// Pi's ModelRuntime streams inside pi's own createAgentSession. Piem
@@ -479,25 +493,75 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			 */
 			compact: options => {
 				assertAction();
-				if (options?.customInstructions !== undefined) unavailable("extension compaction instructions");
-				if (options?.onComplete) unavailable("extension compaction result callbacks");
 				const request = requireCallback("compact");
-				settle(request().then(() => undefined, (error: unknown) => {
+				settle(request(options).then(result => {
+					if (result && typeof result === "object") {
+						options?.onComplete?.(result);
+					}
+				}, (error: unknown) => {
 					if (!options?.onError) throw error;
 					// The extension's own closure. Raised through `settle` so a throwing
 					// handler surfaces as an extension failure, never as an unhandled
-					// rejection, and cannot swallow the compaction's own error silently.
+					// rejection.
 					options.onError(error instanceof Error ? error : new Error(String(error)));
 				}));
 			},
 			getSystemPrompt: () => readCallback("getSystemPrompt")(),
 		};
-		runner.bindCore(actions, context, { registerProvider: deny, registerNativeProvider: deny, unregisterProvider: deny });
-		runner.bindCommandContext({ waitForIdle: () => requireCallback("waitForIdle")(), newSession: deny, fork: deny,
+		runner.bindCore(actions, context, {
+			registerProvider: (name, config) => {
+				assertActive();
+				registeredProviders.add(name);
+				callbacks.registerProvider?.(name, config);
+			},
+			registerNativeProvider: provider => {
+				assertActive();
+				registeredProviders.add(provider.id);
+				callbacks.registerNativeProvider?.(provider);
+			},
+			unregisterProvider: name => {
+				assertActive();
+				registeredProviders.delete(name);
+				callbacks.unregisterProvider?.(name);
+			},
+		});
+		runner.bindCommandContext({
+			waitForIdle: () => requireCallback("waitForIdle")(),
+			newSession: async options => {
+				assertAction();
+				return callbacks.newSession ? callbacks.newSession(options) : { cancelled: true };
+			},
+			fork: async (entryId, options) => {
+				assertAction();
+				return callbacks.fork ? callbacks.fork(entryId, options) : { cancelled: true };
+			},
+			switchSession: async (sessionPath, options) => {
+				assertAction();
+				return callbacks.switchSession ? callbacks.switchSession(sessionPath, options) : { cancelled: true };
+			},
 			navigateTree: async (id, options) => {
 				const session = callbacks.session ?? deny();
 				const scope = lifetime.capture();
 				const oldLeafId = session.getLeafId();
+				if (runner.hasHandlers("session_before_tree")) {
+					const beforeResult = await invoke(() => runner.emit({
+						type: "session_before_tree",
+						preparation: {
+							targetId: id,
+							oldLeafId,
+							commonAncestorId: null,
+							entriesToSummarize: [],
+							userWantsSummary: options?.summarize ?? false,
+							customInstructions: options?.customInstructions,
+							replaceInstructions: options?.replaceInstructions,
+							label: options?.label,
+						},
+						signal: scope.signal,
+					}));
+					if (beforeResult?.cancel) {
+						return { cancelled: true };
+					}
+				}
 				const result = await session.navigateTree(id, options);
 				scope.assertActive();
 				if (!result.cancelled && runner.hasHandlers("session_tree")) {
@@ -510,7 +574,9 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 					}));
 				}
 				return result;
-			}, switchSession: deny, reload: deny });
+			},
+			reload: deny,
+		});
 		const nativeUI = createNativeExtensionUI(lifetime, () => uiAdapter, (message, type) => requireCallback("notify")(message, type));
 		if (callbacks.getEditorText) nativeUI.ui.getEditorText = () => requireCallback("getEditorText")();
 		if (callbacks.setEditorText) nativeUI.ui.setEditorText = text => requireCallback("setEditorText")(text);
@@ -643,6 +709,8 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			},
 			commands: runner.getRegisteredCommands().map(command => ({ name: command.invocationName, description: command.description })),
 			tools: registeredTools,
+			getMessageRenderer: (type: string): MessageRenderer | undefined => runner.getMessageRenderer(type),
+			getEntryRenderer: (type: string): EntryRenderer | undefined => runner.getEntryRenderer(type),
 			transformMarkdown: (markdown: string, context: MarkdownTransformContext): string => {
 				let current = markdown;
 				for (const transformer of runner.getMarkdownTransformers()) {
@@ -745,6 +813,10 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			dispose: (reason: SessionShutdownEvent["reason"] = "quit"): void => {
 				if (disposed) return;
 				disposed = true;
+				for (const name of registeredProviders) {
+					try { callbacks.unregisterProvider?.(name); } catch { /* ignore on teardown */ }
+				}
+				registeredProviders.clear();
 				nativeUI.retire();
 				nativeUI.detach();
 				revokeAuth();
