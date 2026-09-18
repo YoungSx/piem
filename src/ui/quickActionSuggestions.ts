@@ -102,6 +102,13 @@ export function continueAfterFailureQuickAction(t: Translator): QuickAction[] {
  * - Populated connected notes offer summarization, review improvements, and brainstorming.
  *
  * Without an active note, the suggestions turn to the vault as a whole.
+ *
+ * The if-else priority order is a design decision:
+ *   dailyNote/periodicNote > isEmpty > isOrphan > default
+ * A newly created empty daily note gets daily-journal chips (not scaffold chips),
+ * because its role as a journal entry is more specific than its state as a draft.
+ * An empty ordinary note gets scaffold chips (not orphan chips), because outlining
+ * a blank page is more useful than analyzing a graph position it cannot have yet.
  */
 export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, noteFacts?: NoteFacts | null): QuickAction[] {
 	if (hasActiveNote) {
@@ -141,6 +148,16 @@ export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, n
 
 /**
  * Quick action to distill the settled conversation into a reusable skill.
+ *
+ * Exported but not yet wired into the post-reply fallback row: the model
+ * instruction in {@link REPLY_SUGGESTION_INSTRUCTION} handles the distill
+ * suggestion dynamically. This static chip is the deterministic stand-in
+ * for when the post-reply row gains a built-in fallback alongside the
+ * model-generated suggestions.
+ *
+ * TODO: wire into MessageList's `followUpActions` as a fallback when the
+ * model's reply suggestions are empty and the conversation shows a
+ * multi-step procedure worth distilling.
  */
 export function distillSkillQuickAction(t: Translator): QuickAction {
 	return {
