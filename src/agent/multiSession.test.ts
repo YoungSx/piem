@@ -480,6 +480,57 @@ function delegatingStreamFn(): {
 	return { streamFn, childStarted: () => child !== undefined, finishChild };
 }
 
+function multiSessionDelegatingStreamFn(): {
+	streamFn: StreamFn;
+	enteredChildren: Map<string, boolean>;
+} {
+	const enteredChildren = new Map<string, boolean>();
+	let spawnedA = false;
+	let spawnedB = false;
+	const streamFn: StreamFn = withRunawayGuard((model, context, options) => {
+		if (context.systemPrompt?.includes("delegated task") ?? false) {
+			const stream = createAssistantMessageEventStream();
+			const msgStr = JSON.stringify(context.messages);
+			const name = msgStr.includes("scout-a") ? "scout-a" : msgStr.includes("scout-b") ? "scout-b" : "unknown";
+			enteredChildren.set(name, true);
+			const fire = (): void => {
+				const message: AssistantMessage = {
+					role: "assistant",
+					content: [],
+					api: model.api,
+					provider: model.provider,
+					model: model.id,
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					timestamp: Date.now(),
+					stopReason: "aborted",
+					errorMessage: "aborted",
+				};
+				stream.push({ type: "error", reason: "aborted", error: message });
+				stream.end(message);
+			};
+			if (options?.signal?.aborted) {
+				fire();
+			} else {
+				options?.signal?.addEventListener("abort", fire, { once: true });
+			}
+			return stream;
+		}
+		const userMsg = JSON.stringify(context.messages);
+		if (!spawnedA && userMsg.includes("delegate-a")) {
+			spawnedA = true;
+			return scriptedToolCallStream(model, "spawn_a", "spawn_subagent", { task: "scout-a", role: "scout" });
+		}
+		if (!spawnedB && userMsg.includes("delegate-b")) {
+			spawnedB = true;
+			return scriptedToolCallStream(model, "spawn_b", "spawn_subagent", { task: "scout-b", role: "scout" });
+		}
+		return scriptedTextStream(model, "delegated");
+	}, { maxCalls: 100, label: "multiSessionDelegatingStreamFn" });
+
+	return { streamFn, enteredChildren };
+}
+
+
 /** An immediate echo script: every prompt gets `pong:<prompt>` back. */
 function echoStreamFn(): StreamFn {
 	return (model: Model<Api>, context: Context) => scriptedTextStream(model, `pong:${lastUserPromptText(context)}`);
@@ -728,6 +779,53 @@ describe("ObsidianAgentService multi-session concurrency (issue #235)", () => {
 		expect(entry?.settled).toBe(true);
 		expect(entry?.error).toBeUndefined();
 		expect(JSON.stringify(entry?.result?.messages ?? [])).toContain("Scout report: nothing to organize.");
+	});
+
+	it("abortSession cancels only the target session's subagents and deleteSession tears down and prunes them", async () => {
+		const { streamFn, enteredChildren } = multiSessionDelegatingStreamFn();
+		const service = createService(new MemoryAdapter(), streamFn);
+		const { pathA, pathB } = await seedTwoSessions(service);
+
+		// Session A delegates scout-a
+		await service.openSession(pathA);
+		await service.sendPrompt("delegate-a");
+		await waitFor(() => enteredChildren.get("scout-a") === true);
+
+		// Session B delegates scout-b
+		await service.openSession(pathB);
+		await service.sendPrompt("delegate-b");
+		await waitFor(() => enteredChildren.get("scout-b") === true);
+
+		const registry = service.getSubagentRegistry();
+		expect(registry.liveCount()).toBe(2);
+
+		const entryA = registry.forOwner(pathA)[0]!;
+		const entryB = registry.forOwner(pathB)[0]!;
+		expect(entryA).toBeDefined();
+		expect(entryB).toBeDefined();
+		expect(entryA.settled).toBe(false);
+		expect(entryB.settled).toBe(false);
+
+		// Abort session A: only entryA should be cancelled as user abort
+		await service.abortSession(pathA);
+		await waitFor(() => entryA.settled);
+
+		expect(entryA.settled).toBe(true);
+		expect(entryA.killedBy).toBe("user");
+		// Session B's subagent must still be running
+		expect(entryB.settled).toBe(false);
+		expect(entryB.killedBy).toBeUndefined();
+		expect(registry.liveCount()).toBe(1);
+
+		// Delete session B: teardown aborts live subagents and prunes entries for pathB
+		await service.deleteSession(pathB);
+		await waitFor(() => entryB.settled);
+
+		expect(entryB.settled).toBe(true);
+		expect(entryB.killedBy).toBe("teardown");
+		expect(registry.liveCount()).toBe(0);
+		// Settled entries for pathB were pruned on teardown
+		expect(registry.forOwner(pathB)).toEqual([]);
 	});
 
 	it("deleting the neighbor session falls back to the live run without replacing it", async () => {

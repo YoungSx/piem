@@ -73,7 +73,7 @@ export interface SubagentToolsContext {
 	 * long after the host stopped being able to say which conversation is acting,
 	 * so the id is captured here and travels down in a closure.
 	 */
-	createChildTools: (depth: number, ownerId: string, skills: readonly Skill[]) => AgentTool[];
+	createChildTools: (depth: number, ownerId: string, skills: readonly Skill[], callerSubagentId?: string) => AgentTool[];
 	/**
 	 * The conversation a top-level spawn belongs to, per the host. Absent when the
 	 * host does not distinguish conversations; see {@link OWNER_UNKNOWN}.
@@ -88,6 +88,7 @@ export interface SubagentToolsContext {
 
 /** What one child run needs beyond the host wiring the context already carries. */
 export interface ChildRunSpec {
+	id?: string;
 	task: string;
 	/** What the child runs as, resolved: its role, its model, its clamped level. */
 	role: SubagentRole;
@@ -134,7 +135,7 @@ export function startChildRun(context: SubagentToolsContext, spec: ChildRunSpec)
 		task: spec.task,
 		role: spec.role,
 		instructions: spec.instructions,
-		tools: context.createChildTools(spec.depth, spec.ownerId, skills),
+		tools: context.createChildTools(spec.depth, spec.ownerId, skills, spec.id),
 		skills,
 		model: spec.model,
 		streamFn: context.getStreamFn(),
@@ -269,7 +270,12 @@ export function resolveOwnerId(context: SubagentToolsContext, inherited: string 
  * @param inheritedOwnerId The conversation this level belongs to, when a parent
  * level already resolved it. Undefined at the top level only.
  */
-export function createSpawnSubagentTool(context: SubagentToolsContext, depth: number, inheritedOwnerId?: string): AgentTool<SpawnParameters> {
+export function createSpawnSubagentTool(
+	context: SubagentToolsContext,
+	depth: number,
+	inheritedOwnerId?: string,
+	callerSubagentId?: string,
+): AgentTool<SpawnParameters> {
 	// Read once per construction, not per call: the schema is fixed for this tool
 	// instance, so a settings change reaches the next agent build rather than
 	// desynchronizing the advertised ids from the ones this schema accepts.
@@ -328,6 +334,7 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 				// The wait scope is the run that called spawn, not the child's own
 				// linked controller — the two signals are distinct by construction.
 				parentSignal: signal,
+				parentSubagentId: callerSubagentId,
 				ownerId,
 				abort: linked.abort,
 				dispose: linked.dispose,
@@ -342,6 +349,7 @@ export function createSpawnSubagentTool(context: SubagentToolsContext, depth: nu
 				thinkingLevel,
 				start: () =>
 					startChildRun(context, {
+						id,
 						task: params.task,
 						role,
 						instructions: params.instructions,

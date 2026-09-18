@@ -39,7 +39,11 @@ const KillParameters = Type.Object({
  * and a thrown error would end the parent's turn under the service's
  * stop-on-tool-error rule.
  */
-export function createKillSubagentTool(context: SubagentToolsContext, inheritedOwnerId?: string): AgentTool<typeof KillParameters> {
+export function createKillSubagentTool(
+	context: SubagentToolsContext,
+	inheritedOwnerId?: string,
+	callerSubagentId?: string,
+): AgentTool<typeof KillParameters> {
 	return {
 		name: "kill_subagent",
 		label: "Stop subagent",
@@ -49,7 +53,11 @@ export function createKillSubagentTool(context: SubagentToolsContext, inheritedO
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
 			const ownerId = resolveOwnerId(context, inheritedOwnerId);
-			const outcome = context.registry.kill(params.subagentId, signal);
+			const outcome = context.registry.kill(params.subagentId, {
+				ownerSignal: signal,
+				callerOwnerId: ownerId,
+				callerSubagentId,
+			});
 			const id = params.subagentId;
 			switch (outcome) {
 				case "killed":
@@ -208,6 +216,7 @@ export function createFollowUpSubagentTool(context: SubagentToolsContext, inheri
 						dispose: linked.dispose,
 						start: () =>
 							startChildRun(context, {
+								id,
 								task: params.task,
 								role: child.role,
 								instructions: child.instructions,

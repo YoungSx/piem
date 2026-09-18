@@ -2313,4 +2313,213 @@ describe("subagent ownership across conversations", () => {
 			extension.disposeAll();
 		}
 	});
+
+	it("cascades kill from parent subagent down to grandchild", async () => {
+		const hang = hangingStreamFn();
+		let childRequests = 0;
+		const streamFn: StreamFn = (model, context, options) => {
+			const canSpawn = (context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			if (canSpawn) {
+				childRequests += 1;
+				if (childRequests === 1) {
+					return scriptedStreamFn([
+						{ toolCall: { id: "deep_spawn", name: "spawn_subagent", arguments: { task: "Grandchild task" } } },
+					])(model, context, options);
+				}
+				return hang(model, context, options);
+			}
+			return hang(model, context, options);
+		};
+		const extension = createSubagentExtension(makeOwnedHost(streamFn, () => "test-owner"), { waitPacing: TEST_PACING });
+		const tools = extension.createTools();
+		const controller = new AbortController();
+
+		try {
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Root task" }, controller.signal);
+			const childId = spawnedId(spawned);
+
+			// Wait until both child and grandchild have spawned
+			for (let attempt = 0; attempt < 300 && extension.registry.all().length < 2; attempt += 1) {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+
+			expect(extension.registry.all()).toHaveLength(2);
+			const childEntry = extension.registry.get(childId)!;
+			const grandchildEntry = extension.registry.all().find((entry) => entry.id !== childId)!;
+
+			expect(childEntry).toBeDefined();
+			expect(grandchildEntry).toBeDefined();
+			expect(grandchildEntry.parentSubagentId).toBe(childId);
+			expect(grandchildEntry.settled).toBe(false);
+
+			// Kill the child via kill_subagent tool
+			const killed = await toolNamed(tools, "kill_subagent").execute("c2", { subagentId: childId }, controller.signal);
+			expect(killed.details).toMatchObject({ subagentId: childId, killed: true });
+
+			// Await both promises settling
+			await Promise.all([childEntry.promise.catch(() => undefined), grandchildEntry.promise.catch(() => undefined)]);
+
+			expect(childEntry.settled).toBe(true);
+			expect(childEntry.killedBy).toBe("tool");
+
+			// Grandchild must have been aborted with killedBy "parent"
+			expect(grandchildEntry.settled).toBe(true);
+			expect(grandchildEntry.killedBy).toBe("parent");
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("wait_subagent aborts immediately and clears timer when caller signal fires", async () => {
+		const extension = createSubagentExtension(makeOwnedHost(hangingStreamFn(), () => "test-owner"), { waitPacing: TEST_PACING });
+		const tools = extension.createTools();
+		const rootController = new AbortController();
+
+		try {
+			const spawned = await toolNamed(tools, "spawn_subagent").execute("c1", { task: "Hanging task" }, rootController.signal);
+			const childId = spawnedId(spawned);
+
+			const waitController = new AbortController();
+			const waitPromise = toolNamed(tools, "wait_subagent").execute(
+				"c2",
+				{ subagentId: childId, timeoutMs: 10_000 },
+				waitController.signal,
+			);
+
+			// Fire abort shortly after wait starts
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			waitController.abort();
+
+			await expect(waitPromise).rejects.toThrow("Operation aborted");
+
+			// Calling wait_subagent with an already aborted signal rejects immediately
+			const alreadyAborted = new AbortController();
+			alreadyAborted.abort();
+			await expect(
+				toolNamed(tools, "wait_subagent").execute("c3", { subagentId: childId }, alreadyAborted.signal),
+			).rejects.toThrow("Operation aborted");
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("pruneOwner drops settled subagents for an owner without touching live ones or other owners", async () => {
+		let currentOwner = "owner-1";
+		const hang = hangingStreamFn();
+
+		const streamFn: StreamFn = (model, context, options) => {
+			if (JSON.stringify(context.messages).includes("hang-please")) {
+				return hang(model, context, options);
+			}
+			return scriptedStreamFn([{ text: "Done immediately" }])(model, context, options);
+		};
+
+		const extension = createSubagentExtension(makeOwnedHost(streamFn, () => currentOwner), { waitPacing: TEST_PACING });
+		try {
+			currentOwner = "owner-1";
+			const tools1 = extension.createTools(undefined, "owner-1");
+			const spawn1 = await toolNamed(tools1, "spawn_subagent").execute("c1", { task: "Finish 1" }, undefined);
+			const id1 = spawnedId(spawn1);
+			await extension.registry.get(id1)!.promise;
+
+			const spawn2 = await toolNamed(tools1, "spawn_subagent").execute("c2", { task: "hang-please" }, undefined);
+			const id2 = spawnedId(spawn2);
+
+			currentOwner = "owner-2";
+			const tools2 = extension.createTools(undefined, "owner-2");
+			const spawn3 = await toolNamed(tools2, "spawn_subagent").execute("c3", { task: "Finish 3" }, undefined);
+			const id3 = spawnedId(spawn3);
+			await extension.registry.get(id3)!.promise;
+
+			// Before pruning: all 3 exist
+			expect(extension.registry.get(id1)?.settled).toBe(true);
+			expect(extension.registry.get(id2)?.settled).toBe(false);
+			expect(extension.registry.get(id3)?.settled).toBe(true);
+			expect(extension.registry.all()).toHaveLength(3);
+
+			// Prune owner-1
+			extension.registry.pruneOwner("owner-1");
+
+			// id1 (settled for owner-1) must be gone
+			expect(extension.registry.get(id1)).toBeUndefined();
+			// id2 (live for owner-1) must remain
+			expect(extension.registry.get(id2)).toBeDefined();
+			// id3 (settled for owner-2) must remain untouched
+			expect(extension.registry.get(id3)).toBeDefined();
+			expect(extension.registry.all()).toHaveLength(2);
+		} finally {
+			extension.disposeAll();
+		}
+	});
+
+	it("killAllLive scoped to owner cancels all descendants for that owner and spares other owners", async () => {
+		let currentOwner = "owner-a";
+		const hang = hangingStreamFn();
+		let childARequests = 0;
+
+		const streamFn: StreamFn = (model, context, options) => {
+			const isGrandchild = !(context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			if (isGrandchild) {
+				return hang(model, context, options);
+			}
+			const isChildA = JSON.stringify(context.messages).includes("Child A");
+			if (isChildA) {
+				childARequests += 1;
+				if (childARequests === 1) {
+					return scriptedStreamFn([
+						{ toolCall: { id: "child_a_spawn", name: "spawn_subagent", arguments: { task: "Grandchild A" } } },
+					])(model, context, options);
+				}
+				return hang(model, context, options);
+			}
+			return hang(model, context, options);
+		};
+
+		const extension = createSubagentExtension(makeOwnedHost(streamFn, () => currentOwner), { waitPacing: TEST_PACING });
+		try {
+			// Spawn child A under owner-a, which spawns grandchild A
+			currentOwner = "owner-a";
+			const toolsA = extension.createTools(undefined, "owner-a");
+			const spawnA = await toolNamed(toolsA, "spawn_subagent").execute("c1", { task: "Child A" }, undefined);
+			const idA = spawnedId(spawnA);
+
+			// Poll for grandchild A
+			for (let attempt = 0; attempt < 300 && extension.registry.all().length < 2; attempt += 1) {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+
+			// Spawn child B under owner-b
+			currentOwner = "owner-b";
+			const toolsB = extension.createTools(undefined, "owner-b");
+			const spawnB = await toolNamed(toolsB, "spawn_subagent").execute("c2", { task: "Child B" }, undefined);
+			const idB = spawnedId(spawnB);
+
+			expect(extension.registry.all()).toHaveLength(3);
+			const entryA = extension.registry.get(idA)!;
+			const entryB = extension.registry.get(idB)!;
+			const entryGrandchildA = extension.registry.all().find((e) => e.id !== idA && e.id !== idB)!;
+
+			expect(entryA.settled).toBe(false);
+			expect(entryB.settled).toBe(false);
+			expect(entryGrandchildA.settled).toBe(false);
+			expect(entryGrandchildA.parentSubagentId).toBe(idA);
+
+			// Kill all live for owner-a only
+			const killedCount = extension.registry.killAllLive("user", "owner-a");
+			expect(killedCount).toBe(2);
+
+			await Promise.all([entryA.promise.catch(() => undefined), entryGrandchildA.promise.catch(() => undefined)]);
+
+			expect(entryA.settled).toBe(true);
+			expect(entryA.killedBy).toBe("user");
+			expect(entryGrandchildA.settled).toBe(true);
+
+			// entryB (owner-b) must still be running
+			expect(entryB.settled).toBe(false);
+			expect(entryB.killedBy).toBeUndefined();
+		} finally {
+			extension.disposeAll();
+		}
+	});
 });
+

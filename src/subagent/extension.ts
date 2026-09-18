@@ -144,7 +144,7 @@ export function createSubagentExtension(
 		getSkills: () => host.getSkills(),
 		getOwnerId: host.getOwnerId ? () => host.getOwnerId?.() : undefined,
 		registry,
-		createChildTools: (childDepth, ownerId, skills) => buildTools(childDepth, ownerId, () => skills),
+		createChildTools: (childDepth, ownerId, skills, callerSubagentId) => buildTools(childDepth, ownerId, () => skills, callerSubagentId),
 		waitPacing: options?.waitPacing,
 	};
 
@@ -154,7 +154,12 @@ export function createSubagentExtension(
 	 * always given one, because the host can no longer name it by the time a
 	 * grandchild's tool runs.
 	 */
-	function buildTools(depth: number, ownerId?: string, getSkills: () => readonly Skill[] = () => host.getSkills()): AgentTool[] {
+	function buildTools(
+		depth: number,
+		ownerId?: string,
+		getSkills: () => readonly Skill[] = () => host.getSkills(),
+		callerSubagentId?: string,
+	): AgentTool[] {
 		const tools = host.createVaultTools(getSkills, ownerId);
 		const scopedContext = { ...context, getSkills };
 		if (depth < SUBAGENT_DEPTH_LIMIT) {
@@ -166,10 +171,10 @@ export function createSubagentExtension(
 			// owner scope, so what a level may collect is exactly what it may see,
 			// what it may stop, and what it may re-task.
 			tools.push(
-				createSpawnSubagentTool(scopedContext, depth, ownerId),
+				createSpawnSubagentTool(scopedContext, depth, ownerId, callerSubagentId),
 				createWaitSubagentTool(context, ownerId),
 				createListSubagentsTool(context, ownerId),
-				createKillSubagentTool(context, ownerId),
+				createKillSubagentTool(context, ownerId, callerSubagentId),
 				createFollowUpSubagentTool(scopedContext, ownerId),
 			);
 		}
