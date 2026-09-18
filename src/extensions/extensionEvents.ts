@@ -1,6 +1,5 @@
 import type { AgentEvent, AgentMessage, Entry } from "@earendil-works/pi-agent-core";
 import type { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
-import { unavailable } from "./node/unavailable";
 
 export const SUPPORTED_EXTENSION_EVENTS = new Set([
 	"context", "session_start", "session_shutdown", "before_agent_start", "agent_start", "agent_end", "agent_settled",
@@ -14,24 +13,27 @@ export const SUPPORTED_EXTENSION_EVENTS = new Set([
 	"tool_call", "tool_result",
 	"before_provider_request", "after_provider_response",
 	"input", "model_select", "thinking_level_select", "session_tree", "session_compact", "session_compact_failed",
-	"session_before_fork", "session_before_switch",
+	"session_before_fork", "session_before_switch", "session_before_compact", "session_before_tree",
 ]);
 
-/** Piem stores retained messages, not the CLI's cursor into earlier entries. */
+/** Piem compaction entry exposed to extensions with truthful firstKeptEntryId lineage. */
 export type PiemCompactionEntry = Omit<Extract<Entry, { type: "compaction" }>, "timestamp"> & {
 	timestamp: string;
-	/** Unsupported: use retainedTail. Reading this member fails explicitly. */
-	readonly firstKeptEntryId: never;
+	/** The entry ID of the first retained message, or empty string if no retained tail exists. */
+	readonly firstKeptEntryId: string;
 };
 
-export function extensionCompactionEntry(entry: Extract<Entry, { type: "compaction" }>): PiemCompactionEntry {
-	const snapshot = {
-		...structuredClone(entry), timestamp: new Date(entry.timestamp).toISOString(),
-		get firstKeptEntryId(): never { return unavailable("CLI compaction cursors; Piem compaction entries contain retainedTail"); },
+export function extensionCompactionEntry(
+	entry: Extract<Entry, { type: "compaction" }>,
+	firstKeptEntryId?: string | null,
+): PiemCompactionEntry {
+	const resolvedFirstKeptEntryId =
+		(entry as unknown as { firstKeptEntryId?: string }).firstKeptEntryId ?? firstKeptEntryId ?? "";
+	return {
+		...structuredClone(entry),
+		timestamp: new Date(entry.timestamp).toISOString(),
+		firstKeptEntryId: resolvedFirstKeptEntryId,
 	};
-	// Logging the truthful entry stays usable; asking for a nonexistent cursor
-	// never gets a fabricated ID or a silent undefined in its place.
-	return Object.defineProperty(snapshot, "firstKeptEntryId", { enumerable: false });
 }
 
 /** The native agent emits fewer fields than Pi's extension-facing event types. */

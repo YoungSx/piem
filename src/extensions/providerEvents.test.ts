@@ -96,11 +96,11 @@ describe("provider event bridge", () => {
 		} finally { held.resolve(); f.host.dispose(); }
 	});
 
-	it("exposes saved compaction data and explicitly refuses a CLI-only cursor", () => {
+	it("exposes saved compaction data and keeps firstKeptEntryId", () => {
 		const entry = extensionCompactionEntry({ type: "compaction", id: "saved-id", parentId: "parent", seq: 3,
-			timestamp: 0, summary: "Summary", tokensBefore: 100, retainedTail: [], fromHook: false });
+			timestamp: 0, summary: "Summary", tokensBefore: 100, retainedTail: [], fromHook: false }, "kept-123");
 		expect(JSON.parse(JSON.stringify(entry))).toEqual({ type: "compaction", id: "saved-id", parentId: "parent", seq: 3,
-			timestamp: "1970-01-01T00:00:00.000Z", summary: "Summary", tokensBefore: 100, retainedTail: [], fromHook: false });
-		expect(() => entry.firstKeptEntryId).toThrow("CLI compaction cursors");
+			timestamp: "1970-01-01T00:00:00.000Z", summary: "Summary", tokensBefore: 100, retainedTail: [], fromHook: false, firstKeptEntryId: "kept-123" });
+		expect(entry.firstKeptEntryId).toBe("kept-123");
 	});
 });

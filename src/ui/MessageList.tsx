@@ -5,7 +5,9 @@ import { AttachmentCard } from "./AttachmentCard";
 import type { AgentMessage, CustomMessage } from "@earendil-works/pi-agent-core";
 import type { PendingToolCall } from "../agent/ObsidianAgentService";
 import type { AssistantMessage, ImageContent, ThinkingContent, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
-import type { MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
+import type { MarkdownTransformContext, MessageRenderer } from "@earendil-works/pi-coding-agent";
+import { plainText } from "../extensions/compat/textMetrics";
+import { theme } from "../extensions/compat/theme";
 import type { App, Component, IconName } from "obsidian";
 import type { TextBlockKind } from "./markdownPolicy";
 import { MarkdownText } from "./MarkdownText";
@@ -210,6 +212,8 @@ export interface MessageListProps {
 	extensionTail?: React.ReactNode;
 	/** Optional extension-registered Markdown transformation pipeline. */
 	transformMarkdown?: (markdown: string, context: MarkdownTransformContext) => string;
+	/** Optional extension custom message renderer lookup */
+	getMessageRenderer?: (customType: string) => MessageRenderer | undefined;
 }
 
 /**
@@ -475,6 +479,7 @@ export function MessageList({
 	onDismissQuestion,
 	extensionTail,
 	transformMarkdown,
+	getMessageRenderer,
 }: MessageListProps): React.JSX.Element {
 	const t = useT();
 	// Neither changing notes nor replacing a callback changes historical prose.
@@ -651,6 +656,7 @@ export function MessageList({
 					compactionRetained={compactionRetained}
 					contextWindow={contextWindow}
 					transformMarkdown={transformMarkdown}
+					getMessageRenderer={getMessageRenderer}
 				/>
 				{/*
 				 * The question sits at the tail, below the last thing said and above the
@@ -776,7 +782,7 @@ function focusAnchor(event: React.MouseEvent<HTMLAnchorElement>, anchorId: strin
 
 interface MessageHistoryProps extends Pick<MessageListProps,
 	"messages" | "isStreaming" | "pendingToolCalls" | "unpersistedMessages" | "app" | "component" |
-	"compactionEvent" | "compactionRetained" | "contextWindow" | "transformMarkdown"> {
+	"compactionEvent" | "compactionRetained" | "contextWindow" | "transformMarkdown" | "getMessageRenderer"> {
 	/** Pi appends in place; capture the length before that same array grows again. */
 	messageCount: number;
 	showAgentDetails: boolean;
@@ -799,7 +805,7 @@ const MessageHistory = memo(function MessageHistory({
 	messages, isStreaming, pendingToolCalls, unpersistedMessages, app, component,
 	sourcePathRef, actionsRef, canRetry, canEdit, canFork, runSettled,
 	showAgentDetails, traceExpand, compactionEvent, compactionRetained, contextWindow,
-	transformMarkdown,
+	transformMarkdown, getMessageRenderer,
 }: MessageHistoryProps): React.JSX.Element {
 	const t = useT();
 	const activeIndex = streamingIndex(isStreaming, messages);
@@ -811,7 +817,7 @@ const MessageHistory = memo(function MessageHistory({
 	const context: MessageContext = {
 		app, component, sourcePath: sourcePathRef.current, showAgentDetails, traceExpand,
 		foldPlan, pairPlan, liveRow, runningToolCalls, streamingMessageIndex: activeIndex, contextWindow, t,
-		transformMarkdown,
+		transformMarkdown, getMessageRenderer,
 	};
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
@@ -1394,6 +1400,8 @@ interface MessageContext {
 	t: Translator;
 	/** Optional extension-registered Markdown transformation pipeline. */
 	transformMarkdown?: (markdown: string, context: MarkdownTransformContext) => string;
+	/** Optional extension custom message renderer lookup */
+	getMessageRenderer?: (customType: string) => MessageRenderer | undefined;
 }
 
 /**
@@ -1908,6 +1916,34 @@ function HarnessTrace({ message, context }: { message: AgentMessage; context: Me
 	);
 }
 
+function NativeCustomNode({
+	message,
+	renderer,
+	context,
+}: {
+	message: CustomMessage;
+	renderer: MessageRenderer;
+	context: MessageContext;
+}): React.JSX.Element | null {
+	try {
+		const component = renderer(message, {
+			expanded: true,
+			outputPad: 0,
+		}, theme as unknown as Parameters<MessageRenderer>[2]);
+		if (!component) return null;
+		const lines = component.render(80) ?? [];
+		const cleanText = lines.map((line: string) => plainText(line, false)).join("\n");
+		if (!cleanText.trim()) return null;
+		return <Block text={cleanText} kind="harness" isStreaming={false} context={context} />;
+	} catch (error) {
+		console.warn("Custom message renderer failed:", error);
+		if (typeof message.content === "string") {
+			return <Block text={message.content} kind="harness" isStreaming={false} context={context} />;
+		}
+		return null;
+	}
+}
+
 function renderHarnessBody(message: AgentMessage, context: MessageContext): React.ReactNode {
 	if (message.role === "bashExecution") {
 		return <Block text={`$ ${message.command}\n${message.output}`} kind="harness" isStreaming={false} context={context} />;
@@ -1919,6 +1955,11 @@ function renderHarnessBody(message: AgentMessage, context: MessageContext): Reac
 		return <Block text={message.summary} kind="summary" isStreaming={false} context={context} />;
 	}
 	if (message.role === "custom") {
+		if (message.display === false) return null;
+		const renderer = context.getMessageRenderer?.(message.customType);
+		if (renderer) {
+			return <NativeCustomNode message={message} renderer={renderer} context={context} />;
+		}
 		if (typeof message.content === "string") {
 			return <Block text={message.content} kind="harness" isStreaming={false} context={context} />;
 		}

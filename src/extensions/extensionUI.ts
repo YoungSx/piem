@@ -36,5 +36,8 @@ export interface ExtensionUIAdapter extends Pick<ExtensionUIContext,
 	getWorkingMessage?(): string | undefined;
 	setToolsExpanded?(expanded: boolean): void;
 	getToolsExpanded?(): boolean;
+	setTitle?(title: string | undefined): void;
+	setHeaderComponent?(surface: NativeExtensionSurface | undefined): void;
+	setFooterComponent?(surface: NativeExtensionSurface | undefined): void;
 	reset(): void;
 }

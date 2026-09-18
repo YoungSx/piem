@@ -17,7 +17,7 @@ const { DEFAULT_SETTINGS } = await import("../settings");
 type SessionCompactFailedEvent = Extract<ExtensionEvent, { type: "session_compact_failed" }>;
 type SessionCompactEvent = Extract<ExtensionEvent, { type: "session_compact" }>;
 
-function harness(factory: ExtensionFactory, tokens = 4) {
+function harness(factory: ExtensionFactory = () => {}, tokens = 4) {
 	const adapter = new MemoryAdapter();
 	const sessions = new ObsidianSessionManager(adapter as unknown as DataAdapter, "Piem/sessions", "obsidian-vault:Compaction");
 	const settings = {
@@ -53,9 +53,9 @@ function harness(factory: ExtensionFactory, tokens = 4) {
 	return { service, sessions, adapter, requests };
 }
 
-function summaryResponse() {
+function summaryResponse(text = "SUMMARY") {
 	const frames = [
-		{ id: "c1", choices: [{ delta: { content: "SUMMARY" }, finish_reason: null }] },
+		{ id: "c1", choices: [{ delta: { content: text }, finish_reason: null }] },
 		{ id: "c1", choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 } },
 	];
 	return { status: 200, headers: { "content-type": "text/event-stream" },
@@ -82,7 +82,9 @@ describe("extension compaction observations", () => {
 			expect(saved?.type).toBe("compaction");
 			expect(JSON.parse(JSON.stringify(event.compactionEntry))).toEqual({ ...saved, timestamp: new Date(saved!.timestamp).toISOString() });
 			expect(snapshot).toEqual(JSON.parse(JSON.stringify(event.compactionEntry)));
-			expect(() => event.compactionEntry.firstKeptEntryId).toThrow("CLI compaction cursors");
+			expect(typeof event.compactionEntry.firstKeptEntryId).toBe("string");
+			const firstKept = await sessions.getSession().getEntry(event.compactionEntry.firstKeptEntryId!);
+			expect(firstKept).toBeDefined();
 			expect(service.getSnapshot().messages[0]?.role).toBe("compactionSummary");
 		} finally { service.dispose(); }
 	});
@@ -306,5 +308,165 @@ describe("extension compaction observations", () => {
 			expect(seen).toEqual([{ type: "session_compact_failed", reason: "manual", aborted: true, willRetry: false, fromExtension: false }]);
 			expect(staleRead).toThrow();
 		} finally { response.reject(new DOMException("Cancelled", "AbortError")); service.dispose(); }
+	});
+
+	it("aborts compaction cleanly when session_before_compact returns cancel: true", async () => {
+		const failedEvents: SessionCompactFailedEvent[] = [];
+		const compactEvents: SessionCompactEvent[] = [];
+		const { service, sessions } = harness(pi => {
+			pi.on("session_before_compact", (event) => {
+				expect(event.preparation).toBeDefined();
+				expect(typeof event.preparation.tokensBefore).toBe("number");
+				expect(event.branchEntries.length).toBeGreaterThan(0);
+				return { cancel: true };
+			});
+			pi.on("session_compact", event => { compactEvents.push(event); });
+			pi.on("session_compact_failed", event => { failedEvents.push(event); });
+		});
+		try {
+			await service.sendPrompt("Message to compact");
+			requestUrlMock.mockResolvedValue(summaryResponse());
+			await service.compactNow();
+			expect(compactEvents).toHaveLength(0);
+			expect(failedEvents).toHaveLength(1);
+			expect(failedEvents[0]).toMatchObject({
+				type: "session_compact_failed",
+				aborted: true,
+			});
+			// Verify no compaction entry was appended to the session
+			const branch = await sessions.getSession().findEntries();
+			const hasCompaction = branch.some(e => e.type === "compaction");
+			expect(hasCompaction).toBe(false);
+		} finally {
+			service.dispose();
+		}
+	});
+
+	it("applies custom compaction from session_before_compact and emits fromExtension: true", async () => {
+		const compactEvents: SessionCompactEvent[] = [];
+		const { service, sessions } = harness(pi => {
+			pi.on("session_before_compact", (event) => {
+				return {
+					compaction: {
+						summary: "CUSTOM_EXTENSION_SUMMARY",
+						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						tokensBefore: event.preparation.tokensBefore,
+					},
+				};
+			});
+			pi.on("session_compact", event => { compactEvents.push(event); });
+		});
+		try {
+			await service.sendPrompt("Hello world");
+			await service.compactNow();
+			expect(compactEvents).toHaveLength(1);
+			expect(compactEvents[0]?.fromExtension).toBe(true);
+			const entry = compactEvents[0]!.compactionEntry;
+			expect(entry.summary).toBe("CUSTOM_EXTENSION_SUMMARY");
+			expect(typeof entry.firstKeptEntryId).toBe("string");
+			const saved = await sessions.getSession().getEntry(entry.id);
+			expect(saved?.type).toBe("compaction");
+			expect((saved as any).summary).toBe("CUSTOM_EXTENSION_SUMMARY");
+		} finally {
+			service.dispose();
+		}
+	});
+
+	it("passes customInstructions to summarizer and notifies onComplete with firstKeptEntryId", async () => {
+		let completedResult: any = null;
+		const completed = Promise.withResolvers<void>();
+		const { service, sessions } = harness(pi => {
+			pi.registerCommand("tidy-custom", {
+				handler: async (_args, ctx) => {
+					ctx.compact({
+						customInstructions: "Prioritize open questions",
+						onComplete: (result) => {
+							completedResult = result;
+							completed.resolve();
+						},
+					});
+				},
+			});
+		});
+		try {
+			await service.sendPrompt("Turn 1");
+			requestUrlMock.mockResolvedValue(summaryResponse());
+			expect(await service.runExtensionCommand("tidy-custom")).toBe(true);
+			await completed.promise;
+			expect(completedResult).toBeDefined();
+			expect(completedResult.summary).toBe("SUMMARY");
+			expect(typeof completedResult.firstKeptEntryId).toBe("string");
+			const firstKept = await sessions.getSession().getEntry(completedResult.firstKeptEntryId);
+			expect(firstKept).toBeDefined();
+			// Verify that the summarizer prompt request contained the customInstructions
+			const summarizerCall = requestUrlMock.mock.calls.find(c => JSON.stringify(c).includes("Prioritize open questions"));
+			expect(summarizerCall).toBeDefined();
+		} finally {
+			service.dispose();
+		}
+	});
+
+	it("rejects concurrent compactions with conflicting custom instructions", async () => {
+		const entered = Promise.withResolvers<void>();
+		const response = Promise.withResolvers<{ status: number; headers: Record<string, string>; arrayBuffer: ArrayBufferLike }>();
+		let conflictError: Error | null = null;
+		const conflictDone = Promise.withResolvers<void>();
+
+		const { service } = harness(pi => {
+			pi.registerCommand("tidy-concurrent", {
+				handler: async (_args, ctx) => {
+					ctx.compact({ customInstructions: "Instruction A" });
+					ctx.compact({
+						customInstructions: "Instruction B",
+						onError: (err) => {
+							conflictError = err;
+							conflictDone.resolve();
+						},
+					});
+				},
+			});
+		});
+		try {
+			await service.sendPrompt("Hello");
+			requestUrlMock.mockImplementation(() => {
+				entered.resolve();
+				return response.promise;
+			});
+			const cmd = service.runExtensionCommand("tidy-concurrent");
+			await entered.promise;
+			await conflictDone.promise;
+			expect(conflictError).toBeDefined();
+			expect((conflictError as Error | null)?.message).toContain("conflicting custom instructions");
+			response.resolve(summaryResponse());
+			await cmd;
+		} finally {
+			response.resolve(summaryResponse());
+			service.dispose();
+		}
+	});
+
+	it("preserves message origins across session reload after compaction", async () => {
+		const { service, sessions } = harness();
+		try {
+			await service.sendPrompt("Message 1");
+			await service.sendPrompt("Message 2");
+			requestUrlMock.mockResolvedValue(summaryResponse("Retained summary"));
+			await service.compactNow();
+
+			const sessionPath = service.getActiveSessionPath()!;
+			const reloadedContext = await sessions.buildSessionContextFor(sessionPath);
+			// The first message is compactionSummary, with origin null
+			expect(reloadedContext.messages[0]?.role).toBe("compactionSummary");
+			expect(reloadedContext.messageOrigins?.[0]).toBeNull();
+			// The retained messages must have non-null origin IDs matching actual session entries
+			for (let i = 1; i < reloadedContext.messages.length; i++) {
+				const originId = reloadedContext.messageOrigins?.[i];
+				expect(originId).toBeTruthy();
+				const entry = await sessions.getSessionFor(sessionPath).getEntry(originId!);
+				expect(entry).toBeDefined();
+			}
+		} finally {
+			service.dispose();
+		}
 	});
 });

@@ -24,6 +24,7 @@ import {
 	type StreamFn,
 	type ThinkingLevel,
 	calculateContextTokens,
+	estimateContextTokens,
 	shouldCompact,
 } from "@earendil-works/pi-agent-core";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
@@ -38,8 +39,13 @@ import { resolveRetrySettings } from "../net/retrySettings";
 import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "../net/streamRetry";
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
-import { compactIfNeeded, needsCompaction, type CompactionEvent, type CompactionOutcome } from "./compaction";
-import type { BranchSummaryEntry, MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
+import {
+	compactIfNeeded,
+	needsCompaction,
+	type CompactionEvent,
+	type CompactionOutcome,
+} from "./compaction";
+import type { BranchSummaryEntry, CompactOptions, CompactionResult, EntryRenderer, MarkdownTransformContext, MessageRenderer, SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
 import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
 import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
@@ -661,6 +667,12 @@ interface CompactionRunOptions {
 	force?: boolean;
 	/** Extension actions must release their request before cancelled observers acquire a fresh operation. */
 	waitForObservers?: boolean;
+	/** Custom instructions provided by extension to steer summarization. */
+	customInstructions?: string;
+	/** Whether compaction was requested by an extension. */
+	fromExtension?: boolean;
+	onComplete?: (result: CompactionResult) => void;
+	onError?: (error: Error) => void;
 }
 
 type SavedCompactionOutcome = Exclude<CompactionOutcome, { status: "compacted" }>
@@ -2766,23 +2778,41 @@ export class ObsidianAgentService {
 		if (!replyEntryId) {
 			return false;
 		}
+		const result = await this.forkSessionAtEntry(rt, replyEntryId, { position: "at" });
+		return !result.cancelled;
+	}
+
+	async forkSessionAtEntry(
+		rt: SessionRuntime,
+		entryId: string,
+		options?: { position?: "before" | "at" },
+	): Promise<{ cancelled: boolean }> {
+		if (this.pendingSessionOpen || this.disposed) return { cancelled: true };
+		await this.initialize();
+		if (this.pendingSessionOpen || this.disposed) return { cancelled: true };
+		const agent = rt.agent;
+		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing || rt.sessionOperations) {
+			return { cancelled: true };
+		}
 		let forkedPath: string;
 		const sequence = this.sessionOpenSequence;
 		const epoch = rt.stopEpoch;
 		const isCurrent = () => !this.disposed && this.current() === rt && rt.agent === agent && rt.stopEpoch === epoch && this.sessionOpenSequence === sequence;
 		rt.sessionOperations += 1;
 		try {
-			if (!await this.canChangeSession(rt, { type: "session_before_fork", entryId: replyEntryId, position: "at" }) || !isCurrent()) return false;
-			forkedPath = (await this.sessionManager.forkSession(rt.sessionPath, replyEntryId)).path;
+			if (!await this.canChangeSession(rt, { type: "session_before_fork", entryId, position: options?.position ?? "at" }) || !isCurrent()) {
+				return { cancelled: true };
+			}
+			forkedPath = (await this.sessionManager.forkSession(rt.sessionPath, entryId)).path;
 		} catch (error) {
 			if (isCurrent()) this.toast("chat.forkFailed", error);
-			return false;
+			return { cancelled: true };
 		} finally { rt.sessionOperations -= 1; }
-		if (!isCurrent()) return false;
+		if (!isCurrent()) return { cancelled: true };
 		// Pi forks use before_fork only: vetoing a later before_switch would leave
 		// an unwanted copied file behind after the operation was already approved.
 		await this.selectSession(forkedPath, false);
-		return this.currentPath === forkedPath;
+		return { cancelled: this.currentPath !== forkedPath };
 	}
 
 	/** Bookmark commands capture their owner before a modal or any other await can change focus. */
@@ -3822,6 +3852,16 @@ export class ObsidianAgentService {
 		return rt?.communityHost?.transformMarkdown(markdown, context) ?? markdown;
 	}
 
+	getMessageRenderer(customType: string, path?: string): MessageRenderer | undefined {
+		const rt = path ? this.runtimes.get(path) : this.current();
+		return rt?.communityHost?.getMessageRenderer(customType);
+	}
+
+	getEntryRenderer(customType: string, path?: string): EntryRenderer | undefined {
+		const rt = path ? this.runtimes.get(path) : this.current();
+		return rt?.communityHost?.getEntryRenderer(customType);
+	}
+
 	getSnapshot(): ChatSnapshot {
 		const settings = this.getSettings();
 		const rt = this.current();
@@ -4570,9 +4610,9 @@ export class ObsidianAgentService {
 				await this.renameRuntimeSession(rt, name);
 				assertOwner();
 			},
-			compact: async () => {
+			compact: async options => {
 				assertOwner();
-				const compacted = await this.compactRuntimeNow(rt);
+				const compacted = await this.compactRuntimeNow(rt, options);
 				assertOwner();
 				return compacted;
 			},
@@ -4598,6 +4638,44 @@ export class ObsidianAgentService {
 				return { tokens: fill.tokens, contextWindow: fill.contextWindow, percent: fill.ratio * 100 };
 			},
 			abort: () => { assertOwner(); if (this.extensionFactories) void this.abortSession(rt.sessionPath); else { rt.compactionPending = false; rt.extensionStopAfterTurn = true; } },
+			newSession: async () => {
+				assertOwner();
+				await this.newSession();
+				return { cancelled: false };
+			},
+			fork: async (entryId, options) => {
+				assertOwner();
+				return this.forkSessionAtEntry(rt, entryId, options);
+			},
+			switchSession: async sessionPath => {
+				assertOwner();
+				await this.openSession(sessionPath);
+				return { cancelled: this.currentPath !== sessionPath };
+			},
+			registerNativeProvider: provider => {
+				assertOwner();
+				const bundle = this.requireModelsBundle();
+				const registry = bundle.models as unknown as { setProvider?: (p: unknown) => void };
+				if (typeof registry.setProvider === "function") {
+					registry.setProvider(provider);
+				}
+			},
+			registerProvider: (name, config) => {
+				assertOwner();
+				const bundle = this.requireModelsBundle();
+				const registry = bundle.models as unknown as { registerProvider?: (n: string, c: unknown) => void };
+				if (typeof registry.registerProvider === "function") {
+					registry.registerProvider(name, config);
+				}
+			},
+			unregisterProvider: name => {
+				assertOwner();
+				const bundle = this.requireModelsBundle();
+				const registry = bundle.models as unknown as { deleteProvider?: (n: string) => void };
+				if (typeof registry.deleteProvider === "function") {
+					registry.deleteProvider(name);
+				}
+			},
 			waitForIdle: async () => {
 				assertOwner();
 				// The only caller is the extension timer gate (`beforeTimer`). A timer
@@ -5485,7 +5563,7 @@ export class ObsidianAgentService {
 	 * call while `rt.isCompacting` awaits the first instead of starting a rival
 	 * summarization against the same transcript.
 	 */
-	private async compactRuntimeNow(rt: SessionRuntime): Promise<boolean> {
+	private async compactRuntimeNow(rt: SessionRuntime, options?: CompactOptions): Promise<CompactionResult | boolean> {
 		const agent = rt.agent;
 		// A failed start leaves no agent to compact, matching `compactNow`.
 		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
@@ -5496,12 +5574,19 @@ export class ObsidianAgentService {
 			// an extension needs the refusal in its own call.
 			throw new Error("Compaction needs a configured model credential.");
 		}
-		const outcome = await this.runExclusiveCompaction(rt, agent, { force: true, waitForObservers: false });
+		const outcome = await this.runExclusiveCompaction(rt, agent, {
+			force: true,
+			waitForObservers: false,
+			customInstructions: options?.customInstructions,
+			fromExtension: true,
+			onComplete: options?.onComplete,
+			onError: options?.onError,
+		});
 		if (outcome.status === "failed") {
 			if (outcome.aborted) throw new DOMException("Compaction cancelled", "AbortError");
 			throw new Error(outcome.message);
 		}
-		return outcome.status === "compacted";
+		return outcome.status === "compacted" ? (outcome.result as unknown as CompactionResult) : false;
 	}
 
 	/**
@@ -5560,26 +5645,72 @@ export class ObsidianAgentService {
 	 * its single-flight slot, so a handler can compact again without awaiting itself.
 	 */
 	private async runExclusiveCompaction(rt: SessionRuntime, agent: Agent, options: CompactionRunOptions = {}): Promise<CompactionOutcome> {
-		if (!rt.compaction) {
+		if (rt.compaction) {
+			const ongoingInstructions = rt.compaction.customInstructions;
+			const requestedInstructions = options.customInstructions;
+			if (ongoingInstructions !== requestedInstructions) {
+				const error = new Error("Cannot run concurrent compaction with conflicting custom instructions.");
+				options.onError?.(error);
+				return { status: "failed", message: error.message, aborted: false };
+			}
+			if (options.onComplete) {
+				rt.compaction.onCompleteCallbacks = rt.compaction.onCompleteCallbacks ?? [];
+				rt.compaction.onCompleteCallbacks.push(options.onComplete);
+			}
+			if (options.onError) {
+				rt.compaction.onErrorCallbacks = rt.compaction.onErrorCallbacks ?? [];
+				rt.compaction.onErrorCallbacks.push(options.onError);
+			}
+		} else {
 			const controller = new AbortController();
 			const host = rt.communityHost;
 			rt.compactionController = controller;
-			const result = this.trackCompaction(rt, agent, controller.signal, options.force === true).finally(() => {
+			const onCompleteCallbacks = options.onComplete ? [options.onComplete] : [];
+			const onErrorCallbacks = options.onError ? [options.onError] : [];
+			const result = this.trackCompaction(rt, agent, controller.signal, options.force === true, options).finally(() => {
 				if (rt.compaction?.result === result) {
 					rt.compaction = null;
 					rt.compactionController = null;
 				}
 			});
-			const attempt = { result, notified: Promise.resolve() };
+			const attempt = {
+				result,
+				notified: Promise.resolve(),
+				customInstructions: options.customInstructions,
+				onCompleteCallbacks,
+				onErrorCallbacks,
+			};
 			rt.compaction = attempt;
 			attempt.notified = result.then(async outcome => {
 				if (outcome.status === "skipped") return;
-				// Stop retired the platform operation that launched ctx.compact.
-				// Its action promise awaits result only, so draining here cannot
-				// wait on this observer. Old callbacks stay cancelled; the event
-				// receives its own fresh scope after that operation has released.
 				if (controller.signal.aborted) await host?.drain();
-				if (rt.communityHost === host) await this.reportCompactionOutcome(rt, agent, options.force === true, outcome);
+				if (rt.communityHost === host) await this.reportCompactionOutcome(rt, agent, options.force === true, outcome, options);
+				if (outcome.status === "compacted") {
+					const compactionResult = {
+						summary: outcome.result.summary,
+						firstKeptEntryId: outcome.result.firstKeptEntryId ?? "",
+						tokensBefore: outcome.result.tokensBefore,
+						estimatedTokensAfter: estimateContextTokens(outcome.messages).tokens,
+						usage: outcome.result.usage,
+						details: outcome.result.details,
+					};
+					for (const cb of attempt.onCompleteCallbacks ?? []) {
+						try {
+							cb(compactionResult);
+						} catch (err) {
+							this.log.debug("onComplete callback failed", () => ({ error: causeMessage(err) }));
+						}
+					}
+				} else if (outcome.status === "failed") {
+					const err = new Error(outcome.message);
+					for (const cb of attempt.onErrorCallbacks ?? []) {
+						try {
+							cb(err);
+						} catch (cbErr) {
+							this.log.debug("onError callback failed", () => ({ error: causeMessage(cbErr) }));
+						}
+					}
+				}
 			}).catch(error => { this.log.debug("Compaction observer did not settle", () => ({ error: causeMessage(error) })); });
 		}
 		const attempt = rt.compaction;
@@ -5588,7 +5719,13 @@ export class ObsidianAgentService {
 		return outcome;
 	}
 
-	private async trackCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<SavedCompactionOutcome> {
+	private async trackCompaction(
+		rt: SessionRuntime,
+		agent: Agent,
+		signal: AbortSignal,
+		force: boolean,
+		options?: CompactionRunOptions,
+	): Promise<SavedCompactionOutcome> {
 		// The anchor is read here rather than in `performCompaction` because the row
 		// has to appear at the tail the reader is looking at *now* — a prompt's
 		// pre-flight tidy runs before the user's own message joins the transcript.
@@ -5597,7 +5734,7 @@ export class ObsidianAgentService {
 			let outcome: SavedCompactionOutcome;
 			try {
 				this.notify();
-				outcome = await this.performCompaction(rt, agent, signal, force);
+				outcome = await this.performCompaction(rt, agent, signal, force, options);
 			} catch (error) {
 				outcome = { status: "failed", message: causeMessage(error), aborted: signal.aborted || (error instanceof Error && error.name === "AbortError") };
 			}
@@ -5607,7 +5744,7 @@ export class ObsidianAgentService {
 			return outcome;
 		} finally {
 			/*
-				 * The attempt has already decided what the row says next: a
+			 * The attempt has already decided what the row says next: a
 			 * failure worth reporting replaced this record with its own, and every
 			 * other ending — success, nothing to do, abort — leaves the row nothing
 			 * to say. Only the running record is cleared, so a failure recorded
@@ -5620,19 +5757,56 @@ export class ObsidianAgentService {
 		}
 	}
 
-	private async performCompaction(rt: SessionRuntime, agent: Agent, signal: AbortSignal, force: boolean): Promise<SavedCompactionOutcome> {
+	private async performCompaction(
+		rt: SessionRuntime,
+		agent: Agent,
+		signal: AbortSignal,
+		force: boolean,
+		options?: CompactionRunOptions,
+	): Promise<SavedCompactionOutcome> {
 		const model = getSelectedModel(this.getSettings());
+		const settings = this.resolveCompaction(agent.state.model.contextWindow ?? model.contextWindow);
+
+		// Prepare messageOrigins from agent.state.messages
+		const messageOrigins = agent.state.messages.map((msg) => rt.messageEntryIds.get(msg) ?? null);
+
+		let fallbackFirstKeptEntryId = "";
+		try {
+			const session = this.sessionManager.getSessionFor(rt.sessionPath);
+			const branchEntries = await session.view(rt.activeLane).findEntriesOnBranch({ order: "oldestFirst" });
+			if (branchEntries.length > 0) {
+				fallbackFirstKeptEntryId = branchEntries[branchEntries.length - 1]?.id ?? "";
+			}
+		} catch {
+			// Fallback first kept entry ID remains empty if branch entries are not available.
+		}
+
 		const outcome = await compactIfNeeded({
 			messages: agent.state.messages,
+			messageOrigins,
 			model,
 			models: this.modelsWithRequestDefaults(),
 			thinkingLevel: agent.state.thinkingLevel,
 			previous: rt.lastCompaction,
-			// The same resolved settings the context meter reads, so the bar and the
-			// trigger cannot disagree about where the line is.
-			settings: this.resolveCompaction(agent.state.model.contextWindow ?? model.contextWindow),
+			settings,
 			signal,
 			force,
+			customInstructions: options?.customInstructions,
+			fallbackFirstKeptEntryId,
+			beforeCompact: async (preparation) => {
+				if (!rt.communityHost?.hasHandlers("session_before_compact")) return undefined;
+				const session = this.sessionManager.getSessionFor(rt.sessionPath);
+				const branchEntries = (await session.view(rt.activeLane).findEntriesOnBranch({ order: "oldestFirst" })) ?? [];
+				return rt.communityHost.beforeCompact({
+					type: "session_before_compact",
+					preparation,
+					branchEntries: branchEntries as unknown as SessionBeforeCompactEvent["branchEntries"],
+					customInstructions: options?.customInstructions,
+					reason: force ? "manual" : "threshold",
+					willRetry: false,
+					signal,
+				});
+			},
 		});
 
 		// The conversation can move on while the summary is in flight: "New chat",
@@ -5664,35 +5838,57 @@ export class ObsidianAgentService {
 		// reply — which is exactly what the `"awaiting"` latch set above asks
 		// the hook to do.
 		this.recordOverheadUsage(rt, outcome.result.usage);
+
 		const entryId = await this.sessionManager.appendCompactionFor(rt.sessionPath, outcome.result, rt.activeLane);
 		if (rt.agent !== agent) return { status: "skipped" };
+
 		agent.state.messages = outcome.messages;
 		rt.lastCompaction = outcome.result;
+
+		// Re-populate messageEntryIds for retainedTail messages
+		if (Array.isArray(outcome.result.retainedTail)) {
+			const origins = outcome.result.retainedMessageOrigins ?? [];
+			outcome.result.retainedTail.forEach((msg, idx) => {
+				const originId = origins[idx];
+				if (originId) {
+					rt.messageEntryIds.set(msg, originId);
+				}
+			});
+		}
+
 		await this.refreshSessionInfo(rt);
 		this.notify();
 		return { ...outcome, entryId };
 	}
 
 	/** A failed observer cannot turn a best-effort tidy into a failed prompt. */
-	private async reportCompactionOutcome(rt: SessionRuntime, agent: Agent, force: boolean, outcome: Exclude<SavedCompactionOutcome, { status: "skipped" }>): Promise<void> {
+	private async reportCompactionOutcome(
+		rt: SessionRuntime,
+		agent: Agent,
+		force: boolean,
+		outcome: Exclude<SavedCompactionOutcome, { status: "skipped" }>,
+		options?: CompactionRunOptions,
+	): Promise<void> {
 		if (this.disposed || rt.agent !== agent || rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) return;
 		const host = rt.communityHost;
 		const aborted = outcome.status === "failed" && outcome.aborted;
 		try {
 			let entry: Extract<Entry, { type: "compaction" }> | undefined;
+			let firstKeptEntryId: string | null = null;
 			if (outcome.status === "compacted") {
 				const saved = await this.sessionManager.getSessionFor(rt.sessionPath).getEntry(outcome.entryId);
 				if (saved?.type !== "compaction") throw new Error("Saved compaction entry is missing.");
 				entry = saved;
 				if (this.disposed || rt.agent !== agent || rt.communityHost !== host || rt.bookmarkClosing) return;
+				firstKeptEntryId = (saved as unknown as { firstKeptEntryId?: string }).firstKeptEntryId ?? outcome.result.firstKeptEntryId ?? null;
 			}
 			await host?.emit({
 				...(outcome.status === "compacted"
-					? { type: "session_compact" as const, compactionEntry: extensionCompactionEntry(entry!) }
+					? { type: "session_compact" as const, compactionEntry: extensionCompactionEntry(entry!, firstKeptEntryId) }
 					: { type: "session_compact_failed" as const, aborted, ...(aborted ? {} : { errorMessage: outcome.message }) }),
 				reason: force ? "manual" : "threshold",
-				// Piem has no overflow-retry path or extension-supplied summary.
-				willRetry: false, fromExtension: false,
+				willRetry: false,
+				fromExtension: outcome.status === "compacted" ? (Boolean(outcome.fromExtension) || Boolean(options?.fromExtension)) : false,
 			}, true);
 		} catch (error) {
 			if (rt.agent === agent && rt.communityHost === host && !aborted) this.setError(rt, causeMessage(error));

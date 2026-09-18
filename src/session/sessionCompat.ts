@@ -13,6 +13,7 @@ import {
 	type BranchScan,
 	type Entry,
 	type EntryQuery,
+	type NewEntry,
 	type Value,
 	type ValueList,
 	type JsonValue,
@@ -358,9 +359,11 @@ function applyCompatMethods(proto: Record<string, unknown>): void {
 						tokensBefore: typeof entry.tokensBefore === "number" ? entry.tokensBefore : 0,
 						retainedTail: Array.isArray(entry.retainedTail) ? (entry.retainedTail as AgentMessage[]) : [],
 						fromHook: entry.fromHook === true,
+						...(typeof entry.firstKeptEntryId === "string" ? { firstKeptEntryId: entry.firstKeptEntryId } : {}),
+						...(Array.isArray(entry.retainedMessageOrigins) ? { retainedMessageOrigins: entry.retainedMessageOrigins as (string | null)[] } : {}),
 						...(entry.details === undefined ? {} : { details: entry.details as JsonValue }),
 						...(entry.usage === undefined ? {} : { usage: entry.usage as Usage }),
-					}),
+					} as unknown as NewEntry),
 					setValue(branchTip(lane), id),
 				], BACKGROUND_CONTEXT);
 			}, BACKGROUND_CONTEXT);

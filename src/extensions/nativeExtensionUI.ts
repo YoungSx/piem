@@ -3,7 +3,7 @@ import type { ExtensionLifetime, ExtensionScope } from "./extensionLifetime";
 import { abortable, linkedAbortSignal } from "./extensionLifetime";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import { unavailable } from "./node/unavailable";
-import { createNativeComponentUI } from "./nativeComponentUI";
+import { createNativeComponentUI, type FooterFactory, type HeaderFactory } from "./nativeComponentUI";
 import { theme } from "./compat/theme";
 
 export function createNativeExtensionUI(
@@ -81,8 +81,21 @@ export function createNativeExtensionUI(
 			adapter().setWorkingMessage?.(message);
 		},
 		setWorkingVisible: deny,
-		setWorkingIndicator: deny, setHiddenThinkingLabel: deny, setFooter: deny,
-		setHeader: deny, setTitle: deny, custom: components.custom, setEditorComponent: deny,
+		setWorkingIndicator: deny, setHiddenThinkingLabel: deny,
+		setFooter: (factory?: Parameters<ExtensionUIContext["setFooter"]>[0]) => {
+			lifetime.assertActive();
+			components.setFooter(factory as unknown as FooterFactory);
+		},
+		setHeader: (factory?: Parameters<ExtensionUIContext["setHeader"]>[0]) => {
+			lifetime.assertActive();
+			components.setHeader(factory as unknown as HeaderFactory);
+		},
+		setTitle: (title?: string) => {
+			lifetime.assertActive();
+			const a = getAdapter();
+			if (a) a.setTitle?.(title);
+		},
+		custom: components.custom, setEditorComponent: deny,
 		getEditorComponent: deny, get theme() { lifetime.assertActive(); return theme as ExtensionUIContext["theme"]; },
 		getToolsExpanded: () => {
 			lifetime.assertActive();

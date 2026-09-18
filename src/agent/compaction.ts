@@ -7,15 +7,17 @@ import {
 	type AgentMessage,
 	type CompactResult,
 	type Entry,
+	type JsonValue,
 	type MessageEntry,
 	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
+export { createCompactionSummaryMessage, prepareCompaction, type CompactResult };
 import type { Api, Model, Models, RetryPolicy } from "@earendil-works/pi-ai";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from "./compactionSettings";
 import { retainSkillContext } from "./skillContext";
 
-export { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings, type CompactResult };
+export { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings };
 
 /**
  * Retry budget for the summarization request.
@@ -58,14 +60,30 @@ export interface CompactionEvent {
 	error?: string;
 }
 
+import type { CompactionResult as ExtensionCompactionResult, SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
+
+export type ExtensionCompactionPreparation = SessionBeforeCompactEvent["preparation"];
+
+export interface SessionBeforeCompactResult {
+	cancel?: boolean;
+	compaction?: ExtensionCompactionResult;
+}
+
+/** Enhanced CompactResult including truthful origin tracking and first kept entry id. */
+export interface EnhancedCompactResult extends CompactResult {
+	firstKeptEntryId?: string;
+	retainedMessageOrigins?: (string | null)[];
+}
+
 /** Outcome of a compaction attempt. */
 export type CompactionOutcome =
 	| { status: "skipped" }
-	| { status: "compacted"; messages: AgentMessage[]; result: CompactResult }
+	| { status: "compacted"; messages: AgentMessage[]; result: EnhancedCompactResult; fromExtension?: boolean }
 	| { status: "failed"; message: string; aborted: boolean };
 
 export interface CompactionRequest {
 	messages: AgentMessage[];
+	messageOrigins?: (string | null)[];
 	model: Model<Api>;
 	models: Models;
 	thinkingLevel: ThinkingLevel;
@@ -87,6 +105,10 @@ export interface CompactionRequest {
 	 * `keepRecentTokens` leaves behind.
 	 */
 	force?: boolean;
+	/** Optional instructions to steer context summarization. */
+	customInstructions?: string;
+	fallbackFirstKeptEntryId?: string;
+	beforeCompact?: (preparation: ExtensionCompactionPreparation) => Promise<SessionBeforeCompactResult | undefined>;
 }
 
 /**
@@ -129,37 +151,112 @@ export async function compactIfNeeded(request: CompactionRequest): Promise<Compa
 		return { status: "skipped" };
 	}
 
-	// `compact` returns a Result for its own validation failures, but a provider
-	// error propagates as a thrown exception, so both paths need handling.
-	let compacted;
-	try {
-		const ctx = request.signal ? withAbortSignal(request.signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
-		compacted = await compact(
-			prepared.value,
-			request.models,
-			request.model,
-			undefined,
-			request.thinkingLevel,
-			request.retry ?? DEFAULT_COMPACTION_RETRY,
-			undefined,
-			ctx,
-		);
-	} catch (error) {
-		return {
-			status: "failed", message: error instanceof Error ? error.message : String(error),
-			aborted: request.signal?.aborted === true || (error instanceof Error && error.name === "AbortError"),
+	// 1. Calculate retained tail with skill context retention
+	const retainedTail = retainSkillContext(request.messages, prepared.value.retainedTail);
+
+	// 2. Trace message origins for retained messages
+	const originMap = new Map<AgentMessage, string | null>();
+	if (request.messageOrigins) {
+		for (let i = 0; i < request.messages.length; i++) {
+			const msg = request.messages[i];
+			if (msg) {
+				originMap.set(msg, request.messageOrigins[i] ?? null);
+			}
+		}
+	}
+	const retainedMessageOrigins: (string | null)[] = retainedTail.map((msg) => originMap.get(msg) ?? null);
+
+	// 3. Determine firstKeptEntryId: first retained message with a known entry ID, or fallback
+	const firstKeptEntryId =
+		retainedMessageOrigins.find((id): id is string => typeof id === "string" && id.length > 0) ??
+		request.fallbackFirstKeptEntryId ??
+		"";
+
+	// 4. If beforeCompact hook is provided, invoke it
+	let extensionCompaction: ExtensionCompactionResult | undefined;
+	let fromExtension = false;
+	if (request.beforeCompact) {
+		const extensionPreparation: ExtensionCompactionPreparation = {
+			firstKeptEntryId,
+			messagesToSummarize: prepared.value.messagesToSummarize,
+			turnPrefixMessages: prepared.value.turnPrefixMessages,
+			isSplitTurn: prepared.value.isSplitTurn,
+			tokensBefore: prepared.value.tokensBefore,
+			previousSummary: prepared.value.previousSummary,
+			fileOps: prepared.value.fileOps,
+			settings,
+		};
+		const interception = await request.beforeCompact(extensionPreparation);
+		if (interception?.cancel) {
+			return { status: "failed", message: "Compaction was cancelled by extension.", aborted: true };
+		}
+		if (interception?.compaction) {
+			extensionCompaction = interception.compaction;
+			fromExtension = true;
+		}
+	}
+
+	if (request.signal?.aborted) {
+		return { status: "failed", message: "Compaction cancelled", aborted: true };
+	}
+
+	let result: EnhancedCompactResult;
+
+	if (extensionCompaction) {
+		result = {
+			summary: extensionCompaction.summary,
+			tokensBefore: extensionCompaction.tokensBefore ?? prepared.value.tokensBefore,
+			usage: extensionCompaction.usage,
+			retainedTail,
+			details: (extensionCompaction.details as JsonValue) ?? (prepared.value.fileOps as unknown as JsonValue),
+			firstKeptEntryId: extensionCompaction.firstKeptEntryId || firstKeptEntryId,
+			retainedMessageOrigins,
+		};
+	} else {
+		// `compact` returns a Result for its own validation failures, but a provider
+		// error propagates as a thrown exception, so both paths need handling.
+		let compacted;
+		try {
+			const ctx = request.signal ? withAbortSignal(request.signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
+			compacted = await compact(
+				prepared.value,
+				request.models,
+				request.model,
+				request.customInstructions,
+				request.thinkingLevel,
+				request.retry ?? DEFAULT_COMPACTION_RETRY,
+				undefined,
+				ctx,
+			);
+		} catch (error) {
+			return {
+				status: "failed",
+				message: error instanceof Error ? error.message : String(error),
+				aborted: request.signal?.aborted === true || (error instanceof Error && error.name === "AbortError"),
+			};
+		}
+		if (!compacted.ok) {
+			return {
+				status: "failed",
+				message: compacted.error.message,
+				aborted: request.signal?.aborted === true || compacted.error.code === "aborted",
+			};
+		}
+		if (request.signal?.aborted) return { status: "failed", message: "Compaction cancelled", aborted: true };
+
+		result = {
+			...compacted.value,
+			retainedTail,
+			firstKeptEntryId,
+			retainedMessageOrigins,
 		};
 	}
-	if (!compacted.ok) {
-		return { status: "failed", message: compacted.error.message, aborted: request.signal?.aborted === true || compacted.error.code === "aborted" };
-	}
-	if (request.signal?.aborted) return { status: "failed", message: "Compaction cancelled", aborted: true };
 
-	const result = { ...compacted.value, retainedTail: retainSkillContext(request.messages, compacted.value.retainedTail) };
 	return {
 		status: "compacted",
 		messages: toCompactedMessages(result),
 		result,
+		fromExtension,
 	};
 }
 
@@ -183,7 +280,7 @@ export function toCompactedMessages(result: CompactResult): AgentMessage[] {
  * result as a real compaction entry is what lets pi update the existing summary
  * rather than re-summarizing its own output.
  */
-function toHarnessEntries(messages: AgentMessage[], previous?: CompactResult): Entry[] {
+export function toHarnessEntries(messages: AgentMessage[], previous?: CompactResult): Entry[] {
 	if (!previous) {
 		return messages.map((message, index) => toMessageEntry(message, index));
 	}
