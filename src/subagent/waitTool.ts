@@ -208,7 +208,32 @@ export function createWaitSubagentTool(context: SubagentToolsContext, inheritedO
 					() => undefined,
 				)),
 			);
-			await Promise.race([settled, new Promise((resolve) => window.setTimeout(resolve, waitWindow.value))]);
+			let timer: number | undefined;
+			let cleanupAbort: (() => void) | undefined;
+			try {
+				const timerPromise = new Promise<void>((resolve) => {
+					timer = window.setTimeout(resolve, waitWindow.value);
+				});
+				const abortPromise = new Promise<never>((_, reject) => {
+					if (signal?.aborted) {
+						reject(new Error("Operation aborted"));
+						return;
+					}
+					if (signal) {
+						const onAbort = (): void => {
+							reject(new Error("Operation aborted"));
+						};
+						signal.addEventListener("abort", onAbort, { once: true });
+						cleanupAbort = () => signal.removeEventListener("abort", onAbort);
+					}
+				});
+				await Promise.race([settled, timerPromise, abortPromise]);
+			} finally {
+				if (timer !== undefined) {
+					window.clearTimeout(timer);
+				}
+				cleanupAbort?.();
+			}
 
 			// A clamped request is reported whatever the outcome: the model needs it
 			// to tell a slow child from its own rejected pacing.

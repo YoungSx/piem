@@ -1032,6 +1032,8 @@ export class ObsidianAgentService {
 		// explicit — a deleted session never applies anything.
 		runtime.pendingConfiguration = null;
 		runtime.dispose();
+		this.subagentExtension.registry.killAllLive("teardown", runtime.sessionPath);
+		this.subagentExtension.registry.pruneOwner(runtime.sessionPath);
 		this.runtimes.delete(runtime.sessionPath);
 		this.sessionManager.releaseSession(runtime.sessionPath);
 	}
@@ -2560,6 +2562,7 @@ export class ObsidianAgentService {
 		rt.stopEpoch += 1;
 		rt.extensionStopAfterTurn = false;
 		rt.communityHost?.cancel();
+		this.subagentExtension.registry.killAllLive("user", path);
 		const agent = rt.agent;
 		if (!agent) {
 			return;

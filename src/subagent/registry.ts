@@ -112,6 +112,8 @@ export interface SubagentEntry extends SubagentRunHandle {
 	 * by that turn rather than by the one that has already ended.
 	 */
 	parentSignal: AbortSignal | undefined;
+	/** The subagent that spawned this child, when spawned by another subagent. */
+	parentSubagentId?: string;
 	/**
 	 * Which conversation this child was spawned on behalf of, as an opaque id the
 	 * host chose — the plugin passes a chat session's path, this module never
@@ -180,6 +182,17 @@ export function statusOf(entry: SubagentEntry): "running" | "done" | "incomplete
 	}
 	return entry.result?.incomplete ? "incomplete" : "done";
 }
+
+/** Scope constraints for a subagent kill request. */
+export interface KillOptions {
+	/** Signal of the calling run, for callers that scope by run rather than identity. */
+	ownerSignal?: AbortSignal;
+	/** Conversation path that owns the child; a child of another conversation is not found. */
+	callerOwnerId?: string;
+	/** The subagent ordering the kill, when an internal subagent calls kill_subagent. */
+	callerSubagentId?: string;
+}
+
 /**
  * The live bookkeeping for one extension instance: every subagent spawned
  * through its tools.
@@ -246,6 +259,8 @@ export class SubagentRegistry {
 			id: string;
 			/** The signal of the run that called spawn — the identity an id-less wait scopes by. */
 			parentSignal: AbortSignal | undefined;
+			/** The subagent that spawned this child, when spawned by another subagent. */
+			parentSubagentId?: string;
 			/** The conversation this child answers to; see {@link SubagentEntry.ownerId}. */
 			ownerId: string;
 			/** What the child runs as, resolved: role appendix, model, clamped level. */
@@ -274,6 +289,7 @@ export class SubagentRegistry {
 			settled: false,
 			transcript: [],
 			parentSignal: spec.parentSignal,
+			parentSubagentId: spec.parentSubagentId,
 			ownerId: spec.ownerId,
 			task: spec.task,
 			followUps: [],
@@ -408,6 +424,9 @@ export class SubagentRegistry {
 				};
 				entry.settledAt = Date.now();
 				entry.dispose();
+				if (entry.killedBy === "teardown") {
+					this.entries.delete(entry.id);
+				}
 				this.emitChange();
 				return result;
 			},
@@ -422,6 +441,9 @@ export class SubagentRegistry {
 				}
 				entry.settledAt = Date.now();
 				entry.dispose();
+				if (entry.killedBy === "teardown") {
+					this.entries.delete(entry.id);
+				}
 				this.emitChange();
 				throw entry.error;
 			},
@@ -437,7 +459,7 @@ export class SubagentRegistry {
 	}
 
 	/**
-	 * Kills one live child on the parent's orders.
+	 * Kills one live child on the parent's orders, cascading to any of its live descendants.
 	 *
 	 * Returns what happened rather than throwing, because every outcome here is
 	 * something the model should read and move on from: an id it mistyped, a
@@ -451,31 +473,51 @@ export class SubagentRegistry {
 	 */
 	kill(
 		id: string,
-		ownerSignal: AbortSignal | undefined,
+		scope?: AbortSignal | KillOptions,
 		killedBy: "tool" | "user" = "tool",
 	): "killed" | "already-settled" | "not-found" | "not-yours" {
 		const entry = this.entries.get(id);
 		if (!entry) {
 			return "not-found";
 		}
-		// Scoped the same way an id-less wait is: a child may kill what it
-		// spawned, never a sibling or its own parent's other work. A hostless
-		// caller (no signal) is the test/CLI case and owns everything — which is
-		// also the monitor panel's case: it sits outside every run and answers to
-		// the user, not to a signal.
-		if (ownerSignal !== undefined && entry.parentSignal !== ownerSignal) {
+		const opts: KillOptions = scope instanceof AbortSignal ? { ownerSignal: scope } : (scope ?? {});
+
+		// A stranger conversation cannot kill a child belonging to another conversation.
+		if (opts.callerOwnerId !== undefined && entry.ownerId !== opts.callerOwnerId) {
+			return "not-found";
+		}
+
+		// A run may only kill what it spawned, never a sibling or another run's work.
+		if (opts.callerSubagentId !== undefined) {
+			if (entry.parentSubagentId !== opts.callerSubagentId) {
+				return "not-yours";
+			}
+		} else if (opts.ownerSignal !== undefined && entry.parentSignal !== opts.ownerSignal) {
 			return "not-yours";
 		}
+
 		if (entry.settled) {
 			return "already-settled";
 		}
 		entry.killedBy = killedBy;
 		entry.abort();
+		this.killDescendants(entry.id, killedBy === "user" ? "user" : "parent");
 		return "killed";
 	}
 
+	/** Recursively aborts all live descendants of a killed subagent. */
+	private killDescendants(parentId: string, killedBy: "parent" | "teardown" | "user" = "parent"): void {
+		for (const entry of this.entries.values()) {
+			if (entry.parentSubagentId === parentId && !entry.settled) {
+				entry.killedBy = killedBy;
+				entry.abort();
+				this.killDescendants(entry.id, killedBy);
+			}
+		}
+	}
+
 	/**
-	 * Kills every live child on the user's orders, from the monitor panel.
+	 * Kills every live child on the user's orders, from the monitor panel or during session teardown.
 	 *
 	 * Not `disposeAll`: teardown also unwinds settled entries' listener hooks and
 	 * speaks a different cause — this is one user action among live runs, so it
@@ -486,7 +528,7 @@ export class SubagentRegistry {
 	 * @param ownerId Restricts the kill to one conversation's children. Omitted
 	 * means every live child the process holds.
 	 */
-	killAllLive(killedBy: "user", ownerId?: string): number {
+	killAllLive(killedBy: "user" | "teardown", ownerId?: string): number {
 		let killed = 0;
 		for (const entry of this.entries.values()) {
 			if (entry.settled) {
@@ -500,9 +542,31 @@ export class SubagentRegistry {
 			}
 			entry.killedBy = killedBy;
 			entry.abort();
+			this.killDescendants(entry.id, killedBy);
 			killed += 1;
 		}
 		return killed;
+	}
+
+	/**
+	 * Removes settled entries belonging to a deleted or closed session to reclaim memory.
+	 *
+	 * Running entries are left alone (killAllLive should be called prior to pruning).
+	 * Returns the number of pruned entries.
+	 */
+	pruneOwner(ownerId: string): number {
+		let pruned = 0;
+		for (const [id, entry] of this.entries.entries()) {
+			if (entry.ownerId === ownerId && entry.settled) {
+				entry.dispose();
+				this.entries.delete(id);
+				pruned += 1;
+			}
+		}
+		if (pruned > 0) {
+			this.emitChange();
+		}
+		return pruned;
 	}
 
 	/**
