@@ -1116,11 +1116,11 @@ export const en = {
 		/** Summary line of the network section folded under the Models tab. */
 		networkHeading: "Network",
 		networkHeadingDesc: "How requests leave the vault.",
-		networkTransport: "Network transport",
+		networkTransport: "Preferred transport",
 		networkTransportDesc:
-			"Request URL bypasses browser restrictions everywhere but buffers responses — tokens appear all at once. Fetch streams incrementally but may be blocked.",
-		transportRequestUrl: "Request URL (buffered, works everywhere)",
-		transportFetch: "Fetch (streams, may be blocked)",
+			"Fetch streams tokens as they arrive; if a request can't leave the page, it automatically falls back to requestUrl (buffered — tokens arrive all at once). Request URL always buffers.",
+		transportRequestUrl: "Request URL (buffered)",
+		transportFetch: "Fetch (streams, falls back automatically)",
 		/**
 		 * Prompt cache retention. Named for what it does to the bill rather than for
 		 * the API field, since no reader has seen `cache_control.ttl`.

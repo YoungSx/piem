@@ -406,4 +406,57 @@ describe("createFetchForTransport", () => {
 			restore();
 		}
 	});
+
+	it("falls back to requestUrl when the platform fetch rejects", async () => {
+		requestUrlMock.mockReset();
+		requestUrlMock.mockResolvedValue(mockResponse({ status: 200, headers: {}, arrayBuffer: textToArrayBuffer("{}") }));
+		// The four blocked shapes at the top of obsidianFetch.ts all reject before
+		// any headers arrive; a plain TypeError models all of them.
+		const nativeFetch = mock<() => Promise<Response>>();
+		nativeFetch.mockRejectedValue(new TypeError("Failed to fetch"));
+		const restore = stubWindowFetch(nativeFetch);
+
+		try {
+			const fetchImpl = createFetchForTransport("fetch");
+			const response = await fetchImpl("https://api.example.com/v1/models");
+			expect(response.status).toBe(200);
+			expect(nativeFetch).toHaveBeenCalledTimes(1);
+			expect(requestUrlMock).toHaveBeenCalledTimes(1);
+		} finally {
+			restore();
+		}
+	});
+
+	it("does not fall back when the request was aborted", async () => {
+		requestUrlMock.mockReset();
+		const nativeFetch = mock<() => Promise<Response>>();
+		nativeFetch.mockRejectedValue(new DOMException("The operation was aborted.", "AbortError"));
+		const restore = stubWindowFetch(nativeFetch);
+
+		try {
+			const controller = new AbortController();
+			const fetchImpl = createFetchForTransport("fetch");
+			await expect(fetchImpl("https://api.example.com/v1/models", { signal: controller.signal }))
+				.rejects.toThrow();
+			expect(requestUrlMock).not.toHaveBeenCalled();
+		} finally {
+			restore();
+		}
+	});
+
+	it("does not fall back on a real HTTP error status", async () => {
+		requestUrlMock.mockReset();
+		const nativeFetch = mock<() => Promise<Response>>();
+		nativeFetch.mockResolvedValue(new Response('{"error":"nope"}', { status: 401 }));
+		const restore = stubWindowFetch(nativeFetch);
+
+		try {
+			const fetchImpl = createFetchForTransport("fetch");
+			const response = await fetchImpl("https://api.example.com/v1/models");
+			expect(response.status).toBe(401);
+			expect(requestUrlMock).not.toHaveBeenCalled();
+		} finally {
+			restore();
+		}
+	});
 });

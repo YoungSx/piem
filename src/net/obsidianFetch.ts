@@ -18,6 +18,12 @@ import type { FetchFunction } from "@earendil-works/pi-ai";
  * - {@link createObsidianStreamingFetch} — native `fetch`, real streaming,
  *   subject to CORS.
  *
+ * The user's setting is a *preference*, not a hard choice: {@link
+ * createFetchForTransport} pairs the streaming implementation with a one-shot
+ * `requestUrl` fallback, so the four blocked shapes below cost a restart rather
+ * than a failed turn. Callers that pin a transport outright — OAuth token
+ * exchange, the models.dev index, MCP mounting — are untouched by either half.
+ *
  * Why `fetch` is the non-default despite being the better experience. It is not
  * that providers refuse browser origins: a 2026-09-02 sweep found 24 of 27
  * model endpoints answering the preflight for our origins without special
@@ -360,12 +366,51 @@ export function createObsidianStreamingFetch(): FetchFn {
 	return (input: RequestInfo | URL, init?: RequestInit) => window.fetch(input, init);
 }
 
-/** Transport strategy for provider HTTP requests. */
+/**
+ * Transport strategy for provider HTTP requests. The setting names the
+ * *preferred* transport: `fetch` streams and falls back to `requestUrl` when a
+ * request cannot leave the page (see {@link createFetchForTransport});
+ * `requestUrl` has nothing beneath it and always buffers.
+ */
 export type NetworkTransport = "requestUrl" | "fetch";
 
-/** Resolves the configured transport to a concrete `fetch` implementation. */
+/**
+ * Resolves the configured transport to a concrete `fetch` implementation.
+ *
+ * Under the preferred-transport semantics, choosing `fetch` wraps the streaming
+ * implementation with a one-shot fallback: if the platform fetch rejects — the
+ * four blocked shapes at the top of this file all reject before any headers
+ * arrive — the same request is re-issued through `requestUrl`, which cannot
+ * stream but reaches everywhere. A real HTTP answer is not a transport
+ * failure, so non-2xx responses are handed back untouched, and an aborted
+ * request is the user stopping the turn, not the network saying no.
+ *
+ * Stateless per request: a blocked endpoint pays the failed attempt on every
+ * call, but a CORS rejection is local and instant, so memoizing a per-origin
+ * verdict would buy nothing measurable.
+ *
+ * ponytail: the fallback rides `requestUrl`, so it is uncancellable like any
+ * other buffered request — a caller that retains a concurrency slot by watching
+ * `requestUrl` I/O (see `ObsidianAgentService.complete`) will not be watching
+ * this one. Left alone because a fallback only happens after the preferred
+ * transport already failed, and overrunning the slot by at most one request is
+ * cheaper than widening the bundle's `fetch` contract for it.
+ */
 export function createFetchForTransport(transport: NetworkTransport): FetchFn {
-	return transport === "fetch" ? createObsidianStreamingFetch() : createObsidianRequestUrlFetch();
+	if (transport !== "fetch") return createObsidianRequestUrlFetch();
+	const streaming = createObsidianStreamingFetch();
+	const buffered = createObsidianRequestUrlFetch();
+	return async (input, init) => {
+		try {
+			return await streaming(input, init);
+		} catch (error) {
+			// An abort is the user stopping the turn, not the network saying no —
+			// recognized by name, which covers both a platform rejection and our
+			// own `abortError()` (see {@link abortError}).
+			if ((error as { name?: string } | null)?.name === "AbortError") throw error;
+			return buffered(input, init);
+		}
+	};
 }
 
 /**
