@@ -1,9 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
+	BUILTIN_MCP_SERVER_ID,
+	builtinExaServer,
 	createMcpServerConfig,
 	normalizeMcpServer,
 	normalizeMcpServers,
 	slugifyServerName,
+	MAX_MCP_SERVERS,
+	ensureBuiltinMcpServer,
 } from "./mcpConfig";
 
 describe("slugifyServerName", () => {
@@ -96,5 +100,51 @@ describe("createMcpServerConfig", () => {
 
 	it("refuses an unusable URL instead of inventing a server", () => {
 		expect(createMcpServerConfig({ url: "nope" })).toBeNull();
+	});
+});
+
+describe("ensureBuiltinMcpServer", () => {
+	it("seeds the bundled Exa row first on every load", () => {
+		const servers = ensureBuiltinMcpServer([]);
+		expect(servers).toHaveLength(1);
+		expect(servers[0]).toMatchObject({ id: BUILTIN_MCP_SERVER_ID, name: "Exa", url: "https://mcp.exa.ai/mcp", token: "", enabled: true });
+	});
+
+	it("leaves the stored builtin copy alone instead of resetting it", () => {
+		const stored = { ...builtinExaServer(), enabled: false, token: "user-key" };
+		expect(ensureBuiltinMcpServer([stored, { id: "srv-1", url: "https://x.example.com" }])).toEqual([stored, { id: "srv-1", url: "https://x.example.com" }]);
+	});
+
+	it("reappears when a hand-edited data.json removed it", () => {
+		const servers = ensureBuiltinMcpServer([{ id: "srv-1", url: "https://x.example.com" }]);
+		expect(servers[0]?.id).toBe(BUILTIN_MCP_SERVER_ID);
+	});
+
+	it("skips seeding at the cap, where prepending would evict a real server on the next normalize", () => {
+		const many = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, url: `https://s${i}.example.com` }));
+		expect(ensureBuiltinMcpServer(many)).toHaveLength(MAX_MCP_SERVERS);
+	});
+});
+
+describe("ensureBuiltinMcpServer", () => {
+	it("seeds the bundled Exa row first on every load", () => {
+		const servers = ensureBuiltinMcpServer([]);
+		expect(servers).toHaveLength(1);
+		expect(servers[0]).toMatchObject({ id: BUILTIN_MCP_SERVER_ID, name: "Exa", url: "https://mcp.exa.ai/mcp", token: "", enabled: true });
+	});
+
+	it("leaves the stored builtin copy alone instead of resetting it", () => {
+		const stored = { ...builtinExaServer(), enabled: false, token: "user-key" };
+		expect(ensureBuiltinMcpServer([stored, { id: "srv-1", url: "https://x.example.com" }])).toEqual([stored, { id: "srv-1", url: "https://x.example.com" }]);
+	});
+
+	it("reappears when a hand-edited data.json removed it", () => {
+		const servers = ensureBuiltinMcpServer([{ id: "srv-1", url: "https://x.example.com" }]);
+		expect(servers[0]?.id).toBe(BUILTIN_MCP_SERVER_ID);
+	});
+
+	it("skips seeding at the cap, where prepending would evict a real server on the next normalize", () => {
+		const many = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, url: `https://s${i}.example.com` }));
+		expect(ensureBuiltinMcpServer(many)).toHaveLength(MAX_MCP_SERVERS);
 	});
 });

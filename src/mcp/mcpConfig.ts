@@ -37,6 +37,45 @@ export interface McpServerConfig {
 /** Upper bound on configured servers — a guard against runaway pastes into data.json. */
 export const MAX_MCP_SERVERS = 32;
 
+/**
+ * The bundled Exa web-search server, and the id that names it.
+ *
+ * Builtin-ness is *derived* from this id rather than stored as a flag: a row
+ * with this id is undeletable and shows the builtin badge wherever it appears,
+ * and nothing else in the config schema changes. Exa's endpoint accepts the
+ * key as a plain bearer token, so the existing `token`/`secretRef` fields
+ * carry the user's API key with no new plumbing.
+ */
+export const BUILTIN_MCP_SERVER_ID = "builtin-exa";
+
+/** The bundled Exa server as it ships: keyless (shared rate-limited quota) until the user adds a key. */
+export function builtinExaServer(): McpServerConfig {
+	return {
+		id: BUILTIN_MCP_SERVER_ID,
+		name: "Exa",
+		url: "https://mcp.exa.ai/mcp",
+		token: "",
+		secretRef: "",
+		enabled: true,
+	};
+}
+
+/**
+ * Prepends the bundled Exa server unless an entry with its id already exists.
+ *
+ * Called on every settings load, so a hand-edited data.json cannot remove the
+ * server for good — it reappears on the next load, remembering its `enabled`
+ * and token. The cap guard keeps the prepend from pushing the list past
+ * `MAX_MCP_SERVERS`, where the next normalize would evict a real user server
+ * to make room.
+ */
+export function ensureBuiltinMcpServer(servers: McpServerConfig[]): McpServerConfig[] {
+	if (servers.some((server) => server.id === BUILTIN_MCP_SERVER_ID) || servers.length >= MAX_MCP_SERVERS) {
+		return servers;
+	}
+	return [builtinExaServer(), ...servers];
+}
+
 /** Characters a URL must carry for a server entry to be usable at all. */
 function isHttpUrl(value: string): boolean {
 	try {

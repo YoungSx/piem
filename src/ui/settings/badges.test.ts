@@ -8,7 +8,7 @@ import { installObsidianStub } from "../../testUtils/obsidianStub";
 installObsidianStub();
 const { appendBadge, describeMcpBadge, mcpPendingBadge, problemCountBadge, setBadge, skillSourceBadge } = await import("./badges");
 
-const server: McpServerState = { id: "one", name: "One", url: "https://example.com/mcp", enabled: true, status: "ok", toolCount: 1 };
+const server: McpServerState = { id: "one", name: "One", url: "https://example.com/mcp", enabled: true, status: "ok", toolCount: 1, builtin: false };
 
 describe("extension badge facts", () => {
 	for (const language of ["en", "zh-cn"] as const) {
@@ -22,7 +22,9 @@ describe("extension badge facts", () => {
 			expect(describeMcpBadge(failed, t).tone).toBe("error");
 			expect(describeMcpBadge({ ...failed, enabled: false }, t).tone).toBe("disabled");
 			expect(describeMcpBadge({ ...server, status: "untested" }, t).tone).toBe("untested");
-			expect(mcpPendingBadge(t).tone).toBe("connecting");
+			expect(mcpPendingBadge(server, t).tone).toBe("connecting");
+			expect(mcpPendingBadge({ ...server, builtin: true }, t).label).toContain(t.t("badges.builtin"));
+			expect(describeMcpBadge({ ...server, builtin: true }, t).label).toContain(t.t("badges.builtin"));
 		});
 
 		it(`${language}: names a skill row's layer, neutrally`, () => {
@@ -43,7 +45,7 @@ it("reuses the badge, preserves the name and never interprets data as HTML", () 
 	const document = installDom();
 	const name = document.createElement("div");
 	name.textContent = "<script>name</script>";
-	const badge = appendBadge(name, mcpPendingBadge(getT("en")));
+	const badge = appendBadge(name, mcpPendingBadge(server, getT("en")));
 	badge.setAttribute("role", "status");
 	const again = appendBadge(name, describeMcpBadge(server, getT("en")));
 	expect(again).toBe(badge);

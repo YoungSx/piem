@@ -48,6 +48,12 @@ export interface SecretKeyFieldOptions {
 	readSecret(id: string): string;
 	/** Row title, from the caller's own namespace ("API key", "Bearer token"). */
 	title: string;
+	/**
+	 * Overrides the row's computed description. The default copy is about the
+	 * device's keychain; a caller whose form is about a specific credential —
+	 * the bundled server's quota note — replaces it wholesale.
+	 */
+	desc?: string;
 	/** Placeholder for the typed field. */
 	placeholder: string;
 	/** What the key is sent to, for the plaintext-field copy. */
@@ -81,7 +87,7 @@ export function addSecretKeyField(containerEl: HTMLElement, options: SecretKeyFi
 	// secret store's shape ever drifts, and that is cheaper than discovering the
 	// drift as a blank row where the API key belongs.
 	if (tier === "manual" || typeof SecretComponent !== "function") {
-		addTypedKeyField(containerEl, options, { desc: describeApiKeyField(tier, options.target, t) });
+		addTypedKeyField(containerEl, options, { desc: options.desc ?? describeApiKeyField(tier, options.target, t) });
 		return;
 	}
 
@@ -100,7 +106,7 @@ function addKeychainKeyField(containerEl: HTMLElement, options: SecretKeyFieldOp
 	// entry is selected, so the row does not need to restate it.
 	const setting = new Setting(containerEl)
 		.setName(options.title)
-		.setDesc(joinSentences(describeSecretStorage(tier, t), describeSecretPortability(tier, t)))
+		.setDesc(options.desc ?? joinSentences(describeSecretStorage(tier, t), describeSecretPortability(tier, t)))
 		.addComponent((el) =>
 			new SecretComponent(options.app, el)
 				.setValue(options.secretRef)
@@ -113,6 +119,8 @@ function addKeychainKeyField(containerEl: HTMLElement, options: SecretKeyFieldOp
 					// just now; the picker shows the selection, so silence here
 					// would read as success.
 					if (id !== "" && options.readSecret(id) === "") {
+						// The dangling warning outranks a caller's desc override: a binding
+						// that resolves to nothing is a live problem, the quota note is not.
 						setting.setDesc(joinSentences(describeSecretStorage(tier, t), describeSecretPortability(tier, t), t.t("secretStorage.danglingRef")));
 					}
 				}),

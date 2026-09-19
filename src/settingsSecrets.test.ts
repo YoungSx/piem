@@ -62,7 +62,7 @@ describe("resolveSecretRefs", () => {
 
 		resolveSecretRefs(settings, keychainWith({ "my-server-token": "tok-resolved" }));
 
-		expect(settings.mcpServers[0]?.token).toBe("tok-resolved");
+		expect(settings.mcpServers.find((row) => row.id === "mcp-a")?.token).toBe("tok-resolved");
 	});
 
 	it("resolves a dangling reference to an empty key rather than throwing", () => {
@@ -86,7 +86,7 @@ describe("resolveSecretRefs", () => {
 		resolveSecretRefs(settings, keychainWith());
 
 		expect(settings.providers[0]?.apiKey).toBe("sk-inline");
-		expect(settings.mcpServers[0]?.token).toBe("tok-inline");
+		expect(settings.mcpServers.find((row) => row.id === "mcp-a")?.token).toBe("tok-inline");
 	});
 
 	it("overwrites whatever the blob carried for a ref-bound field", () => {
@@ -117,7 +117,7 @@ describe("persistedSettings", () => {
 
 		const persisted = persistedSettings(settings);
 
-		expect(persisted.mcpServers?.[0]?.token).toBe("");
+		expect(persisted.mcpServers?.find((row) => row.id === "mcp-a")?.token).toBe("");
 	});
 
 	it("keeps inline credentials verbatim — there the plaintext is the storage", () => {
@@ -129,7 +129,7 @@ describe("persistedSettings", () => {
 		const persisted = persistedSettings(settings);
 
 		expect(persisted.providers?.[0]?.apiKey).toBe("sk-inline");
-		expect(persisted.mcpServers?.[0]?.token).toBe("tok-inline");
+		expect(persisted.mcpServers?.find((row) => row.id === "mcp-a")?.token).toBe("tok-inline");
 	});
 
 	it("carries the rest of the blob through untouched", () => {

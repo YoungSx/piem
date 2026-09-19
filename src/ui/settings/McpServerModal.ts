@@ -1,5 +1,5 @@
 import { Modal, Notice, Setting, type App } from "obsidian";
-import { generateMcpServerId, type McpServerConfig } from "../../mcp/mcpConfig";
+import { BUILTIN_MCP_SERVER_ID, generateMcpServerId, type McpServerConfig } from "../../mcp/mcpConfig";
 import type { Translator } from "../../i18n";
 import { type SecretStorageState } from "./secretStorageCopy";
 import { addSecretKeyField } from "./secretField";
@@ -23,6 +23,11 @@ export interface McpServerModalOptions {
 	test(draft: McpServerConfig): Promise<number>;
 	/** Persists the finished row. Called only on a valid submit. */
 	onSubmit(server: McpServerConfig): Promise<void>;
+	/** Overrides the form's title; used by the bundled server, whose form is about its key. */
+	title?: string;
+	/** Overrides the key row's title and description, same caller as {@link title}. */
+	tokenTitle?: string;
+	tokenDesc?: string;
 }
 
 /**
@@ -75,12 +80,13 @@ export class McpServerModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass("piem-settings-modal");
 		const { t } = this.options;
-		this.setTitle(t.t(this.isNew ? "mcp.addTitle" : "mcp.editTitle"));
+		this.setTitle(this.options.title ?? t.t(this.isNew ? "mcp.addTitle" : "mcp.editTitle"));
 
 		new Setting(contentEl)
 			.setName(t.t("mcp.name"))
 			.addText((text) => {
 				text.setPlaceholder(t.t("mcp.namePlaceholder"));
+				text.setDisabled(this.options.server?.id === BUILTIN_MCP_SERVER_ID);
 				text.setValue(this.draft.name);
 				text.onChange((value) => {
 					this.draft.name = value;
@@ -95,6 +101,7 @@ export class McpServerModal extends Modal {
 			.setDesc(t.t("mcp.urlDesc"))
 			.addText((text) => {
 				text.setPlaceholder(t.t("mcp.urlPlaceholder"));
+				text.setDisabled(this.options.server?.id === BUILTIN_MCP_SERVER_ID);
 				text.setValue(this.draft.url);
 				text.onChange((value) => {
 					this.draft.url = value;
@@ -111,7 +118,8 @@ export class McpServerModal extends Modal {
 			tier: this.options.secretStorage,
 			t,
 			readSecret: (id) => this.options.readSecret(id),
-			title: t.t("mcp.tokenName"),
+			title: this.options.tokenTitle ?? t.t("mcp.tokenName"),
+			desc: this.options.tokenDesc,
 			placeholder: "",
 			target: t.t("mcp.tokenTarget"),
 			inlineKey: this.draft.token,

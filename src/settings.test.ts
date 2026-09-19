@@ -5,6 +5,7 @@ import type { PiemSettings } from "./settings";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
 
 import { getT } from "./i18n";
+import { builtinExaServer } from "./mcp/mcpConfig";
 
 const t = getT("en");
 const zh = getT("zh-cn");
@@ -509,8 +510,10 @@ describe("normalizeSettings with promptQueueStrategy", () => {
 });
 
 describe("normalizeSettings with mcpServers", () => {
-	it("gives a vault written before the setting existed an empty list", () => {
-		expect(normalizeSettings({}).mcpServers).toEqual([]);
+	it("gives a vault written before the setting existed the bundled Exa row alone", () => {
+		// Every load seeds the bundled server; an empty list is therefore never
+		// empty — it is exactly the builtin row, keyless.
+		expect(normalizeSettings({}).mcpServers).toEqual([builtinExaServer()]);
 	});
 
 	it("keeps a stored server whole: token passes untrimmed, order preserved", () => {
@@ -520,6 +523,7 @@ describe("normalizeSettings with mcpServers", () => {
 			],
 		});
 		expect(settings.mcpServers).toEqual([
+			builtinExaServer(),
 			{ id: "srv-1", name: "GitHub", url: "https://gh.example.com/mcp", token: "enc:v1:AAAA", secretRef: "", enabled: false },
 		]);
 	});
@@ -534,7 +538,7 @@ describe("normalizeSettings with mcpServers", () => {
 				"garbage",
 			] as never,
 		});
-		expect(settings.mcpServers).toEqual([]);
+		expect(settings.mcpServers).toEqual([builtinExaServer()]);
 	});
 });
 

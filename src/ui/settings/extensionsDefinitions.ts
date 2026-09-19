@@ -5,7 +5,7 @@ import type { SkillCatalogEntry } from "../../agent/skillLoader";
 import { builtinSkillsDefinitions } from "./builtinSkillsDefinitions";
 import type { SkillRow } from "../../skills/skillManager";
 import { type SettingsPanelState, type SkillsSnapshot } from "./panelState";
-import { createMcpServerConfig, type McpServerConfig } from "../../mcp/mcpConfig";
+import { BUILTIN_MCP_SERVER_ID, createMcpServerConfig, type McpServerConfig } from "../../mcp/mcpConfig";
 import type { McpServerState } from "../../mcp/mcpManager";
 import { openConfirmDelete } from "./confirmDelete";
 import { setFoldableDescription } from "./descFold";
@@ -551,12 +551,18 @@ function mcpList(host: SettingsPanelHost): SettingDefinitionItem {
 
 /** Opens the add/edit form and hands the finished row to the save-and-rebuild path. */
 function openMcpModal(host: SettingsPanelHost, server?: McpServerConfig): void {
+	const { t } = host;
 	new McpServerModal({
 		app: host.app,
 		secretStorage: host.secretStorage,
 		readSecret: (id) => host.readSecret(id),
 		t: host.t,
 		server,
+		// The bundled row's form speaks about the key, not the server: the endpoint
+		// is fixed and the point of opening it is raising the shared quota.
+		title: server?.id === BUILTIN_MCP_SERVER_ID ? t.t("mcp.builtinEditTitle") : undefined,
+		tokenTitle: server?.id === BUILTIN_MCP_SERVER_ID ? t.t("mcp.builtinKeyName") : undefined,
+		tokenDesc: server?.id === BUILTIN_MCP_SERVER_ID ? t.t("mcp.builtinKeyDesc") : undefined,
 		test: (draft) => host.mcp.test(draft),
 		onSubmit: async (draft) => {
 			// Re-created through the config factory so the row lands normalized; the
@@ -588,7 +594,14 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
 		render: (setting) => {
 			// URLs are handed in verbatim and can be very long; the fold keeps the row
 			// scannable, and the verdict line below still appends after the folded body.
-			setFoldableDescription(setting, state.url, t);
+			// The bundled server trades the fold for the one thing a reader of this row
+			// needs to act on: the keyless-shared-quota hint, with the fixed endpoint
+			// spelled out in the same breath.
+			if (state.builtin) {
+				setting.setDesc(t.t("mcp.builtinDesc"));
+			} else {
+				setFoldableDescription(setting, state.url, t);
+			}
 			const badgeEl = appendSettingBadge(setting, describeMcpBadge(state, t));
 			badgeEl.setAttribute("role", "status");
 			const verdictEl = createEffectLine(setting.descEl);
@@ -609,7 +622,7 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
 					if (retrying || button.extraSettingsEl.hidden) return;
 					retrying = true;
 					button.setDisabled(true);
-					setBadge(badgeEl, mcpPendingBadge(t));
+					setBadge(badgeEl, mcpPendingBadge(state, t));
 					verdictEl.setText("");
 					verdictEl.removeClass("piem-settings-effect--error");
 					void host.mcp.reconnect().finally(() => {
@@ -630,24 +643,26 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
 					}
 				});
 			});
-			setting.addExtraButton((button) => {
-				rowAction(button, "trash-2", t.t("mcp.delete"));
-				button.onClick(() => {
-					openConfirmDelete(host.app, {
-						subject: t.t("confirmDelete.mcpServerSubject", { name: state.name }),
-						consequences: [t.t("deletion.mcpServer")],
-						t,
-						onConfirm: async () => {
-							// No keychain cleanup on purpose: a bound token's entry belongs to
-							// the user and may be shared, so the plugin — read-only there —
-							// leaves it alone.
-							host.settings.mcpServers = host.settings.mcpServers.filter((row) => row.id !== state.id);
-							await host.save();
-							host.refresh();
-						},
+			if (state.id !== BUILTIN_MCP_SERVER_ID) {
+				setting.addExtraButton((button) => {
+					rowAction(button, "trash-2", t.t("mcp.delete"));
+					button.onClick(() => {
+						openConfirmDelete(host.app, {
+							subject: t.t("confirmDelete.mcpServerSubject", { name: state.name }),
+							consequences: [t.t("deletion.mcpServer")],
+							t,
+							onConfirm: async () => {
+								// No keychain cleanup on purpose: a bound token's entry belongs to
+								// the user and may be shared, so the plugin — read-only there —
+								// leaves it alone.
+								host.settings.mcpServers = host.settings.mcpServers.filter((row) => row.id !== state.id);
+								await host.save();
+								host.refresh();
+							},
+						});
 					});
 				});
-			});
+			}
 		},
 	};
 }
@@ -700,7 +715,7 @@ function configureMcpToggle(
 					server.enabled = enabled;
 				}
 				toggle.setDisabled(true);
-				setBadge(badgeEl, enabled ? mcpPendingBadge(t) : describeMcpBadge({ ...state, enabled: false }, t));
+				setBadge(badgeEl, enabled ? mcpPendingBadge(state, t) : describeMcpBadge({ ...state, enabled: false }, t));
 				verdictEl.setText("");
 				verdictEl.removeClass("piem-settings-effect--error");
 				try {

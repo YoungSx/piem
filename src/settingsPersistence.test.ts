@@ -179,10 +179,10 @@ describe("saveSettings", () => {
 
 		await plugin.saveSettings();
 
-		const persisted = saved().value as { mcpServers: { token: string; secretRef: string }[] };
-		expect(persisted.mcpServers[0]?.token).toBe("");
-		expect(persisted.mcpServers[0]?.secretRef).toBe("server-token");
-		expect(plugin.settings.mcpServers[0]?.token).toBe("tok-vaulted");
+		const persisted = saved().value as { mcpServers: { id: string; token: string; secretRef: string }[] };
+		expect(persisted.mcpServers.find((entry) => entry.id === "m1")?.token).toBe("");
+		expect(persisted.mcpServers.find((entry) => entry.id === "m1")?.secretRef).toBe("server-token");
+		expect(plugin.settings.mcpServers.find((entry) => entry.id === "m1")?.token).toBe("tok-vaulted");
 	});
 });
 

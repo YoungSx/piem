@@ -1324,6 +1324,14 @@ export const en = {
 		bufferedNoPush:
 			"MCP mounting always rides the buffered transport, so a server cannot push to you: its tool list refreshes when you save settings, not when the server changes it.",
 		add: "Add server",
+		// The bundled Exa row's copy: the endpoint is fixed, so the row says the one
+		// thing an editable form is for — keyless is a shared quota, a key is yours.
+		builtinDesc:
+			"Web search built into Piem; works without setup (shared rate limits with all users). Add your own Exa API key for independent, higher limits.",
+		builtinEditTitle: "Exa search",
+		builtinKeyName: "Exa API key",
+		builtinKeyDesc:
+			"Add your own Exa API key and requests use your account's quota instead of the shared rate limit; leave it empty to stay on the bundled free tier. You can get a key for free at exa.ai.",
 		edit: "Edit",
 		delete: "Delete",
 		empty: "No MCP servers configured yet. Add one to bring its tools into chat.",
