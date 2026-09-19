@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+	type McpServerConfig,
 	BUILTIN_MCP_SERVER_ID,
 	builtinExaServer,
 	createMcpServerConfig,
@@ -103,7 +104,10 @@ describe("createMcpServerConfig", () => {
 	});
 });
 
+
 describe("ensureBuiltinMcpServer", () => {
+	const user = (): McpServerConfig => ({ id: "srv-1", name: "Hub", url: "https://x.example.com", token: "", secretRef: "", enabled: true });
+
 	it("seeds the bundled Exa row first on every load", () => {
 		const servers = ensureBuiltinMcpServer([]);
 		expect(servers).toHaveLength(1);
@@ -112,21 +116,23 @@ describe("ensureBuiltinMcpServer", () => {
 
 	it("leaves the stored builtin copy alone instead of resetting it", () => {
 		const stored = { ...builtinExaServer(), enabled: false, token: "user-key" };
-		expect(ensureBuiltinMcpServer([stored, { id: "srv-1", url: "https://x.example.com" }])).toEqual([stored, { id: "srv-1", url: "https://x.example.com" }]);
+		expect(ensureBuiltinMcpServer([stored, user()])).toEqual([stored, user()]);
 	});
 
 	it("reappears when a hand-edited data.json removed it", () => {
-		const servers = ensureBuiltinMcpServer([{ id: "srv-1", url: "https://x.example.com" }]);
+		const servers = ensureBuiltinMcpServer([user()]);
 		expect(servers[0]?.id).toBe(BUILTIN_MCP_SERVER_ID);
 	});
 
 	it("skips seeding at the cap, where prepending would evict a real server on the next normalize", () => {
-		const many = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, url: `https://s${i}.example.com` }));
+		const many: McpServerConfig[] = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, name: `s${i}`, url: `https://s${i}.example.com`, token: "", secretRef: "", enabled: true }));
 		expect(ensureBuiltinMcpServer(many)).toHaveLength(MAX_MCP_SERVERS);
 	});
 });
 
 describe("ensureBuiltinMcpServer", () => {
+	const user = (): McpServerConfig => ({ id: "srv-1", name: "Hub", url: "https://x.example.com", token: "", secretRef: "", enabled: true });
+
 	it("seeds the bundled Exa row first on every load", () => {
 		const servers = ensureBuiltinMcpServer([]);
 		expect(servers).toHaveLength(1);
@@ -135,16 +141,16 @@ describe("ensureBuiltinMcpServer", () => {
 
 	it("leaves the stored builtin copy alone instead of resetting it", () => {
 		const stored = { ...builtinExaServer(), enabled: false, token: "user-key" };
-		expect(ensureBuiltinMcpServer([stored, { id: "srv-1", url: "https://x.example.com" }])).toEqual([stored, { id: "srv-1", url: "https://x.example.com" }]);
+		expect(ensureBuiltinMcpServer([stored, user()])).toEqual([stored, user()]);
 	});
 
 	it("reappears when a hand-edited data.json removed it", () => {
-		const servers = ensureBuiltinMcpServer([{ id: "srv-1", url: "https://x.example.com" }]);
+		const servers = ensureBuiltinMcpServer([user()]);
 		expect(servers[0]?.id).toBe(BUILTIN_MCP_SERVER_ID);
 	});
 
 	it("skips seeding at the cap, where prepending would evict a real server on the next normalize", () => {
-		const many = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, url: `https://s${i}.example.com` }));
+		const many: McpServerConfig[] = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, name: `s${i}`, url: `https://s${i}.example.com`, token: "", secretRef: "", enabled: true }));
 		expect(ensureBuiltinMcpServer(many)).toHaveLength(MAX_MCP_SERVERS);
 	});
 });
