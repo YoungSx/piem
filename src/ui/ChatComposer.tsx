@@ -469,7 +469,7 @@ export function ChatComposer({
 					 */}
 					{canFold ? (
 						<IconButton
-							icon={collapsed ? "chevron-down" : "chevron-up"}
+							icon={collapsed ? "chevron-up" : "chevron-down"}
 							label={t.t(collapsed ? "chat.expandComposer" : "chat.collapseComposer")}
 							onClick={onToggleCollapsed}
 							className="piem-chat__composer-toggle"
