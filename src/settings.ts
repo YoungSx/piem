@@ -17,7 +17,7 @@ import {
 import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compactionSettings";
 
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
-import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
+import { ensureBuiltinMcpServer, normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
 import { normalizeExtensionConfig, type ExtensionConfigData } from "./extensions/extensionConfigStore";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
@@ -318,7 +318,10 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
-		mcpServers: normalizeMcpServers(data?.mcpServers),
+		// The bundled Exa server rides along on every load: absent from a
+		// hand-edited data.json means it reappears, with its `enabled` and token
+		// intact if the user had set either.
+		mcpServers: ensureBuiltinMcpServer(normalizeMcpServers(data?.mcpServers)),
 		shareDiagnostics: data?.shareDiagnostics !== false,
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"

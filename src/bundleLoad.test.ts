@@ -351,6 +351,12 @@ describe("built bundle installs the separate official skill resource", () => {
 			const { version } = JSON.parse(readFileSync("manifest.json", "utf8")) as { version: string };
 			let requests = 0;
 			host.requestUrl = async (params) => {
+				// The bundled Exa MCP connects fire-and-forget at onload; the counter
+				// is about the skills resource, so the MCP traffic is answered and
+				// never counted.
+				if (params.url.startsWith("https://mcp.exa.ai/")) {
+					return { status: 405, headers: {}, arrayBuffer: new ArrayBuffer(0) };
+				}
 				requests++;
 				expect(params.url).toBe(`https://github.com/YoungSx/piem/releases/download/${version}/builtin-skills.json`);
 				expect(params.headers?.authorization).toBeUndefined();

@@ -53,6 +53,11 @@ export function setGroupHeadingBadge(group: SettingGroup, heading: string, badge
 }
 
 export function describeMcpBadge(state: McpServerState, t: Translator): SettingBadge {
+	return withBuiltinPrefix(state, describeMcpStatusBadge(state, t), t);
+}
+
+/** The status verdict alone, before the builtin mark is prefixed on. */
+function describeMcpStatusBadge(state: McpServerState, t: Translator): SettingBadge {
 	if (!state.enabled) {
 		return { label: t.t("badges.disabled"), tone: "disabled" };
 	}
@@ -65,9 +70,18 @@ export function describeMcpBadge(state: McpServerState, t: Translator): SettingB
 	return { label: t.t("badges.mcpPending"), tone: "untested" };
 }
 
+/**
+ * The bundled row leads with the builtin mark on every badge it ever wears —
+ * status, pending, disabled — so the "why can't I delete this?" answer survives
+ * the row's frequent badge swaps instead of belonging to one render only.
+ */
+function withBuiltinPrefix(state: McpServerState, badge: SettingBadge, t: Translator): SettingBadge {
+	return state.builtin ? { ...badge, label: `${t.t("badges.builtin")} · ${badge.label}` } : badge;
+}
+
 // Connecting exists only while a row's save or retry is pending.
-export function mcpPendingBadge(t: Translator): SettingBadge {
-	return { label: t.t("badges.mcpConnecting"), tone: "connecting" };
+export function mcpPendingBadge(state: McpServerState, t: Translator): SettingBadge {
+	return withBuiltinPrefix(state, { label: t.t("badges.mcpConnecting"), tone: "connecting" }, t);
 }
 
 /**

@@ -244,7 +244,7 @@ describe("the MCP enable toggle", () => {
 			},
 			mcp: {
 				states: () => [
-					{ id: server.id, name: server.name, url: server.url, enabled: server.enabled, status: "untested", toolCount: 0 },
+					{ id: server.id, name: server.name, url: server.url, enabled: server.enabled, status: "untested", toolCount: 0, builtin: false },
 				],
 				test: async () => 0,
 				reconnect: async () => undefined,
@@ -342,7 +342,7 @@ describe("the MCP enable toggle", () => {
  * what the manager now reports once the reconnect settles.
  */
 describe("the MCP connection button", () => {
-	const SERVER = { id: "mcp_1", name: "Hub", url: "http://127.0.0.1:39991/mcp", token: "", secretRef: "", enabled: true };
+	const SERVER = { id: "mcp_1", name: "Hub", url: "http://127.0.0.1:39991/mcp", token: "", secretRef: "", enabled: true, builtin: false };
 
 	function renderRow(mcp: SettingsPanelHost["mcp"]): { container: HTMLElement; extraButtons: ExtraButtonStub[] } {
 		const base = stubHost();
@@ -677,7 +677,7 @@ describe("extension row badges", () => {
 
 	it.each(["ok", "error"] as const)("reconciles the badge and recovery button after enabling settles as %s", async (status) => {
 		const base = stubHost();
-		const server = { id: "mcp_1", name: "Hub", url: "https://example.com/mcp", token: "", secretRef: "", enabled: false };
+		const server = { id: "mcp_1", name: "Hub", url: "https://example.com/mcp", token: "", secretRef: "", enabled: false, builtin: false };
 		let current: McpServerState = { ...server, status: "disabled", toolCount: 0 };
 		let release: (() => void) | undefined;
 		const gate = new Promise<void>((resolve) => { release = resolve; });

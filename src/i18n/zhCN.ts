@@ -787,6 +787,12 @@ export const zhCN: DeepPartial<EnCopy> = {
 		bufferedNoPush:
 			"MCP 挂载固定走缓冲传输，服务器无法主动推给你：工具列表只在你保存设置时刷新，服务器自己改了不算。",
 		add: "添加服务器",
+		// 内置 Exa 行的专属文案：端点是死的，表单真正能编辑的只有密钥，行描述
+		// 也就只说这一件事——不带 key 是共享限额，带 key 才是自己的配额。
+		builtinDesc: "Piem 内置的联网搜索，无需配置即可使用（与所有用户共享限速）。填入自己的 Exa API 密钥可获得独立配额，额度更高。",
+		builtinEditTitle: "Exa 搜索",
+		builtinKeyName: "Exa API 密钥",
+		builtinKeyDesc: "填入你自己的 Exa API 密钥，请求就走你的账号配额，不再受共享限速；留空则继续用内置的共享额度。密钥可在 exa.ai 免费申请。",
 		edit: "编辑",
 		delete: "删除",
 		empty: "还没有配置 MCP 服务器。添加一个，即可让它的工具进入对话。",
