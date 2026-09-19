@@ -36,8 +36,10 @@ import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "
  *    the coding-agent ModelManager migration.
  * 2. Obsidian's renderer enforces CORS for `window.fetch`, which blocks most
  *    provider endpoints. `requestUrl` bypasses it but cannot stream, so the
- *    transport is selected per the user's setting and surfaced through
- *    {@link NetworkTransport} rather than decided silently.
+ *    setting names a *preferred* transport: `fetch` streams and falls back to
+ *    `requestUrl` when a request cannot leave the page — see
+ *    {@link createFetchForTransport} for where that lives and what does not
+ *    fall back.
  * 3. Prompt cache retention is a plugin decision, not pi's: pi defaults to the
  *    five-minute cache its CLI loop never outlives, and an Obsidian reader's
  *    turns are minutes apart. {@link requestDefaults} is the one place the

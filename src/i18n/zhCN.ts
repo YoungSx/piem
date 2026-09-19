@@ -653,12 +653,12 @@ export const zhCN: DeepPartial<EnCopy> = {
 		chatHistoryDesc: "聊天记录存放的位置，以及旧的保留多少条。",
 		networkHeading: "网络",
 		networkHeadingDesc: "请求如何离开笔记库。",
-		networkTransport: "网络传输",
+		networkTransport: "首选请求方式",
 		networkTransportDesc:
-			"requestUrl 可在各处绕过浏览器限制，但会缓冲响应——token 会一次性出现。fetch 会增量流式返回，但可能被拦截。",
+			"选 fetch 可流式输出，token 随到随显示；请求发不出去时自动改走 requestUrl（全程缓冲，token 一次性出现）。选 requestUrl 则始终缓冲。",
 		// 这两项是配置里的字面值（"requestUrl" | "fetch"），保持原样以便和配置、日志对上。
-		transportRequestUrl: "requestUrl（缓冲，各处可用）",
-		transportFetch: "fetch（流式，可能被拦截）",
+		transportRequestUrl: "requestUrl（缓冲）",
+		transportFetch: "fetch（流式，失败自动回退）",
 		cacheRetention: "提示缓存",
 		cacheRetentionDesc:
 			"服务商会替你记住提示里不变的那部分——系统指令、工具定义、技能——后续每一轮只按约一折的价格计费，不用每次都付全价。端点不认缓存标记的话，就关掉。",
