@@ -402,6 +402,34 @@ export const zhCN: DeepPartial<EnCopy> = {
 				label: "你能做什么？",
 				prompt: "在我的笔记库里你能帮我做什么？举三个具体的例子。",
 			},
+			extractTodos: {
+				label: "整理未完待办",
+				prompt: "梳理当前笔记中未完成的待办事项（- [ ]），按优先级排序并规划执行步骤。",
+			},
+			morningFocus: {
+				label: "晨间专注规划",
+				prompt: "梳理今日核心目标与待办，为我规划今天早晨的高效专注日程。",
+			},
+			sinkInbox: {
+				label: "碎片整理归档",
+				prompt: "梳理当前记录的零散碎片内容，按专题提炼结构并提出归档建议。",
+			},
+			reviewCode: {
+				label: "审查代码质量",
+				prompt: "审阅当前笔记中的代码块，指出潜在缺陷并提供重构优化建议。",
+			},
+			explainCode: {
+				label: "解析代码逻辑",
+				prompt: "详细解析当前笔记中代码的实现思路、架构设计与关键逻辑。",
+			},
+			distillNotes: {
+				label: "提炼核心要点",
+				prompt: "提炼当前读书或文献笔记中的核心论点、关键洞见与后续行动项。",
+			},
+			recallSession: {
+				label: "继续上次探讨",
+				prompt: "结合我们此前关于这篇笔记的讨论，继续深入探讨并推进后续思路。",
+			},
 		},
 		reply: {
 			distillSkill: {

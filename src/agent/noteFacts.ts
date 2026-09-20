@@ -8,10 +8,17 @@
  * - Daily / periodic note detection (e.g. 2026-09-18.md, 2026-W38.md).
  * - Empty / draft note detection (size === 0).
  * - Link graph hygiene (orphan note with 0 backlinks, unresolved links).
+ * - Task list items (open `- [ ]` and completed `- [x]` checkboxes).
+ * - Code blocks and dominant topic characteristics.
+ * - Temporal context (morning, afternoon, evening, and today's daily journal).
+ * - Long-horizon session recall (whether earlier chats discussed this note).
  */
 
 import type { App } from "obsidian";
 import { hasAnyBacklink, toLinkReferences } from "../vault/links";
+
+/** Time of day segment for cadence-aware suggestions. */
+export type TimeOfDay = "morning" | "afternoon" | "evening";
 
 /** The structural facts probed about an active note. */
 export interface NoteFacts {
@@ -33,6 +40,20 @@ export interface NoteFacts {
 	backlinkCount: number;
 	/** Count of broken / unresolved links inside this note pointing to missing targets. */
 	unresolvedLinkCount: number;
+	/** Count of open / uncompleted task items (- [ ]). Defaults to 0. */
+	todoCount?: number;
+	/** Count of completed task items (- [x]). Defaults to 0. */
+	doneTodoCount?: number;
+	/** Whether the note contains code blocks. Defaults to false. */
+	hasCode?: boolean;
+	/** Whether this daily journal note matches today's date. Defaults to false. */
+	isToday?: boolean;
+	/** Time segment when probed. */
+	timeOfDay?: TimeOfDay;
+	/** Dominant detected topic characteristic. */
+	dominantTopic?: "code" | "tasks" | "reading" | "daily" | null;
+	/** Whether an earlier conversation touched this note. Defaults to false. */
+	hasPriorSession?: boolean;
 }
 
 /** Matches standard daily note naming formats: YYYY-MM-DD, YYYY_MM_DD, YYYY.MM.DD, or YYYYMMDD. */
@@ -49,6 +70,27 @@ export function isDailyNotePath(path: string): boolean {
 /** Checks whether a path indicates a periodic note (daily or weekly). */
 export function isPeriodicNotePath(path: string): boolean {
 	return DAILY_NOTE_REGEX.test(path) || WEEKLY_NOTE_REGEX.test(path);
+}
+
+/** Computes the time of day segment from a given Date. */
+export function getTimeOfDay(now: Date = new Date()): TimeOfDay {
+	const hour = now.getHours();
+	if (hour >= 5 && hour < 12) {
+		return "morning";
+	}
+	if (hour >= 12 && hour < 18) {
+		return "afternoon";
+	}
+	return "evening";
+}
+
+/** Checks whether a path represents today's daily journal note. */
+export function isTodayNotePath(path: string, now: Date = new Date()): boolean {
+	const y = now.getFullYear();
+	const m = String(now.getMonth() + 1).padStart(2, "0");
+	const d = String(now.getDate()).padStart(2, "0");
+	const formats = [`${y}-${m}-${d}`, `${y}_${m}_${d}`, `${y}.${m}.${d}`, `${y}${m}${d}`];
+	return formats.some((fmt) => path.includes(fmt));
 }
 
 /**
@@ -72,6 +114,18 @@ export function renderNoteFactLines(facts: NoteFacts): string[] {
 	if (facts.unresolvedLinkCount > 0) {
 		lines.push(`Note graph: Contains ${facts.unresolvedLinkCount} unresolved link(s).`);
 	}
+	if ((facts.todoCount ?? 0) > 0) {
+		lines.push(`Note tasks: Contains ${facts.todoCount} uncompleted task(s) (- [ ]).`);
+	}
+	if (facts.hasCode) {
+		lines.push("Note content: Contains code blocks or technical scripts.");
+	}
+	if (facts.isDailyNote && facts.isToday && facts.timeOfDay) {
+		lines.push(`Temporal context: Today's daily note (working in ${facts.timeOfDay}).`);
+	}
+	if (facts.hasPriorSession) {
+		lines.push("Session history: This note was previously referenced in an earlier conversation.");
+	}
 	return lines;
 }
 
@@ -81,11 +135,20 @@ export function noteFactsKeyPart(facts: NoteFacts | null): string {
 		return "";
 	}
 	return [
-		facts.isDailyNote ? "daily" : facts.isPeriodicNote ? "periodic" : "note",
+		facts.isDailyNote ? (facts.isToday ? "today-daily" : "daily") : facts.isPeriodicNote ? "periodic" : "note",
 		facts.isEmpty ? "empty" : "has-content",
 		facts.isOrphan ? "orphan" : `bl:${facts.backlinkCount}`,
 		`unres:${facts.unresolvedLinkCount}`,
+		`todos:${(facts.todoCount ?? 0) > 0 ? facts.todoCount : 0}`,
+		`code:${facts.hasCode ? "1" : "0"}`,
+		`tod:${facts.timeOfDay ?? ""}`,
+		`prior:${facts.hasPriorSession ? "1" : "0"}`,
 	].join("|");
+}
+
+export interface ProbeNoteFactsOptions {
+	now?: Date;
+	hasPriorSession?: boolean;
 }
 
 /**
@@ -93,11 +156,16 @@ export function noteFactsKeyPart(facts: NoteFacts | null): string {
  *
  * Never throws: if anything is unexpected, returns null so suggestions fall back safely.
  */
-export function probeNoteFacts(app: App, activePath: string | null): NoteFacts | null {
+export function probeNoteFacts(
+	app: App,
+	activePath: string | null,
+	options?: ProbeNoteFactsOptions,
+): NoteFacts | null {
 	if (!activePath) {
 		return null;
 	}
 	try {
+		const now = options?.now ?? new Date();
 		const file = app.vault.getFileByPath(activePath);
 		const isDaily = isDailyNotePath(activePath);
 		const isPeriodic = isPeriodicNotePath(activePath);
@@ -110,6 +178,60 @@ export function probeNoteFacts(app: App, activePath: string | null): NoteFacts |
 		const unresolvedMap = app.metadataCache.unresolvedLinks?.[activePath];
 		const unresolvedLinkCount = unresolvedMap ? toLinkReferences(unresolvedMap).length : 0;
 
+		const cache = file !== null && typeof app.metadataCache?.getFileCache === "function"
+			? app.metadataCache.getFileCache(file)
+			: null;
+
+		let todoCount = 0;
+		let doneTodoCount = 0;
+		if (cache?.listItems) {
+			for (const item of cache.listItems) {
+				if (item.task === " ") {
+					todoCount++;
+				} else if (item.task !== undefined) {
+					doneTodoCount++;
+				}
+			}
+		}
+
+		const hasCode = cache?.sections ? cache.sections.some((s) => s.type === "code") : false;
+		const timeOfDay = getTimeOfDay(now);
+		const isToday = isDaily ? isTodayNotePath(activePath, now) : false;
+		const hasPriorSession = options?.hasPriorSession ?? false;
+
+		let dominantTopic: "code" | "tasks" | "reading" | "daily" | null = null;
+		if (isDaily || isPeriodic) {
+			dominantTopic = "daily";
+		} else if (todoCount >= 2) {
+			dominantTopic = "tasks";
+		} else if (hasCode) {
+			dominantTopic = "code";
+		} else if (cache) {
+			const tagList: string[] = [];
+			if (cache.tags) {
+				for (const t of cache.tags) {
+					tagList.push(t.tag.toLowerCase());
+				}
+			}
+			const rawTags: unknown = cache.frontmatter?.tags;
+			if (Array.isArray(rawTags)) {
+				for (const t of rawTags) {
+					if (typeof t === "string") tagList.push(t.toLowerCase());
+				}
+			} else if (typeof rawTags === "string") {
+				tagList.push(rawTags.toLowerCase());
+			}
+			const rawType: unknown = cache.frontmatter?.type;
+			const fmType = typeof rawType === "string" ? rawType.toLowerCase() : "";
+			if (
+				tagList.some((t) => t.includes("reading") || t.includes("book") || t.includes("paper") || t.includes("research")) ||
+				fmType.includes("book") ||
+				fmType.includes("paper")
+			) {
+				dominantTopic = "reading";
+			}
+		}
+
 		return {
 			path: activePath,
 			isDailyNote: isDaily,
@@ -118,6 +240,13 @@ export function probeNoteFacts(app: App, activePath: string | null): NoteFacts |
 			isOrphan,
 			backlinkCount,
 			unresolvedLinkCount,
+			todoCount,
+			doneTodoCount,
+			hasCode,
+			isToday,
+			timeOfDay,
+			dominantTopic,
+			hasPriorSession,
 		};
 	} catch {
 		return null;

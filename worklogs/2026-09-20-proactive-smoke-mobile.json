@@ -1,0 +1,367 @@
+{
+  "passed": true,
+  "checks": [
+    "correct official device mode",
+    "official phone emulation",
+    "tasks note offers extractTodos chip",
+    "code note offers code quality chip",
+    "code note offers code logic chip",
+    "daily note offers cadence-aware chip",
+    "note with session index offers recallSession chip",
+    "quick actions chips do not overflow horizontally",
+    "found recall quick action button",
+    "quick action click completes assistant turn",
+    "negative Node controls refused",
+    "plugin only requests Obsidian",
+    "no unexpected console errors",
+    "no renderer errors or unhandled rejections"
+  ],
+  "errors": [],
+  "stages": [
+    {
+      "stage": "tasks-note",
+      "chips": [
+        "整理未完待办",
+        "总结这篇笔记",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "code-note",
+      "chips": [
+        "审查代码质量",
+        "解析代码逻辑",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "daily-note",
+      "chips": [
+        "晨间专注规划",
+        "今日待办简报",
+        "规划今日安排"
+      ]
+    },
+    {
+      "stage": "recall-note",
+      "chips": [
+        "继续上次探讨",
+        "总结这篇笔记",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "completed-turn",
+      "userPrompt": "结合我们此前关于这篇笔记的讨论，继续深入探讨并推进后续思路。",
+      "assistantReply": "已为您调出上次关于向量检索的讨论记录，我们可以从当时尚未完成的检索召回率评估继续展开。"
+    }
+  ],
+  "environment": {
+    "mobile": true,
+    "phone": true,
+    "width": 390,
+    "height": 844,
+    "obsidian": "1.13.7"
+  },
+  "nodeAccess": {
+    "evaluations": 1,
+    "requests": [
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      },
+      {
+        "id": "obsidian",
+        "provided": true
+      }
+    ],
+    "controls": [
+      {
+        "id": "fs",
+        "provided": false
+      },
+      {
+        "id": "node:fs",
+        "provided": false
+      },
+      {
+        "id": "node:fs/promises",
+        "provided": false
+      },
+      {
+        "id": "child_process",
+        "provided": false
+      },
+      {
+        "id": "node:module",
+        "provided": false
+      },
+      {
+        "id": "electron",
+        "provided": false
+      }
+    ],
+    "consoleErrors": [
+      {
+        "control": true,
+        "message": "Error: [piem] Attempting to load NodeJS package: \"fs\"\n    at s (app://obsidian.md/app.js:1:2900765)\n    at <anonymous>:239:21\n    at t.<anonymous> (app://obsidian.md/app.js:1:2901043)\n    at app://obsidian.md/app.js:1:258720\n    at Object.next (app://obsidian.md/app.js:1:258825)\n    at a (app://obsidian.md/app.js:1:257543)"
+      },
+      {
+        "control": true,
+        "message": "Error: [piem] Attempting to load NodeJS package: \"node:fs\"\n    at s (app://obsidian.md/app.js:1:2900765)\n    at <anonymous>:239:21\n    at t.<anonymous> (app://obsidian.md/app.js:1:2901043)\n    at app://obsidian.md/app.js:1:258720\n    at Object.next (app://obsidian.md/app.js:1:258825)\n    at a (app://obsidian.md/app.js:1:257543)"
+      },
+      {
+        "control": true,
+        "message": "Error: [piem] Attempting to load NodeJS package: \"node:fs/promises\"\n    at s (app://obsidian.md/app.js:1:2900765)\n    at <anonymous>:239:21\n    at t.<anonymous> (app://obsidian.md/app.js:1:2901043)\n    at app://obsidian.md/app.js:1:258720\n    at Object.next (app://obsidian.md/app.js:1:258825)\n    at a (app://obsidian.md/app.js:1:257543)"
+      },
+      {
+        "control": true,
+        "message": "Error: [piem] Attempting to load NodeJS package: \"child_process\"\n    at s (app://obsidian.md/app.js:1:2900765)\n    at <anonymous>:239:21\n    at t.<anonymous> (app://obsidian.md/app.js:1:2901043)\n    at app://obsidian.md/app.js:1:258720\n    at Object.next (app://obsidian.md/app.js:1:258825)\n    at a (app://obsidian.md/app.js:1:257543)"
+      },
+      {
+        "control": true,
+        "message": "Error: [piem] Attempting to load NodeJS package: \"node:module\"\n    at s (app://obsidian.md/app.js:1:2900765)\n    at <anonymous>:239:21\n    at t.<anonymous> (app://obsidian.md/app.js:1:2901043)\n    at app://obsidian.md/app.js:1:258720\n    at Object.next (app://obsidian.md/app.js:1:258825)\n    at a (app://obsidian.md/app.js:1:257543)"
+      },
+      {
+        "control": true,
+        "message": "Error: [piem] Attempting to load NodeJS package: \"electron\"\n    at s (app://obsidian.md/app.js:1:2900765)\n    at <anonymous>:239:21\n    at t.<anonymous> (app://obsidian.md/app.js:1:2901043)\n    at app://obsidian.md/app.js:1:258720\n    at Object.next (app://obsidian.md/app.js:1:258825)\n    at a (app://obsidian.md/app.js:1:257543)"
+      }
+    ],
+    "platform": {
+      "isMobile": true,
+      "isDesktop": false,
+      "isMobileApp": false,
+      "isDesktopApp": true
+    }
+  },
+  "artifactSha256": "0d10e61dd60465ae0dd78759e2d8faa1a2b8b3bf3d9521312ee15639a4076225",
+  "bytes": 2376813
+}

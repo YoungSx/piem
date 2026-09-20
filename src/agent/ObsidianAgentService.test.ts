@@ -5705,4 +5705,26 @@ describe("original bookmark extension integration", () => {
 			await expect(service.runBookmark(path, "bookmark", "Cannot resurrect")).rejects.toThrow();
 		} finally { service.dispose(); }
 	});
+	it("records note session associations and provides hasPriorSessionForNote", async () => {
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter);
+		try {
+			await service.initialize();
+			expect(service.hasPriorSessionForNote("Notes/test.md")).toBe(false);
+
+			// Pin or touch a note reference
+			await service.sendPrompt("Hello world", [], [{ kind: "file", path: "Notes/test.md" }]);
+			// In the same session, it's not a "prior" session
+			expect(service.hasPriorSessionForNote("Notes/test.md")).toBe(false);
+
+			// Start a new session
+			await service.newSession();
+			// Now it IS a prior session!
+			expect(service.hasPriorSessionForNote("Notes/test.md")).toBe(true);
+			// Another unrelated note has no prior session
+			expect(service.hasPriorSessionForNote("Notes/other.md")).toBe(false);
+		} finally {
+			service.dispose();
+		}
+	});
 });

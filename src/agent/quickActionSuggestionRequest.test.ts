@@ -116,6 +116,28 @@ describe("buildSuggestionPrompt", () => {
 		expect(prompt).toContain("Note graph: Contains 2 unresolved link(s).");
 	});
 
+	it("quotes proactive task, code, temporal and prior-session facts when present", () => {
+		const proactiveFacts = {
+			path: "2026-09-20.md",
+			isDailyNote: true,
+			isPeriodicNote: true,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			todoCount: 5,
+			hasCode: true,
+			isToday: true,
+			timeOfDay: "morning" as const,
+			hasPriorSession: true,
+		};
+		const prompt = buildSuggestionPrompt("empty", "2026-09-20.md", "en", undefined, proactiveFacts);
+		expect(prompt).toContain("Note tasks: Contains 5 uncompleted task(s) (- [ ]).");
+		expect(prompt).toContain("Note content: Contains code blocks or technical scripts.");
+		expect(prompt).toContain("Temporal context: Today's daily note (working in morning).");
+		expect(prompt).toContain("Session history: This note was previously referenced in an earlier conversation.");
+	});
+
 	it("instructs the model to offer distillation when a workflow was established", () => {
 		const prompt = buildSuggestionPrompt("reply", "Finished the workflow.", "en");
 		expect(prompt).toContain("/distill-skill");

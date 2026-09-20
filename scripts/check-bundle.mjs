@@ -129,6 +129,9 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     session tree navigation, custom renderers, provider lifecycle, native
  *     UI widgets) measured 2,359,579 B (+~12 KiB). The ceiling follows to
  *     2.26 MiB.
+ * 23. Proactive intelligence enhancements (cadence awareness, task/code/recall
+ *     heuristics, in-memory note-session index, and bilingual copy) measured
+ *     2,376,813 B (+~17 KiB). The ceiling follows to 2.28 MiB.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -143,7 +146,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.26 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.28 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

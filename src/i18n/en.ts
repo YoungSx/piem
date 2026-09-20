@@ -746,6 +746,34 @@ export const en = {
 				label: "What can you do?",
 				prompt: "What can you help me with in my vault? Give three concrete examples.",
 			},
+			extractTodos: {
+				label: "Organize tasks",
+				prompt: "Review the open tasks (- [ ]) in this note, prioritize them, and suggest next execution steps.",
+			},
+			morningFocus: {
+				label: "Morning focus",
+				prompt: "Review today's priorities and plan a focused schedule for my morning.",
+			},
+			sinkInbox: {
+				label: "Tidy & archive",
+				prompt: "Review the scattered thoughts in this note and organize them into structured topics.",
+			},
+			reviewCode: {
+				label: "Review code",
+				prompt: "Review the code snippets in this note for potential bugs and structural improvements.",
+			},
+			explainCode: {
+				label: "Explain code",
+				prompt: "Explain the architecture and technical logic of the code blocks in this note.",
+			},
+			distillNotes: {
+				label: "Distill insights",
+				prompt: "Extract the core concepts, key takeaways, and action items from this reading note.",
+			},
+			recallSession: {
+				label: "Resume discussion",
+				prompt: "Recall our previous discussion on this note and continue expanding on the findings.",
+			},
 		},
 		reply: {
 			distillSkill: {

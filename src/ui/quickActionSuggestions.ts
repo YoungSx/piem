@@ -112,20 +112,98 @@ export function continueAfterFailureQuickAction(t: Translator): QuickAction[] {
  */
 export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, noteFacts?: NoteFacts | null): QuickAction[] {
 	if (hasActiveNote) {
-		if (noteFacts?.isDailyNote || noteFacts?.isPeriodicNote) {
-			return [
-				{ id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
-				{ id: "planDay", label: t.t("quickActions.empty.planDay.label"), prompt: t.t("quickActions.empty.planDay.prompt") },
-				{ id: "reviewDay", label: t.t("quickActions.empty.reviewDay.label"), prompt: t.t("quickActions.empty.reviewDay.prompt") },
-			];
-		}
+		// 1. Empty draft notes
 		if (noteFacts?.isEmpty) {
+			if (noteFacts.isDailyNote || noteFacts.isPeriodicNote) {
+				return [
+					{ id: "planDay", label: t.t("quickActions.empty.planDay.label"), prompt: t.t("quickActions.empty.planDay.prompt") },
+					{ id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
+					{ id: "scaffoldOutline", label: t.t("quickActions.empty.scaffoldOutline.label"), prompt: t.t("quickActions.empty.scaffoldOutline.prompt") },
+				];
+			}
 			return [
 				{ id: "scaffoldOutline", label: t.t("quickActions.empty.scaffoldOutline.label"), prompt: t.t("quickActions.empty.scaffoldOutline.prompt") },
 				{ id: "researchTopic", label: t.t("quickActions.empty.researchTopic.label"), prompt: t.t("quickActions.empty.researchTopic.prompt") },
 				{ id: "brainstorm", label: t.t("quickActions.empty.brainstorm.label"), prompt: t.t("quickActions.empty.brainstorm.prompt") },
 			];
 		}
+
+		// 2. Prior session recall
+		if (noteFacts?.hasPriorSession) {
+			const secondary = (noteFacts.todoCount ?? 0) > 0
+				? { id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") }
+				: noteFacts.hasCode
+					? { id: "reviewCode", label: t.t("quickActions.empty.reviewCode.label"), prompt: t.t("quickActions.empty.reviewCode.prompt") }
+					: { id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") };
+			return [
+				{ id: "recallSession", label: t.t("quickActions.empty.recallSession.label"), prompt: t.t("quickActions.empty.recallSession.prompt") },
+				secondary,
+				{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+			];
+		}
+
+		// 3. Daily or Periodic notes with cadence awareness
+		if (noteFacts?.isDailyNote || noteFacts?.isPeriodicNote) {
+			if (noteFacts.isToday) {
+				if (noteFacts.timeOfDay === "morning") {
+					return [
+						{ id: "morningFocus", label: t.t("quickActions.empty.morningFocus.label"), prompt: t.t("quickActions.empty.morningFocus.prompt") },
+						{ id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
+						{ id: "planDay", label: t.t("quickActions.empty.planDay.label"), prompt: t.t("quickActions.empty.planDay.prompt") },
+					];
+				}
+				if (noteFacts.timeOfDay === "evening") {
+					return [
+						{ id: "reviewDay", label: t.t("quickActions.empty.reviewDay.label"), prompt: t.t("quickActions.empty.reviewDay.prompt") },
+						{ id: "sinkInbox", label: t.t("quickActions.empty.sinkInbox.label"), prompt: t.t("quickActions.empty.sinkInbox.prompt") },
+						(noteFacts.todoCount ?? 0) > 0
+							? { id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") }
+							: { id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
+					];
+				}
+			}
+			if ((noteFacts.todoCount ?? 0) > 0) {
+				return [
+					{ id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") },
+					{ id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
+					{ id: "reviewDay", label: t.t("quickActions.empty.reviewDay.label"), prompt: t.t("quickActions.empty.reviewDay.prompt") },
+				];
+			}
+			return [
+				{ id: "todayTasks", label: t.t("quickActions.empty.todayTasks.label"), prompt: t.t("quickActions.empty.todayTasks.prompt") },
+				{ id: "planDay", label: t.t("quickActions.empty.planDay.label"), prompt: t.t("quickActions.empty.planDay.prompt") },
+				{ id: "reviewDay", label: t.t("quickActions.empty.reviewDay.label"), prompt: t.t("quickActions.empty.reviewDay.prompt") },
+			];
+		}
+
+		// 4. Notes with open tasks
+		if ((noteFacts?.todoCount ?? 0) > 0) {
+			return [
+				{ id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") },
+				{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
+				{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+			];
+		}
+
+		// 5. Code-heavy notes
+		if (noteFacts?.hasCode) {
+			return [
+				{ id: "reviewCode", label: t.t("quickActions.empty.reviewCode.label"), prompt: t.t("quickActions.empty.reviewCode.prompt") },
+				{ id: "explainCode", label: t.t("quickActions.empty.explainCode.label"), prompt: t.t("quickActions.empty.explainCode.prompt") },
+				{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+			];
+		}
+
+		// 6. Reading / Research notes
+		if (noteFacts?.dominantTopic === "reading") {
+			return [
+				{ id: "distillNotes", label: t.t("quickActions.empty.distillNotes.label"), prompt: t.t("quickActions.empty.distillNotes.prompt") },
+				{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
+				{ id: "brainstorm", label: t.t("quickActions.empty.brainstorm.label"), prompt: t.t("quickActions.empty.brainstorm.prompt") },
+			];
+		}
+
+		// 7. Orphan notes
 		if (noteFacts?.isOrphan) {
 			return [
 				{ id: "linkGraph", label: t.t("quickActions.empty.linkGraph.label"), prompt: t.t("quickActions.empty.linkGraph.prompt") },
@@ -133,6 +211,8 @@ export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, n
 				{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
 			];
 		}
+
+		// 8. Default populated connected note
 		return [
 			{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
 			{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
