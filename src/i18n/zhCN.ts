@@ -571,12 +571,12 @@ export const zhCN: DeepPartial<EnCopy> = {
 
 		logLevelHeading: "日志级别",
 		logLevelDesc:
-			"插件往日志里写多少内容。日常使用“警告”就够；排查问题时调成“调试”，看完再调回去。",
+			"控制日志记录的详细程度。日常建议设为“警告”，排查问题时可切换为“调试”。",
 		logsHeading: "日志",
 		// 这一行得有名字：光秃秃一个按钮像个走丢的控件，屏幕阅读器
 		// 单独念它时也得知道它打开的是什么。
 		logViewerName: "日志查看器",
-		logViewerDesc: "插件写下的全部日志，可搜索、可按级别过滤。",
+		logViewerDesc: "插件的所有运行日志，支持搜索和按级别过滤。",
 
 		languageHeading: "语言",
 		languageDesc: "界面使用的语言。“自动”会跟随笔记库的语言。",
@@ -585,21 +585,21 @@ export const zhCN: DeepPartial<EnCopy> = {
 		// 挂在通用页的「快捷键」小节下。全插件只有这一个键盘设置，
 		// 撑不起独立一节；但有了节名，读者按「快捷键」这个词找就能找到，
 		// 不用记住它在哪个页签。
-		sendShortcut: "发送消息用",
+		sendShortcut: "发送消息快捷键",
 
 		providersHeading: "提供方",
-		providersDesc: "请求可以发送到的端点。一个提供方包含基础 URL、请求协议和一把密钥。",
+		providersDesc: "配置 API 服务的接入端点（基础 URL、协议及密钥）。",
 		addProvider: "添加提供方",
-		noProviders: "还没有提供方。添加一个，即可将请求发送到你自己的端点或网关。",
+		noProviders: "暂无提供方。添加提供方以连接模型服务或网关。",
 		editProvider: "编辑提供方",
 		deleteProvider: "删除提供方",
 		modelsHeading: "模型",
-		modelsDescWithProviders: "你可以选择的模型。每个模型指定一个提供方以及该提供方期望的模型 ID。",
-		modelsDescNoProviders: "请先添加提供方——模型需要一个端点来提供服务。",
+		modelsDescWithProviders: "可选的模型列表。每个模型关联一个提供方及对应的模型 ID。",
+		modelsDescNoProviders: "请先添加提供方，模型需要关联提供方端点。",
 		addModel: "添加模型",
 		noModels: "还没有模型。",
 		activeModelHeading: "默认模型",
-		activeModelDesc: "所有请求都会从这个模型发出。",
+		activeModelDesc: "对话时默认使用的模型。",
 		missingBuiltinModel:
 			"此版本不再内置 {provider}/{modelId}，请求将改为发往 {replacement}。若要继续使用，请在下方将其添加为提供方和模型。",
 		editModel: "编辑模型",
@@ -622,56 +622,56 @@ export const zhCN: DeepPartial<EnCopy> = {
 		// 选项按「读者看到的对话」措辞，不按机器行为：例外项由打开的 diff 行自己解释。
 		traceExpand: "工具动态展开方式",
 		traceExpandDesc:
-			"对话流中思考、工具调用与结果默认展开多少。任何一行之后仍可手动开合。选「全部折叠」时，连续的思考和工具调用会一起收成一行，并写明这一串做了什么。",
+			"对话流中思考过程、工具调用与结果的默认展开方式。",
 		traceExpandCollapsed: "全部折叠",
 		traceExpandHighValue: "高价值行展开",
 		traceExpandExpanded: "全部展开",
 		/** 回复途中排队的入口（#289）。说明里最要紧的是讲清「两档都不打断」，免得有人改了默认值还是没等到立刻发出。 */
 		queueStrategy: "回复途中发送",
 		queueStrategyDesc:
-			"Piem 还在回答时你发出的消息，要等多久才轮到它。两档都不会打断这条回复——想立刻发出，请用等待条右侧的引导按钮。",
-		queueStrategyWhen: "等到",
-		queueStrategyWhenDesc: "「整段回答」不会动这条回复的计划；「当前请求」更快，但可能在一长串工具调用中途改掉它的计划。",
+			"AI 正在回复时发送新消息的处理时机。若需立即插话，请使用等待条右侧的操作按钮。",
+		queueStrategyWhen: "发送时机",
+		queueStrategyWhenDesc: "「整段回答结束」保证当前计划完整执行；「当前请求结束」响应更快，但可能改变后续工具调用。",
 		queueStrategyAfterRun: "整段回答结束",
 		queueStrategyAfterTurn: "当前这次请求结束",
 		// 重试入口，折叠进高级组。0 是真实答案——两层重试一起关——要先说清楚。
 		retryEntry: "网络重试",
-		retryEntryDesc: "请求模型失败且还没吐出一个字时，Piem 会隔一小会儿再试一次，读者几乎察觉不到；只有等得久了才会有提示。填 0 表示彻底关闭重试。",
+		retryEntryDesc: "请求模型在收到首字前失败时的自动重试机制。设为 0 可关闭重试。",
 		retryAttempts: "重试次数",
-		retryAttemptsDesc: "失败的请求再试几次。0 为关闭重试，最多 {max} 次。",
+		retryAttemptsDesc: "失败请求的重试次数。0 为关闭重试，最多 {max} 次。",
 		retryDelay: "首次重试等待（毫秒）",
-		retryDelayDesc: "第一次重试等多久，单位毫秒；之后每次翻倍，到上限为止。范围 {min} 到 {max}。",
+		retryDelayDesc: "首次重试等待时长（毫秒），后续指数递增。范围 {min} 到 {max}。",
 		retryDisplayAttempts: "重试 {count} 次",
 		retryDisplayDelay: "首次等 {ms} 毫秒",
-		sendShortcutDesc: "用哪个键发送消息。无论选哪项，Ctrl+回车 和 ⌘+回车 都能发送。",
+		sendShortcutDesc: "发送消息的快捷键。Ctrl+回车 和 ⌘+回车 始终可发送。",
 		sendShortcutEnter: "回车（Shift+回车 换行）",
 		sendShortcutModEnter: "Ctrl+回车 或 ⌘+回车（回车用于换行）",
-		sendShortcutMobileNote: "在手机上回车一律换行——软键盘没有 Shift+回车——请用发送按钮。",
+		sendShortcutMobileNote: "移动端回车始终换行，请使用发送按钮。",
 		// 对话页的小节标题，把「行为」和「存放」隔开。用标题而不用折叠：
 		// 存储不是高级配置，长期用户迟早要找，不该点开才看得见。
 		chatHistoryHeading: "聊天记录",
 		chatHistoryDesc: "聊天记录存放的位置，以及旧的保留多少条。",
 		networkHeading: "网络",
-		networkHeadingDesc: "请求如何离开笔记库。",
+		networkHeadingDesc: "配置 API 请求的网络传输方式与缓存策略。",
 		networkTransport: "首选请求方式",
 		networkTransportDesc:
-			"选 fetch 可流式输出，token 随到随显示；请求发不出去时自动改走 requestUrl（全程缓冲，token 一次性出现）。选 requestUrl 则始终缓冲。",
+			"优先使用 fetch 流式传输（失败时自动回退为 requestUrl 缓冲）；也可强制使用 requestUrl 缓冲。",
 		// 这两项是配置里的字面值（"requestUrl" | "fetch"），保持原样以便和配置、日志对上。
 		transportRequestUrl: "requestUrl（缓冲）",
 		transportFetch: "fetch（流式，失败自动回退）",
 		cacheRetention: "提示缓存",
 		cacheRetentionDesc:
-			"服务商会替你记住提示里不变的那部分——系统指令、工具定义、技能——后续每一轮只按约一折的价格计费，不用每次都付全价。端点不认缓存标记的话，就关掉。",
-		cacheRetentionLong: "一小时——去写点笔记，回来还是热的",
-		cacheRetentionShort: "五分钟——快问快答正合适",
-		cacheRetentionNone: "关闭——端点不认缓存标记",
-		whatLeavesVault: "什么会离开笔记库",
+			"缓存系统指令、工具及技能等固定上下文，可降低后续费用并加快响应；若服务商不支持则关闭。",
+		cacheRetentionLong: "1 小时（推荐，适合持续对话）",
+		cacheRetentionShort: "5 分钟（适合短对话）",
+		cacheRetentionNone: "关闭（端点不支持缓存标记时使用）",
+		whatLeavesVault: "数据出库说明",
 		whatLeavesVaultDesc:
 			"提示词、笔记和工具结果发给选定的模型服务商。MCP 工具与网页请求会访问对应服务。错误报告与性能数据默认发给 Piem 维护者，可在扩展能力中关闭分享。正文采集关闭，但错误文字可能包含笔记内容。",
 		chatLogsInVault:
 			"聊天记录是笔记库里的文件，会随你的笔记一起同步和备份。它们包含对话内容，以及回答过程中读取的笔记原文。",
 		apiKeysHeading: "API 密钥",
-		restrictedKeyHint: "请使用受限、低限额的密钥：笔记库是一个普通文件夹，里面的密钥会随着该文件夹的每次备份和同步一起传播。",
+		restrictedKeyHint: "建议使用配额受限的 API 密钥，避免密钥随笔记库备份或同步时泄露。",
 	},
 
 	// 一个列表收拢代理能加载的所有技能，每行徽章标明来自哪一层；文案对层级
@@ -699,7 +699,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		// 哪 kinds 的地方」，故意不枚举三层。保留原内置注记的核心承诺——
 		// 「下一条消息生效」是诚实的边界：保存会重写运行中会话的提示词，下一轮
 		// 开始才是新开关管的事；已经读到某技能指令的那一轮运行不受影响。
-		desc: "代理可以按需加载的指令。每行的徽章标明它住在哪里——你的笔记库、这台电脑上的文件夹，或随 Piem 出厂自带。关掉开关会把该技能从代理的技能列表移除，下一条消息起生效。",
+		desc: "AI 可按需加载的技能指令（来自内置、笔记库或本机文件夹）。关闭开关即从可用技能中移除，下一条消息起生效。",
 		import: "从 URL 导入",
 		empty: "你的笔记库里还没有技能。从 URL 导入一个，或在 Piem/skills 里建一个包含 SKILL.md 的文件夹。",
 		open: "打开",
@@ -713,7 +713,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		couldNotDelete: "无法删除 {name}：{message}",
 		reload: "重新加载",
 		// 「就是」而不是「是」：这句承诺的是「完全一致」，不只是「有关系」。
-		reloadClean: "已重新读取技能，没有发现问题。代理现在用的就是磁盘上的内容。",
+		reloadClean: "已重新读取技能，没有发现问题。",
 		reloadProblems: "已重新读取技能。返回的问题列在各自的分区下方。",
 		couldNotReload: "无法重新读取技能：{message}",
 		problemsHeading: "读取技能文件时的问题",
@@ -727,7 +727,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 			"请填写完整路径——以 / 或盘符开头，或用 ~ 表示你的主目录。像 'skills' 这样的普通名称不会被读取，因此不会加载任何额外文件夹。",
 		userSearchedHeading: "已搜索的文件夹",
 		userSearchedDesc:
-			"上次加载技能时查找过的位置。你没有创建过的文件夹本来就不存在，这不是故障。你确实创建过的文件夹应当显示它包含多少个技能——如果没有，说明实际读取的路径不是你想要的那个。",
+			"上次加载技能时扫描的路径。未创建的文件夹不存在不是故障；已创建的文件夹若未显示技能，说明路径不是你想要的。",
 		userProblemsHeading: "读取本机文件夹时的问题",
 		// 「原样返回」是这句话的关键：它告诉读者下面那段英文是操作系统吐出来的，
 		// 不是插件自己坏了——否则一行 EACCES 看起来就像崩溃日志。后两句分别交代
@@ -785,14 +785,14 @@ export const zhCN: DeepPartial<EnCopy> = {
 		// 但此前只写在源码注释里，用户看不见的地方。这里不再指引读者去换 fetch：
 		// 换了也救不回挂载的推送，只会改变工具调用的走法。
 		bufferedNoPush:
-			"MCP 挂载固定走缓冲传输，服务器无法主动推给你：工具列表只在你保存设置时刷新，服务器自己改了不算。",
+			"MCP 采用缓冲传输。工具列表仅在保存设置时刷新，不支持服务端主动推送变更。",
 		add: "添加服务器",
 		// 内置 Exa 行的专属文案：端点是死的，表单真正能编辑的只有密钥，行描述
 		// 也就只说这一件事——不带 key 是共享限额，带 key 才是自己的配额。
-		builtinDesc: "Piem 内置的联网搜索，无需配置即可使用（与所有用户共享限速）。填入自己的 Exa API 密钥可获得独立配额，额度更高。",
+		builtinDesc: "Piem 内置联网搜索，无需配置即可使用（共享配额）。填入自己的 Exa API 密钥可使用独立配额。",
 		builtinEditTitle: "Exa 搜索",
 		builtinKeyName: "Exa API 密钥",
-		builtinKeyDesc: "填入你自己的 Exa API 密钥，请求就走你的账号配额，不再受共享限速；留空则继续用内置的共享额度。密钥可在 exa.ai 免费申请。",
+		builtinKeyDesc: "填入 Exa API 密钥以使用专属配额，留空则使用内置共享额度。密钥可在 exa.ai 获取。",
 		edit: "编辑",
 		delete: "删除",
 		empty: "还没有配置 MCP 服务器。添加一个，即可让它的工具进入对话。",
@@ -833,7 +833,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		licenseLabel: "阅读许可协议",
 		sponsorName: "赞助我",
 		sponsorDesc: "请我在 Ko-fi 上喝杯咖啡。",
-		sponsorLabel: "疯狂星期四 V 我 50",
+		sponsorLabel: "赞助支持 (Ko-fi)",
 	},
 
 	compaction: {
@@ -848,7 +848,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 
 	sessions: {
 		retentionName: "保留的对话数",
-		retentionDesc: "创建新对话时，较早的对话会移到回收站，之后仍可从那里恢复。设为 0 则保留全部对话。",
+		retentionDesc: "保留的历史对话数量。超出部分将移入回收站（可恢复）；设为 0 则保留全部对话。",
 		retentionFloor: "低于 {min} 的值会被提升到该下限。",
 		retentionUnlimited: "保留全部对话。{stored}",
 		retentionWillTrash: "{stored} 下一次新建对话会把最早的 {chats}移到回收站。",
@@ -922,7 +922,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		providerManyModels: "由它提供服务的 {count} 个模型也会被移除：{names}。",
 		modelProviderStays: "提供方及其密钥会保留，其他模型仍可正常使用。",
 		modelWasActive: "它是默认模型，移除后由 {model} 接替。",
-		modelWasLast: "它是唯一的模型，移除后没有继任——请先添加另一个再发消息。",
+		modelWasLast: "这是当前唯一的模型，移除后需添加新模型才能继续发送消息。",
 		skillFiles: "技能的文件会移入回收站，并不再对代理可用。",
 		mcpServer: "它的工具不再提供给代理。其令牌绑定的钥匙串条目会保留不动。",
 	},
@@ -952,7 +952,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		manualKeyField: "仅发送给 {target}。{storage} 请使用受限、低限额的密钥。",
 		/** 委托层级下折叠的手填字段：分组提示已说明存到哪里。 */
 		manualKeyFieldPlain: "仅发送给 {target}。请使用受限、低限额的密钥。",
-		noSync: "钥匙串不会同步，因此每台设备都要各自选取一次。在另一台设备上重新选取是正常的。",
+		noSync: "钥匙串保存在本地设备，不会跨设备同步，需在各设备上单独配置。",
 		providerTarget: "此提供方的基础 URL",
 		boundTo: "已绑定钥匙串条目「{name}」。",
 		danglingRef: "此提供方绑定的钥匙串条目已被删除。请重新选取。",
@@ -1000,7 +1000,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		// 这三行就隐藏，只剩密钥要填。「自定义」排在最前，因为那本就是表单打开时的状态——
 		// 要接网关的人不该先划过十六个用不上的厂商，才回到原地。
 		preset: "预设",
-		presetDesc: "选一个已知提供方，剩下只需填它的 API 密钥。想自己设名称、基础 URL 和协议就选「自定义」——网关、代理，或自托管服务。",
+		presetDesc: "选择预设提供方只需填写 API 密钥；或选择「自定义」自行配置端点和协议。",
 		presetCustom: "自定义",
 		name: "名称",
 		nameDesc: "在列出该提供方的地方显示。可选——留空时使用基础 URL。",
@@ -1009,7 +1009,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		baseUrlDesc: "API 的根地址，例如 https://api.example.com/v1",
 		baseUrlPlaceholder: "https://api.example.com/v1",
 		protocol: "协议",
-		protocolDesc: "该端点使用的请求格式。第一个选项是网关和自托管服务器实现最广泛的一种。",
+		protocolDesc: "端点支持的请求格式。通用网关和自托管服务通常推荐 OpenAI 协议。",
 		apiKey: "API 密钥",
 		apiKeyPlaceholder: "输入 API 密钥",
 		connection: "连接",
@@ -1046,24 +1046,24 @@ export const zhCN: DeepPartial<EnCopy> = {
 		maxTokensDesc: "单次回复的上限。留空则使用默认值（8192）。",
 		maxTokensPlaceholder: "8192",
 		supportsThinking: "支持思考",
-		supportsThinkingDesc: "仅当该模型接受推理参数时启用。严格的服务器会直接拒绝它们。",
+		supportsThinkingDesc: "仅在模型支持推理参数时开启；若端点不支持可能会报错。",
 		thinkingHintSupported: "该模型支持思考，建议开启。",
 		thinkingHintUnsupported: "该模型不支持思考，建议关闭。",
-		thinkingUnbacked: "模型目录没有收录这个 ID，思考开关没有出处可依。仅在确定服务器接受时保持开启。",
+		thinkingUnbacked: "模型目录未收录此 ID。请根据服务商文档确认模型是否支持思考。",
 		supportsImages: "接受图片",
 		supportsImagesDesc: "开启后允许随文本一起向该模型发送附件图片。",
 		imagesHintSupported: "该模型接受图片，建议开启。",
 		imagesHintUnsupported: "该模型不接受图片，建议关闭。",
-		imagesUnbacked: "模型目录没有收录这个 ID，图片开关没有出处可依。仅在确定服务器接受图片时保持开启。",
+		imagesUnbacked: "模型目录未收录此 ID。请根据服务商文档确认模型是否支持图片。",
 		// Issue #160：数字字段过去只填一次便永久沉默，上一个模型的数值会
 		// 无声地留在新 ID 下面。下面几行是这次失败的替代品：目录只建议，
 		// 数值永远是用户的，无出处的数值要明说而不是略过。
 		contextWindowAdvice: "目录建议此模型使用 {value}。",
 		contextWindowAdviceMatches: "与目录中此模型的数值一致。",
-		contextWindowUnbacked: "模型目录没有收录这个 ID，这个数字没有出处可依。请对照提供方文档核实。",
+		contextWindowUnbacked: "模型目录未收录此 ID。请对照提供方文档确认上下文窗口大小。",
 		maxTokensAdvice: "目录建议此模型使用 {value}。",
 		maxTokensAdviceMatches: "与目录中此模型的数值一致。",
-		maxTokensUnbacked: "模型目录没有收录这个 ID，这个数字没有出处可依。请对照提供方文档核实。",
+		maxTokensUnbacked: "模型目录未收录此 ID。请对照提供方文档确认最大输出 token 数。",
 		adoptNumber: "采纳建议值",
 		adoptToggleOn: "开启",
 		adoptToggleOff: "关闭",
