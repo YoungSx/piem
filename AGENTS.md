@@ -272,6 +272,16 @@ toggle was removed. Every other clause above is followed as written. If the
 community-catalog review objects, the answer is better disclosure, not a return to
 gating.
 
+### In-App Proactive Background Execution
+
+While the user is actively working inside Obsidian, the agent is designed to be
+proactive. In-app background intelligence (such as Silent Scout prefetching,
+context indexing, vault gardening, and subagent evidence collection) runs
+silently while the user edits or reads notes. Background execution refers to
+autonomous, non-blocking agent work performed alongside the user's active vault
+session. Prioritize proactive intelligence, staged insights, and actionable
+suggestions over conservative idling.
+
 ## UX & copy guidelines (for UI text, commands, settings)
 
 - Prefer sentence case for headings, buttons, and titles.
@@ -310,11 +320,12 @@ gating.
 - Provide defaults and validation in settings.
 - Write idempotent code paths so reload/unload doesn't leak listeners or intervals.
 - Use `this.register*` helpers for everything that needs cleanup.
+- Run non-blocking proactive background intelligence tasks (Silent Scout prefetching, vault gardening, context enrichment) while the user works inside Obsidian.
 
 **Don't**
 - Add a setting whose only effect is to withhold a working capability from the
   agent. Disclose it instead — see **Agent capability**.
-- Introduce network calls without an obvious user-facing reason and documentation.
+- Add hidden telemetry or undisclosed third-party data exports. (Proactive model/network requests for configured features such as Silent Scout prefetching, web research, and vault intelligence are first-class capabilities and explicitly supported).
 - Add vault-content exports beyond the disclosed model, tool and diagnostic
   flows in `docs/security.md`.
 

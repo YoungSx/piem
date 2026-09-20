@@ -17,6 +17,10 @@
 import type { App } from "obsidian";
 import { hasAnyBacklink, toLinkReferences } from "../vault/links";
 
+import type { ScoutInsight, StagedScoutAction } from "./silentScout";
+import type { BrokenLinkFix } from "./vaultGardener";
+import { detectEmergentMoc, findBrokenLinkFixes } from "./vaultGardener";
+
 /** Time of day segment for cadence-aware suggestions. */
 export type TimeOfDay = "morning" | "afternoon" | "evening";
 
@@ -54,6 +58,14 @@ export interface NoteFacts {
 	dominantTopic?: "code" | "tasks" | "reading" | "daily" | null;
 	/** Whether an earlier conversation touched this note. Defaults to false. */
 	hasPriorSession?: boolean;
+	/** Unverified premises or promises detected in note content. */
+	unresolvedPromises?: string[];
+	/** Proposed broken link repair if any. */
+	brokenLinkFixes?: BrokenLinkFix[];
+	/** Emergent tag topic suggesting a Map of Content. */
+	suggestedMocTopic?: string | null;
+	/** Staged background insight from silent scout. */
+	stagedScoutAction?: StagedScoutAction;
 }
 
 /** Matches standard daily note naming formats: YYYY-MM-DD, YYYY_MM_DD, YYYY.MM.DD, or YYYYMMDD. */
@@ -126,6 +138,18 @@ export function renderNoteFactLines(facts: NoteFacts): string[] {
 	if (facts.hasPriorSession) {
 		lines.push("Session history: This note was previously referenced in an earlier conversation.");
 	}
+	if (facts.stagedScoutAction) {
+		lines.push(`Scout staged action: ${facts.stagedScoutAction.label} -> ${facts.stagedScoutAction.prompt}`);
+	}
+	if (facts.unresolvedPromises && facts.unresolvedPromises.length > 0) {
+		lines.push(`Unresolved promises: ${facts.unresolvedPromises.join("; ")}`);
+	}
+	if (facts.brokenLinkFixes && facts.brokenLinkFixes.length > 0) {
+		lines.push(`Broken link repair: ${facts.brokenLinkFixes.map((f) => `[[${f.original}]] -> [[${f.target}]]`).join(", ")}`);
+	}
+	if (facts.suggestedMocTopic) {
+		lines.push(`Emergent topic cluster: Eligible for a MOC under #${facts.suggestedMocTopic}`);
+	}
 	return lines;
 }
 
@@ -143,12 +167,16 @@ export function noteFactsKeyPart(facts: NoteFacts | null): string {
 		`code:${facts.hasCode ? "1" : "0"}`,
 		`tod:${facts.timeOfDay ?? ""}`,
 		`prior:${facts.hasPriorSession ? "1" : "0"}`,
+		`scout:${facts.stagedScoutAction?.label ?? ""}`,
+		`promises:${facts.unresolvedPromises?.length ?? 0}`,
+		`moc:${facts.suggestedMocTopic ?? ""}`,
 	].join("|");
 }
 
 export interface ProbeNoteFactsOptions {
 	now?: Date;
 	hasPriorSession?: boolean;
+	scoutInsight?: ScoutInsight | null;
 }
 
 /**
@@ -199,15 +227,8 @@ export function probeNoteFacts(
 		const isToday = isDaily ? isTodayNotePath(activePath, now) : false;
 		const hasPriorSession = options?.hasPriorSession ?? false;
 
-		let dominantTopic: "code" | "tasks" | "reading" | "daily" | null = null;
-		if (isDaily || isPeriodic) {
-			dominantTopic = "daily";
-		} else if (todoCount >= 2) {
-			dominantTopic = "tasks";
-		} else if (hasCode) {
-			dominantTopic = "code";
-		} else if (cache) {
-			const tagList: string[] = [];
+		const tagList: string[] = [];
+		if (cache) {
 			if (cache.tags) {
 				for (const t of cache.tags) {
 					tagList.push(t.tag.toLowerCase());
@@ -221,6 +242,16 @@ export function probeNoteFacts(
 			} else if (typeof rawTags === "string") {
 				tagList.push(rawTags.toLowerCase());
 			}
+		}
+
+		let dominantTopic: "code" | "tasks" | "reading" | "daily" | null = null;
+		if (isDaily || isPeriodic) {
+			dominantTopic = "daily";
+		} else if (todoCount >= 2) {
+			dominantTopic = "tasks";
+		} else if (hasCode) {
+			dominantTopic = "code";
+		} else if (cache) {
 			const rawType: unknown = cache.frontmatter?.type;
 			const fmType = typeof rawType === "string" ? rawType.toLowerCase() : "";
 			if (
@@ -231,6 +262,12 @@ export function probeNoteFacts(
 				dominantTopic = "reading";
 			}
 		}
+
+		const scoutInsight = options?.scoutInsight;
+		const unresolvedPromises = scoutInsight?.unresolvedPromises;
+		const brokenLinkFixes = scoutInsight?.brokenLinkFixes ?? (file ? findBrokenLinkFixes(app, file) : []);
+		const suggestedMocTopic = scoutInsight?.suggestedMocTopic ?? (file ? detectEmergentMoc(app, file, tagList) : null);
+		const stagedScoutAction = scoutInsight?.stagedAction;
 
 		return {
 			path: activePath,
@@ -247,6 +284,10 @@ export function probeNoteFacts(
 			timeOfDay,
 			dominantTopic,
 			hasPriorSession,
+			unresolvedPromises,
+			brokenLinkFixes,
+			suggestedMocTopic,
+			stagedScoutAction,
 		};
 	} catch {
 		return null;
