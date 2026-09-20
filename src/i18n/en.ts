@@ -989,7 +989,7 @@ export const en = {
 
 		logLevelHeading: "Log level",
 		logLevelDesc:
-			"How much the plugin writes to its log. \"Warnings\" is enough for everyday use; turn it down to \"Debug\" while troubleshooting, then back.",
+			"Controls log verbosity. \"Warnings\" is recommended for everyday use; switch to \"Debug\" when troubleshooting.",
 		logsHeading: "Logs",
 		/**
 		 * Names the row that opens the viewer, because a bare button reads as a
@@ -1009,21 +1009,21 @@ export const en = {
 		 * standing one up; the heading keeps it findable by the word a reader
 		 * reaches for — "shortcut" — rather than by remembering which tab.
 		 */
-		sendShortcut: "Send message with",
+		sendShortcut: "Send shortcut",
 
 		providersHeading: "Providers",
-		providersDesc: "Endpoints requests can go to. A provider holds a base URL, a wire protocol, and one key.",
+		providersDesc: "Endpoints requests can go to, each with a base URL, wire protocol, and key.",
 		addProvider: "Add provider",
-		noProviders: "No providers yet. Add one to send requests to your own endpoint or gateway.",
+		noProviders: "No providers yet. Add one to connect to an endpoint or gateway.",
 		editProvider: "Edit provider",
 		deleteProvider: "Delete provider",
 		modelsHeading: "Models",
-		modelsDescWithProviders: "Models you can select. Each one names a provider and the model ID that provider expects.",
-		modelsDescNoProviders: "Add a provider first — a model needs an endpoint to be served from.",
+		modelsDescWithProviders: "Models you can select, each specifying a provider and model ID.",
+		modelsDescNoProviders: "Add a provider first — models need an endpoint to be served from.",
 		addModel: "Add model",
 		noModels: "No models yet.",
 		activeModelHeading: "Default model",
-		activeModelDesc: "Every request goes out on this one.",
+		activeModelDesc: "Default model used for requests.",
 		/**
 		 * Shown when the vault names a builtin model this trimmed build dropped.
 		 *
@@ -1060,7 +1060,7 @@ export const en = {
 		 */
 		traceExpand: "Open tool activity",
 		traceExpandDesc:
-			"How much of the machine traffic — thinking, tool calls, results — starts open in the transcript. Any row can still be opened or closed by hand. With everything collapsed, consecutive thinking and tool calls fold into a single row naming what the run did.",
+			"Default expansion of thinking, tool calls, and results in the transcript.",
 		traceExpandCollapsed: "Everything collapsed",
 		traceExpandHighValue: "High-value rows open",
 		traceExpandExpanded: "Everything open",
@@ -1074,10 +1074,10 @@ export const en = {
 		 */
 		queueStrategy: "Mid-reply sends",
 		queueStrategyDesc:
-			"How long a message you send while Piem is still answering waits before it reaches the model. Neither choice interrupts the reply — the steer button beside each waiting message does that.",
+			"How long messages sent while Piem is replying wait before reaching the model. The steer button beside waiting messages sends immediately.",
 		queueStrategyWhen: "Wait until",
 		queueStrategyWhenDesc:
-			"The whole answer leaves the reply's plan intact. The current request is sooner, and can change a long run of tool calls halfway through it.",
+			"\"The whole answer is finished\" preserves the current plan; \"The current request is finished\" responds sooner but may alter subsequent tool calls.",
 		queueStrategyAfterRun: "The whole answer is finished",
 		queueStrategyAfterTurn: "The current request is finished",
 		/**
@@ -1088,11 +1088,11 @@ export const en = {
 		 */
 		retryEntry: "Network retries",
 		retryEntryDesc:
-			"How hard Piem tries when a request to the model fails before any text arrives: the attempt is replayed after a short wait, and the reader sees nothing unless the wait drags on. Zero turns retrying off.",
+			"Automatically retries failed requests before any text is received. Set to 0 to disable retries.",
 		retryAttempts: "Retry attempts",
-		retryAttemptsDesc: "How many times a failed request is tried again. Zero disables retrying; the most allowed is {max}.",
+		retryAttemptsDesc: "How many times a failed request is tried again. 0 disables retrying; maximum is {max}.",
 		retryDelay: "First retry wait (ms)",
-		retryDelayDesc: "How long the first retry waits, in milliseconds. Later retries double this, up to the cap. Between {min} and {max}.",
+		retryDelayDesc: "Initial retry wait in milliseconds, doubling on subsequent attempts. Between {min} and {max}.",
 		retryDisplayAttempts: "{count} retries",
 		retryDisplayDelay: "{ms} ms first wait",
 		/**
@@ -1104,7 +1104,7 @@ export const en = {
 		sendShortcutEnter: "Enter (Shift+Enter for a new line)",
 		sendShortcutModEnter: "Ctrl+Enter or ⌘+Enter (Enter makes a new line)",
 		/** Shown under the row on a phone, where a soft keyboard has no Shift+Enter. */
-		sendShortcutMobileNote: "On a phone, Enter always makes a new line — a soft keyboard has no Shift+Enter — so use the Send button.",
+		sendShortcutMobileNote: "On mobile, Enter always inserts a new line; use the Send button to send.",
 		/**
 		 * Section heading under the Chat tab for where chats are kept. Storage is
 		 * separated from behaviour by a heading, not a collapsible: it is not
@@ -1115,10 +1115,10 @@ export const en = {
 		chatHistoryDesc: "Where chats are kept, and how many old ones stay.",
 		/** Summary line of the network section folded under the Models tab. */
 		networkHeading: "Network",
-		networkHeadingDesc: "How requests leave the vault.",
+		networkHeadingDesc: "Configure network transport and prompt caching.",
 		networkTransport: "Preferred transport",
 		networkTransportDesc:
-			"Fetch streams tokens as they arrive; if a request can't leave the page, it automatically falls back to requestUrl (buffered — tokens arrive all at once). Request URL always buffers.",
+			"Prefers fetch streaming (falls back to buffered requestUrl on failure); or force requestUrl buffering.",
 		transportRequestUrl: "Request URL (buffered)",
 		transportFetch: "Fetch (streams, falls back automatically)",
 		/**
@@ -1127,17 +1127,17 @@ export const en = {
 		 */
 		cacheRetention: "Prompt cache",
 		cacheRetentionDesc:
-			"Providers hold the unchanging part of a prompt for you — system instructions, tool definitions, skills — so follow-up turns bill at about a tenth of the price instead of full. Turn it off for an endpoint that refuses cache markers.",
-		cacheRetentionLong: "An hour — step away to write, come back to it warm",
-		cacheRetentionShort: "Five minutes — for rapid back-and-forth",
-		cacheRetentionNone: "Off — for endpoints that refuse cache markers",
-		whatLeavesVault: "What leaves this vault",
+			"Caches prompt context (system instructions, tools, skills) to reduce costs and latency. Turn off if the provider rejects cache markers.",
+		cacheRetentionLong: "1 hour (recommended for ongoing work)",
+		cacheRetentionShort: "5 minutes (for quick exchanges)",
+		cacheRetentionNone: "Off (for endpoints without cache support)",
+		whatLeavesVault: "Data leaving this vault",
 		whatLeavesVaultDesc:
 			"Prompts, notes and tool results go to the selected model provider. MCP tools and web requests reach their named services. Error reports and performance data go to Piem's maintainers by default; turn sharing off under Extensions. Content capture is off, but error messages may include note text.",
 		chatLogsInVault:
 			"Chat logs are files in your vault, so they sync and back up with your notes. They hold the conversation and whatever note text was read while answering it.",
 		apiKeysHeading: "API keys",
-		restrictedKeyHint: "Use a restricted, low-limit key: a vault is a plain folder, and a key inside it travels with every backup and sync of that folder.",
+		restrictedKeyHint: "Use restricted, low-limit API keys to avoid exposing credentials when the vault syncs or backs up.",
 	},
 
 	/**
@@ -1179,7 +1179,7 @@ export const en = {
 		 * switch governs — an ongoing run that already read a skill keeps the
 		 * instructions it loaded.
 		 */
-		desc: "Instructions the agent can load on request. The badge on each row says where it lives — in your vault, in a folder on this computer, or shipped with Piem. A switch turned off removes that skill from the agent's list, taking effect on the next message.",
+		desc: "Instructions the agent can load on request (built-in, vault, or local folder). Disabling removes the skill from the agent's list, taking effect on the next message.",
 		import: "Import from URL",
 		empty: "Your vault has no skills yet. Import one from a URL, or create a folder in Piem/skills with a SKILL.md inside.",
 		open: "Open",
@@ -1204,7 +1204,7 @@ export const en = {
 		 * on screen: the problem lists simply stay empty, and a button that
 		 * appears to do nothing reads as broken.
 		 */
-		reloadClean: "Skills read again, and nothing was wrong. The agent is using what is on disk now.",
+		reloadClean: "Skills read again, and nothing was wrong.",
 		/** Does not restate the problems: they are listed under the section each belongs to. */
 		reloadProblems: "Skills read again. The problems that came back are listed with each section.",
 		couldNotReload: "Could not read the skills again: {message}",
@@ -1250,7 +1250,7 @@ export const en = {
 		 * did create going unread is the defect this section exists to surface.
 		 */
 		userSearchedDesc:
-			"Where skills were looked for the last time they loaded. A folder you have not created is simply not there, and nothing is wrong. A folder you did create should say how many skills it holds — if it does not, the path being read is not the one you meant.",
+			"Paths scanned during the last skill load. Missing uncreated folders means nothing is wrong; if a folder you did create shows no skills, the path being read is not the one you meant.",
 		userProblemsHeading: "Problems reading folders on this computer",
 		/**
 		 * "In its own words" is the load-bearing phrase: it tells the reader the
@@ -1322,16 +1322,16 @@ export const en = {
 		 * mount — and with it the lack of push — stays pinned.
 		 */
 		bufferedNoPush:
-			"MCP mounting always rides the buffered transport, so a server cannot push to you: its tool list refreshes when you save settings, not when the server changes it.",
+			"MCP uses buffered transport. Tool lists refresh when settings are saved; server-pushed updates are not supported.",
 		add: "Add server",
 		// The bundled Exa row's copy: the endpoint is fixed, so the row says the one
 		// thing an editable form is for — keyless is a shared quota, a key is yours.
 		builtinDesc:
-			"Web search built into Piem; works without setup (shared rate limits with all users). Add your own Exa API key for independent, higher limits.",
+			"Built-in web search, ready to use with shared rate limits. Add an Exa API key for dedicated quota.",
 		builtinEditTitle: "Exa search",
 		builtinKeyName: "Exa API key",
 		builtinKeyDesc:
-			"Add your own Exa API key and requests use your account's quota instead of the shared rate limit; leave it empty to stay on the bundled free tier. You can get a key for free at exa.ai.",
+			"Add an Exa API key for dedicated quota, or leave empty for shared limits. Keys are available at exa.ai.",
 		edit: "Edit",
 		delete: "Delete",
 		empty: "No MCP servers configured yet. Add one to bring its tools into chat.",
