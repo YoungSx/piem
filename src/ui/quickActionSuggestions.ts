@@ -112,6 +112,51 @@ export function continueAfterFailureQuickAction(t: Translator): QuickAction[] {
  */
 export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, noteFacts?: NoteFacts | null): QuickAction[] {
 	if (hasActiveNote) {
+		// 0. Proactive In-App Scout & Vault Gardening Findings
+		if (noteFacts?.stagedScoutAction) {
+			const secondary = (noteFacts.todoCount ?? 0) > 0
+				? { id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") }
+				: { id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") };
+			return [
+				{ id: "scoutStagedAction", label: noteFacts.stagedScoutAction.label, prompt: noteFacts.stagedScoutAction.prompt },
+				secondary,
+				{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+			];
+		}
+
+		if (noteFacts?.unresolvedPromises && noteFacts.unresolvedPromises.length > 0) {
+			const promise = noteFacts.unresolvedPromises[0];
+			if (promise) {
+				const secondary = (noteFacts.todoCount ?? 0) > 0
+					? { id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") }
+					: { id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") };
+				return [
+					{ id: "resolvePromise", label: t.t("quickActions.empty.resolvePromise.label"), prompt: t.t("quickActions.empty.resolvePromise.prompt", { promise }) },
+					secondary,
+					{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+				];
+			}
+		}
+
+		if (noteFacts?.brokenLinkFixes && noteFacts.brokenLinkFixes.length > 0) {
+			const fix = noteFacts.brokenLinkFixes[0];
+			if (fix) {
+				return [
+					{ id: "fixBrokenLink", label: t.t("quickActions.empty.fixBrokenLink.label"), prompt: t.t("quickActions.empty.fixBrokenLink.prompt", { original: fix.original, target: fix.target }) },
+					{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
+					{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+				];
+			}
+		}
+
+		if (noteFacts?.suggestedMocTopic) {
+			return [
+				{ id: "buildMoc", label: t.t("quickActions.empty.buildMoc.label"), prompt: t.t("quickActions.empty.buildMoc.prompt", { topic: noteFacts.suggestedMocTopic }) },
+				{ id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") },
+				{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
+			];
+		}
+
 		// 1. Empty draft notes
 		if (noteFacts?.isEmpty) {
 			if (noteFacts.isDailyNote || noteFacts.isPeriodicNote) {

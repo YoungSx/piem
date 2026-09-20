@@ -5160,6 +5160,30 @@ describe("quick-action suggestions", () => {
 		expect(prompts[0]).toContain("Note graph: Isolated note with 0 backlinks.");
 	});
 
+	it("inspects active note with silent scout and quotes staged insights", async () => {
+		const prompts: string[] = [];
+		const capturingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+			prompts.push(context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n"));
+			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
+		};
+		const { service } = createServiceWithSettings(new MemoryAdapter(), {
+			streamFn: capturingStreamFn,
+			vaultFiles: { "Ideas/concept.md": "# Concept\n\n待验证：移动端离线预取可行性。" },
+		});
+		await service.initialize();
+		service.setActiveNotePath("Ideas/concept.md");
+
+		// Allow cachedRead promise in triggerScoutForActiveNote to resolve
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		const scout = service.getSilentScout();
+		expect(scout.getInsight("Ideas/concept.md")?.unresolvedPromises).toContain("移动端离线预取可行性。");
+
+		expect(await service.suggestQuickActions("empty")).not.toBeNull();
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]).toContain("Unresolved promises: 移动端离线预取可行性。");
+	});
+
 	it("keeps the request alive when the workspace probe throws", async () => {
 		const { service } = createServiceWithSettings(new MemoryAdapter(), {
 			streamFn: suggestionReplyStreamFn(SUGGESTION_JSON),

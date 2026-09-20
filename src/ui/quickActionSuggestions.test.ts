@@ -171,6 +171,76 @@ describe("emptyScreenQuickActions", () => {
 		expect(actions.map((action) => action.id)).toEqual(["distillNotes", "summarizeNote", "brainstorm"]);
 	});
 
+	it("prioritizes staged scout actions above static heuristics", () => {
+		const scoutFacts = {
+			path: "Architecture.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 3,
+			unresolvedLinkCount: 0,
+			stagedScoutAction: {
+				label: "Verify Quantization",
+				prompt: "Evaluate throughput under Q4 quantization.",
+			},
+		};
+		const actions = emptyScreenQuickActions(true, t, scoutFacts);
+		expect(actions[0]?.id).toBe("scoutStagedAction");
+		expect(actions[0]?.label).toBe("Verify Quantization");
+		expect(actions[0]?.prompt).toBe("Evaluate throughput under Q4 quantization.");
+	});
+
+	it("prioritizes unresolved promises when present", () => {
+		const promiseFacts = {
+			path: "Plan.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			unresolvedPromises: ["Check cache invalidation race condition"],
+		};
+		const actions = emptyScreenQuickActions(true, t, promiseFacts);
+		expect(actions[0]?.id).toBe("resolvePromise");
+		expect(actions[0]?.label).toBe(t.t("quickActions.empty.resolvePromise.label"));
+		expect(actions[0]?.prompt).toContain("Check cache invalidation race condition");
+	});
+
+	it("prioritizes broken link fixes when present", () => {
+		const fixFacts = {
+			path: "Notes.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 1,
+			brokenLinkFixes: [{ original: "ai-roadmap", target: "AI Roadmap" }],
+		};
+		const actions = emptyScreenQuickActions(true, t, fixFacts);
+		expect(actions[0]?.id).toBe("fixBrokenLink");
+		expect(actions[0]?.prompt).toContain("[[ai-roadmap]]");
+		expect(actions[0]?.prompt).toContain("[[AI Roadmap]]");
+	});
+
+	it("suggests building a topic MOC when emergent topic is detected", () => {
+		const mocFacts = {
+			path: "Research.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 2,
+			unresolvedLinkCount: 0,
+			suggestedMocTopic: "distributed-systems",
+		};
+		const actions = emptyScreenQuickActions(true, t, mocFacts);
+		expect(actions[0]?.id).toBe("buildMoc");
+		expect(actions[0]?.prompt).toContain("#distributed-systems");
+	});
+
 	it("turns to the vault as a whole when nothing is open", () => {
 		const actions = emptyScreenQuickActions(false, t);
 		expect(actions.map((action) => action.id)).toEqual(["draftNote", "mapVault", "capabilities"]);

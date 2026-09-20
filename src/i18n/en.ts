@@ -774,6 +774,18 @@ export const en = {
 				label: "Resume discussion",
 				prompt: "Recall our previous discussion on this note and continue expanding on the findings.",
 			},
+			resolvePromise: {
+				label: "Verify open question",
+				prompt: "Investigate and verify the open question or unverified assumption in this note: {promise}.",
+			},
+			fixBrokenLink: {
+				label: "Fix broken link",
+				prompt: "Reconnect the broken link [[{original}]] by redirecting it to existing note [[{target}]].",
+			},
+			buildMoc: {
+				label: "Build topic MOC",
+				prompt: "Organize related notes under the #{topic} tag and compile a structured Map of Content (MOC).",
+			},
 		},
 		reply: {
 			distillSkill: {

@@ -220,4 +220,49 @@ describe("probeNoteFacts", () => {
 		expect(facts?.dominantTopic).toBe("tasks");
 		expect(facts?.hasPriorSession).toBe(true);
 	});
+
+	it("integrates scout insights into probed facts and rendered lines", () => {
+		const mockFile = { path: "Proactive.md", basename: "Proactive", stat: { size: 500 } } as TFile;
+		const app = {
+			vault: {
+				getFileByPath: (path: string) => (path === "Proactive.md" ? mockFile : null),
+				getMarkdownFiles: () => [mockFile],
+			},
+			metadataCache: {
+				resolvedLinks: {},
+				unresolvedLinks: {},
+				getFileCache: () => null,
+			},
+		} as unknown as App;
+
+		const scoutInsight = {
+			notePath: "Proactive.md",
+			timestamp: Date.now(),
+			unresolvedPromises: ["待验证移动端离线预取性能"],
+			brokenLinkFixes: [{ original: "old-concept", target: "Old Concept" }],
+			suggestedMocTopic: "mobile-agent",
+			stagedAction: {
+				label: "基准测试",
+				prompt: "运行移动端预取性能基准测试",
+			},
+		};
+
+		const facts = probeNoteFacts(app, "Proactive.md", { scoutInsight });
+		expect(facts).not.toBeNull();
+		expect(facts?.unresolvedPromises).toEqual(["待验证移动端离线预取性能"]);
+		expect(facts?.brokenLinkFixes).toEqual([{ original: "old-concept", target: "Old Concept" }]);
+		expect(facts?.suggestedMocTopic).toBe("mobile-agent");
+		expect(facts?.stagedScoutAction?.label).toBe("基准测试");
+
+		const lines = renderNoteFactLines(facts!);
+		expect(lines).toContain("Scout staged action: 基准测试 -> 运行移动端预取性能基准测试");
+		expect(lines).toContain("Unresolved promises: 待验证移动端离线预取性能");
+		expect(lines).toContain("Broken link repair: [[old-concept]] -> [[Old Concept]]");
+		expect(lines).toContain("Emergent topic cluster: Eligible for a MOC under #mobile-agent");
+
+		const key = noteFactsKeyPart(facts);
+		expect(key).toContain("scout:基准测试");
+		expect(key).toContain("promises:1");
+		expect(key).toContain("moc:mobile-agent");
+	});
 });

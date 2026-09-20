@@ -430,6 +430,18 @@ export const zhCN: DeepPartial<EnCopy> = {
 				label: "继续上次探讨",
 				prompt: "结合我们此前关于这篇笔记的讨论，继续深入探讨并推进后续思路。",
 			},
+			resolvePromise: {
+				label: "核验未决设想",
+				prompt: "深入推演并验证当前笔记中记录的待验证设想或待落实问题：{promise}。",
+			},
+			fixBrokenLink: {
+				label: "修复疑似死链",
+				prompt: "将当前笔记中的疑似死链 [[{original}]] 修正并重定向到既有笔记 [[{target}]]。",
+			},
+			buildMoc: {
+				label: "构建专题索引",
+				prompt: "为当前 #{topic} 标签下的零散笔记梳理知识脉络，生成结构化的 MOC 专题索引。",
+			},
 		},
 		reply: {
 			distillSkill: {

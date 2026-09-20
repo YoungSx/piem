@@ -210,9 +210,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	const hasPriorSession = activeNotePath && typeof service.hasPriorSessionForNote === "function"
 		? service.hasPriorSessionForNote(activeNotePath)
 		: false;
+	const scoutInsight = activeNotePath && typeof service.getScoutInsight === "function"
+		? service.getScoutInsight(activeNotePath)
+		: null;
 	const noteFacts = useMemo(
-		() => probeNoteFacts(app, activeNotePath, { hasPriorSession }),
-		[app, activeNotePath, hasPriorSession],
+		() => probeNoteFacts(app, activeNotePath, { hasPriorSession, scoutInsight }),
+		[app, activeNotePath, hasPriorSession, scoutInsight],
 	);
 	/*
 	 * The runs this conversation ordered, which is what the entry icon may count.
