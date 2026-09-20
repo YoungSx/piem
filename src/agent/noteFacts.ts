@@ -17,7 +17,8 @@
 import type { App } from "obsidian";
 import { hasAnyBacklink, toLinkReferences } from "../vault/links";
 
-import type { ScoutInsight, StagedScoutAction } from "./silentScout";
+import type { ScoutInsight } from "./silentScout";
+import type { ScoutFinding } from "./scoutPerception";
 import type { BrokenLinkFix } from "./vaultGardener";
 import { detectEmergentMoc, findBrokenLinkFixes } from "./vaultGardener";
 
@@ -64,8 +65,8 @@ export interface NoteFacts {
 	brokenLinkFixes?: BrokenLinkFix[];
 	/** Emergent tag topic suggesting a Map of Content. */
 	suggestedMocTopic?: string | null;
-	/** Staged background insight from silent scout. */
-	stagedScoutAction?: StagedScoutAction;
+	/** The most serious thing the background scout perceived about this note. */
+	scoutFinding?: ScoutFinding;
 }
 
 /** Matches standard daily note naming formats: YYYY-MM-DD, YYYY_MM_DD, YYYY.MM.DD, or YYYYMMDD. */
@@ -138,8 +139,8 @@ export function renderNoteFactLines(facts: NoteFacts): string[] {
 	if (facts.hasPriorSession) {
 		lines.push("Session history: This note was previously referenced in an earlier conversation.");
 	}
-	if (facts.stagedScoutAction) {
-		lines.push(`Scout staged action: ${facts.stagedScoutAction.label} -> ${facts.stagedScoutAction.prompt}`);
+	if (facts.scoutFinding) {
+		lines.push(`Scout found: ${facts.scoutFinding.label} -> ${facts.scoutFinding.prompt}`);
 	}
 	if (facts.unresolvedPromises && facts.unresolvedPromises.length > 0) {
 		lines.push(`Unresolved promises: ${facts.unresolvedPromises.join("; ")}`);
@@ -167,7 +168,7 @@ export function noteFactsKeyPart(facts: NoteFacts | null): string {
 		`code:${facts.hasCode ? "1" : "0"}`,
 		`tod:${facts.timeOfDay ?? ""}`,
 		`prior:${facts.hasPriorSession ? "1" : "0"}`,
-		`scout:${facts.stagedScoutAction?.label ?? ""}`,
+		`scout:${facts.scoutFinding?.label ?? ""}`,
 		`promises:${facts.unresolvedPromises?.length ?? 0}`,
 		`moc:${facts.suggestedMocTopic ?? ""}`,
 	].join("|");
@@ -267,7 +268,7 @@ export function probeNoteFacts(
 		const unresolvedPromises = scoutInsight?.unresolvedPromises;
 		const brokenLinkFixes = scoutInsight?.brokenLinkFixes ?? (file ? findBrokenLinkFixes(app, file) : []);
 		const suggestedMocTopic = scoutInsight?.suggestedMocTopic ?? (file ? detectEmergentMoc(app, file, tagList) : null);
-		const stagedScoutAction = scoutInsight?.stagedAction;
+		const scoutFinding = scoutInsight?.findings?.[0];
 
 		return {
 			path: activePath,
@@ -287,7 +288,7 @@ export function probeNoteFacts(
 			unresolvedPromises,
 			brokenLinkFixes,
 			suggestedMocTopic,
-			stagedScoutAction,
+			scoutFinding,
 		};
 	} catch {
 		return null;

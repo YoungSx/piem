@@ -238,13 +238,14 @@ describe("probeNoteFacts", () => {
 		const scoutInsight = {
 			notePath: "Proactive.md",
 			timestamp: Date.now(),
+			contentHash: "abc123",
 			unresolvedPromises: ["待验证移动端离线预取性能"],
 			brokenLinkFixes: [{ original: "old-concept", target: "Old Concept" }],
 			suggestedMocTopic: "mobile-agent",
-			stagedAction: {
-				label: "基准测试",
-				prompt: "运行移动端预取性能基准测试",
-			},
+			findings: [
+				{ label: "基准测试", prompt: "运行移动端预取性能基准测试" },
+				{ label: "断链修复", prompt: "修复旧概念链接" },
+			],
 		};
 
 		const facts = probeNoteFacts(app, "Proactive.md", { scoutInsight });
@@ -252,10 +253,11 @@ describe("probeNoteFacts", () => {
 		expect(facts?.unresolvedPromises).toEqual(["待验证移动端离线预取性能"]);
 		expect(facts?.brokenLinkFixes).toEqual([{ original: "old-concept", target: "Old Concept" }]);
 		expect(facts?.suggestedMocTopic).toBe("mobile-agent");
-		expect(facts?.stagedScoutAction?.label).toBe("基准测试");
+		// The chip is the first finding; the rest are ranked behind it.
+		expect(facts?.scoutFinding?.label).toBe("基准测试");
 
 		const lines = renderNoteFactLines(facts!);
-		expect(lines).toContain("Scout staged action: 基准测试 -> 运行移动端预取性能基准测试");
+		expect(lines).toContain("Scout found: 基准测试 -> 运行移动端预取性能基准测试");
 		expect(lines).toContain("Unresolved promises: 待验证移动端离线预取性能");
 		expect(lines).toContain("Broken link repair: [[old-concept]] -> [[Old Concept]]");
 		expect(lines).toContain("Emergent topic cluster: Eligible for a MOC under #mobile-agent");

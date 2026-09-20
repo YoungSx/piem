@@ -132,6 +132,14 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 23. Proactive intelligence enhancements (cadence awareness, task/code/recall
  *     heuristics, in-memory note-session index, and bilingual copy) measured
  *     2,376,813 B (+~17 KiB). The ceiling follows to 2.28 MiB.
+ * 24. Model-driven scout perception (structured note sampling, locally-probed
+ *     facts folded into the prompt, multi-finding output, and the per-note
+ *     content-hash and cooldown gates) measured 2,390,550 B (+~13 KiB). The
+ *     ceiling follows to 2.28 MiB: the new size still rounds under the same
+ *     notch, and the history above is explicit that re-opening a large margin
+ *     is how the ruler stops measuring — #23 wanted the same move and did not
+ *     get it. The ~13 KiB is one prompt builder, one parser and the gates; no
+ *     new dependency and no second request per note.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).

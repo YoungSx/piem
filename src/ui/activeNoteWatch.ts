@@ -1,7 +1,7 @@
 import type { App, EventRef } from "obsidian";
 
 /**
- * Watches which note the user is working in.
+ * Watches which note the user is working in, and when its text moves.
  *
  * Nothing in the panel observed this before. `ChatApp` recomputes
  * `getActiveNotePath` on every render, but no render is *triggered* by a note
@@ -9,6 +9,13 @@ import type { App, EventRef } from "obsidian";
  * value was refreshed only when something unrelated happened to re-render. Good
  * enough for a link-resolution base, useless for anything that has to be correct
  * the moment focus moves.
+ *
+ * The same callback carries the working note's own writes, because a consumer
+ * that wants to re-read the note cares about both and the path alone cannot say
+ * which happened; the consumer re-reads either way and decides for itself.
+ * Obsidian flushes the editor buffer a moment after the last keystroke, so a
+ * `modify` on the open note arrives when the user pauses — which is the moment
+ * background perception is for.
  *
  * Returns the event refs instead of registering them, so the component that owns
  * the lifecycle stays in charge of teardown and this stays testable without an
@@ -30,6 +37,14 @@ export function watchActiveNote(
 		// that already has focus, which `file-open` covers. Both run the same read,
 		// and a repeated path is expected to be cheap for the consumer to ignore.
 		app.workspace.on("file-open", publish),
+		// Writes anywhere in the vault reach here — this plugin's own note tools
+		// included — and only the working note's own write is reported. Renames and
+		// deletes already republish on their own, so those are not re-reported here.
+		app.vault.on("modify", (file) => {
+			if (resolveWorkingNotePath(app) === file.path) {
+				publish();
+			}
+		}),
 	];
 	if (onRename) {
 		refs.push(app.vault.on("rename", (file, oldPath) => {

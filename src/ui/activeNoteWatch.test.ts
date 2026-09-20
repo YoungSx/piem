@@ -64,6 +64,10 @@ class FakeVault {
 			callback(file, oldPath);
 		}
 	}
+
+	handlerCount(name: string): number {
+		return this.handlers.get(name)?.size ?? 0;
+	}
 }
 
 function createApp(): { app: App; workspace: FakeWorkspace; vault: FakeVault } {
@@ -134,16 +138,45 @@ describe("resolveWorkingNotePath", () => {
 });
 
 describe("watchActiveNote", () => {
-	it("subscribes to both events that can change the note", () => {
-		const { app, workspace } = createApp();
+	it("subscribes to every event that changes the note or its text", () => {
+		const { app, workspace, vault } = createApp();
 
 		const refs = watchActiveNote(app, () => undefined);
 
-		expect(refs).toHaveLength(2);
+		expect(refs).toHaveLength(3);
 		expect(workspace.handlerCount("active-leaf-change")).toBe(1);
 		// `active-leaf-change` does not fire when a file is swapped inside a leaf
 		// that already holds focus, so `file-open` is not redundant.
 		expect(workspace.handlerCount("file-open")).toBe(1);
+		// The text moving is not a change of *which* note, but it is the signal a
+		// consumer that re-reads the note is waiting for: it is what a pause in
+		// typing looks like from outside the editor.
+		expect(vault.handlerCount("modify")).toBe(1);
+	});
+
+	it("reports the working note when its own text is written", () => {
+		const { app, workspace, vault } = createApp();
+		const seen: (string | null)[] = [];
+		watchActiveNote(app, (path) => seen.push(path));
+		openNote(workspace, vault, "Notes/today.md");
+
+		vault.trigger("modify", markdown("Notes/today.md"));
+
+		expect(seen).toEqual(["Notes/today.md"]);
+	});
+
+	it("says nothing when a note the user is not working in is written", () => {
+		const { app, workspace, vault } = createApp();
+		const seen: (string | null)[] = [];
+		watchActiveNote(app, (path) => seen.push(path));
+		openNote(workspace, vault, "Notes/today.md");
+		vault.files.add("Notes/elsewhere.md");
+
+		// The plugin's own note tools write files while the user watches: a write
+		// somewhere else is not news about the note on screen.
+		vault.trigger("modify", markdown("Notes/elsewhere.md"));
+
+		expect(seen).toEqual([]);
 	});
 
 	it("reports the note when a leaf change fires", () => {

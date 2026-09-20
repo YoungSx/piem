@@ -786,6 +786,10 @@ export const en = {
 				label: "Build topic MOC",
 				prompt: "Organize related notes under the #{topic} tag and compile a structured Map of Content (MOC).",
 			},
+/** The scout's chip: `{finding}` is the model's own label for what it found. */
+			scoutFinding: {
+				label: "[Ready] {finding}",
+			},
 		},
 		reply: {
 			distillSkill: {
