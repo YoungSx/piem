@@ -171,7 +171,7 @@ describe("emptyScreenQuickActions", () => {
 		expect(actions.map((action) => action.id)).toEqual(["distillNotes", "summarizeNote", "brainstorm"]);
 	});
 
-	it("prioritizes staged scout actions above static heuristics", () => {
+	it("prioritizes staged scout findings above static heuristics", () => {
 		const scoutFacts = {
 			path: "Architecture.md",
 			isDailyNote: false,
@@ -180,14 +180,15 @@ describe("emptyScreenQuickActions", () => {
 			isOrphan: false,
 			backlinkCount: 3,
 			unresolvedLinkCount: 0,
-			stagedScoutAction: {
+			scoutFinding: {
 				label: "Verify Quantization",
 				prompt: "Evaluate throughput under Q4 quantization.",
 			},
 		};
 		const actions = emptyScreenQuickActions(true, t, scoutFacts);
-		expect(actions[0]?.id).toBe("scoutStagedAction");
-		expect(actions[0]?.label).toBe("Verify Quantization");
+		expect(actions[0]?.id).toBe("scoutFinding");
+		// The badge is what tells the user the work is already done.
+		expect(actions[0]?.label).toBe("[Ready] Verify Quantization");
 		expect(actions[0]?.prompt).toBe("Evaluate throughput under Q4 quantization.");
 	});
 

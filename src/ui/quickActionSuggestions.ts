@@ -113,12 +113,19 @@ export function continueAfterFailureQuickAction(t: Translator): QuickAction[] {
 export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, noteFacts?: NoteFacts | null): QuickAction[] {
 	if (hasActiveNote) {
 		// 0. Proactive In-App Scout & Vault Gardening Findings
-		if (noteFacts?.stagedScoutAction) {
+		if (noteFacts?.scoutFinding) {
 			const secondary = (noteFacts.todoCount ?? 0) > 0
 				? { id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") }
 				: { id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") };
 			return [
-				{ id: "scoutStagedAction", label: noteFacts.stagedScoutAction.label, prompt: noteFacts.stagedScoutAction.prompt },
+				{
+					id: "scoutFinding",
+					// The badge is the whole point of the chip: the perception already
+					// happened, so the label says what was found rather than what a tap
+					// would go and look for.
+					label: t.t("quickActions.empty.scoutFinding.label", { finding: noteFacts.scoutFinding.label }),
+					prompt: noteFacts.scoutFinding.prompt,
+				},
 				secondary,
 				{ id: "improveNote", label: t.t("quickActions.empty.improveNote.label"), prompt: t.t("quickActions.empty.improveNote.prompt") },
 			];

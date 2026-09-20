@@ -2,14 +2,12 @@ import { type App, Notice, parseLinktext, TFile } from "obsidian";
 import {
 	clampThinkingLevel,
 	getSupportedThinkingLevels,
-	type Context,
 	type CredentialStore,
 	type ImageContent,
 	type Model,
 	type Models,
 	type RetryCallbacks,
 	type Usage,
-	type UserMessage,
 } from "@earendil-works/pi-ai";
 import {
 	Agent,
@@ -69,7 +67,7 @@ import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBook
 import { createObsidianTools } from "../tools/obsidianTools";
 import { resolveNoteEditor } from "../vault/noteEditor";
 import type { AskUserBroker } from "../tools/askUserBroker";
-import { assistantMessageText, fetchQuickActionSuggestions, lastAssistantText, type SuggestionScope } from "./quickActionSuggestionRequest";
+import { fetchQuickActionSuggestions, lastAssistantText, type SuggestionScope } from "./quickActionSuggestionRequest";
 import { QuickActionSuggestionCache, type SuggestionCacheKey, workspaceKeyPart } from "./quickActionSuggestionCache";
 import type { QuickAction } from "../ui/quickActionSuggestions";
 import type { TraceExpandSetting } from "../ui/traceExpand";
@@ -102,6 +100,7 @@ import { probeEnvironment, probeRunContext, probeWorkspaceContext } from "./cont
 import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
 import { probeNoteFacts, noteFactsKeyPart, type NoteFacts } from "./noteFacts";
 import { SilentScout, type ScoutInsight } from "./silentScout";
+import { requestScoutFindings } from "./scoutPerception";
 import { NoteSessionIndex } from "./noteSessionIndex";
 import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "./exportNote";
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
@@ -880,32 +879,20 @@ export class ObsidianAgentService {
 		this.noteSessionIndex = new NoteSessionIndex(50, vaultKey);
 		this.streamFn = options.streamFn;
 		this.askUserBroker = options.askUserBroker;
-		this.silentScout = options.silentScout ?? new SilentScout(this.app, async (prompt, signal) => {
+		this.silentScout = options.silentScout ?? new SilentScout(this.app, async (request, signal) => {
+			// The suggestion model, not the active one: perception is a background
+			// nicety and must never inherit the conversation model's cost. No model
+			// configured means no perception, never a builtin-catalog one.
 			const model = resolveSuggestionModel(this.getSettings());
 			if (!model) return null;
-			const context: Context = {
-				messages: [
-					{
-						role: "user",
-						content: prompt,
-						timestamp: Date.now(),
-					} satisfies UserMessage,
-				],
-			};
-			try {
-				const stream = await this.resolveStreamFn()(model, context, {
-					signal,
-					maxTokens: 150,
-					apiKey: this.getApiKey(model.provider),
-				});
-				const message = await stream.result();
-				if (signal.aborted || message.stopReason === "error" || message.stopReason === "aborted") {
-					return null;
-				}
-				return assistantMessageText(message);
-			} catch {
-				return null;
-			}
+			return requestScoutFindings({
+				streamSimple: this.resolveStreamFn(),
+				model,
+				request,
+				language: resolveLanguage(this.app.vault as LanguageHost, this.getSettings().language),
+				signal,
+				apiKey: this.getApiKey(model.provider),
+			});
 		});
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
 		this.builtinSkills = options.builtinSkills;
@@ -4085,13 +4072,14 @@ export class ObsidianAgentService {
 	 * leaf and for repeated focus of the same file. Notifying only on a real change
 	 * keeps those from re-rendering the panel, which matters because `notify`
 	 * rebuilds the whole snapshot and React cannot bail out on a fresh object.
+	 * What counts as a real change is the note's *text*, decided by the scout's own
+	 * gates — a repeated focus is the common case here, and it costs one cached
+	 * read to find out.
 	 */
 	setActiveNotePath(path: string | null): void {
 		const next = path ?? null;
 		if (this.activeNotePath === next) {
-			if (next && !this.silentScout.getInsight(next)) {
-				this.triggerScoutForActiveNote(next);
-			}
+			this.triggerScoutForActiveNote(next);
 			return;
 		}
 		this.activeNotePath = next;
@@ -4100,7 +4088,8 @@ export class ObsidianAgentService {
 	}
 
 	/**
-	 * Initiates proactive in-app background intelligence (Silent Scout) for the active note.
+	 * Hands the active note to the Silent Scout: a free local audit, plus the
+	 * model-side perception when the scout's hash and cooldown gates allow it.
 	 */
 	private triggerScoutForActiveNote(path: string | null): void {
 		if (!path) return;
@@ -4123,13 +4112,16 @@ export class ObsidianAgentService {
 
 		void this.app.vault.cachedRead(file).then((content) => {
 			if (this.activeNotePath !== path) return;
-			this.silentScout.inspectNoteLocal(file, content, tags);
-			this.silentScout.scheduleBackgroundPrefetch(file, content, (insight) => {
+			// The scout answers whether the text moved. A perception that lands later
+			// re-renders on its own callback, so `changed` only covers the local facts.
+			const changed = this.silentScout.observe(file, content, tags, () => {
 				if (this.activeNotePath === path) {
 					this.notify();
 				}
 			});
-			this.notify();
+			if (changed) {
+				this.notify();
+			}
 		}).catch(() => {});
 	}
 

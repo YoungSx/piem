@@ -442,6 +442,10 @@ export const zhCN: DeepPartial<EnCopy> = {
 				label: "构建专题索引",
 				prompt: "为当前 #{topic} 标签下的零散笔记梳理知识脉络，生成结构化的 MOC 专题索引。",
 			},
+			/** 感知芯片：{finding} 是模型自己对"发现了什么"的命名。 */
+			scoutFinding: {
+				label: "[已就绪] {finding}",
+			},
 		},
 		reply: {
 			distillSkill: {
