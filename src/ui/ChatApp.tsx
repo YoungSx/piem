@@ -207,7 +207,13 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// screen's suggestion effect must key on: a switch from note A to note B
 	// never flips presence, yet changes what the chips should be about.
 	const activeNotePath = snapshot.contextRefs.find((ref) => ref.kind === "active")?.path ?? null;
-	const noteFacts = useMemo(() => probeNoteFacts(app, activeNotePath), [app, activeNotePath]);
+	const hasPriorSession = activeNotePath && typeof service.hasPriorSessionForNote === "function"
+		? service.hasPriorSessionForNote(activeNotePath)
+		: false;
+	const noteFacts = useMemo(
+		() => probeNoteFacts(app, activeNotePath, { hasPriorSession }),
+		[app, activeNotePath, hasPriorSession],
+	);
 	/*
 	 * The runs this conversation ordered, which is what the entry icon may count.
 	 *

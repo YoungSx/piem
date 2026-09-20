@@ -78,6 +78,99 @@ describe("emptyScreenQuickActions", () => {
 		expect(actions[0]?.prompt).toContain("/link-graph");
 	});
 
+	it("suggests prior session recall when an active note was discussed previously", () => {
+		const priorFacts = {
+			path: "Arch.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			hasPriorSession: true,
+		};
+		const actions = emptyScreenQuickActions(true, t, priorFacts);
+		expect(actions.map((action) => action.id)).toEqual(["recallSession", "summarizeNote", "improveNote"]);
+	});
+
+	it("suggests morning focus for today's daily note in the morning", () => {
+		const morningDaily = {
+			path: "2026-09-20.md",
+			isDailyNote: true,
+			isPeriodicNote: true,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			isToday: true,
+			timeOfDay: "morning" as const,
+		};
+		const actions = emptyScreenQuickActions(true, t, morningDaily);
+		expect(actions.map((action) => action.id)).toEqual(["morningFocus", "todayTasks", "planDay"]);
+	});
+
+	it("suggests evening reflection and inbox sinking for today's daily note in the evening", () => {
+		const eveningDaily = {
+			path: "2026-09-20.md",
+			isDailyNote: true,
+			isPeriodicNote: true,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			isToday: true,
+			timeOfDay: "evening" as const,
+			todoCount: 2,
+		};
+		const actions = emptyScreenQuickActions(true, t, eveningDaily);
+		expect(actions.map((action) => action.id)).toEqual(["reviewDay", "sinkInbox", "extractTodos"]);
+	});
+
+	it("suggests task extraction when note has uncompleted tasks", () => {
+		const taskFacts = {
+			path: "Sprint.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 2,
+			unresolvedLinkCount: 0,
+			todoCount: 4,
+		};
+		const actions = emptyScreenQuickActions(true, t, taskFacts);
+		expect(actions.map((action) => action.id)).toEqual(["extractTodos", "summarizeNote", "improveNote"]);
+	});
+
+	it("suggests code review and explanation for technical code notes", () => {
+		const codeFacts = {
+			path: "Algorithm.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			hasCode: true,
+		};
+		const actions = emptyScreenQuickActions(true, t, codeFacts);
+		expect(actions.map((action) => action.id)).toEqual(["reviewCode", "explainCode", "improveNote"]);
+	});
+
+	it("suggests insight distillation for reading / research notes", () => {
+		const readingFacts = {
+			path: "BookReview.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 2,
+			unresolvedLinkCount: 0,
+			dominantTopic: "reading" as const,
+		};
+		const actions = emptyScreenQuickActions(true, t, readingFacts);
+		expect(actions.map((action) => action.id)).toEqual(["distillNotes", "summarizeNote", "brainstorm"]);
+	});
+
 	it("turns to the vault as a whole when nothing is open", () => {
 		const actions = emptyScreenQuickActions(false, t);
 		expect(actions.map((action) => action.id)).toEqual(["draftNote", "mapVault", "capabilities"]);

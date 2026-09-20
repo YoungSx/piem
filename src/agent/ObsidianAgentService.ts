@@ -99,6 +99,7 @@ import { EMPTY_RUN_CONTEXT, injectContext, type FrozenRunContext, type InjectedN
 import { probeEnvironment, probeRunContext, probeWorkspaceContext } from "./contextProbe";
 import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
 import { probeNoteFacts, noteFactsKeyPart, type NoteFacts } from "./noteFacts";
+import { NoteSessionIndex } from "./noteSessionIndex";
 import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "./exportNote";
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
@@ -788,6 +789,7 @@ export class ObsidianAgentService {
 	 * cold start a reload produces.
 	 */
 	private readonly suggestionCache = new QuickActionSuggestionCache();
+	private readonly noteSessionIndex: NoteSessionIndex;
 
 	/**
 	 * Loaded prompt templates: builtins first, then the vault's `Piem/prompts`.
@@ -867,6 +869,9 @@ export class ObsidianAgentService {
 		this.app = app;
 		this.getSettings = getSettings;
 		this.sessionManager = sessionManager;
+		const appId = (app as App & { appId?: unknown }).appId;
+		const vaultKey = typeof appId === "string" && appId ? appId : undefined;
+		this.noteSessionIndex = new NoteSessionIndex(50, vaultKey);
 		this.streamFn = options.streamFn;
 		this.askUserBroker = options.askUserBroker;
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
@@ -1250,6 +1255,18 @@ export class ObsidianAgentService {
 		const agent = rt.agent;
 		if (!agent) {
 			return false;
+		}
+
+		if (rt.sessionPath) {
+			const active = this.contextRefList(rt).find((ref) => ref.kind === "active")?.path;
+			if (active) {
+				this.noteSessionIndex.record(active, rt.sessionPath, rt.sessionInfo?.name);
+			}
+			for (const ref of references) {
+				if (ref.kind === "file") {
+					this.noteSessionIndex.record(ref.path, rt.sessionPath, rt.sessionInfo?.name);
+				}
+			}
 		}
 
 		// A send that arrives while the agent is already answering is not
@@ -2415,6 +2432,13 @@ export class ObsidianAgentService {
 	 * than breaking the side channel — the request path must never throw, and
 	 * the peek path runs inside React's commit phase.
 	 */
+	/**
+	 * Checks whether an active note was discussed in an earlier conversation.
+	 */
+	hasPriorSessionForNote(notePath: string): boolean {
+		return this.noteSessionIndex.has(notePath, this.current()?.sessionPath);
+	}
+
 	private suggestionSubject(rt: SessionRuntime | null): { notePath: string | null; workspace: WorkspaceContext; noteFacts: NoteFacts | null } {
 		const refs = this.contextRefList(rt);
 		const notePath = refs.find((ref) => ref.kind === "active")?.path ?? null;
@@ -2427,7 +2451,8 @@ export class ObsidianAgentService {
 		}
 		let noteFacts: NoteFacts | null = null;
 		try {
-			noteFacts = probeNoteFacts(this.app, notePath);
+			const hasPriorSession = notePath ? this.hasPriorSessionForNote(notePath) : false;
+			noteFacts = probeNoteFacts(this.app, notePath, { hasPriorSession });
 		} catch (error) {
 			this.log.debug("note facts probe for suggestions failed", () => ({ error: String(error) }));
 		}

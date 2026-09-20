@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import type { App, TFile } from "obsidian";
 import {
 	DAILY_NOTE_REGEX,
+	getTimeOfDay,
 	isDailyNotePath,
 	isPeriodicNotePath,
+	isTodayNotePath,
 	noteFactsKeyPart,
 	probeNoteFacts,
 	renderNoteFactLines,
@@ -29,6 +31,20 @@ describe("noteFacts patterns", () => {
 		expect(isPeriodicNotePath("2026_W1.md")).toBe(true);
 		expect(isPeriodicNotePath("2026-09-18.md")).toBe(true); // Daily is also periodic
 		expect(isPeriodicNotePath("RandomNote.md")).toBe(false);
+	});
+
+	it("identifies today's daily note", () => {
+		const simulatedToday = new Date("2026-09-20T10:00:00Z");
+		expect(isTodayNotePath("2026-09-20.md", simulatedToday)).toBe(true);
+		expect(isTodayNotePath("Journal/2026-09-20.md", simulatedToday)).toBe(true);
+		expect(isTodayNotePath("2026-09-18.md", simulatedToday)).toBe(false);
+	});
+
+	it("computes time of day accurately", () => {
+		expect(getTimeOfDay(new Date("2026-09-20T08:00:00"))).toBe("morning");
+		expect(getTimeOfDay(new Date("2026-09-20T14:30:00"))).toBe("afternoon");
+		expect(getTimeOfDay(new Date("2026-09-20T21:00:00"))).toBe("evening");
+		expect(getTimeOfDay(new Date("2026-09-20T03:00:00"))).toBe("evening");
 	});
 });
 
@@ -63,6 +79,28 @@ describe("renderNoteFactLines", () => {
 		const lines = renderNoteFactLines(facts);
 		expect(lines).toEqual([]);
 	});
+
+	it("renders tasks, code, temporal and prior-session lines when present", () => {
+		const facts: NoteFacts = {
+			path: "2026-09-20.md",
+			isDailyNote: true,
+			isPeriodicNote: true,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			todoCount: 3,
+			hasCode: true,
+			isToday: true,
+			timeOfDay: "morning",
+			hasPriorSession: true,
+		};
+		const lines = renderNoteFactLines(facts);
+		expect(lines).toContain("Note tasks: Contains 3 uncompleted task(s) (- [ ]).");
+		expect(lines).toContain("Note content: Contains code blocks or technical scripts.");
+		expect(lines).toContain("Temporal context: Today's daily note (working in morning).");
+		expect(lines).toContain("Session history: This note was previously referenced in an earlier conversation.");
+	});
 });
 
 describe("noteFactsKeyPart", () => {
@@ -85,11 +123,15 @@ describe("noteFactsKeyPart", () => {
 			isEmpty: false,
 			isOrphan: false,
 			backlinkCount: 3,
+			todoCount: 2,
+			hasCode: true,
 		};
 		expect(noteFactsKeyPart(dailyEmpty)).not.toBe(noteFactsKeyPart(dailyFilled));
 		expect(noteFactsKeyPart(dailyEmpty)).toContain("daily");
 		expect(noteFactsKeyPart(dailyEmpty)).toContain("empty");
 		expect(noteFactsKeyPart(dailyEmpty)).toContain("orphan");
+		expect(noteFactsKeyPart(dailyFilled)).toContain("todos:2");
+		expect(noteFactsKeyPart(dailyFilled)).toContain("code:1");
 	});
 });
 
@@ -110,6 +152,7 @@ describe("probeNoteFacts", () => {
 				unresolvedLinks: {
 					"2026-09-18.md": { MissingTarget: 1 },
 				},
+				getFileCache: () => null,
 			},
 		} as unknown as App;
 
@@ -133,6 +176,7 @@ describe("probeNoteFacts", () => {
 					"Index.md": { "Topic.md": 2 },
 				},
 				unresolvedLinks: {},
+				getFileCache: () => null,
 			},
 		} as unknown as App;
 
@@ -141,5 +185,39 @@ describe("probeNoteFacts", () => {
 		expect(facts?.isEmpty).toBe(false);
 		expect(facts?.isOrphan).toBe(false);
 		expect(facts?.backlinkCount).toBe(1);
+	});
+
+	it("probes tasks and code blocks from metadataCache", () => {
+		const mockFile = { path: "Dev.md", stat: { size: 1024 } } as TFile;
+		const app = {
+			vault: {
+				getFileByPath: (path: string) => (path === "Dev.md" ? mockFile : null),
+			},
+			metadataCache: {
+				resolvedLinks: {},
+				unresolvedLinks: {},
+				getFileCache: () => ({
+					listItems: [
+						{ task: " " }, // incomplete
+						{ task: " " }, // incomplete
+						{ task: "x" }, // completed
+						{ task: undefined }, // regular bullet
+					],
+					sections: [
+						{ type: "paragraph" },
+						{ type: "code" },
+					],
+					tags: [{ tag: "#project" }],
+				}),
+			},
+		} as unknown as App;
+
+		const facts = probeNoteFacts(app, "Dev.md", { hasPriorSession: true });
+		expect(facts).not.toBeNull();
+		expect(facts?.todoCount).toBe(2);
+		expect(facts?.doneTodoCount).toBe(1);
+		expect(facts?.hasCode).toBe(true);
+		expect(facts?.dominantTopic).toBe("tasks");
+		expect(facts?.hasPriorSession).toBe(true);
 	});
 });
