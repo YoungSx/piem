@@ -1,0 +1,75 @@
+{
+  "passed": true,
+  "checks": [
+    "correct official device mode",
+    "perception stages a ready chip",
+    "perception reached the endpoint once",
+    "an unchanged note is not perceived twice",
+    "a changed note waits out the cooldown",
+    "tasks note offers extractTodos chip",
+    "code note offers code quality chip",
+    "code note offers code logic chip",
+    "daily note offers cadence-aware chips",
+    "note with session index offers recallSession chip",
+    "quick actions chips do not overflow horizontally",
+    "found recall quick action button",
+    "no renderer errors or unhandled rejections"
+  ],
+  "errors": [],
+  "stages": [
+    {
+      "stage": "scout-perception",
+      "chips": [
+        "[已就绪] 2 处矛盾",
+        "总结这篇笔记",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "tasks-note",
+      "chips": [
+        "核验未决设想",
+        "整理未完待办",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "code-note",
+      "chips": [
+        "审查代码质量",
+        "解析代码逻辑",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "daily-note",
+      "chips": [
+        "总结与复盘",
+        "碎片整理归档",
+        "今日待办简报"
+      ]
+    },
+    {
+      "stage": "recall-note",
+      "chips": [
+        "继续上次探讨",
+        "总结这篇笔记",
+        "改进这篇笔记"
+      ]
+    },
+    {
+      "stage": "completed-turn",
+      "userPrompt": "结合我们此前关于这篇笔记的讨论，继续深入探讨并推进后续思路。",
+      "assistantReply": "已为您调出上次关于向量检索的讨论记录，我们可以从当时尚未完成的检索召回率评估继续展开。"
+    }
+  ],
+  "environment": {
+    "mobile": false,
+    "phone": false,
+    "width": 390,
+    "height": 844,
+    "obsidian": "1.13.7"
+  },
+  "artifactSha256": "a5a51cb804dbd2d33b253e43e79a117a542cffee026d012bc173003f01d9eb94",
+  "bytes": 2390550
+}

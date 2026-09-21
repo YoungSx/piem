@@ -107,6 +107,46 @@ def evaluate(expression):
     return json.loads(out.stdout.splitlines()[-1])
 
 
+def set_focus_emulation(port, enabled):
+    """Turn CDP focus emulation on/off for the page target.
+
+    The Xvfb window is never focused from Chromium's point of view, and the
+    renderer throttles the timers (and SSE settling) of an unfocused page until
+    a turn's reply lands tens of seconds late — which reads as a hung run.
+    Focus emulation makes the page count as focused.
+    """
+    expression = (
+        "const targets=await(await fetch('http://127.0.0.1:%d/json/list')).json();"
+        "const t=targets.find(t=>t.type==='page'&&t.url.startsWith('app://obsidian.md/index.html'))"
+        "??targets.find(t=>t.type==='page'&&t.url.startsWith('app://'));"
+        "const ws=new WebSocket(t.webSocketDebuggerUrl);"
+        "await new Promise(r=>ws.addEventListener('open',r,{once:true}));"
+        "ws.send(JSON.stringify({id:1,method:'Emulation.setFocusEmulationEnabled',params:{enabled:%s}}));"
+        "await new Promise(r=>setTimeout(r,800));ws.close();" % (port, "true" if enabled else "false")
+    )
+    subprocess.run(["node", "-e", expression], timeout=30, capture_output=True)
+
+
+def set_focus_emulation(port, enabled):
+    """Turn CDP focus emulation on/off for the page target.
+
+    The Xvfb window is never focused from Chromium's point of view, and the
+    renderer throttles the timers (and SSE settling) of an unfocused page until
+    a turn's reply lands tens of seconds late — which reads as a hung run.
+    Focus emulation makes the page count as focused.
+    """
+    expression = (
+        "const targets=await(await fetch('http://127.0.0.1:%d/json/list')).json();"
+        "const t=targets.find(t=>t.type==='page'&&t.url.startsWith('app://obsidian.md/index.html'))"
+        "??targets.find(t=>t.type==='page'&&t.url.startsWith('app://'));"
+        "const ws=new WebSocket(t.webSocketDebuggerUrl);"
+        "await new Promise(r=>ws.addEventListener('open',r,{once:true}));"
+        "ws.send(JSON.stringify({id:1,method:'Emulation.setFocusEmulationEnabled',params:{enabled:%s}}));"
+        "await new Promise(r=>setTimeout(r,800));ws.close();" % (port, "true" if enabled else "false")
+    )
+    subprocess.run(["node", "-e", expression], timeout=30, capture_output=True)
+
+
 def run_smoke(mobile):
     command = ["node", str(worktree / "scripts" / "smoke-proactive-obsidian.mjs"), str(port), str(root)]
     if mobile:
@@ -141,6 +181,17 @@ def main():
 
     env = dict(os.environ, DISPLAY=display)
 
+    # A fresh profile lands on the first-run starter (`starter.html`), whose
+    # `window.app` is a different, plugin-less shim: every check downstream
+    # would read an empty world and time out looking like a product failure.
+    # Point the profile at the disposable vault before launch.
+    obsidian_json = profile / "obsidian.json"
+    profile.mkdir(parents=True, exist_ok=True)
+    if not obsidian_json.exists():
+        obsidian_json.write_text(json.dumps({
+            "vaults": {"0d11061a9f31c6f4": {"path": str(vault), "ts": int(time.time() * 1000), "open": True}}
+        }))
+
     # Launch Obsidian
     print(f"Starting Obsidian on port {port}...")
     with open(root / "logs" / "obsidian.log", "ab") as log:
@@ -169,7 +220,13 @@ def main():
             loaded = evaluate("!!window.app?.plugins?.plugins?.piem")
             if loaded:
                 break
-            evaluate("app.plugins.setEnable('piem', true); await app.plugins.enablePluginAndSave('piem')")
+            # `setEnable(true)` is the community-plugins master switch; without it a
+            # plugin listed in community-plugins.json never instantiates, and the
+            # failure is silent (the manifest is still in `app.plugins.manifests`).
+            # Wrapped in an async IIFE because `Runtime.evaluate` rejects a bare
+            # `await` — the unwrapped form threw on syntax and was swallowed here.
+            evaluate("(async () => { app.plugins.setEnable(true); await app.plugins.enablePluginAndSave('piem'); })()")
+            time.sleep(2)
         except Exception as cause:
             rescue.append(str(cause)[:200])
         time.sleep(1)
@@ -201,6 +258,7 @@ def main():
             time.sleep(0.5)
 
     print("Piem plugin loaded! Running Desktop Smoke Pass...")
+    set_focus_emulation(port, True)
     desktop, desktopCode = run_smoke(False)
     print(f"Desktop result: {desktop.get('passed', False)}")
 
@@ -234,6 +292,7 @@ def main():
             time.sleep(0.5)
 
         print("Running Mobile Smoke Pass...")
+        set_focus_emulation(port, True)
         mobile, mobileCode = run_smoke(True)
         print(f"Mobile result: {mobile.get('passed', False)}")
 
