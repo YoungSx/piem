@@ -39,6 +39,44 @@ describe("project diagnostics configuration", () => {
 		expect(env.OTEL_RESOURCE_ATTRIBUTES).toBeUndefined();
 	});
 
+	it("ignores a leaked window global instead of reading another test's storage", () => {
+		// bun test files share one process; a sibling file can define `window`.
+		// The id comes only from the injected argument, so a leaked window must
+		// not resurrect one.
+		const previous = (globalThis as { window?: unknown }).window;
+		Object.defineProperty(globalThis, "window", {
+			value: { localStorage: memoryStorage() },
+			configurable: true,
+			writable: true,
+		});
+		try {
+			const env = otelEnvironment(true, undefined, undefined);
+			expect(env.OTEL_RESOURCE_ATTRIBUTES).toBeUndefined();
+		} finally {
+			if (previous === undefined) delete (globalThis as { window?: unknown }).window;
+			else Object.defineProperty(globalThis, "window", { value: previous, configurable: true, writable: true });
+		}
+	});
+
+	it("ignores a leaked window global instead of reading another test's storage", () => {
+		// bun test files share one process; a sibling file can define `window`.
+		// The id comes only from the injected argument, so a leaked window must
+		// not resurrect one.
+		const previous = (globalThis as { window?: unknown }).window;
+		Object.defineProperty(globalThis, "window", {
+			value: { localStorage: memoryStorage() },
+			configurable: true,
+			writable: true,
+		});
+		try {
+			const env = otelEnvironment(true, undefined, undefined);
+			expect(env.OTEL_RESOURCE_ATTRIBUTES).toBeUndefined();
+		} finally {
+			if (previous === undefined) delete (globalThis as { window?: unknown }).window;
+			else Object.defineProperty(globalThis, "window", { value: previous, configurable: true, writable: true });
+		}
+	});
+
 	it("keeps the upstream factory inactive when sharing is disabled", () => {
 		expect(otelEnvironment(false, "manifest-version", memoryStorage())).toEqual({});
 	});

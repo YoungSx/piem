@@ -26,12 +26,19 @@ function anonymousUserId(storage: Storage | undefined): string | undefined {
 	}
 }
 
+/**
+ * The renderer's persistent storage, probed through `window` the way every
+ * other localStorage consumer here does. A required argument at the call site
+ * rather than a default inside {@link otelEnvironment}: bun test shares one
+ * process, and a defaulted probe would pick up whatever `window` another test
+ * file leaked into the global scope.
+ */
+export function hostStorage(): Storage | undefined {
+	return typeof window !== "undefined" ? window.localStorage : undefined;
+}
+
 /** Configure the original factory through its own environment contract. */
-export function otelEnvironment(
-	enabled: boolean,
-	pluginVersion?: string,
-	storage: Storage | undefined = typeof window !== "undefined" ? window.localStorage : undefined,
-): Readonly<Record<string, string>> {
+export function otelEnvironment(enabled: boolean, pluginVersion?: string, storage?: Storage): Readonly<Record<string, string>> {
 	if (!enabled) return {};
 	const userId = anonymousUserId(storage);
 	return {
