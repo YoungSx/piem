@@ -63,7 +63,7 @@ import { navigateExtensionSummary } from "../session/extensionNavigation";
 import { configuredModels } from "../extensions/configuredModels";
 import { createExtensionConfigStore } from "../extensions/extensionConfigStore";
 import { clarifyModelProjection } from "../extensions/clarifyConfig";
-import { otelEnvironment } from "../extensions/otelConfig";
+import { hostStorage, otelEnvironment } from "../extensions/otelConfig";
 import { ExtensionModelSwitch } from "../extensions/modelSwitch";
 import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
@@ -920,7 +920,7 @@ export class ObsidianAgentService {
 		this.credentials = options.credentials;
 		this.extensionFactories = options.extensionFactories;
 		this.diagnosticsDisabled = getSettings().shareDiagnostics === false;
-		this.telemetryEnvironment = otelEnvironment(!this.diagnosticsDisabled, options.pluginVersion);
+		this.telemetryEnvironment = otelEnvironment(!this.diagnosticsDisabled, options.pluginVersion, hostStorage());
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
