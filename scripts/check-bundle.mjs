@@ -140,6 +140,18 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     is how the ruler stops measuring — #23 wanted the same move and did not
  *     get it. The ~13 KiB is one prompt builder, one parser and the gates; no
  *     new dependency and no second request per note.
+ * 25. Merging master (the OTEL anonymous per-device user id, #otel) spent the
+ *     notch #24 had declined to open: the merged build measures 2,390,867 B —
+ *     114 B over the 2.28 MiB line, caught by the merge build in CI, exactly
+ *     the collision the notch exists to catch. The ceiling follows to 2.29
+ *     MiB. The scout's own share was already counted in #24; the bytes here
+ *     are the otelConfig addition.
+ * 25. Merging master (the OTEL anonymous per-device user id, #otel) spent the
+ *     notch #24 had declined to open: the merged build measures 2,390,867 B —
+ *     114 B over the 2.28 MiB line, caught by the merge build in CI, exactly
+ *     the collision the notch exists to catch. The ceiling follows to 2.29
+ *     MiB. The scout's own share was already counted in #24; the bytes here
+ *     are the otelConfig addition.
  *
  * Direct session opening, pending-selection cleanup and the memoized transcript
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
@@ -154,7 +166,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.28 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.29 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
