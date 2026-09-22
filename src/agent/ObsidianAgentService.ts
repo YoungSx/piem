@@ -2736,6 +2736,12 @@ export class ObsidianAgentService {
 			this.sessionManager.isBlankSession(previous.sessionPath) &&
 			previous.agent.state.messages.length === 0
 		) {
+			// The sheet is kept, but the click still asked for something: a fresh
+			// suggestion row. Bumping the revision re-runs the panel's empty-screen
+			// effect (its dependency), which re-requests — and `suggestQuickActions`
+			// aborts any in-flight one, so the old answer cannot win the race.
+			previous.sessionRevision += 1;
+			this.notify();
 			return;
 		}
 		this.newSessionInFlight = true;

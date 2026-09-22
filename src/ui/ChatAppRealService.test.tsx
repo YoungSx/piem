@@ -246,7 +246,15 @@ describe("ChatApp × real service (issue #168)", () => {
 
 	async function mountPanel(
 		scripted: { streamFn: StreamFn; prompts: string[] },
-		options: { yieldIO?: boolean; extensionFactories?: readonly StaticExtension[]; askUserBroker?: InstanceType<typeof AskUserBroker> } = {},
+		options: {
+			yieldIO?: boolean;
+			extensionFactories?: readonly StaticExtension[];
+			askUserBroker?: InstanceType<typeof AskUserBroker>;
+			/** Vault contents; defaults to the two fixture notes the suite mounts with. */
+			vaultFiles?: Record<string, string>;
+			/** Puts `cachedRead` — the scout's read — a macrotask out, the way real disk I/O trails React's commit. */
+			scoutReadDelayMs?: number;
+		} = {},
 	): Promise<{
 		service: ObsidianAgentServiceType;
 		prompts: string[];
@@ -286,10 +294,14 @@ describe("ChatApp × real service (issue #168)", () => {
 			sessionDir: DEFAULT_SESSION_DIR,
 			userSkillsDir: "",
 		};
-		const vaultFiles: Record<string, string> = { "Notes/todo.md": "- buy milk", "Notes/other.md": "- buy eggs" };
-		const files = new Map<string, { path: string; extension: string }>();
+		const vaultFiles: Record<string, string> = options.vaultFiles ?? { "Notes/todo.md": "- buy milk", "Notes/other.md": "- buy eggs" };
+		const files = new Map<string, { path: string; extension: string; stat: { size: number } }>();
 		for (const path of Object.keys(vaultFiles)) {
-			files.set(path, { path, extension: path.slice(path.lastIndexOf(".") + 1) });
+			// `stat.size` is read by the note-facts probe (empty-note detection);
+			// bare `{path, extension}` objects made the probe throw and the panel
+			// swallowed a null `noteFacts` for the whole test.
+			const size = (vaultFiles[path] ?? "").length;
+			files.set(path, { path, extension: path.slice(path.lastIndexOf(".") + 1), stat: { size } });
 		}
 		let activeFile: { path: string; extension: string } | null = null;
 		const app = {
@@ -300,7 +312,19 @@ describe("ChatApp × real service (issue #168)", () => {
 				getFileByPath: (path: string) => files.get(path) ?? null,
 				getAbstractFileByPath: (path: string) => files.get(path) ?? null,
 				read: async (file: { path: string }) => vaultFiles[file.path] ?? "",
-				cachedRead: async (file: { path: string }) => vaultFiles[file.path] ?? "",
+				cachedRead: async (file: { path: string }) => {
+					if (options.scoutReadDelayMs) {
+						await new Promise((resolve) => setTimeout(resolve, options.scoutReadDelayMs));
+					}
+					return vaultFiles[file.path] ?? "";
+				},
+			},
+			// The note-facts probe reads the link graph; without these keys it
+			// throws and the panel swallows a null noteFacts for the whole test.
+			metadataCache: {
+				unresolvedLinks: {},
+				resolvedLinks: {},
+				getFileCache: () => null,
 			},
 			workspace: {
 				getActiveViewOfType: () => null,
@@ -676,6 +700,53 @@ describe("ChatApp × real service (issue #168)", () => {
 		expect(document.querySelector("textarea")).not.toBeNull();
 		// And the surviving chat is the one on screen, not a freshly minted blank.
 		expect(service.getSnapshot().session?.path).toBe(survivor);
+	});
+
+	it("re-asks once the scout's facts land, so the row quotes the real note (issue #168 follow-up)", async () => {
+		const { service, setActiveFile, prompts } = await mountPanel(scriptedStreamFn([CHIPS_JSON]), {
+			vaultFiles: { "Ideas/concept.md": "# Concept\n\n待验证：移动端离线预取可行性。" },
+			// Real disk I/O trails React's commit: the first request races out the
+			// door before the scout's read lands, and only a re-ask on the insight's
+			// arrival can ground the row in the note's own facts.
+			scoutReadDelayMs: 50,
+		});
+
+		const suggestionPrompts = () => prompts.filter((prompt) => prompt.includes("one-tap follow-up"));
+		// Cold start already asked once (vault-wide, no note open).
+		await flushRender(() => suggestionPrompts().length >= 1);
+
+		setActiveFile("Ideas/concept.md");
+		service.setActiveNotePath("Ideas/concept.md");
+
+		// The note's own request went out without the local audit's facts.
+		await flushRender(() => suggestionPrompts().length >= 2);
+		expect(suggestionPrompts()[1]).not.toContain("Unresolved promises");
+
+		// The read lands, the insight is staged, the panel is notified — the row
+		// must re-ask rather than stand on the ungrounded first answer.
+		await flushRender(() => suggestionPrompts().length >= 2 && suggestionPrompts().at(-1)!.includes("Unresolved promises"));
+		expect(suggestionPrompts().at(-1)).toContain("移动端离线预取可行性");
+		expect(crashes).toHaveLength(0);
+	});
+
+	it("a new-chat click on a blank sheet re-asks for the suggestion row", async () => {
+		const { service, prompts } = await mountPanel(scriptedStreamFn([CHIPS_JSON]));
+
+		// Cold start: the empty screen asks once.
+		for (let i = 0; i < 10 && prompts.filter((prompt) => prompt.includes("one-tap follow-up")).length < 1; i += 1) {
+			await flushRender();
+		}
+		const before = prompts.filter((prompt) => prompt.includes("one-tap follow-up")).length;
+		expect(before).toBe(1);
+		// The sheet the panel opens on is blank, so the click keeps it — and
+		// re-requests, which is the only visible thing the click changed.
+		await service.newSession();
+		for (let i = 0; i < 10 && prompts.filter((prompt) => prompt.includes("one-tap follow-up")).length < 2; i += 1) {
+			await flushRender();
+		}
+
+		expect(prompts.filter((prompt) => prompt.includes("one-tap follow-up")).length).toBe(2);
+		expect(service.getSnapshot().messages).toHaveLength(0);
 	});
 
 	it("switching from note A to note B re-asks the model for empty-screen chips (issue #168)", async () => {
