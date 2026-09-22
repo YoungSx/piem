@@ -5196,6 +5196,54 @@ describe("quick-action suggestions", () => {
 		expect(actions).toEqual([{ id: "suggested-0", label: "Go deeper", prompt: "Expand on the reply." }]);
 	});
 
+	it("refreshes suggestions when new chat is asked for on a sheet that is already blank", async () => {
+		let requests = 0;
+		const countingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+			requests += 1;
+			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
+		};
+		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn: countingStreamFn });
+		await service.initialize();
+
+		// The panel opens on a blank sheet and fetches its row.
+		expect(await service.suggestQuickActions("empty")).not.toBeNull();
+		expect(requests).toBe(1);
+
+		// Clicking "new chat" on a sheet with no turns keeps that sheet, but the
+		// click is the user asking for a fresh row — the request must go out again.
+		await service.newSession();
+		expect(await service.suggestQuickActions("empty")).not.toBeNull();
+		expect(requests).toBe(2);
+	});
+
+	it("drops a suggestion fetched for the sheet a new chat is replacing", async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let suggestionCalls = 0;
+		const streamFn: StreamFn = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
+			const text = context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n");
+			if (text.includes("one-tap follow-up")) {
+				suggestionCalls += 1;
+				return suggestionReplyStreamFn(SUGGESTION_JSON, gate)(model, context, options ?? ({} as SimpleStreamOptions));
+			}
+			return createFakeStreamFn()(model, context, options);
+		};
+		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn });
+		await service.initialize();
+		await service.sendPrompt("Something to leave behind");
+
+		// The empty screen of the chat about to be left asks; the answer is held.
+		const stale = service.suggestQuickActions("empty");
+		await service.newSession();
+		release();
+
+		// The fresh sheet must not inherit chips fetched for the conversation it replaced.
+		expect(await stale).toBeNull();
+		expect(service.peekQuickActionSuggestions("empty")).toBeUndefined();
+	});
+
 	it("reads a changed tab set as unanswered, so stale chips for old tabs are never served", async () => {
 		// Both tab sets must be files the vault can resolve; the new existence
 		// filter drops an unregistered leaf, and two empty sets read as no change.

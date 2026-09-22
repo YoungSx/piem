@@ -337,8 +337,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		});
 		// Re-runs per session and per active-note change — the *path*, not just a
 		// presence flip, so A→B recomputes what the chips are about (issue #168
-		// follow-up). The guard above keeps it off a live turn.
-	}, [service, snapshot.isConfigured, snapshot.isStreaming, isExtensionBusy, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, isInitializing]);
+		// follow-up). The guard above keeps it off a live turn. The note facts are
+		// a dependency too: the scout's read trails the commit that fired the
+		// request, and without re-asking when the insight lands the row would stand
+		// on an answer that never saw the note's own facts — cached under a key no
+		// later visit reproduces, so not even the cache could rescue it.
+	}, [service, snapshot.isConfigured, snapshot.isStreaming, isExtensionBusy, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, noteFacts, isInitializing]);
 
 	/*
 	 * Settled reply: clear whatever the previous reply suggested and fetch the
