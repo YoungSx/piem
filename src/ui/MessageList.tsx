@@ -529,6 +529,14 @@ export function MessageList({
 	const settledIndex = runSettled ? regenerateIndex : null;
 	const followUpActions = !onQuickAction || settledIndex === null ? [] : suggestedActions;
 	const transcriptRef = useRef<HTMLElement | null>(null);
+	/*
+	 * The follow gate, held twice because one fact needs two readers: this
+	 * ref is what the follow effect reads — the scroll handler can flip the
+	 * gate without React handing a pending effect a fresh closure, so a
+	 * state read there can be stale — and the `isAtLatest` state below is
+	 * what renders the "Latest" button. Every writer writes both, so the two
+	 * cannot drift apart into separately-deciding copies of one verdict.
+	 */
 	const shouldFollowRef = useRef(true);
 	/*
 	 * The last position the reader demonstrably sat at. A scroll event whose
@@ -542,16 +550,33 @@ export function MessageList({
 	const lastReaderScrollTopRef = useRef(0);
 	const [isAtLatest, setIsAtLatest] = useState(true);
 
+	/**
+	 * Writes the reader to the bottom, instantly, and records the position so
+	 * the scroll event the write owes reads as our own echo and is skipped.
+	 * Instant is the point: an animated scroll would walk through intermediate
+	 * positions, each an ordinary scroll event a long way from the bottom, and
+	 * each would re-measure "not at latest" — flipping the button back on
+	 * mid-flight and closing the gate with it. Both callers are the same
+	 * intent, "be at the bottom": the follow effect doing it on the reader's
+	 * behalf, the button doing it on the reader's request.
+	 */
+	const pinToBottom = (transcript: HTMLElement): void => {
+		transcript.scrollTop = transcript.scrollHeight;
+		// The write moved the reader, so record the position we chose; the
+		// echo event it owes will report this same value and be skipped.
+		lastReaderScrollTopRef.current = transcript.scrollTop;
+	};
+
 	useEffect(() => {
-		const transcript = transcriptRef.current;
-		if (!transcript || !shouldFollowRef.current) {
-			return;
-		}
+		// The gate is read inside the frame, not when scheduling it: a reader
+		// can scroll away in the window between this effect and the callback,
+		// and the verdict that counts is the one at write time — a gate read
+		// here would yank them back to the bottom they just left.
 		const frame = window.requestAnimationFrame(() => {
-			transcript.scrollTop = transcript.scrollHeight;
-			// The write moved the reader, so record the position we chose; the
-			// echo event it owes will report this same value and be skipped.
-			lastReaderScrollTopRef.current = transcript.scrollTop;
+			const transcript = transcriptRef.current;
+			if (transcript && shouldFollowRef.current) {
+				pinToBottom(transcript);
+			}
 		});
 		return () => window.cancelAnimationFrame(frame);
 		// The pending question joins the dependency list for the same reason the
@@ -587,14 +612,11 @@ export function MessageList({
 		if (!transcript) {
 			return;
 		}
+		// Re-armed before the pin: the click is the reader saying "take me
+		// back", so the follow effect keeps them there as new content lands.
 		shouldFollowRef.current = true;
 		setIsAtLatest(true);
-		// Smooth scrolling animates through intermediate positions, each
-		// dispatching a scroll event; each one differs from the last measured
-		// position, so the gate re-measures to "at latest" — a no-op while the
-		// animation runs and a settled truth once it lands. A real user scroll
-		// that starts mid-animation is likewise just another differing position.
-		transcript.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" });
+		pinToBottom(transcript);
 	};
 
 	return (
