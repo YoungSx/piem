@@ -2190,4 +2190,73 @@ describe("MessageList follow-scroll", () => {
 		await flushRender();
 		expect(geometry.scrollTop).toBe(40);
 	});
+
+	it("the Latest button pins straight down, and the echo it owes does not read as the reader leaving", async () => {
+		// The pin must be a single instant write, not an animation: every
+		// intermediate position of a smooth scroll is an ordinary scroll event
+		// far from the bottom, and each would re-measure "not at latest" — the
+		// button back on mid-flight, the gate closed with it — until the
+		// animation landed. The click has to be done in one step.
+		const geometry = { scrollHeight: 800, clientHeight: 400, scrollTop: 0 };
+		const earlier = [userMessage("earlier question"), assistantMessage("earlier answer")];
+		const host = renderMessages(earlier);
+		await flushRender();
+		pinScrollGeometry(scrollerOf(host), geometry);
+		renderInto(host, earlier);
+		await flushRender();
+		expect(geometry.scrollTop).toBe(400);
+
+		// The reader scrolled away by hand: the gate closes, the button shows.
+		geometry.scrollTop = 40;
+		echoScroll(host);
+		await flushRender();
+		const latest = host.querySelector<HTMLButtonElement>(".piem-chat__latest");
+		expect(latest).not.toBeNull();
+
+		// The click pins in one step and re-arms the gate.
+		latest!.click();
+		await flushRender();
+		expect(geometry.scrollTop).toBe(400);
+		expect(host.querySelector(".piem-chat__latest")).toBeNull();
+
+		// The write owes a scroll event; arriving, it must not reopen anything.
+		echoScroll(host);
+		await flushRender();
+		expect(host.querySelector(".piem-chat__latest")).toBeNull();
+
+		// The re-armed gate keeps following: the next send still pins the tail.
+		geometry.scrollHeight = 1000;
+		renderInto(host, [...earlier, userMessage("new question")], { isStreaming: true });
+		await flushRender();
+		expect(geometry.scrollTop).toBe(600);
+	});
+
+	it("a reader who beats the follow frame is not yanked back", async () => {
+		// The race this one holds: the follow effect schedules its frame, and
+		// in the window before that frame fires the reader scrolls up. Reading
+		// the gate at scheduling time would let the frame write the reader
+		// back to the bottom they just left — the read must happen at write
+		// time, inside the frame.
+		const geometry = { scrollHeight: 800, clientHeight: 400, scrollTop: 0 };
+		const earlier = [userMessage("earlier question"), assistantMessage("earlier answer")];
+		const host = renderMessages(earlier);
+		await flushRender();
+		pinScrollGeometry(scrollerOf(host), geometry);
+		renderInto(host, earlier);
+		await flushRender();
+		expect(geometry.scrollTop).toBe(400);
+
+		// A send starts: the follow effect runs and schedules its frame.
+		geometry.scrollHeight = 1000;
+		renderInto(host, [...earlier, userMessage("new question")], { isStreaming: true });
+		// One round is exactly the gap: the effect has run, the frame has not.
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		// The reader beats the frame: they scroll up, the gate closes.
+		geometry.scrollTop = 40;
+		echoScroll(host);
+		await flushRender();
+		// The frame fired after the reader left; it must not have written.
+		expect(geometry.scrollTop).toBe(40);
+		expect(host.querySelector(".piem-chat__latest")).not.toBeNull();
+	});
 });
