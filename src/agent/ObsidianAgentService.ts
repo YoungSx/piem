@@ -3806,12 +3806,14 @@ export class ObsidianAgentService {
 		await this.applyRuntimeThinkingLevel(rt, thinkingLevel ?? agent.state.thinkingLevel);
 		agent.state.tools = [
 			...this.buildTools(rt),
-			// Connect runs here, on the same settings-save path that rebuilt the
-			// vault tool list — one road from "configuration changed" to "the agent
-			// sees the new tools". The manager skips servers whose url+token are
-			// unchanged, so routine saves do not reconnect anything.
-			...(await this.fetchExternalTools()),
+			// The mounted list, connect-free: a send awaits this apply on its
+			// prelude, and one unreachable server would hold the composer for the
+			// full connect timeout on every turn. A settings save still forces the
+			// reconnect — the background sync below is what carries a handshake
+			// that outlives this apply into the live agent.
+			...this.mountedExternalTools(),
 		];
+		this.syncExternalToolsInBackground(rt);
 		await rt.communityHost?.syncModel();
 		// Skills are read from the vault here too: `saveSettings` calls this after
 		// every settings change, and the panel re-reads the folder with it, so a
@@ -4514,6 +4516,40 @@ export class ObsidianAgentService {
 	}
 
 	/**
+	 * The mounted tool list, connect-free.
+	 *
+	 * Used on every path a user is synchronously waiting on: agent construction
+	 * runs on the new-session and session-switch paths, and awaiting a connect
+	 * there lets one unreachable MCP server hold the composer for the full
+	 * connect timeout. The mount cache is what the subagent side already reads
+	 * at spawn time for exactly this reason; the agent reads it too, and the
+	 * background sync below folds in whatever a pending handshake produces.
+	 */
+	private mountedExternalTools(): AgentTool[] {
+		return this.getMountedExternalToolsFn ? [...this.getMountedExternalToolsFn()] : [];
+	}
+
+	/**
+	 * Reconciles the agent's tool list once background MCP connects land.
+	 *
+	 * A handshaked server's tools arrive here instead of blocking the switch
+	 * that built the agent; a failed server simply never produces an update.
+	 * Rebuilds the whole external list (mount semantics are replace, not merge)
+	 * and swaps it into the live agent when this runtime still owns it — the
+	 * same owner checks `replaceAgent` holds everywhere else on this path.
+	 */
+	private syncExternalToolsInBackground(rt: SessionRuntime): void {
+		void this.fetchExternalTools()
+			.then((external) => {
+				if (this.disposed || this.runtimes.get(rt.sessionPath) !== rt || rt.agent === null) return;
+				rt.agent.state.tools = [...this.buildTools(rt), ...external];
+			})
+			.catch((error) => {
+				this.log.debug("Background external tool sync failed", () => ({ error: causeMessage(error) }));
+			});
+	}
+
+	/**
 	 * Builds a fresh agent over `messages`, wiring every seam the conversation
 	 * needs.
 	 *
@@ -4845,13 +4881,19 @@ export class ObsidianAgentService {
 		this.refreshDiagnostics();
 		let tools: AgentTool[];
 		try {
-			tools = [...(await this.buildToolsAsync(rt)), ...(await this.fetchExternalTools())];
+			// The vault tool list is synchronous; MCP tools come from the mounted
+			// cache when every server is already connected. The connect itself
+			// never rides this await: a server that cannot be reached would hold
+			// the session switch for the full connect timeout, and the background
+			// sync below hands the tools over the moment they exist.
+			tools = [...(await this.buildToolsAsync(rt)), ...this.mountedExternalTools()];
 			assertOwner();
 		} catch (error) {
 			community.dispose();
 			if (rt.communityHost === community) rt.communityHost = undefined;
 			throw error;
 		}
+		this.syncExternalToolsInBackground(rt);
 		const stream = this.resolveStreamFn();
 		const agent: Agent = new Agent({
 			// The custom endpoint rides the same transport as builtin providers;

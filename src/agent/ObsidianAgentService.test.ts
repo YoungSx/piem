@@ -5799,4 +5799,32 @@ describe("original bookmark extension integration", () => {
 			service.dispose();
 		}
 	});
+
+	it("never lets a pending MCP handshake hold a send", async () => {
+		// The reported P0: `connect()` was awaited on the send's prelude and on
+		// agent construction, so one unreachable server held the composer and
+		// every session switch for the full connect timeout — on every turn,
+		// forever. The send and the switch read the mounted cache instead; the
+		// handshake lands in the background and folds in when it lands.
+		const adapter = new MemoryAdapter();
+		const service = new ObsidianAgentService(
+			createFakeApp(asDataAdapter(adapter)),
+			() => defaultTestSettings(),
+			new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test"),
+			{
+				loadUserSkills: NO_USER_SKILLS,
+				// A handshake that never resolves — an unreachable server.
+				getExternalTools: () => new Promise(() => {}),
+			},
+		);
+
+		const started = Date.now();
+		expect(await service.sendPrompt("Hello")).toBe(true);
+		expect(Date.now() - started).toBeLessThan(2_000);
+		expect(service.getSnapshot().errorMessage).toBeUndefined();
+
+		await service.newSession();
+		expect(service.getSnapshot().errorMessage).toBeUndefined();
+		service.dispose();
+	});
 });

@@ -55,6 +55,19 @@ import { BUILTIN_MCP_SERVER_ID, slugifyServerName, type McpServerConfig } from "
 const CONNECT_TIMEOUT_MS = 15_000;
 
 /**
+ * How long a failed mount is left alone before the next connect retries it.
+ *
+ * Connects are awaited on the send and new-session paths (that is how refreshed
+ * tools reach the agent), so a server that cannot be reached at all would
+ * otherwise tax *every* one of those operations the full {@link CONNECT_TIMEOUT_MS}
+ * — fifteen seconds of frozen composer, forever, with zero chance of recovery
+ * inside any single wait. Sixty seconds bounds that cost to at most one timeout
+ * per minute per dead server while a temporarily down endpoint still comes back
+ * within a couple of operations.
+ */
+const MOUNT_RETRY_COOLDOWN_MS = 60_000;
+
+/**
  * Default wait on one tool call, when the model does not say what it wants.
  *
  * Not a policy ceiling: the model may raise it per call via `timeoutMs`, the same
@@ -118,6 +131,8 @@ interface McpServerEntry {
 	error?: string;
 	/** The url+token this entry was connected with, for skip-if-unchanged. */
 	connection?: { url: string; token: string };
+	/** When the last mount attempt failed; gates the retry cooldown. */
+	failedAt?: number;
 }
 
 /** Converts a JSON Schema object into the TypeBox type pi's tool signatures use. */
@@ -426,6 +441,32 @@ export class McpManager {
 		) {
 			return;
 		}
+		// A failed mount is retried only after the cooldown. Without this, every
+		// connect — and connects ride the send and new-session paths — pays the
+		// full connect timeout against a server that cannot be reached at all,
+		// blocking the composer for fifteen seconds on every operation forever.
+		// The panel keeps showing the error either way; the cooldown only bounds
+		// how often the dead endpoint is knocked on again.
+		if (
+			existing?.status === "error" &&
+			existing.failedAt !== undefined &&
+			Date.now() - existing.failedAt < MOUNT_RETRY_COOLDOWN_MS
+		) {
+			return;
+		}
+		// A failed mount is retried only after the cooldown. Without this, every
+		// connect — and connects ride the send and new-session paths — pays the
+		// full connect timeout against a server that cannot be reached at all,
+		// blocking the composer for fifteen seconds on every operation forever.
+		// The panel keeps showing the error either way; the cooldown only bounds
+		// how often the dead endpoint is knocked on again.
+		if (
+			existing?.status === "error" &&
+			existing.failedAt !== undefined &&
+			Date.now() - existing.failedAt < MOUNT_RETRY_COOLDOWN_MS
+		) {
+			return;
+		}
 		try {
 			const { client, tools } = await this.openMountedClient(server);
 			// The handshake finished after unload: nothing may keep the client
@@ -460,6 +501,7 @@ export class McpManager {
 				status: "error",
 				error: error instanceof Error ? error.message : String(error),
 				connection: { url: server.url, token: server.token },
+				failedAt: Date.now(),
 			});
 			// Warn, not error: the panel already reports this row, and the startup
 			// connect is fire-and-forget — this is the only trace a failed boot
