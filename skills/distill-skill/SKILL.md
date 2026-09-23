@@ -1,6 +1,6 @@
 ---
 name: distill-skill
-description: "Save or improve a reusable skill under Piem/skills/ after a useful procedure succeeds, including on its first verified run."
+description: "After a procedure succeeds — even once — save or improve the reusable skill under Piem/skills/."
 compatibility: Requires Piem's Obsidian vault tools.
 ---
 
