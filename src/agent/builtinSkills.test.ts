@@ -10,12 +10,17 @@ await env.cleanup(BACKGROUND_CONTEXT);
 expect(diagnostics).toEqual([]);
 
 describe("builtinSkills", () => {
-	it("loads all seven standard skill directories", () => {
+	it("loads all eight standard skill directories", () => {
 		expect(skills.map((skill) => skill.name).sort()).toEqual([
 			"distill-skill",
 			"efficient-web-research",
 			"find-skills",
 			"link-graph",
+			// The agent team operator manual, vendored verbatim from
+			// @geminixiang/pi-agent-team (see communityTeamHost.test.ts for the
+			// equality pin) so the parent model can read what pi's CLI would
+			// have loaded from the package's own `pi.skills` declaration.
+			"pi-agent-team",
 			"summarize",
 			"tag-organize",
 			"vault-memory",

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { webcrypto } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type { Model } from "@earendil-works/pi-ai";
 import { Logger } from "../logging/Logger";
 import { stubWindowMembers } from "../testUtils/windowStub";
@@ -113,5 +114,27 @@ describe("agent team through the community host", () => {
 		// The retained run stays answerable to cancel and shutdown handlers.
 		const cancel = host.tools.find(tool => tool.name === "team_cancel");
 		expect(cancel).toBeDefined();
+	});
+
+	it("exposes the team extension's own tool guidelines for the system prompt", async () => {
+		const { host } = await teamHost();
+		// The upstream `team_start` declares these as pi `promptGuidelines`; the
+		// host must surface them unfiltered (no activeTools restriction is set)
+		// so the composed system prompt can teach the model when to start a team.
+		const guidelines = host.toolPromptGuidelines();
+		expect(guidelines).toContain("Give the team the user's objective and initial message without adding expected answers.");
+		expect(guidelines.some(guideline => guideline.includes('claims the "reporter" resource'))).toBe(true);
+	});
+
+	it("ships the upstream operator skill verbatim as a standard skill", async () => {
+		// Vendored at skills/pi-agent-team so the parent model can read the manual
+		// pi's CLI would have loaded from the package's own `pi.skills` declaration.
+		// Verbatim equality is the staleness alarm: a package update that changes
+		// the manual must re-vendor it here, deliberately.
+		const [vendored, packaged] = await Promise.all([
+			readFile("skills/pi-agent-team/SKILL.md", "utf8"),
+			readFile("node_modules/@geminixiang/pi-agent-team/skills/pi-agent-team/SKILL.md", "utf8"),
+		]);
+		expect(vendored).toBe(packaged);
 	});
 });

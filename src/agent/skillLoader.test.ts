@@ -193,4 +193,23 @@ describe("composeSystemPrompt", () => {
 		expect(composed).toContain("/Piem/skills/summarize/SKILL.md");
 		expect(composed).toContain("use the read_skill tool");
 	});
+
+	it("appends tool guidelines after the skills block, trimmed and blank-free", () => {
+		const composed = composeSystemPrompt(BASE, [
+			{ name: "summarize", description: "Summarize a note", content: "Body", filePath: "/Piem/skills/summarize/SKILL.md" },
+		], ["  Give the team the user's objective  ", "", "Do not guess a maxTurns value"]);
+
+		// Skills first, guidelines after: the listing is the session's catalog,
+		// the guidelines are the run's tool set, and the order holds when both exist.
+		expect(composed.indexOf("<available_skills>")).toBeLessThan(composed.indexOf("Guidelines contributed by the extension tools"));
+		expect(composed).toContain("- Give the team the user's objective");
+		expect(composed).toContain("- Do not guess a maxTurns value");
+		expect(composed).not.toContain("-  ");
+	});
+
+	it("leaves a guidelines-free prompt byte-identical for empty and absent input", () => {
+		expect(composeSystemPrompt(BASE, [])).toBe(BASE);
+		expect(composeSystemPrompt(BASE, [], [])).toBe(BASE);
+		expect(composeSystemPrompt(BASE, [], ["  ", ""])).toBe(BASE);
+	});
 });

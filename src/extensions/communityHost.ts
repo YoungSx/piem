@@ -218,6 +218,26 @@ export class CommunityHost {
 		}));
 	}
 	get commands() { return this.host.commands.filter(command => command.name !== "acm"); }
+	/**
+	 * The `promptGuidelines` of the extension tools this conversation holds, in
+	 * registration order, deduplicated and trimmed — pi's own semantics
+	 * (`_normalizePromptGuidelines` plus its set-dedup), fed to the system
+	 * prompt rather than pi's CLI prompt builder, which piem does not run.
+	 *
+	 * Filtered by the same `activeTools` set as {@link tools}: a guideline for
+	 * a tool the agent cannot call is advice about nothing.
+	 */
+	toolPromptGuidelines(): string[] {
+		const guidelines: string[] = [];
+		for (const [name, contribution] of this.host.toolPromptMetadata()) {
+			if (this.activeTools && !this.activeTools.has(name)) continue;
+			for (const guideline of contribution.guidelines ?? []) {
+				const trimmed = guideline.trim();
+				if (trimmed && !guidelines.includes(trimmed)) guidelines.push(trimmed);
+			}
+		}
+		return guidelines;
+	}
 	getMessageRenderer(type: string): MessageRenderer | undefined {
 		return this.host.getMessageRenderer?.(type);
 	}

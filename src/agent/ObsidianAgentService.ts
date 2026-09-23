@@ -1857,7 +1857,7 @@ export class ObsidianAgentService {
 		host?.cancelInvocation();
 		const ledger = rt.activeRunLedger;
 		let departed = false;
-		const base = composeSystemPrompt(this.promptWithEnvironment(), rt.skills);
+		const base = composeSystemPrompt(this.promptWithEnvironment(), rt.skills, host?.toolPromptGuidelines());
 		const user = [...messages].reverse().find(message => message.role === "user");
 		const images = user?.role === "user" && Array.isArray(user.content)
 			? user.content.filter((part): part is ImageContent => part.type === "image") : undefined;
@@ -1884,7 +1884,7 @@ export class ObsidianAgentService {
 			throw error;
 		} finally {
 			rt.extensionPreparing = false;
-			if (rt.agent === agent) agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), rt.skills);
+			if (rt.agent === agent) agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), rt.skills, rt.communityHost?.toolPromptGuidelines());
 		}
 	}
 
@@ -4962,7 +4962,7 @@ export class ObsidianAgentService {
 				// (`initializeAgent` / `openSession` / `newSession` all await
 				// `reloadSkills` first), so the composed prompt is current; a live
 				// agent gets its prompt refreshed by `reloadSkills` itself.
-				systemPrompt: composeSystemPrompt(this.promptWithEnvironment(), rt.skills),
+				systemPrompt: composeSystemPrompt(this.promptWithEnvironment(), rt.skills, rt.communityHost?.toolPromptGuidelines()),
 				model,
 				// The caller resolves this: the loaded session's own level, or the
 				// seed a new session was created with. Global settings have no say.
@@ -5310,7 +5310,7 @@ export class ObsidianAgentService {
 		for (const rt of this.runtimes.values()) {
 			if (rt.agent && !this.isBusy(rt)) {
 				rt.skills = skills;
-				rt.agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), skills);
+				rt.agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), skills, rt.communityHost?.toolPromptGuidelines());
 			}
 		}
 	}

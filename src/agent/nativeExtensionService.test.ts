@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { Type } from "typebox";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import { stubWindowTimers } from "../testUtils/windowStub";
 
@@ -118,6 +119,25 @@ describe("native extension service lifecycle", () => {
 			expect(custom).toHaveLength(2);
 			expect(JSON.stringify(custom)).toContain("native-context");
 			expect(await sessions.findOpenRunOperations()).toHaveLength(0);
+		} finally { service.dispose(); }
+	});
+
+	it("folds a tool's declared prompt guidelines into the system prompt the provider receives", async () => {
+		const { service, requests } = harness(pi => {
+			pi.registerTool({
+				name: "fixture", label: "Fixture", description: "Fixture tool",
+				promptGuidelines: ["Use the fixture for fixture work."],
+				parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }),
+			});
+		});
+		try {
+			expect(await service.sendPrompt("First question")).toBe(true);
+			// The whole chain in one assertion: the extension's registration, the
+			// host's live metadata read, the active-tools pass-through, and the
+			// composer's guidelines section all have to hold for the provider's
+			// request to name the guideline.
+			expect(requests[0]?.systemPrompt).toContain("Guidelines contributed by the extension tools");
+			expect(requests[0]?.systemPrompt).toContain("Use the fixture for fixture work.");
 		} finally { service.dispose(); }
 	});
 });

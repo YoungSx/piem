@@ -709,6 +709,24 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			},
 			commands: runner.getRegisteredCommands().map(command => ({ name: command.invocationName, description: command.description })),
 			tools: registeredTools,
+			/**
+			 * The prompt metadata (snippet, guidelines) of every registered tool,
+			 * keyed by name, read live from the runner.
+			 *
+			 * pi's own AgentSession folds these into its default system prompt's
+			 * "Available tools" and "Guidelines" sections; piem composes its prompt
+			 * itself, so the metadata crosses here for the service to fold in. A
+			 * live read rather than a construction-time snapshot because the
+			 * wrapped `tools` above can outlive a runner that `resetContext`
+			 * replaced — the pair must always answer from the same registration
+			 * set.
+			 */
+			toolPromptMetadata(): ReadonlyMap<string, { snippet?: string; guidelines?: readonly string[] }> {
+				return new Map(runner.getAllRegisteredTools().map(({ definition }) => [definition.name, {
+					snippet: definition.promptSnippet,
+					guidelines: definition.promptGuidelines,
+				}]));
+			},
 			getMessageRenderer: (type: string): MessageRenderer | undefined => runner.getMessageRenderer(type),
 			getEntryRenderer: (type: string): EntryRenderer | undefined => runner.getEntryRenderer(type),
 			transformMarkdown: (markdown: string, context: MarkdownTransformContext): string => {
