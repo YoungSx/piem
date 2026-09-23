@@ -671,12 +671,18 @@ describe("McpManager", () => {
 		await manager.dispose();
 	});
 
-	it("retries a failed server on the next connect and recovers", async () => {
-		// A failed entry is always re-attempted; when the endpoint comes back,
-		// nothing but another connect stands between the user and the tools.
+	it("retries a failed server after the cooldown and recovers", async () => {
+		// A failed entry waits out the retry cooldown before another attempt:
+		// connects ride the send and new-session paths, so an unreachable server
+		// without the cooldown would tax every one of those operations the full
+		// connect timeout. When the cooldown expires — or the endpoint comes
+		// back — another connect is all that stands between the user and the
+		// tools.
 		const server = serverFixture({ name: "x", url: "https://x.example.com" });
 		let fail = true;
+		let attempts = 0;
 		const manager = makeManager([server], () => async (url, init) => {
+			attempts += 1;
 			if ((init?.method ?? "GET").toUpperCase() === "GET") {
 				return new Response(null, { status: 405 });
 			}
@@ -698,9 +704,24 @@ describe("McpManager", () => {
 
 		await manager.connect();
 		expect(manager.getServerStates()[0]?.status).toBe("error");
+		const attemptsAfterFailure = attempts;
 
-		fail = false;
+		// Inside the cooldown the next connect does not knock on the dead
+		// endpoint again — the entry keeps its error and its verdict.
 		await manager.connect();
+		expect(attempts).toBe(attemptsAfterFailure);
+		expect(manager.getServerStates()[0]?.status).toBe("error");
+
+		// The cooldown only lives in the entry's failure timestamp: winding it
+		// back is the test stand-in for waiting it out.
+		fail = false;
+		const entries = (manager as unknown as { entries: Map<string, { failedAt?: number }> }).entries;
+		const entry = entries.get(server.id);
+		expect(entry?.failedAt).not.toBeUndefined();
+		entry!.failedAt = Date.now() - 61_000;
+
+		await manager.connect();
+		expect(attempts).toBeGreaterThan(attemptsAfterFailure);
 		expect(manager.getServerStates()[0]?.status).toBe("ok");
 		await manager.dispose();
 	});

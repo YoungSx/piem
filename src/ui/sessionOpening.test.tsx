@@ -146,20 +146,20 @@ describe("Opening a stored conversation", () => {
 		});
 	}
 
-	it("keeps the previous chat focused until runtime setup also finishes", async () => {
-		const { service, manager, host, holdTools, a, b } = await fixture();
+	it("hands a pending MCP handshake to the background instead of blocking the switch", async () => {
+		// The reported P0: `fetchExternalTools` was awaited on the switch, so one
+		// unreachable server held every new chat for the full connect timeout.
+		// The switch now completes while the handshake is still in flight — the
+		// background sync folds the tools in when they land.
+		const { service, holdTools, b } = await fixture();
 		const gate = holdTools();
 		const opening = service.openSession(b.path);
 		try {
 			await gate.arrived;
-			service.setActiveNotePath("Changed.md");
 			await flushRender();
-			expect(service.getSnapshot().session?.path).toBe(a.path);
-			expect(manager.getActiveSessionPath()).toBe(a.path);
-			expect(host.textContent).toContain("Conversation A");
-			expect(host.querySelector(".piem-chat__spinner")).not.toBeNull();
+			expect(service.getSnapshot().session?.path).toBe(b.path);
+			expect(service.getSnapshot().isOpeningSession).toBe(false);
 		} finally { gate.release(); await opening; }
-		expect(service.getSnapshot().session?.path).toBe(b.path);
 	});
 
 	it("does not redraw the visible history merely to announce a cold selection", async () => {
@@ -335,20 +335,19 @@ describe("Opening a stored conversation", () => {
 		expect(shownNotices).toHaveLength(0);
 	});
 
-	it("does not subscribe an agent after disposal during extension tool preparation", async () => {
+	it("leaves no background tool-sync writes after disposal", async () => {
+		// The handshake outlives the service: the sync's owner check must drop
+		// its result, and disposal must leave no adopted session behind. The
+		// disk-pending sibling below covers the same race on the disk read.
 		const { service, holdTools, manager, a, b } = await fixture();
-		const subscribe = spyOn(Agent.prototype, "subscribe");
 		const gate = holdTools();
 		const opening = service.openSession(b.path);
-		try {
-			await gate.arrived;
-			service.dispose();
-			gate.release();
-			await opening;
-			expect(subscribe).not.toHaveBeenCalled();
-			expect(service.getKnownSessions()).toHaveLength(0);
-			expect(manager.getActiveSessionPath()).toBe(a.path);
-		} finally { gate.release(); subscribe.mockRestore(); }
+		await gate.arrived;
+		service.dispose();
+		gate.release();
+		await opening;
+		expect(service.getKnownSessions()).toHaveLength(0);
+		expect(manager.getActiveSessionPath()).toBe(a.path);
 	});
 
 	it("does not rebuild an agent after disposal during initial session hydration", async () => {
