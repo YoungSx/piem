@@ -205,19 +205,32 @@ export function emptySkillLoadReport(): SkillLoadReport {
 }
 
 /**
- * Appends the skill listing to the base system prompt.
+ * Appends the skill listing, and the extension tools' prompt guidelines, to the
+ * base system prompt.
  *
  * Kept here rather than at the call site so the base prompt and the skills
  * block have exactly one join point: `formatSkillsForSystemPrompt` returns
  * an empty string for no skills, in which case the base prompt is passed
  * through untouched.
+ *
+ * `toolGuidelines` is pi's `promptGuidelines` channel — the bullets a tool
+ * declares next to its description, which pi's own `buildSystemPrompt` folds
+ * into a "Guidelines" section. piem composes its prompt itself, so the bullets
+ * arrive here already filtered to the tools this conversation actually holds.
+ * Absent or empty leaves the composed prompt byte-identical to before, which
+ * is what the subagent runner (no extension tools) and every existing caller
+ * rely on.
  */
-export function composeSystemPrompt(basePrompt: string, skills: readonly Skill[]): string {
+export function composeSystemPrompt(basePrompt: string, skills: readonly Skill[], toolGuidelines?: readonly string[]): string {
 	// pi's formatter types its parameter mutable; the copy keeps callers free to
 	// hold read-only skill lists (the subagent runner does).
 	const formatted = formatSkillsForSystemPrompt([...skills]);
-	if (!formatted) {
-		return basePrompt;
+	let prompt = formatted
+		? `${basePrompt}\n\n${formatted}\n\nIn Piem, use the read_skill tool with the listed name to read a skill's instructions. Follow its continuation offsets until complete. Read referenced text resources with read_skill using the same name and a path relative to that skill's directory. This also works for user-level skills outside the vault; ordinary vault file tools stay inside the vault. Skills do not grant shell execution.`
+		: basePrompt;
+	const guidelines = (toolGuidelines ?? []).map((guideline) => guideline.trim()).filter(Boolean);
+	if (guidelines.length > 0) {
+		prompt += `\n\nGuidelines contributed by the extension tools active in this conversation — follow them when using those tools:\n${guidelines.map((guideline) => `- ${guideline}`).join("\n")}`;
 	}
-	return `${basePrompt}\n\n${formatted}\n\nIn Piem, use the read_skill tool with the listed name to read a skill's instructions. Follow its continuation offsets until complete. Read referenced text resources with read_skill using the same name and a path relative to that skill's directory. This also works for user-level skills outside the vault; ordinary vault file tools stay inside the vault. Skills do not grant shell execution.`;
+	return prompt;
 }
