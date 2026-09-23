@@ -108,4 +108,27 @@ describe("community host preserves native lifetime contracts", () => {
 			expect(f.reads()).toBe(before);
 		} finally { f.host.dispose(); await f.host.closed(); }
 	});
+
+	it("joins a parallel batch's concurrent end events instead of failing the losers", async () => {
+		// pi finalizes a parallel tool batch with Promise.all, so several
+		// `tool_execution_end` events reach the host at once. The first one
+		// wins the exclusive operation; the rest used to be rejected with
+		// "An extension operation is already running" and surfaced as UI errors.
+		let ended = 0;
+		const f = await fixture(pi => { pi.on("tool_execution_end", async () => { await Promise.resolve(); ended++; }); });
+		try {
+			const before = f.reads();
+			await f.host.start();
+			const events = Array.from({ length: 4 }, (_, i) =>
+				f.host.emitAgentEvent({ type: "tool_execution_end", toolCallId: String(i), toolName: "read", result: { content: [], details: {} }, isError: false }));
+			await Promise.all(events);
+			expect(ended).toBe(4);
+			// The winner refreshes (its own operate plus the host-level refresh —
+			// the long-standing double read) and the joiners reuse that view: no
+			// further Vault read per joined event.
+			expect(f.reads()).toBe(before + 2);
+			await f.host.drain();
+			expect(f.host.busy).toBe(false);
+		} finally { f.host.dispose(); await f.host.closed(); }
+	});
 });

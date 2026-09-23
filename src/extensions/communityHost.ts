@@ -75,7 +75,6 @@ export class CommunityHost {
 	private otelDisabled = false;
 	private failure: { error?: Error } = {};
 	private activeTools?: Set<string>;
-	private navigationDispatches = 0;
 
 	private needsContextReset = false;
 	private contextReset?: Promise<void>;
@@ -239,18 +238,15 @@ export class CommunityHost {
 		// An existing operation already owns a refreshed read view. Refreshing it
 		// again can wait on a ContextSession navigation that is calling us itself.
 		const emit = async () => { await this.host.start(); return this.host.emit(event, false); };
-		this.navigationDispatches++;
-		try {
-			let result;
-			if (this.platform.busy) {
-				const work = emit().then(async result => { await this.flushWrites(); this.assertActive(); return result; });
-				this.platform.trackRequest(work.then(() => undefined));
-				result = await work;
-			} else result = await this.operate(emit);
-			// This matches Pi's runtime: skipConversationRestore remains in its types,
-			// but the upstream fork path only consumes cancel.
-			return result?.cancel === true;
-		} finally { this.navigationDispatches--; }
+		let result;
+		if (this.platform.busy) {
+			const work = emit().then(async result => { await this.flushWrites(); this.assertActive(); return result; });
+			this.platform.trackRequest(work.then(() => undefined));
+			result = await work;
+		} else result = await this.operate(emit);
+		// This matches Pi's runtime: skipConversationRestore remains in its types,
+		// but the upstream fork path only consumes cancel.
+		return result?.cancel === true;
 	}
 	hasHandlers(type: string): boolean {
 		return this.host?.hasHandlers(type) ?? false;
@@ -260,40 +256,30 @@ export class CommunityHost {
 		this.assertActive();
 		if (this.host.isStarting) return undefined;
 		const emit = async () => { await this.host.start(); return this.host.emit(event, false); };
-		this.navigationDispatches++;
-		try {
-			let result: SessionBeforeCompactResult | undefined;
-			if (this.platform.busy) {
-				const work = emit().then(async res => { await this.flushWrites(); this.assertActive(); return res; });
-				this.platform.trackRequest(work.then(() => undefined));
-				result = await work;
-			} else {
-				result = await this.operate(emit);
-			}
-			return result;
-		} finally {
-			this.navigationDispatches--;
+		let result: SessionBeforeCompactResult | undefined;
+		if (this.platform.busy) {
+			const work = emit().then(async res => { await this.flushWrites(); this.assertActive(); return res; });
+			this.platform.trackRequest(work.then(() => undefined));
+			result = await work;
+		} else {
+			result = await this.operate(emit);
 		}
+		return result;
 	}
 	async beforeTree(event: SessionBeforeTreeEvent): Promise<SessionBeforeTreeResult | undefined> {
 		if (!this.host.hasHandlers("session_before_tree")) return undefined;
 		this.assertActive();
 		if (this.host.isStarting) return undefined;
 		const emit = async () => { await this.host.start(); return this.host.emit(event, false); };
-		this.navigationDispatches++;
-		try {
-			let result: SessionBeforeTreeResult | undefined;
-			if (this.platform.busy) {
-				const work = emit().then(async res => { await this.flushWrites(); this.assertActive(); return res; });
-				this.platform.trackRequest(work.then(() => undefined));
-				result = await work;
-			} else {
-				result = await this.operate(emit);
-			}
-			return result;
-		} finally {
-			this.navigationDispatches--;
+		let result: SessionBeforeTreeResult | undefined;
+		if (this.platform.busy) {
+			const work = emit().then(async res => { await this.flushWrites(); this.assertActive(); return res; });
+			this.platform.trackRequest(work.then(() => undefined));
+			result = await work;
+		} else {
+			result = await this.operate(emit);
 		}
+		return result;
 	}
 	async syncModel(): Promise<void> {
 		if (!this.host.hasHandlers("model_select")) return;
@@ -321,13 +307,18 @@ export class CommunityHost {
 	}
 	emitAgentEvent(event: AgentEvent): Promise<void> {
 		if (!this.host.hasHandlers(event.type)) return this.host.emitAgentEvent(event);
-		if (this.navigationDispatches && this.platform.busy) {
-			// A pending switch dialog must not suppress the source chat's live
-			// message/tool observers. Reuse its captured view and retain each task
-			// until writes settle, even if the navigation handler finishes first.
-			this.navigationDispatches++;
-			const work = this.host.emitAgentEvent(event, false).then(() => this.flushWrites()).finally(() => { this.navigationDispatches--; });
-			this.platform.trackRequest(work);
+		// A parallel tool batch finalizes several calls at once, and pi's loop
+		// dispatches those `tool_execution_*` events concurrently (`Promise.all`
+		// over the batch). Each dispatch runs through `operate`, which is
+		// exclusive: only the first would win and the rest would be rejected with
+		// "An extension operation is already running", surfacing as UI errors for
+		// a perfectly good batch. Reuse the navigation path instead — it already
+		// knows how to join a running operation without opening a new one, and
+		// `tool_execution_*` events carry no handler-visible state that the
+		// source operation's refreshed view would invalidate.
+		if (this.platform.busy) {
+			const work = this.host.emitAgentEvent(event, false).then(() => this.flushWrites());
+			this.platform.trackRequest(work.then(() => undefined));
 			return work;
 		}
 		return this.operate(() => this.host.emitAgentEvent(event), undefined,
