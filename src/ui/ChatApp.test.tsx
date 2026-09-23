@@ -1121,6 +1121,12 @@ describe("ChatApp model-suggested quick actions", () => {
 
 		releaseRequest();
 		await flushRender();
+
+		// The released request is note A's, held across the switch: its answer
+		// must not land on the switched-to note's row. The request counter
+		// (suggestionRequestRef) is the guard — this pins it.
+		expect(quickActionChips(host).some((chip) => chip.textContent === "Agent chip")).toBe(false);
+		expect(quickActionChips(host).some((chip) => chip.textContent === "Summarize this note")).toBe(true);
 	});
 
 	it("shows the model's follow-ups after a reply settles", async () => {
