@@ -183,6 +183,17 @@ export interface PiemSettings {
 	 * nothing and is rewritten away only if the row is toggled again.
 	 */
 	disabledSkills: string[];
+	/**
+	 * Ids of built-in Pi extensions turned off on the Extensions tab.
+	 *
+	 * An id from {@link ./extensions/communityHost}'s static list, matched when
+	 * that host assembles a conversation's extensions — a blocklist, so absent or
+	 * empty means every bundled extension loads and a vault that never toggled one
+	 * stays byte-identical. An entry naming nothing installed is harmless. Not
+	 * every bundled id is offered here: OTel rides the `shareDiagnostics` switch
+	 * instead, and the bookmark engine is not a community extension at all.
+	 */
+	disabledExtensions: string[];
 	/** Internal installation ownership; not a capability switch. */
 	builtinSkillState?: BuiltinSkillState;
 	/**
@@ -223,6 +234,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	sessionDir: DEFAULT_SESSION_DIR,
 	userSkillsDir: "",
 	disabledSkills: [],
+	disabledExtensions: [],
 	logLevel: DEFAULT_LOG_LEVEL,
 	shareDiagnostics: true,
 	mcpServers: [],
@@ -314,6 +326,11 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// place the list should stay clean.
 		disabledSkills: Array.from(
 			new Set((Array.isArray(data?.disabledSkills) ? data.disabledSkills : []).filter((name): name is string => typeof name === "string")),
+		),
+		// Same shape and reasoning as `disabledSkills`: a blocklist of ids, de-duped
+		// and stripped of non-strings so the persisted file stays clean.
+		disabledExtensions: Array.from(
+			new Set((Array.isArray(data?.disabledExtensions) ? data.disabledExtensions : []).filter((id): id is string => typeof id === "string")),
 		),
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.

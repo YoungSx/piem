@@ -93,6 +93,26 @@ describe("normalizeSettings with disabledSkills", () => {
 	});
 });
 
+describe("normalizeSettings with disabledExtensions", () => {
+	it("defaults to an empty list when data.json says nothing", () => {
+		expect(normalizeSettings({}).disabledExtensions).toEqual([]);
+	});
+
+	it("keeps the extension ids as stored and deduplicates them", () => {
+		const settings = normalizeSettings({ disabledExtensions: ["pi-web-search", "@juicesharp/rpiv-todo", "pi-web-search"] });
+		expect(settings.disabledExtensions).toEqual(["pi-web-search", "@juicesharp/rpiv-todo"]);
+	});
+
+	it("drops non-string entries a hand-edited data.json may carry", () => {
+		expect(normalizeSettings({ disabledExtensions: ["pi-clarify", 42, null, true] as never }).disabledExtensions).toEqual(["pi-clarify"]);
+	});
+
+	it("round-trips: a normalized list survives a second pass", () => {
+		const once = normalizeSettings({ disabledExtensions: ["pi-context"] });
+		expect(normalizeSettings(once).disabledExtensions).toEqual(["pi-context"]);
+	});
+});
+
 describe("normalizeSettings narrowing the network transport", () => {
 	it("defaults to the buffered transport when data.json says nothing", () => {
 		// The default is the one that works from every origin without asking an
