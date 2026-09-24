@@ -4537,6 +4537,15 @@ export class ObsidianAgentService {
 		return this.subagentExtension.registry;
 	}
 
+	/**
+	 * The `run_workflow` tool, for the same reason {@link getSubagentRegistry}
+	 * is exposed: a read-only handle for an observer or a smoke to reach the one
+	 * shared instance, rather than rebuilding a session's tool set to find it.
+	 */
+	getWorkflowTool(): AgentTool {
+		return this.workflowTool;
+	}
+
 	/** External tools for the current settings; empty when no provider is wired. */
 	private fetchExternalTools(): Promise<AgentTool[]> {
 		return this.getExternalToolsFn();
