@@ -300,6 +300,9 @@ npm 上的同名包。`package.json` 固定完整 Git 提交，`bun.lock` 锁定
    `scripts/smoke-community-obsidian.mjs` 和
    `scripts/smoke-research-extensions-obsidian.mjs`，覆盖桌面及官方手机模拟。
 
+所有真机 smoke 共用一个台子：一条命令起台与坑位清单见
+[Obsidian 真机 smoke 台](obsidian-smoke-rig.zh-CN.md)。
+
 `scripts/smoke-extension-ui-obsidian.mjs` 在成品服务中用本地测试工厂验证原生弹窗、
 输入补全、生命周期和模型请求。使用 `scripts/smoke-generic-bridge-obsidian.mjs`
 验证通用包导入、组件工厂、原生选择、取消、快捷操作及导入的模型 completion。
