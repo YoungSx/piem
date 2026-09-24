@@ -172,6 +172,122 @@ function fail(message: string): never {
 	throw new WorkflowMetaError(message);
 }
 
+/**
+ * Parse a pure JS object/array literal without evaluating it.
+ *
+ * Accepts exactly what a `meta` literal may contain — object, array, string
+ * (single or double quoted), number, `true`/`false`/`null` — and skips
+ * whitespace and `//` / block comments. Anything else (a bare identifier, a
+ * call, a spread) throws, which is how an impure literal is rejected: the same
+ * outcome upstream got from evaluating in an empty realm, but with no `eval`.
+ */
+function parsePureLiteral(text: string): unknown {
+	let i = 0;
+
+	const skip = (): void => {
+		for (;;) {
+			const c = text[i];
+			if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
+			if (c === "/" && text[i + 1] === "/") { i += 2; while (i < text.length && text[i] !== "\n") i++; continue; }
+			if (c === "/" && text[i + 1] === "*") {
+				i += 2;
+				while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+				i += 2;
+				continue;
+			}
+			return;
+		}
+	};
+
+	const parseString = (quote: string): string => {
+		i++; // opening quote
+		let out = "";
+		while (i < text.length) {
+			const c = text[i];
+			if (c === "\\") {
+				const next = text[i + 1];
+				if (next === "n") out += "\n";
+				else if (next === "t") out += "\t";
+				else if (next === "r") out += "\r";
+				else if (next === "b") out += "\b";
+				else if (next === "f") out += "\f";
+				else if (next === "u") {
+					const hex = text.slice(i + 2, i + 6);
+					out += String.fromCharCode(parseInt(hex, 16));
+					i += 6;
+					continue;
+				} else out += next ?? "";
+				i += 2;
+				continue;
+			}
+			if (c === quote) { i++; return out; }
+			out += c;
+			i++;
+		}
+		throw new Error("unterminated string");
+	};
+
+	const parseValue = (): unknown => {
+		skip();
+		const c = text[i];
+		if (c === '"' || c === "'") return parseString(c);
+		if (c === "{") return parseObject();
+		if (c === "[") return parseArray();
+		if (text.startsWith("true", i)) { i += 4; return true; }
+		if (text.startsWith("false", i)) { i += 5; return false; }
+		if (text.startsWith("null", i)) { i += 4; return null; }
+		const numberMatch = /^-?\d+(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(i));
+		if (numberMatch) { i += numberMatch[0].length; return Number(numberMatch[0]); }
+		throw new Error(`unexpected token at ${i} (only object, array, string, number, boolean and null are allowed)`);
+	};
+
+	const parseKey = (): string => {
+		skip();
+		const c = text[i];
+		if (c === '"' || c === "'") return parseString(c);
+		const identMatch = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(text.slice(i));
+		if (identMatch) { i += identMatch[0].length; return identMatch[0]; }
+		throw new Error(`expected a property name at ${i}`);
+	};
+
+	function parseObject(): Record<string, unknown> {
+		i++; // {
+		const out: Record<string, unknown> = {};
+		skip();
+		if (text[i] === "}") { i++; return out; }
+		for (;;) {
+			const key = parseKey();
+			skip();
+			if (text[i] !== ":") throw new Error(`expected ':' after "${key}"`);
+			i++;
+			out[key] = parseValue();
+			skip();
+			if (text[i] === ",") { i++; skip(); if (text[i] === "}") { i++; return out; } continue; }
+			if (text[i] === "}") { i++; return out; }
+			throw new Error(`expected ',' or '}' at ${i}`);
+		}
+	}
+
+	function parseArray(): unknown[] {
+		i++; // [
+		const out: unknown[] = [];
+		skip();
+		if (text[i] === "]") { i++; return out; }
+		for (;;) {
+			out.push(parseValue());
+			skip();
+			if (text[i] === ",") { i++; skip(); if (text[i] === "]") { i++; return out; } continue; }
+			if (text[i] === "]") { i++; return out; }
+			throw new Error(`expected ',' or ']' at ${i}`);
+		}
+	}
+
+	const result = parseValue();
+	skip();
+	if (i < text.length) throw new Error(`trailing content after the literal at ${i}`);
+	return result;
+}
+
 function assertPhases(value: unknown): WorkflowPhaseMeta[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value)) fail("`meta.phases` must be an array of { title, detail?, model? } objects.");
@@ -225,9 +341,13 @@ export function extractMeta(source: string): MetaExtraction {
 	const fragment = source.slice(open, close);
 	let value: unknown;
 	try {
-		// A pure literal needs no globals, so anything reaching for one (a
-		// variable, a helper call) throws here and is reported as impure.
-		value = new Function(`return (${fragment})`)();
+		// Parsed by {@link parsePureLiteral}, not evaluated: the Obsidian plugin
+		// guidelines (and this repo's lint) forbid `new Function`/`eval`, and a
+		// pure literal needs no evaluation anyway. The parser accepts only object,
+		// array, string, number, boolean, and null — an identifier or a call (an
+		// impure literal) throws, which is the same rejection upstream got from
+		// evaluating in an empty realm.
+		value = parsePureLiteral(fragment);
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		fail(`\`meta\` could not be evaluated: ${detail}\n${PURE_LITERAL_HINT}`);
@@ -252,7 +372,7 @@ export function extractMeta(source: string): MetaExtraction {
 	const meta: WorkflowMeta = {
 		name: raw.name,
 		description: raw.description,
-		...(raw.whenToUse !== undefined ? { whenToUse: raw.whenToUse as string } : {}),
+		...(raw.whenToUse !== undefined ? { whenToUse: raw.whenToUse } : {}),
 		...(phases !== undefined ? { phases } : {}),
 	};
 

@@ -106,6 +106,9 @@ import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
 import { createSubagentExtension } from "../subagent/extension";
+import { SUBAGENT_ROLES } from "../subagent/roles";
+import { createWorkflowHost } from "../workflow/host";
+import { createWorkflowTool, createMemoryJournalStore } from "../workflow/workflowTool";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
 import type { MemberSessionHandle, MemberSessionSpec } from "../extensions/team/memberTypes";
 import { OBSIDIAN_AGENT_SYSTEM_PROMPT } from "./systemPrompt";
@@ -731,6 +734,13 @@ export class ObsidianAgentService {
 	 */
 	private readonly subagentExtension: ReturnType<typeof createSubagentExtension>;
 	/**
+	 * The `run_workflow` tool, built once over the subagent runner and shared by
+	 * every session's tool set. Its journal store is per-service, so a
+	 * `resumeFromRunId` from one session's run replays in another within the
+	 * session's lifetime — the store dies with the service.
+	 */
+	private readonly workflowTool: AgentTool;
+	/**
 	 * One runtime per open session file (issue #235). The service no longer
 	 * carries per-session state as singletons: every field that belongs to a
 	 * conversation lives on the {@link SessionRuntime} keyed by its file path,
@@ -957,6 +967,16 @@ export class ObsidianAgentService {
 			// conversation builds ride, so a child never waits on (or resurrects) a
 			// dead server's handshake. Undefined in hosts without the gather.
 			getExternalTools: this.getMountedExternalToolsFn,
+		});
+
+		// The workflow tool spawns through the same subagent runner, so a workflow
+		// child resolves its model, tools, and transport exactly as a delegated
+		// subagent does. Built once and shared; the journal store lives here.
+		this.workflowTool = createWorkflowTool({
+			host: createWorkflowHost(this.subagentExtension.workflowChildRunner),
+			store: createMemoryJournalStore(),
+			newRunId: () => crypto.randomUUID(),
+			agentTypes: SUBAGENT_ROLES.map((role) => role.name),
 		});
 	}
 
@@ -4479,7 +4499,14 @@ export class ObsidianAgentService {
 		// at spawn-execute time and must read the spawning session's state — a
 		// focused panel on session B must not leak B's thinking level or skills
 		// into a spawn started by session A.
-		return [...this.subagentExtension.createTools(() => rt.skills, rt.sessionPath), ...(rt.communityHost?.tools ?? [])].map((tool) => {
+		return [
+			...this.subagentExtension.createTools(() => rt.skills, rt.sessionPath),
+			// One orchestration tool per set, top level only conceptually — a
+			// workflow's own children are leaves and never receive it, because they
+			// run at the subagent depth limit where the delegation tools are absent.
+			this.workflowTool,
+			...(rt.communityHost?.tools ?? []),
+		].map((tool) => {
 			if (!tool.execute) {
 				return tool;
 			}
