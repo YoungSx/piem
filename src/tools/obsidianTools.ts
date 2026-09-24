@@ -1,6 +1,10 @@
 import type { App } from "obsidian";
 import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
-import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
+import {
+	createEditTool,
+	createReadTool,
+	createWriteTool,
+} from "@earendil-works/pi-agent-core";
 import type { VaultExecutionEnv } from "../vault/VaultExecutionEnv";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
 import { withContentLedger } from "../vault/contentLedger";
@@ -8,7 +12,10 @@ import { createNoteLinksTool, createNoteMetadataTool } from "./linkTools";
 import { createUpdateFrontmatterTool } from "./frontmatterTools";
 import { createActiveNoteTool } from "./noteTools";
 import { createOpenNoteTool, createOpenSidePanelTool } from "./navigationTools";
-import { createGotoLocationTool, createInsertAtCursorTool } from "./editorTools";
+import {
+	createGotoLocationTool,
+	createInsertAtCursorTool,
+} from "./editorTools";
 import { createAskUserTool, createNotifyTool } from "./interactionTools";
 import type { AskUserBroker } from "./askUserBroker";
 import { createMoveNoteTool, createTrashNoteTool } from "./organizeTools";
@@ -17,6 +24,7 @@ import { createListTasksTool, createSummarizeTasksTool } from "./taskTools";
 import { createWebFetchTool } from "./webFetchTools";
 import { createReadSkillTool } from "./skillTools";
 import type { PiemSettings } from "../settings";
+import type { Keychain } from "../keychain";
 
 /**
  * Builds the full Obsidian-vault tool set for a low-level pi `Agent`.
@@ -34,13 +42,13 @@ import type { PiemSettings } from "../settings";
  * to load prompt templates, so a reload never hands the loader a different
  * object than the tools queue on.
  *
-	 * The remaining tools (ls, find, grep, tasks, notes, frontmatter, skills,
-	 * move, trash, and the screen tools — open/panel/cursor/notify/ask) are
-	 * application-specific
-	 * and stay hand-written. `read_skill` serves the loaded in-memory snapshot
-	 * across built-in, user-level, and vault skill files. move/trash
-	 * stay out of the native set because pi's `FileSystem` rename replaces its
-	 * destination, while a user-facing move must refuse an occupied one.
+ * The remaining tools (ls, find, grep, tasks, notes, frontmatter, skills,
+ * move, trash, and the screen tools — open/panel/cursor/notify/ask) are
+ * application-specific
+ * and stay hand-written. `read_skill` serves the loaded in-memory snapshot
+ * across built-in, user-level, and vault skill files. move/trash
+ * stay out of the native set because pi's `FileSystem` rename replaces its
+ * destination, while a user-facing move must refuse an occupied one.
  *
  * Every tool carries an explicit `executionMode` — pi treats an omitted mark
  * as "parallel", and a batch runs concurrently unless one of its tools is
@@ -76,6 +84,13 @@ export interface ObsidianToolDeps {
 	askUserBroker?: AskUserBroker;
 	/** Originating conversation, bound when these tools are built. */
 	ownerId?: string;
+	/**
+	 * Read-only keychain `web_fetch` resolves `{{secret:id}}` placeholders
+	 * against. Omitted leaves the placeholder substitution off, so the tool sends
+	 * whatever the model wrote verbatim — the safe default for tests and for a
+	 * host with no usable secret storage.
+	 */
+	keychain?: Keychain;
 }
 
 export function createObsidianTools(
@@ -91,9 +106,18 @@ export function createObsidianTools(
 	const tools: AgentTool[] = [
 		// pi's native harness tools ship without an `executionMode`, so the pin
 		// happens here, at the one place they are adapted into the agent's list.
-		adaptHarnessTool(createReadTool(), { context: { env: trackedEnv }, executionMode: "parallel" }),
-		adaptHarnessTool(createWriteTool(), { context: { env: trackedEnv }, executionMode: "sequential" }),
-		adaptHarnessTool(createEditTool(), { context: { env: trackedEnv }, executionMode: "sequential" }),
+		adaptHarnessTool(createReadTool(), {
+			context: { env: trackedEnv },
+			executionMode: "parallel",
+		}),
+		adaptHarnessTool(createWriteTool(), {
+			context: { env: trackedEnv },
+			executionMode: "sequential",
+		}),
+		adaptHarnessTool(createEditTool(), {
+			context: { env: trackedEnv },
+			executionMode: "sequential",
+		}),
 		createLsTool(app),
 		createFindTool(app),
 		createGrepTool(app),
@@ -121,8 +145,10 @@ export function createObsidianTools(
 		 * React tree now, which reads the language from its own context. This layer
 		 * supplies the broker and the conversation the question belongs to.
 		 */
-		...(deps.askUserBroker ? [createAskUserTool(app, deps.askUserBroker, deps.ownerId)] : []),
-		createWebFetchTool(),
+		...(deps.askUserBroker
+			? [createAskUserTool(app, deps.askUserBroker, deps.ownerId)]
+			: []),
+		createWebFetchTool(deps.keychain),
 	];
 	if (deps.getSkills) {
 		tools.push(createReadSkillTool(deps.getSkills));

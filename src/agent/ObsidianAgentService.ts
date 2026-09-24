@@ -27,16 +27,42 @@ import {
 	estimateContextTokens,
 	shouldCompact,
 } from "@earendil-works/pi-agent-core";
-import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
-import { PromptQueue, queuedMessages, type QueuedPrompt, type QueueEntry, type TakenPrompt } from "./promptQueue";
+import {
+	BACKGROUND_CONTEXT,
+	withAbortSignal,
+} from "@earendil-works/chord/context";
+import {
+	PromptQueue,
+	queuedMessages,
+	type QueuedPrompt,
+	type QueueEntry,
+	type TakenPrompt,
+} from "./promptQueue";
 import { MAX_DRAFT_LENGTH } from "../session/DraftStore";
 import { appendToDraft } from "../ui/noteReference";
-import { MAX_CONTEXT_REFERENCES, createReferenceMessage, mergeContextReferences, messageReferences, parseContextReferences, promptReferences, type ContextReference } from "./contextReference";
+import {
+	MAX_CONTEXT_REFERENCES,
+	createReferenceMessage,
+	mergeContextReferences,
+	messageReferences,
+	parseContextReferences,
+	promptReferences,
+	type ContextReference,
+} from "./contextReference";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
-import { createObsidianModels, requestDefaults, withRequestDefaults, type ObsidianModelsBundle } from "../net/streamFn";
+import {
+	createObsidianModels,
+	requestDefaults,
+	withRequestDefaults,
+	type ObsidianModelsBundle,
+} from "../net/streamFn";
 import { createObsidianRequestUrlFetch } from "../net/obsidianFetch";
 import { resolveRetrySettings } from "../net/retrySettings";
-import { withTurnRetry, DEFAULT_TURN_MAX_DELAY_MS, type TurnRetryPolicy } from "../net/streamRetry";
+import {
+	withTurnRetry,
+	DEFAULT_TURN_MAX_DELAY_MS,
+	type TurnRetryPolicy,
+} from "../net/streamRetry";
 import { matchVendorForModel } from "../net/vendorMatch";
 import { vendorIconName } from "../net/vendorIcons";
 import {
@@ -45,9 +71,25 @@ import {
 	type CompactionEvent,
 	type CompactionOutcome,
 } from "./compaction";
-import type { BranchSummaryEntry, CompactOptions, CompactionResult, EntryRenderer, MarkdownTransformContext, MessageRenderer, SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
-import { measureContextFill, sumUsage, type ContextFill, type UsageTotals } from "./usage";
-import { resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
+import type {
+	BranchSummaryEntry,
+	CompactOptions,
+	CompactionResult,
+	EntryRenderer,
+	MarkdownTransformContext,
+	MessageRenderer,
+	SessionBeforeCompactEvent,
+} from "@earendil-works/pi-coding-agent";
+import {
+	measureContextFill,
+	sumUsage,
+	type ContextFill,
+	type UsageTotals,
+} from "./usage";
+import {
+	resolveCompactionSettings,
+	type CompactionSettings,
+} from "./compactionSettings";
 import { CommunityHost } from "../extensions/communityHost";
 import { hasClarifyMarker } from "../extensions/communityFactories.mjs";
 import type { CommunityExtension } from "../extensions/communityHost";
@@ -63,12 +105,25 @@ import { createExtensionConfigStore } from "../extensions/extensionConfigStore";
 import { clarifyModelProjection } from "../extensions/clarifyConfig";
 import { hostStorage, otelEnvironment } from "../extensions/otelConfig";
 import { ExtensionModelSwitch } from "../extensions/modelSwitch";
-import { BookmarkHost, type BookmarkCommand, type BookmarkOutcome, type ChatBookmark } from "../extensions/bookmarkHost";
+import {
+	BookmarkHost,
+	type BookmarkCommand,
+	type BookmarkOutcome,
+	type ChatBookmark,
+} from "../extensions/bookmarkHost";
 import { createObsidianTools } from "../tools/obsidianTools";
 import { resolveNoteEditor } from "../vault/noteEditor";
 import type { AskUserBroker } from "../tools/askUserBroker";
-import { fetchQuickActionSuggestions, lastAssistantText, type SuggestionScope } from "./quickActionSuggestionRequest";
-import { QuickActionSuggestionCache, type SuggestionCacheKey, workspaceKeyPart } from "./quickActionSuggestionCache";
+import {
+	fetchQuickActionSuggestions,
+	lastAssistantText,
+	type SuggestionScope,
+} from "./quickActionSuggestionRequest";
+import {
+	QuickActionSuggestionCache,
+	type SuggestionCacheKey,
+	workspaceKeyPart,
+} from "./quickActionSuggestionCache";
 import type { QuickAction } from "../ui/quickActionSuggestions";
 import type { TraceExpandSetting } from "../ui/traceExpand";
 import { DEFAULT_THINKING_LEVEL } from "../constants";
@@ -93,24 +148,56 @@ import {
 	type SessionDefaults,
 	type SessionReconcileOutcome,
 } from "../session/ObsidianSessionManager";
-import { aggregateSessionSearchHits, type SessionSearchResult } from "../session/sessionSearch";
-import { arrayBufferToBase64, extractImageRefs, mimeTypeForPath, sanitizeMessageForLog, stripImageRefs } from "../vault/image";
-import { EMPTY_RUN_CONTEXT, injectContext, type FrozenRunContext, type InjectedNote } from "./contextInjection";
-import { probeEnvironment, probeRunContext, probeWorkspaceContext } from "./contextProbe";
-import { EMPTY_WORKSPACE_CONTEXT, type WorkspaceContext } from "./workspaceContext";
+import {
+	aggregateSessionSearchHits,
+	type SessionSearchResult,
+} from "../session/sessionSearch";
+import {
+	arrayBufferToBase64,
+	extractImageRefs,
+	mimeTypeForPath,
+	sanitizeMessageForLog,
+	stripImageRefs,
+} from "../vault/image";
+import {
+	EMPTY_RUN_CONTEXT,
+	injectContext,
+	type FrozenRunContext,
+	type InjectedNote,
+} from "./contextInjection";
+import {
+	probeEnvironment,
+	probeRunContext,
+	probeWorkspaceContext,
+} from "./contextProbe";
+import {
+	EMPTY_WORKSPACE_CONTEXT,
+	type WorkspaceContext,
+} from "./workspaceContext";
 import { probeNoteFacts, noteFactsKeyPart, type NoteFacts } from "./noteFacts";
 import { SilentScout, type ScoutInsight } from "./silentScout";
+import type { Keychain } from "../keychain";
 import { requestScoutFindings } from "./scoutPerception";
 import { NoteSessionIndex } from "./noteSessionIndex";
-import { noteFileName, renderTranscriptMarkdown, type ExportableMessage } from "./exportNote";
+import {
+	noteFileName,
+	renderTranscriptMarkdown,
+	type ExportableMessage,
+} from "./exportNote";
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
 import { createSubagentExtension } from "../subagent/extension";
 import { SUBAGENT_ROLES } from "../subagent/roles";
 import { createWorkflowHost } from "../workflow/host";
-import { createWorkflowTool, createMemoryJournalStore } from "../workflow/workflowTool";
+import {
+	createWorkflowTool,
+	createMemoryJournalStore,
+} from "../workflow/workflowTool";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
-import type { MemberSessionHandle, MemberSessionSpec } from "../extensions/team/memberTypes";
+import type {
+	MemberSessionHandle,
+	MemberSessionSpec,
+} from "../extensions/team/memberTypes";
 import { OBSIDIAN_AGENT_SYSTEM_PROMPT } from "./systemPrompt";
 import {
 	composeSystemPrompt,
@@ -126,13 +213,22 @@ import {
 import { loadUserSkills, type UserSkillsLoad } from "../skills/userSkills";
 import type { Skill, SkillDiagnostic } from "@earendil-works/pi-agent-core";
 import { BUILTIN_SKILLS_DIR } from "../skills/builtinSkillPackage";
-import { emptyBuiltinSkillReport, type BuiltinSkillReport } from "../skills/builtinSkillState";
+import {
+	emptyBuiltinSkillReport,
+	type BuiltinSkillReport,
+} from "../skills/builtinSkillState";
 import { describeAgentEvent } from "./agentEventLog";
 import { markReplySteered } from "../ui/replyCutoff";
 import { stampReplyEnd } from "../ui/replyDuration";
 import { summarizeToolContent } from "../ui/traceSummary";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
-import { getT, resolveLanguage, type Language, type LanguageHost, type Translator } from "../i18n";
+import {
+	getT,
+	resolveLanguage,
+	type Language,
+	type LanguageHost,
+	type Translator,
+} from "../i18n";
 import type { SendShortcut } from "../ui/keyboard";
 import { VaultExecutionEnv } from "../vault/VaultExecutionEnv";
 import { BUILTIN_PROMPT_TEMPLATES } from "./builtinTemplates";
@@ -468,8 +564,15 @@ type SnapshotListener = (snapshot: ChatSnapshot) => void;
  * head was replaced by a compaction summary — retrying there would resend a
  * prompt the model can no longer see in context.
  */
-function findPromptIndex(messages: AgentMessage[], index: number): number | null {
-	for (let cursor = Math.min(index, messages.length) - 1; cursor >= 0; cursor -= 1) {
+function findPromptIndex(
+	messages: AgentMessage[],
+	index: number,
+): number | null {
+	for (
+		let cursor = Math.min(index, messages.length) - 1;
+		cursor >= 0;
+		cursor -= 1
+	) {
 		if (messages[cursor]?.role === "user") {
 			return cursor;
 		}
@@ -506,16 +609,24 @@ function findPromptIndex(messages: AgentMessage[], index: number): number | null
  * A failure with no assistant turn to anchor to is untouched and still reaches
  * the banner: nothing departed, so there is nothing to point at.
  */
-function isReportedInTranscript(agent: Agent | null, agentError: string): boolean {
+function isReportedInTranscript(
+	agent: Agent | null,
+	agentError: string,
+): boolean {
 	const messages = agent?.state.messages;
 	if (!messages) {
 		return false;
 	}
 	const lastAssistant = lastAssistantTurn(messages);
-	if (lastAssistant?.role !== "assistant" || lastAssistant.errorMessage !== agentError) {
+	if (
+		lastAssistant?.role !== "assistant" ||
+		lastAssistant.errorMessage !== agentError
+	) {
 		return false;
 	}
-	return lastAssistant.stopReason === "aborted" || lastAssistant.stopReason === "error";
+	return (
+		lastAssistant.stopReason === "aborted" || lastAssistant.stopReason === "error"
+	);
 }
 
 /**
@@ -534,7 +645,9 @@ function causeMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
-function lastAssistantTurn(messages: readonly AgentMessage[]): AgentMessage | undefined {
+function lastAssistantTurn(
+	messages: readonly AgentMessage[],
+): AgentMessage | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];
 		if (message?.role === "assistant") {
@@ -553,7 +666,10 @@ function extractUserText(message: AgentMessage | undefined): string {
 		return content.trim();
 	}
 	return content
-		.filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+		.filter(
+			(part): part is Extract<typeof part, { type: "text" }> =>
+				part.type === "text",
+		)
 		.map((part) => part.text)
 		.join("\n")
 		.trim();
@@ -669,6 +785,16 @@ export interface ObsidianAgentServiceOptions {
 	pluginVersion?: string;
 	/** In-app background intelligence and proactive context prefetcher. */
 	silentScout?: SilentScout;
+	/**
+	 * Read-only keychain the vault tools resolve `{{secret:id}}` placeholders
+	 * against — `web_fetch` today.
+	 *
+	 * The plugin passes {@link SecretEnvironment.keychain}, the same read view
+	 * provider bindings resolve through, so a `web_fetch` placeholder reaches any
+	 * entry the user created without the value ever entering the transcript.
+	 * Omitted (the default in tests) leaves placeholder substitution off.
+	 */
+	keychain?: Keychain;
 }
 
 interface CompactionRunOptions {
@@ -684,7 +810,8 @@ interface CompactionRunOptions {
 	onError?: (error: Error) => void;
 }
 
-type SavedCompactionOutcome = Exclude<CompactionOutcome, { status: "compacted" }>
+type SavedCompactionOutcome =
+	| Exclude<CompactionOutcome, { status: "compacted" }>
 	| (Extract<CompactionOutcome, { status: "compacted" }> & { entryId: string });
 
 export class ObsidianAgentService {
@@ -694,17 +821,25 @@ export class ObsidianAgentService {
 	private readonly getSettings: () => PiemSettings;
 	private readonly sessionManager: ObsidianSessionManager;
 	private readonly streamFn: StreamFn | undefined;
-	private readonly loadUserSkillsFn: (customDir?: string) => Promise<UserSkillsLoad>;
+	private readonly loadUserSkillsFn: (
+		customDir?: string,
+	) => Promise<UserSkillsLoad>;
 	private readonly builtinSkills: ObsidianAgentServiceOptions["builtinSkills"];
 	private skillReload?: Promise<void>;
 	/** See {@link ObsidianAgentServiceOptions.persistSettings}. */
-	private readonly persistSettings: (options?: { reconfigure?: boolean }) => Promise<void>;
+	private readonly persistSettings: (options?: {
+		reconfigure?: boolean;
+	}) => Promise<void>;
 	/** See {@link ObsidianAgentServiceOptions.getExternalTools}. */
 	private readonly getExternalToolsFn: () => Promise<AgentTool[]>;
 	/** See {@link ObsidianAgentServiceOptions.getMountedExternalTools}. */
-	private readonly getMountedExternalToolsFn: (() => readonly AgentTool[]) | undefined;
+	private readonly getMountedExternalToolsFn:
+		| (() => readonly AgentTool[])
+		| undefined;
 	/** See {@link ObsidianAgentServiceOptions.credentials}. */
 	private readonly credentials: CredentialStore | undefined;
+	/** See {@link ObsidianAgentServiceOptions.keychain}. */
+	private readonly keychain: Keychain | undefined;
 	private readonly extensionFactories: readonly CommunityExtension[] | undefined;
 	/** Turning off is immediate and latched for this service; re-enabling needs reload. */
 	private diagnosticsDisabled: boolean;
@@ -713,7 +848,9 @@ export class ObsidianAgentService {
 	private readonly extensionBackgroundFetch = (() => {
 		const fetch = createObsidianRequestUrlFetch();
 		const physicalRequestSignal = new AbortController().signal;
-		return createExtensionRequestPool((input, init) => fetch(input, { ...init, signal: physicalRequestSignal }));
+		return createExtensionRequestPool((input, init) =>
+			fetch(input, { ...init, signal: physicalRequestSignal }),
+		);
 	})();
 	private readonly listeners = new Set<SnapshotListener>();
 	/**
@@ -753,7 +890,8 @@ export class ObsidianAgentService {
 	private disposed = false;
 	private sessionOpenSequence = 0;
 	private sessionOpenQueue: Promise<void> = Promise.resolve();
-	private pendingSessionOpen: { path: string; promise: Promise<void> } | null = null;
+	private pendingSessionOpen: { path: string; promise: Promise<void> } | null =
+		null;
 	/**
 	 * The snapshot is the ACTIVE session's view, so these two mirror the active
 	 * runtime's `sessionInfo` / `sessionRevision` for `getSnapshot` — and stand
@@ -880,7 +1018,12 @@ export class ObsidianAgentService {
 	private readonly askUserBroker: AskUserBroker | undefined;
 	private readonly silentScout: SilentScout;
 
-	constructor(app: App, getSettings: () => PiemSettings, sessionManager: ObsidianSessionManager, options: ObsidianAgentServiceOptions = {}) {
+	constructor(
+		app: App,
+		getSettings: () => PiemSettings,
+		sessionManager: ObsidianSessionManager,
+		options: ObsidianAgentServiceOptions = {},
+	) {
 		this.app = app;
 		this.getSettings = getSettings;
 		this.sessionManager = sessionManager;
@@ -889,35 +1032,55 @@ export class ObsidianAgentService {
 		this.noteSessionIndex = new NoteSessionIndex(50, vaultKey);
 		this.streamFn = options.streamFn;
 		this.askUserBroker = options.askUserBroker;
-		this.silentScout = options.silentScout ?? new SilentScout(this.app, async (request, signal) => {
-			// The suggestion model, not the active one: perception is a background
-			// nicety and must never inherit the conversation model's cost. No model
-			// configured means no perception, never a builtin-catalog one.
-			const model = resolveSuggestionModel(this.getSettings());
-			if (!model) return null;
-			return requestScoutFindings({
-				streamSimple: this.resolveStreamFn(),
-				model,
-				request,
-				language: resolveLanguage(this.app.vault as LanguageHost, this.getSettings().language),
-				signal,
-				apiKey: this.getApiKey(model.provider),
+		this.silentScout =
+			options.silentScout ??
+			new SilentScout(this.app, async (request, signal) => {
+				// The suggestion model, not the active one: perception is a background
+				// nicety and must never inherit the conversation model's cost. No model
+				// configured means no perception, never a builtin-catalog one.
+				const model = resolveSuggestionModel(this.getSettings());
+				if (!model) return null;
+				return requestScoutFindings({
+					streamSimple: this.resolveStreamFn(),
+					model,
+					request,
+					language: resolveLanguage(
+						this.app.vault as LanguageHost,
+						this.getSettings().language,
+					),
+					signal,
+					apiKey: this.getApiKey(model.provider),
+				});
 			});
-		});
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
 		this.builtinSkills = options.builtinSkills;
-		this.persistSettings = options.persistSettings ?? ((options?: { reconfigure?: boolean }) => (options?.reconfigure === false ? Promise.resolve() : this.refreshConfiguration()));
+		this.persistSettings =
+			options.persistSettings ??
+			((options?: { reconfigure?: boolean }) =>
+				options?.reconfigure === false
+					? Promise.resolve()
+					: this.refreshConfiguration());
 		this.extensionModelSwitch = new ExtensionModelSwitch({
-			getSettings: this.getSettings, sessions: this.sessionManager,
-			persistSettings: this.persistSettings, notify: () => this.notify(),
-			reportFailure: error => this.log.error("Failed to restore model preference", () => ({ error: causeMessage(error) })),
+			getSettings: this.getSettings,
+			sessions: this.sessionManager,
+			persistSettings: this.persistSettings,
+			notify: () => this.notify(),
+			reportFailure: (error) =>
+				this.log.error("Failed to restore model preference", () => ({
+					error: causeMessage(error),
+				})),
 		});
 		this.getExternalToolsFn = options.getExternalTools ?? (async () => []);
 		this.getMountedExternalToolsFn = options.getMountedExternalTools;
 		this.credentials = options.credentials;
+		this.keychain = options.keychain;
 		this.extensionFactories = options.extensionFactories;
 		this.diagnosticsDisabled = getSettings().shareDiagnostics === false;
-		this.telemetryEnvironment = otelEnvironment(!this.diagnosticsDisabled, options.pluginVersion, hostStorage());
+		this.telemetryEnvironment = otelEnvironment(
+			!this.diagnosticsDisabled,
+			options.pluginVersion,
+			hostStorage(),
+		);
 		this.log = (options.logger ?? NOOP_LOGGER).child("agent");
 		this.env = new VaultExecutionEnv(app);
 		this.subagentExtension = createSubagentExtension({
@@ -929,6 +1092,7 @@ export class ObsidianAgentService {
 					// once produce two cards in turn rather than two dialogs stacked.
 					askUserBroker: this.askUserBroker,
 					ownerId,
+					keychain: this.keychain,
 				}),
 			getModel: () => getSelectedModel(this.getSettings()),
 			getStreamFn: () => this.resolveStreamFn(),
@@ -937,14 +1101,18 @@ export class ObsidianAgentService {
 			// session the panel is currently showing. The slot is set by the
 			// per-runtime tool wrappers built in `replaceAgent`.
 			getThinkingLevel: () =>
-				this.toolRuntime?.agent?.state.thinkingLevel
-					?? this.current()?.agent?.state.thinkingLevel
-					?? DEFAULT_THINKING_LEVEL,
+				this.toolRuntime?.agent?.state.thinkingLevel ??
+				this.current()?.agent?.state.thinkingLevel ??
+				DEFAULT_THINKING_LEVEL,
 			// The same list and the same join the model switcher uses, so a spawn
 			// can only pick something the user could pick — and resolves it the way
 			// the switcher would. Read per call, so a model configured after this
 			// service was built is offered to the next agent build.
-			listModels: () => listModelChoices(this.getSettings()).map((choice) => ({ id: choice.id, label: `${choice.name} (${choice.provider})` })),
+			listModels: () =>
+				listModelChoices(this.getSettings()).map((choice) => ({
+					id: choice.id,
+					label: `${choice.name} (${choice.provider})`,
+				})),
 			resolveModel: (choiceId) => resolveModelChoice(this.getSettings(), choiceId),
 			// The same instance the parent's own compaction uses, rebuilt with it
 			// when a provider registration changes. `withRequestDefaults` is not
@@ -953,7 +1121,8 @@ export class ObsidianAgentService {
 			// into the instance or a child compacts against `globalThis.fetch`
 			// without a key.
 			getModels: () => this.modelsWithRequestDefaults(),
-			getCompactionSettings: (contextWindow) => this.resolveCompaction(contextWindow),
+			getCompactionSettings: (contextWindow) =>
+				this.resolveCompaction(contextWindow),
 			getApiKey: (provider) => this.getApiKey(provider),
 			getSkills: () => this.toolRuntime?.skills ?? this.skills,
 			// Which chat a delegation belongs to, resolved the same way — and for the
@@ -962,7 +1131,8 @@ export class ObsidianAgentService {
 			// while the panel shows another must not have its children filed under
 			// the chat being read, or the monitor panel lists them under the wrong
 			// conversation and `list_subagents` offers them to the wrong model.
-			getOwnerId: () => this.toolRuntime?.sessionPath ?? this.current()?.sessionPath,
+			getOwnerId: () =>
+				this.toolRuntime?.sessionPath ?? this.current()?.sessionPath,
 			// What is mounted right now, connect-free — a spawn reads the cache the
 			// conversation builds ride, so a child never waits on (or resurrects) a
 			// dead server's handshake. Undefined in hosts without the gather.
@@ -1047,7 +1217,9 @@ export class ObsidianAgentService {
 
 	/** The runtime of the session on screen, if one has been adopted. */
 	private current(): SessionRuntime | null {
-		return this.currentPath ? (this.runtimes.get(this.currentPath) ?? null) : null;
+		return this.currentPath
+			? (this.runtimes.get(this.currentPath) ?? null)
+			: null;
 	}
 
 	/**
@@ -1132,7 +1304,12 @@ export class ObsidianAgentService {
 		}
 	}
 
-	async sendPrompt(prompt: string, images: ImageContent[] = [], references: readonly ContextReference[] = [], onAccepted?: () => void): Promise<boolean> {
+	async sendPrompt(
+		prompt: string,
+		images: ImageContent[] = [],
+		references: readonly ContextReference[] = [],
+		onAccepted?: () => void,
+	): Promise<boolean> {
 		const trimmedPrompt = prompt.trim();
 		if (!trimmedPrompt || this.pendingSessionOpen || this.disposed) {
 			return false;
@@ -1165,30 +1342,79 @@ export class ObsidianAgentService {
 		 */
 		const rt = this.runtimeForFocused();
 		const validReferences = parseContextReferences(references);
-		if (!validReferences) { this.setNotice(rt, this.t().t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES })); return false; }
-		if (validReferences.length && this.isExtensionInput(trimmedPrompt)) {
-			this.setNotice(rt, this.t().t("noteReference.extensionReferences")); return false;
+		if (!validReferences) {
+			this.setNotice(
+				rt,
+				this.t().t("noteReference.referenceLimit", {
+					limit: MAX_CONTEXT_REFERENCES,
+				}),
+			);
+			return false;
 		}
-		if (rt.extensionBusy || rt.extensionCommand) { this.setNotice(rt, this.t().t("extensions.busy")); return false; }
+		if (validReferences.length && this.isExtensionInput(trimmedPrompt)) {
+			this.setNotice(rt, this.t().t("noteReference.extensionReferences"));
+			return false;
+		}
+		if (rt.extensionBusy || rt.extensionCommand) {
+			this.setNotice(rt, this.t().t("extensions.busy"));
+			return false;
+		}
 		if (rt.isCompacting || rt.retryInFlight) {
-			this.setNotice(rt, this.t().t(rt.isCompacting ? "chat.busyTidying" : "chat.busyResending"));
+			this.setNotice(
+				rt,
+				this.t().t(rt.isCompacting ? "chat.busyTidying" : "chat.busyResending"),
+			);
 			return false;
 		}
 		const extensionCommand = parsePromptCommand(trimmedPrompt);
 		const explicitExtension = extensionCommand?.name.startsWith("extension:");
-		const extensionName = explicitExtension ? extensionCommand!.name.slice("extension:".length) : extensionCommand?.name;
-		const matchedExtension = rt.communityHost?.commands.find(command => command.name === extensionName) ?? (extensionName === "context" ? { name: "context" } : undefined);
-		if (extensionCommand && matchedExtension && (explicitExtension || !findPromptTemplate(this.promptTemplates, extensionCommand.name) && !findSkill(rt.skills, extensionCommand.name))) {
-			if (images.length) { this.setNotice(rt, this.t().t("extensions.noImages")); return false; }
-			try { return await this.runExtensionFor(rt, matchedExtension.name, extensionCommand.additionalInstructions); }
-			catch (error) { this.setError(rt, causeMessage(error)); return false; }
+		const extensionName = explicitExtension
+			? extensionCommand!.name.slice("extension:".length)
+			: extensionCommand?.name;
+		const matchedExtension =
+			rt.communityHost?.commands.find(
+				(command) => command.name === extensionName,
+			) ?? (extensionName === "context" ? { name: "context" } : undefined);
+		if (
+			extensionCommand &&
+			matchedExtension &&
+			(explicitExtension ||
+				(!findPromptTemplate(this.promptTemplates, extensionCommand.name) &&
+					!findSkill(rt.skills, extensionCommand.name)))
+		) {
+			if (images.length) {
+				this.setNotice(rt, this.t().t("extensions.noImages"));
+				return false;
+			}
+			try {
+				return await this.runExtensionFor(
+					rt,
+					matchedExtension.name,
+					extensionCommand.additionalInstructions,
+				);
+			} catch (error) {
+				this.setError(rt, causeMessage(error));
+				return false;
+			}
 		}
 		if (hasClarifyMarker(trimmedPrompt)) {
-			if (images.length) { this.setNotice(rt, this.t().t("extensions.noImages")); return false; }
-			try { return await this.runExtensionFor(rt, "clarify-input", trimmedPrompt); }
-			catch (error) { this.setError(rt, causeMessage(error)); return false; }
+			if (images.length) {
+				this.setNotice(rt, this.t().t("extensions.noImages"));
+				return false;
+			}
+			try {
+				return await this.runExtensionFor(rt, "clarify-input", trimmedPrompt);
+			} catch (error) {
+				this.setError(rt, causeMessage(error));
+				return false;
+			}
 		}
-		return await this.deliverPrompt(trimmedPrompt, images, validReferences, onAccepted);
+		return await this.deliverPrompt(
+			trimmedPrompt,
+			images,
+			validReferences,
+			onAccepted,
+		);
 	}
 
 	/**
@@ -1206,7 +1432,13 @@ export class ObsidianAgentService {
 			return true;
 		}
 		const t = this.t();
-		this.setError(rt, t.t("target.needsKeyToSend", { target: describeModelTarget(this.getSettings(), t) }), true);
+		this.setError(
+			rt,
+			t.t("target.needsKeyToSend", {
+				target: describeModelTarget(this.getSettings(), t),
+			}),
+			true,
+		);
 		return false;
 	}
 
@@ -1219,8 +1451,14 @@ export class ObsidianAgentService {
 	 * must refuse an impossible replacement *before* it throws the original
 	 * turn away, with the exact refusal a normal send would have raised.
 	 */
-	private ensureImagesSupported(rt: SessionRuntime, images: ImageContent[]): boolean {
-		if (images.length === 0 || modelSupportsImages(getSelectedModel(this.getSettings()))) {
+	private ensureImagesSupported(
+		rt: SessionRuntime,
+		images: ImageContent[],
+	): boolean {
+		if (
+			images.length === 0 ||
+			modelSupportsImages(getSelectedModel(this.getSettings()))
+		) {
 			return true;
 		}
 		// The same sentence the staging-time gate shows, on the same channel. It
@@ -1248,7 +1486,12 @@ export class ObsidianAgentService {
 	 * normal send would raise — rather than half-completing a rewind that
 	 * already threw the original turn away.
 	 */
-	private async deliverPrompt(prompt: string, images: ImageContent[] = [], references: readonly ContextReference[] = [], onAccepted?: () => void): Promise<boolean> {
+	private async deliverPrompt(
+		prompt: string,
+		images: ImageContent[] = [],
+		references: readonly ContextReference[] = [],
+		onAccepted?: () => void,
+	): Promise<boolean> {
 		// Error boundary for the whole send. Refusal leaves the composer's text
 		// and attachments untouched; acceptance is reported when Pi takes them.
 		// The run's failures already resolve in band (pi's `prompt` never
@@ -1287,7 +1530,13 @@ export class ObsidianAgentService {
 		}
 	}
 
-	private async resolveAndDeliver(rt: SessionRuntime, prompt: string, images: ImageContent[] = [], references: readonly ContextReference[] = [], onAccepted?: () => void): Promise<boolean> {
+	private async resolveAndDeliver(
+		rt: SessionRuntime,
+		prompt: string,
+		images: ImageContent[] = [],
+		references: readonly ContextReference[] = [],
+		onAccepted?: () => void,
+	): Promise<boolean> {
 		const trimmedPrompt = prompt;
 		// The runtime was captured by the boundary above, before any await: a
 		// switch mid-resolution cannot retarget the ledger, the queue, or the
@@ -1298,13 +1547,19 @@ export class ObsidianAgentService {
 		}
 
 		if (rt.sessionPath) {
-			const active = this.contextRefList(rt).find((ref) => ref.kind === "active")?.path;
+			const active = this.contextRefList(rt).find(
+				(ref) => ref.kind === "active",
+			)?.path;
 			if (active) {
 				this.noteSessionIndex.record(active, rt.sessionPath, rt.sessionInfo?.name);
 			}
 			for (const ref of references) {
 				if (ref.kind === "file") {
-					this.noteSessionIndex.record(ref.path, rt.sessionPath, rt.sessionInfo?.name);
+					this.noteSessionIndex.record(
+						ref.path,
+						rt.sessionPath,
+						rt.sessionInfo?.name,
+					);
 				}
 			}
 		}
@@ -1348,7 +1603,9 @@ export class ObsidianAgentService {
 		let modelPrompt = trimmedPrompt;
 		const command = parsePromptCommand(trimmedPrompt);
 		if (command) {
-			const explicitSkillName = command.name.startsWith("skill:") ? command.name.slice("skill:".length) : undefined;
+			const explicitSkillName = command.name.startsWith("skill:")
+				? command.name.slice("skill:".length)
+				: undefined;
 			if (explicitSkillName !== undefined) {
 				const skill = findSkill(rt.skills, explicitSkillName);
 				if (!skill) {
@@ -1362,7 +1619,10 @@ export class ObsidianAgentService {
 				if (template) {
 					modelPrompt = expandPromptTemplate(template, command.args);
 					if (skill) {
-						this.appendNotice(rt, this.t().t("chat.commandConflict", { name: command.name }));
+						this.appendNotice(
+							rt,
+							this.t().t("chat.commandConflict", { name: command.name }),
+						);
 					}
 				} else if (skill) {
 					modelPrompt = expandSkill(skill, command.additionalInstructions);
@@ -1393,10 +1653,13 @@ export class ObsidianAgentService {
 		// reads past the freeze or freezing earlier, and both drag more state
 		// reads onto this path for that window.
 		const refs = extractImageRefs(modelPrompt);
-		const sourcePath = this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ?? null;
+		const sourcePath =
+			this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ?? null;
 		const vaultImages = await this.readVaultImages(rt, refs, sourcePath);
-		const promptText = vaultImages.length > 0 ? stripImageRefs(modelPrompt) : modelPrompt;
-		const allImages = images.length > 0 ? [...images, ...vaultImages] : vaultImages;
+		const promptText =
+			vaultImages.length > 0 ? stripImageRefs(modelPrompt) : modelPrompt;
+		const allImages =
+			images.length > 0 ? [...images, ...vaultImages] : vaultImages;
 
 		// Phase 3: gate multimodal send on the active model's declared capability.
 		// A text-only model cannot consume an image content array; block before
@@ -1410,7 +1673,14 @@ export class ObsidianAgentService {
 		// above were awaited: fall through to a plain send, and whatever the
 		// queue still holds rides along ahead of this message.
 		if (agent.state.isStreaming) {
-			const queued = this.enqueuePrompt(rt, trimmedPrompt, promptText, allImages, images, references);
+			const queued = this.enqueuePrompt(
+				rt,
+				trimmedPrompt,
+				promptText,
+				allImages,
+				images,
+				references,
+			);
 			if (queued) onAccepted?.();
 			return queued;
 		}
@@ -1433,15 +1703,20 @@ export class ObsidianAgentService {
 				content: [{ type: "text", text: promptText }, ...allImages],
 				timestamp: Date.now(),
 			};
-			const dispatch = [...stranded.flatMap(queuedMessages), message,
-				...(references.length ? [createReferenceMessage(references, message.timestamp)] : [])];
+			const dispatch = [
+				...stranded.flatMap(queuedMessages),
+				message,
+				...(references.length
+					? [createReferenceMessage(references, message.timestamp)]
+					: []),
+			];
 			if (onAccepted) this.promptAccepted.set(message, onAccepted);
 			// The ledger entry opens before the run departs: a crash between
 			// this write and the run's own finish is the orphan signature
 			// recovery reads on the next load. Filed against the lane it departs
 			// on, so recovery reads the entry back where the run left it rather
 			// than against a name assumed later.
-			if (!await this.beginRunOperation(rt, dispatch)) return false;
+			if (!(await this.beginRunOperation(rt, dispatch))) return false;
 			// Queued messages the interrupt never got to dispatch — a run that
 			// died on a provider error, which {@link dispatchQueuedPrompts}
 			// deliberately does not re-send into — must not wait behind this
@@ -1492,8 +1767,14 @@ export class ObsidianAgentService {
 			content: [{ type: "text", text: resolvedText }, ...allImages],
 			timestamp: Date.now(),
 		};
-		rt.promptQueue.add({ text: originalText, imageCount: allImages.length, stagedImages, message,
-			...(references.length ? { contextMessage: createReferenceMessage(references, message.timestamp) } : {}),
+		rt.promptQueue.add({
+			text: originalText,
+			imageCount: allImages.length,
+			stagedImages,
+			message,
+			...(references.length
+				? { contextMessage: createReferenceMessage(references, message.timestamp) }
+				: {}),
 		});
 		this.notify();
 		return true;
@@ -1518,7 +1799,11 @@ export class ObsidianAgentService {
 	 * clearing means a violation costs a duplicate that never reaches the model
 	 * rather than one that does.
 	 */
-	private offerQueuedPromptsToTurn(rt: SessionRuntime, agent: Agent, signal?: AbortSignal): void {
+	private offerQueuedPromptsToTurn(
+		rt: SessionRuntime,
+		agent: Agent,
+		signal?: AbortSignal,
+	): void {
 		if (this.getSettings().promptQueueStrategy !== "afterTurn") {
 			return;
 		}
@@ -1586,7 +1871,9 @@ export class ObsidianAgentService {
 	 * Single-argument form: the finished run's messages, dispatched against the
 	 * focused runtime's queue. Kept because a test reaches this seam directly.
 	 */
-	private async resumeQueuedPrompts(messages: readonly AgentMessage[]): Promise<void> {
+	private async resumeQueuedPrompts(
+		messages: readonly AgentMessage[],
+	): Promise<void> {
 		const focused = this.current();
 		if (focused) {
 			await this.dispatchQueuedPrompts(focused, messages);
@@ -1628,7 +1915,10 @@ export class ObsidianAgentService {
 	 * arrived on — not `this.current()` — is what lets a backgrounded session's
 	 * tail work land on its own runtime.
 	 */
-	private async afterRunIdle(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
+	private async afterRunIdle(
+		rt: SessionRuntime,
+		messages: readonly AgentMessage[],
+	): Promise<void> {
 		const agent = rt.agent;
 		const revision = rt.extensionRunRevision;
 		const epoch = rt.stopEpoch;
@@ -1638,14 +1928,30 @@ export class ObsidianAgentService {
 		// The run-end checkpoint: arrivals the other device landed mid-run are
 		// only unioned here, once nothing streams and the queue has drained.
 		await this.reconcileActiveSessionDrift();
-		if (this.runtimes.get(rt.sessionPath) !== rt || rt.agent !== agent || agent?.state.isStreaming
-			|| rt.extensionRunRevision !== revision || rt.extensionSettledRevision === revision
-			|| rt.isCompacting || rt.compactionPending || rt.promptQueue.size || rt.steeredPrompts.length) return;
+		if (
+			this.runtimes.get(rt.sessionPath) !== rt ||
+			rt.agent !== agent ||
+			agent?.state.isStreaming ||
+			rt.extensionRunRevision !== revision ||
+			rt.extensionSettledRevision === revision ||
+			rt.isCompacting ||
+			rt.compactionPending ||
+			rt.promptQueue.size ||
+			rt.steeredPrompts.length
+		)
+			return;
 		rt.extensionSettledRevision = revision;
-		try { await rt.communityHost?.settled(); }
-		catch (error) {
-			if (rt.stopEpoch === epoch && !(error instanceof DOMException && error.name === "AbortError")) this.setError(rt, causeMessage(error));
-			this.log.debug("Extension settled handler failed", () => ({ error: causeMessage(error) }));
+		try {
+			await rt.communityHost?.settled();
+		} catch (error) {
+			if (
+				rt.stopEpoch === epoch &&
+				!(error instanceof DOMException && error.name === "AbortError")
+			)
+				this.setError(rt, causeMessage(error));
+			this.log.debug("Extension settled handler failed", () => ({
+				error: causeMessage(error),
+			}));
 		}
 	}
 
@@ -1703,7 +2009,7 @@ export class ObsidianAgentService {
 				return;
 			}
 			const last = agent.state.messages.at(-1);
-			if (!await this.beginRunOperation(rt, last ? [last] : [])) return;
+			if (!(await this.beginRunOperation(rt, last ? [last] : []))) return;
 			await rt.communityHost?.start();
 			await agent.continue();
 		} catch (error) {
@@ -1714,7 +2020,10 @@ export class ObsidianAgentService {
 		}
 	}
 
-	private async dispatchQueuedPrompts(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
+	private async dispatchQueuedPrompts(
+		rt: SessionRuntime,
+		messages: readonly AgentMessage[],
+	): Promise<void> {
 		try {
 			await this.sendQueuedPrompts(rt, messages);
 		} finally {
@@ -1731,7 +2040,10 @@ export class ObsidianAgentService {
 	}
 
 	/** The body of {@link dispatchQueuedPrompts}, minus the handover bookkeeping. */
-	private async sendQueuedPrompts(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
+	private async sendQueuedPrompts(
+		rt: SessionRuntime,
+		messages: readonly AgentMessage[],
+	): Promise<void> {
 		const runMessages = messages;
 		if (rt.steeredPrompts.length === 0 && rt.promptQueue.size === 0) {
 			return;
@@ -1747,7 +2059,9 @@ export class ObsidianAgentService {
 		// ahead of `sendPrompt`'s finally — the take-then-apply flush makes the
 		// double call harmless instead of ordering the callers.
 		await this.flushPendingConfiguration(rt);
-		const lastAssistant = [...runMessages].reverse().find((message) => message.role === "assistant");
+		const lastAssistant = [...runMessages]
+			.reverse()
+			.find((message) => message.role === "assistant");
 		if (lastAssistant?.stopReason === "error") {
 			// Back onto the chips, including the one a steer had already claimed:
 			// re-sending into the same failure would bill a second refusal, and a
@@ -1781,7 +2095,10 @@ export class ObsidianAgentService {
 	 * failure the entries go back onto the chips: the words are still the user's,
 	 * and hiding them behind an error banner loses them.
 	 */
-	private async sendPromptEntries(rt: SessionRuntime, entries: readonly QueueEntry[]): Promise<void> {
+	private async sendPromptEntries(
+		rt: SessionRuntime,
+		entries: readonly QueueEntry[],
+	): Promise<void> {
 		const epoch = rt.stopEpoch;
 		const agent = rt.agent;
 		if (!agent) {
@@ -1801,11 +2118,14 @@ export class ObsidianAgentService {
 			rt.activeRunContext = this.freezeRunContext(rt);
 			this.notify();
 			await this.compactContextIfNeeded(rt, agent);
-			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.bookmarkClosing) return;
-			if (!await this.beginRunOperation(rt, entries.flatMap(queuedMessages))) return;
+			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.bookmarkClosing)
+				return;
+			if (!(await this.beginRunOperation(rt, entries.flatMap(queuedMessages))))
+				return;
 			await this.promptWithExtensions(rt, agent, entries.flatMap(queuedMessages));
 		} catch (error) {
-			if (rt.stopEpoch === epoch && rt.agent === agent && !rt.bookmarkClosing) rt.promptQueue.restore(entries);
+			if (rt.stopEpoch === epoch && rt.agent === agent && !rt.bookmarkClosing)
+				rt.promptQueue.restore(entries);
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
 			rt.promptPreparations -= 1;
@@ -1826,7 +2146,12 @@ export class ObsidianAgentService {
 	async resumeInterruptedRun(): Promise<void> {
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
+		if (
+			!agent ||
+			agent.state.isStreaming ||
+			rt.bookmarkWork ||
+			rt.bookmarkClosing
+		) {
 			return;
 		}
 		rt.resumableLanes.delete(rt.activeLane);
@@ -1849,7 +2174,7 @@ export class ObsidianAgentService {
 				return;
 			}
 			const last = agent.state.messages.at(-1);
-			if (!await this.beginRunOperation(rt, last ? [last] : [])) return;
+			if (!(await this.beginRunOperation(rt, last ? [last] : []))) return;
 			await rt.communityHost?.start();
 			await agent.continue();
 		} catch (error) {
@@ -1871,40 +2196,76 @@ export class ObsidianAgentService {
 	}
 
 	/** Pi's before_agent_start result belongs to this prompt and this run only. */
-	private async promptWithExtensions(rt: SessionRuntime, agent: Agent, messages: AgentMessage[]): Promise<void> {
+	private async promptWithExtensions(
+		rt: SessionRuntime,
+		agent: Agent,
+		messages: AgentMessage[],
+	): Promise<void> {
 		const host = rt.communityHost;
 		const epoch = rt.stopEpoch;
 		host?.cancelInvocation();
 		const ledger = rt.activeRunLedger;
 		let departed = false;
-		const base = composeSystemPrompt(this.promptWithEnvironment(), rt.skills, host?.toolPromptGuidelines());
-		const user = [...messages].reverse().find(message => message.role === "user");
-		const images = user?.role === "user" && Array.isArray(user.content)
-			? user.content.filter((part): part is ImageContent => part.type === "image") : undefined;
+		const base = composeSystemPrompt(
+			this.promptWithEnvironment(),
+			rt.skills,
+			host?.toolPromptGuidelines(),
+		);
+		const user = [...messages]
+			.reverse()
+			.find((message) => message.role === "user");
+		const images =
+			user?.role === "user" && Array.isArray(user.content)
+				? user.content.filter((part): part is ImageContent => part.type === "image")
+				: undefined;
 		try {
 			rt.extensionPreparing = host?.hasBeforeAgentStart ?? false;
 			if (rt.extensionPreparing) this.notify();
-			const result = await host?.beforeAgentStart(extractUserText(user), images, base);
-			if (rt.stopEpoch !== epoch || rt.agent !== agent || rt.communityHost !== host || rt.bookmarkClosing) {
+			const result = await host?.beforeAgentStart(
+				extractUserText(user),
+				images,
+				base,
+			);
+			if (
+				rt.stopEpoch !== epoch ||
+				rt.agent !== agent ||
+				rt.communityHost !== host ||
+				rt.bookmarkClosing
+			) {
 				throw new DOMException("Extension prompt was cancelled.", "AbortError");
 			}
 			agent.state.systemPrompt = result?.systemPrompt ?? base;
-			const extra: AgentMessage[] = (result?.messages ?? []).map(message => ({
-				...message, role: "custom", content: message.content ?? [], timestamp: Date.now(),
+			const extra: AgentMessage[] = (result?.messages ?? []).map((message) => ({
+				...message,
+				role: "custom",
+				content: message.content ?? [],
+				timestamp: Date.now(),
 			}));
 			departed = true;
 			rt.extensionPreparing = false;
 			await agent.prompt([...messages, ...extra]);
 		} catch (error) {
 			if (!departed && rt.activeRunLedger === ledger) {
-				await this.endRunOperation(rt, error instanceof Error && error.name === "AbortError" ? "aborted" : "failed", {
-					code: "extension_preflight", message: causeMessage(error),
-				});
+				await this.endRunOperation(
+					rt,
+					error instanceof Error && error.name === "AbortError"
+						? "aborted"
+						: "failed",
+					{
+						code: "extension_preflight",
+						message: causeMessage(error),
+					},
+				);
 			}
 			throw error;
 		} finally {
 			rt.extensionPreparing = false;
-			if (rt.agent === agent) agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), rt.skills, rt.communityHost?.toolPromptGuidelines());
+			if (rt.agent === agent)
+				agent.state.systemPrompt = composeSystemPrompt(
+					this.promptWithEnvironment(),
+					rt.skills,
+					rt.communityHost?.toolPromptGuidelines(),
+				);
 		}
 	}
 
@@ -1919,11 +2280,18 @@ export class ObsidianAgentService {
 	 * block the send the user asked for. The cost of a missing entry is only
 	 * that a crash during that run leaves nothing for recovery to find.
 	 */
-	private async beginRunOperation(rt: SessionRuntime, originalPrompt: readonly AgentMessage[]): Promise<boolean> {
+	private async beginRunOperation(
+		rt: SessionRuntime,
+		originalPrompt: readonly AgentMessage[],
+	): Promise<boolean> {
 		const agent = rt.agent;
 		const lane = rt.activeLane;
 		const epoch = rt.stopEpoch;
-		const isCurrent = () => this.runtimes.get(rt.sessionPath) === rt && rt.agent === agent && rt.stopEpoch === epoch && !rt.bookmarkClosing;
+		const isCurrent = () =>
+			this.runtimes.get(rt.sessionPath) === rt &&
+			rt.agent === agent &&
+			rt.stopEpoch === epoch &&
+			!rt.bookmarkClosing;
 		if (!agent || !isCurrent()) return false;
 		// Protect the asynchronous start independently of the eventual run claim.
 		// Stop can settle an idle agent before this write completes, but cannot
@@ -1953,38 +2321,69 @@ export class ObsidianAgentService {
 					// message otherwise.
 					rt.sessionRevision += 1;
 				} catch (error) {
-					this.log.error("Failed to materialize blank session; aborting the send", () => ({
-						path: rt.sessionPath,
-						error: causeMessage(error),
-					}));
+					this.log.error(
+						"Failed to materialize blank session; aborting the send",
+						() => ({
+							path: rt.sessionPath,
+							error: causeMessage(error),
+						}),
+					);
 					return false;
 				}
 			}
 			try {
-				await this.sessionManager.ensureConfigurationFor(rt.sessionPath, { provider: model.provider, modelId: model.id }, lane);
+				await this.sessionManager.ensureConfigurationFor(
+					rt.sessionPath,
+					{ provider: model.provider, modelId: model.id },
+					lane,
+				);
 			} catch (error) {
-				this.log.debug("Model assertion at run start failed", () => ({ lane, error: causeMessage(error) }));
+				this.log.debug("Model assertion at run start failed", () => ({
+					lane,
+					error: causeMessage(error),
+				}));
 			}
 			if (!isCurrent()) return false;
 			let runId: string | undefined;
 			try {
-				runId = await this.sessionManager.beginRunOperationFor(rt.sessionPath, [...originalPrompt], lane);
+				runId = await this.sessionManager.beginRunOperationFor(
+					rt.sessionPath,
+					[...originalPrompt],
+					lane,
+				);
 			} catch (error) {
-				this.log.error("Failed to record run start", () => ({ lane, error: causeMessage(error) }));
+				this.log.error("Failed to record run start", () => ({
+					lane,
+					error: causeMessage(error),
+				}));
 			}
 			if (!isCurrent()) {
 				// Close THIS late record directly: assigning it to activeRunLedger
 				// would let a newer run's stop or finish consume the wrong record.
 				if (runId && this.sessionManager.isLoaded(rt.sessionPath)) {
-					try { await this.sessionManager.endRunOperationFor(rt.sessionPath, runId, "aborted", undefined, lane); }
-					catch (error) { this.log.error("Failed to close cancelled run start", () => ({ lane, error: causeMessage(error) })); }
+					try {
+						await this.sessionManager.endRunOperationFor(
+							rt.sessionPath,
+							runId,
+							"aborted",
+							undefined,
+							lane,
+						);
+					} catch (error) {
+						this.log.error("Failed to close cancelled run start", () => ({
+							lane,
+							error: causeMessage(error),
+						}));
+					}
 				}
 				return false;
 			}
 			rt.activeRunLedger = runId ? { runId, lane } : undefined;
 			this.sessionManager.retainSession(rt.sessionPath);
 			return true;
-		} finally { release(); }
+		} finally {
+			release();
+		}
 	}
 
 	/**
@@ -1996,7 +2395,11 @@ export class ObsidianAgentService {
 	 * user who switched lanes mid-run must not have the close filed against the
 	 * lane they are now looking at, which would leave the real entry open.
 	 */
-	private async endRunOperation(rt: SessionRuntime, outcome: "completed" | "aborted" | "failed", error?: { code: string; message: string }): Promise<void> {
+	private async endRunOperation(
+		rt: SessionRuntime,
+		outcome: "completed" | "aborted" | "failed",
+		error?: { code: string; message: string },
+	): Promise<void> {
 		const ledger = rt.activeRunLedger;
 		rt.activeRunLedger = undefined;
 		// Released before the ledger close: the run is over either way, and a
@@ -2016,7 +2419,13 @@ export class ObsidianAgentService {
 			return;
 		}
 		try {
-			await this.sessionManager.endRunOperationFor(rt.sessionPath, ledger.runId, outcome, error, ledger.lane);
+			await this.sessionManager.endRunOperationFor(
+				rt.sessionPath,
+				ledger.runId,
+				outcome,
+				error,
+				ledger.lane,
+			);
 		} catch (failure) {
 			// The orphan this leaves is exactly what recovery looks for, so a failed
 			// close degrades to a spurious recovery offer — never to a lost reply.
@@ -2035,8 +2444,13 @@ export class ObsidianAgentService {
 	 * message the banner shows). `length` and any other stop reason mean the
 	 * model said its piece — the run did what was asked.
 	 */
-	private async settleRunLedger(rt: SessionRuntime, messages: readonly AgentMessage[]): Promise<void> {
-		const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+	private async settleRunLedger(
+		rt: SessionRuntime,
+		messages: readonly AgentMessage[],
+	): Promise<void> {
+		const lastAssistant = [...messages]
+			.reverse()
+			.find((message) => message.role === "assistant");
 		if (lastAssistant?.stopReason === "error") {
 			await this.endRunOperation(rt, "failed", {
 				code: "provider_error",
@@ -2044,7 +2458,10 @@ export class ObsidianAgentService {
 			});
 			return;
 		}
-		await this.endRunOperation(rt, lastAssistant?.stopReason === "aborted" ? "aborted" : "completed");
+		await this.endRunOperation(
+			rt,
+			lastAssistant?.stopReason === "aborted" ? "aborted" : "completed",
+		);
 	}
 
 	/**
@@ -2070,7 +2487,10 @@ export class ObsidianAgentService {
 	 * only for the active lane — switching to another resumable lane reveals its
 	 * own offer without a second sweep.
 	 */
-	private async settleInterruptedRuns(rt: SessionRuntime, activeContext: SessionContext): Promise<void> {
+	private async settleInterruptedRuns(
+		rt: SessionRuntime,
+		activeContext: SessionContext,
+	): Promise<void> {
 		rt.resumableLanes.clear();
 		let open: Map<string, OperationStartedRecord[]>;
 		try {
@@ -2084,12 +2504,21 @@ export class ObsidianAgentService {
 		for (const [lane, orphans] of open) {
 			for (const orphan of orphans) {
 				try {
-					await this.sessionManager.endRunOperationFor(rt.sessionPath, orphan.id, "aborted", undefined, lane);
-				} catch (error) {
-					this.log.error("Failed to close an interrupted run's ledger entry", () => ({
+					await this.sessionManager.endRunOperationFor(
+						rt.sessionPath,
+						orphan.id,
+						"aborted",
+						undefined,
 						lane,
-						error: causeMessage(error),
-					}));
+					);
+				} catch (error) {
+					this.log.error(
+						"Failed to close an interrupted run's ledger entry",
+						() => ({
+							lane,
+							error: causeMessage(error),
+						}),
+					);
 				}
 			}
 			if (await this.laneEndsResumable(rt, lane, activeContext)) {
@@ -2105,13 +2534,19 @@ export class ObsidianAgentService {
 	 * The active lane is read from the context already built for it rather than
 	 * re-projected, so the offer and the transcript on screen cannot disagree.
 	 */
-	private async laneEndsResumable(rt: SessionRuntime, lane: string, activeContext: SessionContext): Promise<boolean> {
+	private async laneEndsResumable(
+		rt: SessionRuntime,
+		lane: string,
+		activeContext: SessionContext,
+	): Promise<boolean> {
 		let last: AgentMessage | undefined;
 		if (lane === rt.activeLane) {
 			last = activeContext.messages.at(-1);
 		} else {
 			try {
-				last = (await this.sessionManager.buildSessionContextFor(rt.sessionPath, lane)).messages.at(-1);
+				last = (
+					await this.sessionManager.buildSessionContextFor(rt.sessionPath, lane)
+				).messages.at(-1);
 			} catch (error) {
 				this.log.error("Failed to read an interrupted lane's transcript", () => ({
 					lane,
@@ -2120,7 +2555,11 @@ export class ObsidianAgentService {
 				return false;
 			}
 		}
-		return last?.role === "user" || last?.role === "toolResult" || messageReferences(last) !== null;
+		return (
+			last?.role === "user" ||
+			last?.role === "toolResult" ||
+			messageReferences(last) !== null
+		);
 	}
 
 	/**
@@ -2151,7 +2590,12 @@ export class ObsidianAgentService {
 	 */
 	notifyImagesBlocked(): void {
 		const t = this.t();
-		this.setNotice(this.runtimeForFocused(), t.t("chat.imagesNotSupported", { model: describeModelTarget(this.getSettings(), t) }));
+		this.setNotice(
+			this.runtimeForFocused(),
+			t.t("chat.imagesNotSupported", {
+				model: describeModelTarget(this.getSettings(), t),
+			}),
+		);
 	}
 
 	/**
@@ -2178,7 +2622,14 @@ export class ObsidianAgentService {
 		if (!prompt) {
 			return false;
 		}
-		return await this.rewindAndResend(rt, agent, promptIndex, prompt, [], promptReferences(agent.state.messages, promptIndex));
+		return await this.rewindAndResend(
+			rt,
+			agent,
+			promptIndex,
+			prompt,
+			[],
+			promptReferences(agent.state.messages, promptIndex),
+		);
 	}
 
 	/**
@@ -2201,7 +2652,13 @@ export class ObsidianAgentService {
 	 * staged ones are the only pictures the replacement turn shows, so dropping
 	 * them here would send less than the composer promised.
 	 */
-	async editAndResend(index: number, prompt: string, images: ImageContent[] = [], references?: readonly ContextReference[], onAccepted?: () => void): Promise<boolean> {
+	async editAndResend(
+		index: number,
+		prompt: string,
+		images: ImageContent[] = [],
+		references?: readonly ContextReference[],
+		onAccepted?: () => void,
+	): Promise<boolean> {
 		const trimmed = prompt.trim();
 		if (!trimmed || this.pendingSessionOpen || this.disposed) {
 			return false;
@@ -2216,9 +2673,27 @@ export class ObsidianAgentService {
 		if (agent.state.messages[index]?.role !== "user") {
 			return false;
 		}
-		const validReferences = parseContextReferences(references ?? promptReferences(agent.state.messages, index));
-		if (!validReferences) { this.setNotice(rt, this.t().t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES })); return false; }
-		return await this.rewindAndResend(rt, agent, index, trimmed, images, validReferences, onAccepted);
+		const validReferences = parseContextReferences(
+			references ?? promptReferences(agent.state.messages, index),
+		);
+		if (!validReferences) {
+			this.setNotice(
+				rt,
+				this.t().t("noteReference.referenceLimit", {
+					limit: MAX_CONTEXT_REFERENCES,
+				}),
+			);
+			return false;
+		}
+		return await this.rewindAndResend(
+			rt,
+			agent,
+			index,
+			trimmed,
+			images,
+			validReferences,
+			onAccepted,
+		);
 	}
 
 	/**
@@ -2262,7 +2737,14 @@ export class ObsidianAgentService {
 		references: readonly ContextReference[] = [],
 		onAccepted?: () => void,
 	): Promise<boolean> {
-		if (agent.state.isStreaming || rt.isCompacting || rt.branchSummaryController || rt.retryInFlight || rt.bookmarkWork || rt.bookmarkClosing) {
+		if (
+			agent.state.isStreaming ||
+			rt.isCompacting ||
+			rt.branchSummaryController ||
+			rt.retryInFlight ||
+			rt.bookmarkWork ||
+			rt.bookmarkClosing
+		) {
 			return false;
 		}
 		// Preflight before anything destructive: the rewind throws the original
@@ -2273,12 +2755,20 @@ export class ObsidianAgentService {
 		// The send-side checks stay; they are not redundant but the backstop for
 		// the seconds the branch summary runs, during which a key can be removed
 		// or the model switched.
-		if (!this.ensureCredentialReady(rt) || !this.ensureImagesSupported(rt, images)) {
+		if (
+			!this.ensureCredentialReady(rt) ||
+			!this.ensureImagesSupported(rt, images)
+		) {
 			return false;
 		}
 		const epoch = rt.stopEpoch;
-		const isCurrent = () => !this.disposed && !rt.bookmarkClosing && rt.agent === agent
-			&& rt.stopEpoch === epoch && this.runtimes.get(rt.sessionPath) === rt && this.current() === rt;
+		const isCurrent = () =>
+			!this.disposed &&
+			!rt.bookmarkClosing &&
+			rt.agent === agent &&
+			rt.stopEpoch === epoch &&
+			this.runtimes.get(rt.sessionPath) === rt &&
+			this.current() === rt;
 		rt.retryInFlight = true;
 		// The window this flag opens is one the agent does not narrate: no stream
 		// events, no compaction. Without a notify here the panel stays visually
@@ -2287,7 +2777,9 @@ export class ObsidianAgentService {
 		this.notify();
 		try {
 			const promptMessage = agent.state.messages[promptIndex];
-			const entryId = promptMessage ? rt.messageEntryIds.get(promptMessage) : undefined;
+			const entryId = promptMessage
+				? rt.messageEntryIds.get(promptMessage)
+				: undefined;
 			if (!entryId) {
 				return false;
 			}
@@ -2310,7 +2802,10 @@ export class ObsidianAgentService {
 			}
 			agent.state.messages = agent.state.messages.slice(0, promptIndex);
 			if (summaryMessage) {
-				agent.state.messages = [...agent.state.messages.slice(0, promptIndex), summaryMessage];
+				agent.state.messages = [
+					...agent.state.messages.slice(0, promptIndex),
+					summaryMessage,
+				];
 			}
 			const newLeafId = await session.view(rt.activeLane).getLeafId();
 			if (oldLeafId !== newLeafId && isCurrent()) {
@@ -2318,8 +2813,18 @@ export class ObsidianAgentService {
 				if (!isCurrent()) return false;
 				try {
 					await rt.communityHost?.emit({
-						type: "session_tree", oldLeafId, newLeafId, fromExtension: false,
-						...(summaryMessage && entry?.type === "branch_summary" ? { summaryEntry: { ...entry, timestamp: new Date(entry.timestamp).toISOString() } as unknown as BranchSummaryEntry } : {}),
+						type: "session_tree",
+						oldLeafId,
+						newLeafId,
+						fromExtension: false,
+						...(summaryMessage && entry?.type === "branch_summary"
+							? {
+									summaryEntry: {
+										...entry,
+										timestamp: new Date(entry.timestamp).toISOString(),
+									} as unknown as BranchSummaryEntry,
+								}
+							: {}),
 					});
 				} catch (error) {
 					if (isCurrent()) this.setError(rt, causeMessage(error));
@@ -2352,7 +2857,10 @@ export class ObsidianAgentService {
 	 * already running, or the request was aborted). Never throws on a summary
 	 * failure — only on an unknown rewind target, which surfaces as a user error.
 	 */
-	private async summarizeAbandonedBranch(rt: SessionRuntime, entryId: string): Promise<AgentMessage | null> {
+	private async summarizeAbandonedBranch(
+		rt: SessionRuntime,
+		entryId: string,
+	): Promise<AgentMessage | null> {
 		const session = this.sessionManager.getSessionFor(rt.sessionPath);
 		// Read through the panel's own lane rather than assuming main: the leaf
 		// `collectEntriesForBranchSummary` walks back from has to be the one that
@@ -2361,7 +2869,10 @@ export class ObsidianAgentService {
 		// No leaf means a fresh log with nothing to abandon; `oldLeafId === entryId`
 		// means the rewind targets the current tip, so there is no fork below it.
 		if (!oldLeafId || oldLeafId === entryId) {
-			await session.moveLane(rt.activeLane, (await session.getEntry(entryId))?.parentId ?? null);
+			await session.moveLane(
+				rt.activeLane,
+				(await session.getEntry(entryId))?.parentId ?? null,
+			);
 			return null;
 		}
 		// A compaction in flight owns the log's summarization budget; a second
@@ -2370,36 +2881,63 @@ export class ObsidianAgentService {
 		// The rewind still happens — the user's intent is the retry, not the
 		// summary.
 		if (rt.isCompacting) {
-			await session.moveLane(rt.activeLane, (await session.getEntry(entryId))?.parentId ?? null);
+			await session.moveLane(
+				rt.activeLane,
+				(await session.getEntry(entryId))?.parentId ?? null,
+			);
 			return null;
 		}
 
 		const controller = new AbortController();
 		rt.branchSummaryController = controller;
 		try {
-			const branch = (await session.branch(rt.activeLane, BACKGROUND_CONTEXT)) ?? session.view(rt.activeLane);
-			const summaryContext = withAbortSignal(controller.signal, BACKGROUND_CONTEXT);
-			const collected = await collectEntriesForBranchSummary(branch, session, oldLeafId, entryId, summaryContext);
+			const branch =
+				(await session.branch(rt.activeLane, BACKGROUND_CONTEXT)) ??
+				session.view(rt.activeLane);
+			const summaryContext = withAbortSignal(
+				controller.signal,
+				BACKGROUND_CONTEXT,
+			);
+			const collected = await collectEntriesForBranchSummary(
+				branch,
+				session,
+				oldLeafId,
+				entryId,
+				summaryContext,
+			);
 			if (collected.entries.length === 0) {
-				await session.moveLane(rt.activeLane, (await session.getEntry(entryId))?.parentId ?? null);
+				await session.moveLane(
+					rt.activeLane,
+					(await session.getEntry(entryId))?.parentId ?? null,
+				);
 				return null;
 			}
 
 			const model = getSelectedModel(this.getSettings());
-			const result = await generateBranchSummary(collected.entries, {
-				models: this.modelsWithRequestDefaults(),
-				model,
-			}, summaryContext);
+			const result = await generateBranchSummary(
+				collected.entries,
+				{
+					models: this.modelsWithRequestDefaults(),
+					model,
+				},
+				summaryContext,
+			);
 
 			// The rewind is deferred until after the summary so the view walked a
 			// still-live branch; it is unconditional because the retry was the
 			// user's actual request. A failed or aborted summary simply means the
 			// fork is forgotten, not that the retry is blocked.
-			await session.moveLane(rt.activeLane, (await session.getEntry(entryId))?.parentId ?? null);
+			await session.moveLane(
+				rt.activeLane,
+				(await session.getEntry(entryId))?.parentId ?? null,
+			);
 
 			if (!result.ok) {
 				if (!controller.signal.aborted) {
-					this.setNotice(rt, this.t().t("chat.branchSummaryFailed", { error: result.error.message }));
+					this.setNotice(
+						rt,
+						this.t().t("chat.branchSummaryFailed", { error: result.error.message }),
+					);
 				}
 				return null;
 			}
@@ -2411,8 +2949,17 @@ export class ObsidianAgentService {
 			// throw there cannot silently drop an amount the user was already
 			// charged.
 			this.recordOverheadUsage(rt, result.value.usage);
-			await this.sessionManager.appendBranchSummaryFor(rt.sessionPath, result.value, oldLeafId, rt.activeLane);
-			return createBranchSummaryMessage(result.value.summary, oldLeafId, Date.now());
+			await this.sessionManager.appendBranchSummaryFor(
+				rt.sessionPath,
+				result.value,
+				oldLeafId,
+				rt.activeLane,
+			);
+			return createBranchSummaryMessage(
+				result.value.summary,
+				oldLeafId,
+				Date.now(),
+			);
 		} finally {
 			if (rt.branchSummaryController === controller) {
 				rt.branchSummaryController = null;
@@ -2479,23 +3026,36 @@ export class ObsidianAgentService {
 		return this.noteSessionIndex.has(notePath, this.current()?.sessionPath);
 	}
 
-	private suggestionSubject(rt: SessionRuntime | null): { notePath: string | null; workspace: WorkspaceContext; noteFacts: NoteFacts | null } {
+	private suggestionSubject(rt: SessionRuntime | null): {
+		notePath: string | null;
+		workspace: WorkspaceContext;
+		noteFacts: NoteFacts | null;
+	} {
 		const refs = this.contextRefList(rt);
 		const notePath = refs.find((ref) => ref.kind === "active")?.path ?? null;
 		let workspace: WorkspaceContext;
 		try {
 			workspace = probeWorkspaceContext(this.app, refs);
 		} catch (error) {
-			this.log.debug("workspace probe for suggestions failed", () => ({ error: String(error) }));
+			this.log.debug("workspace probe for suggestions failed", () => ({
+				error: String(error),
+			}));
 			workspace = EMPTY_WORKSPACE_CONTEXT;
 		}
 		let noteFacts: NoteFacts | null = null;
 		try {
-			const hasPriorSession = notePath ? this.hasPriorSessionForNote(notePath) : false;
+			const hasPriorSession = notePath
+				? this.hasPriorSessionForNote(notePath)
+				: false;
 			const scoutInsight = notePath ? this.silentScout.getInsight(notePath) : null;
-			noteFacts = probeNoteFacts(this.app, notePath, { hasPriorSession, scoutInsight });
+			noteFacts = probeNoteFacts(this.app, notePath, {
+				hasPriorSession,
+				scoutInsight,
+			});
 		} catch (error) {
-			this.log.debug("note facts probe for suggestions failed", () => ({ error: String(error) }));
+			this.log.debug("note facts probe for suggestions failed", () => ({
+				error: String(error),
+			}));
 		}
 		return { notePath, workspace, noteFacts };
 	}
@@ -2533,7 +3093,9 @@ export class ObsidianAgentService {
 	 * {@link recordOverheadUsage} before the result returns, so a parse failure
 	 * cannot spend the user's money invisibly.
 	 */
-	async suggestQuickActions(scope: SuggestionScope): Promise<QuickAction[] | null> {
+	async suggestQuickActions(
+		scope: SuggestionScope,
+	): Promise<QuickAction[] | null> {
 		if (this.pendingSessionOpen || this.disposed) return null;
 		const settings = this.getSettings();
 		// No focused runtime is one more "nothing to show", not an error: the
@@ -2541,13 +3103,21 @@ export class ObsidianAgentService {
 		// from above the `try` escaped that promise — as an unhandled rejection
 		// here, and as a torn-down panel through the synchronous peek beside it.
 		const rt = this.current();
-		if (!rt || !this.hasApiKey() || !rt.agent || rt.agent.state.isStreaming || rt.isCompacting || rt.retryInFlight) {
+		if (
+			!rt ||
+			!this.hasApiKey() ||
+			!rt.agent ||
+			rt.agent.state.isStreaming ||
+			rt.isCompacting ||
+			rt.retryInFlight
+		) {
 			return null;
 		}
 		const subject =
 			scope === "reply"
 				? lastAssistantText(rt.agent.state.messages)
-				: this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ?? null;
+				: (this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ??
+					null);
 		if (scope === "reply" && !subject) {
 			return null;
 		}
@@ -2570,7 +3140,10 @@ export class ObsidianAgentService {
 			if (!model) {
 				return null;
 			}
-			const language = resolveLanguage(this.app.vault as LanguageHost, settings.language);
+			const language = resolveLanguage(
+				this.app.vault as LanguageHost,
+				settings.language,
+			);
 			const result = await fetchQuickActionSuggestions({
 				streamSimple: this.resolveStreamFn(),
 				model,
@@ -2594,7 +3167,10 @@ export class ObsidianAgentService {
 			// newest text — no future request will ask for it, so caching it would
 			// be dead weight.
 			if (scope === "empty" && result.actions) {
-				this.suggestionCache.set(this.suggestionCacheKey(language, subject, workspace, model, noteFacts), result.actions);
+				this.suggestionCache.set(
+					this.suggestionCacheKey(language, subject, workspace, model, noteFacts),
+					result.actions,
+				);
 			}
 			return result.actions;
 		} catch (error) {
@@ -2603,7 +3179,9 @@ export class ObsidianAgentService {
 			// holds that line, but `getSelectedModel` above it can reject for a
 			// legacy endpoint no catalog entry covers — letting that escape would
 			// turn a decorative miss into an unhandled rejection in the panel.
-			this.log.debug("quick action suggestions failed", () => ({ error: String(error) }));
+			this.log.debug("quick action suggestions failed", () => ({
+				error: String(error),
+			}));
 			return null;
 		} finally {
 			if (rt.suggestionController === controller) {
@@ -2700,7 +3278,10 @@ export class ObsidianAgentService {
 	 * One entry per session the service knows about (issue #235).
 	 */
 	getSessionRunStates(): Array<{ path: string; state: SessionRunState }> {
-		return [...this.runtimes.values()].map((rt) => ({ path: rt.sessionPath, state: this.deriveRunState(rt) }));
+		return [...this.runtimes.values()].map((rt) => ({
+			path: rt.sessionPath,
+			state: this.deriveRunState(rt),
+		}));
 	}
 
 	/**
@@ -2766,8 +3347,19 @@ export class ObsidianAgentService {
 		}
 		this.newSessionInFlight = true;
 		try {
-			if (!await this.canChangeSession(previous, { type: "session_before_switch", reason: "new" })) return;
-			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) return;
+			if (
+				!(await this.canChangeSession(previous, {
+					type: "session_before_switch",
+					reason: "new",
+				}))
+			)
+				return;
+			if (
+				this.disposed ||
+				this.current() !== previous ||
+				this.sessionOpenSequence !== sequence
+			)
+				return;
 			// The session being left keeps its runtime and its run (issue #235):
 			// a new chat abandons it for the panel but does not tear it down.
 			// Suggestions belong to the conversation that prompted them; a fresh chat
@@ -2778,8 +3370,16 @@ export class ObsidianAgentService {
 			// start from a value they never chose. Clamped to the model the new
 			// session will run on, since the previous one may have run another.
 			const inherited = await this.sessionManager.readLastSessionThinkingLevel();
-			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) return;
-			const seed = clampThinkingLevel(getSelectedModel(this.getSettings()), inherited ?? DEFAULT_THINKING_LEVEL);
+			if (
+				this.disposed ||
+				this.current() !== previous ||
+				this.sessionOpenSequence !== sequence
+			)
+				return;
+			const seed = clampThinkingLevel(
+				getSelectedModel(this.getSettings()),
+				inherited ?? DEFAULT_THINKING_LEVEL,
+			);
 			// The sheet is held in memory only: the first message is what makes a
 			// session durable (`beginRunOperation` materializes it), so a sheet
 			// the user merely looked at leaves no file, no history row, and no
@@ -2787,12 +3387,19 @@ export class ObsidianAgentService {
 			// sheet's memory as real facts, so context readers see the same shape
 			// on a sheet as on a stored chat.
 			const seedModel = getSelectedModel(this.getSettings());
-			const info = await this.sessionManager.createBlankSession({
-				provider: seedModel.provider,
-				modelId: seedModel.id,
-				thinkingLevel: seed,
-			}, false);
-			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) {
+			const info = await this.sessionManager.createBlankSession(
+				{
+					provider: seedModel.provider,
+					modelId: seedModel.id,
+					thinkingLevel: seed,
+				},
+				false,
+			);
+			if (
+				this.disposed ||
+				this.current() !== previous ||
+				this.sessionOpenSequence !== sequence
+			) {
 				await this.sessionManager.deleteSession(info.path);
 				return;
 			}
@@ -2809,13 +3416,18 @@ export class ObsidianAgentService {
 			// Pins and a dismissed follow belong to the conversation that collected them;
 			// a fresh runtime starts clean (the old `contextRefs.reset()`), while the
 			// workspace's active note is left alone because it describes the workspace.
-			try { await this.replaceAgent(rt, [], seed); }
-			catch (error) {
+			try {
+				await this.replaceAgent(rt, [], seed);
+			} catch (error) {
 				this.removeRuntime(rt);
 				await this.sessionManager.deleteSession(info.path);
 				throw error;
 			}
-			if (this.disposed || this.current() !== previous || this.sessionOpenSequence !== sequence) {
+			if (
+				this.disposed ||
+				this.current() !== previous ||
+				this.sessionOpenSequence !== sequence
+			) {
 				this.removeRuntime(rt);
 				await this.sessionManager.deleteSession(info.path);
 				return;
@@ -2832,17 +3444,31 @@ export class ObsidianAgentService {
 	}
 
 	/** The outgoing runtime owns the veto, even if the panel moves while it awaits input. */
-	private async canChangeSession(rt: SessionRuntime | null, event: Parameters<CommunityHost["beforeSessionChange"]>[0]): Promise<boolean> {
+	private async canChangeSession(
+		rt: SessionRuntime | null,
+		event: Parameters<CommunityHost["beforeSessionChange"]>[0],
+	): Promise<boolean> {
 		const host = rt?.communityHost;
 		if (!rt || !host) return true;
 		const epoch = rt.stopEpoch;
 		try {
 			if (await host.beforeSessionChange(event)) return false;
 		} catch (error) {
-			if (!this.disposed && this.runtimes.get(rt.sessionPath) === rt && rt.stopEpoch === epoch) this.setError(rt, causeMessage(error));
+			if (
+				!this.disposed &&
+				this.runtimes.get(rt.sessionPath) === rt &&
+				rt.stopEpoch === epoch
+			)
+				this.setError(rt, causeMessage(error));
 			return false;
 		}
-		return !this.disposed && !rt.bookmarkClosing && this.runtimes.get(rt.sessionPath) === rt && rt.communityHost === host && rt.stopEpoch === epoch;
+		return (
+			!this.disposed &&
+			!rt.bookmarkClosing &&
+			this.runtimes.get(rt.sessionPath) === rt &&
+			rt.communityHost === host &&
+			rt.stopEpoch === epoch
+		);
 	}
 
 	/**
@@ -2872,15 +3498,28 @@ export class ObsidianAgentService {
 		if (this.pendingSessionOpen || this.disposed) return false;
 		const rt = this.runtimeForFocused();
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing || rt.sessionOperations) {
+		if (
+			!agent ||
+			agent.state.isStreaming ||
+			rt.isCompacting ||
+			rt.retryInFlight ||
+			rt.branchSummaryController ||
+			rt.bookmarkWork ||
+			rt.bookmarkClosing ||
+			rt.sessionOperations
+		) {
 			return false;
 		}
 		const replyMessage = agent.state.messages[index];
-		const replyEntryId = replyMessage ? rt.messageEntryIds.get(replyMessage) : undefined;
+		const replyEntryId = replyMessage
+			? rt.messageEntryIds.get(replyMessage)
+			: undefined;
 		if (!replyEntryId) {
 			return false;
 		}
-		const result = await this.forkSessionAtEntry(rt, replyEntryId, { position: "at" });
+		const result = await this.forkSessionAtEntry(rt, replyEntryId, {
+			position: "at",
+		});
 		return !result.cancelled;
 	}
 
@@ -2893,23 +3532,47 @@ export class ObsidianAgentService {
 		await this.initialize();
 		if (this.pendingSessionOpen || this.disposed) return { cancelled: true };
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.bookmarkWork || rt.bookmarkClosing || rt.sessionOperations) {
+		if (
+			!agent ||
+			agent.state.isStreaming ||
+			rt.isCompacting ||
+			rt.retryInFlight ||
+			rt.branchSummaryController ||
+			rt.bookmarkWork ||
+			rt.bookmarkClosing ||
+			rt.sessionOperations
+		) {
 			return { cancelled: true };
 		}
 		let forkedPath: string;
 		const sequence = this.sessionOpenSequence;
 		const epoch = rt.stopEpoch;
-		const isCurrent = () => !this.disposed && this.current() === rt && rt.agent === agent && rt.stopEpoch === epoch && this.sessionOpenSequence === sequence;
+		const isCurrent = () =>
+			!this.disposed &&
+			this.current() === rt &&
+			rt.agent === agent &&
+			rt.stopEpoch === epoch &&
+			this.sessionOpenSequence === sequence;
 		rt.sessionOperations += 1;
 		try {
-			if (!await this.canChangeSession(rt, { type: "session_before_fork", entryId, position: options?.position ?? "at" }) || !isCurrent()) {
+			if (
+				!(await this.canChangeSession(rt, {
+					type: "session_before_fork",
+					entryId,
+					position: options?.position ?? "at",
+				})) ||
+				!isCurrent()
+			) {
 				return { cancelled: true };
 			}
-			forkedPath = (await this.sessionManager.forkSession(rt.sessionPath, entryId)).path;
+			forkedPath = (await this.sessionManager.forkSession(rt.sessionPath, entryId))
+				.path;
 		} catch (error) {
 			if (isCurrent()) this.toast("chat.forkFailed", error);
 			return { cancelled: true };
-		} finally { rt.sessionOperations -= 1; }
+		} finally {
+			rt.sessionOperations -= 1;
+		}
 		if (!isCurrent()) return { cancelled: true };
 		// Pi forks use before_fork only: vetoing a later before_switch would leave
 		// an unwanted copied file behind after the operation was already approved.
@@ -2918,7 +3581,11 @@ export class ObsidianAgentService {
 	}
 
 	/** Bookmark commands capture their owner before a modal or any other await can change focus. */
-	async runBookmark(path: string, command: BookmarkCommand, label = ""): Promise<BookmarkOutcome> {
+	async runBookmark(
+		path: string,
+		command: BookmarkCommand,
+		label = "",
+	): Promise<BookmarkOutcome> {
 		const rt = this.runtimes.get(path);
 		if (!rt) throw new Error(this.t().t("bookmarks.unavailable"));
 		const host = this.bookmarksFor(rt);
@@ -2932,7 +3599,8 @@ export class ObsidianAgentService {
 		} finally {
 			rt.bookmarkWork -= 1;
 			release();
-			if (!rt.bookmarkWork && !rt.bookmarkClosing) await this.notifySettledState(rt);
+			if (!rt.bookmarkWork && !rt.bookmarkClosing)
+				await this.notifySettledState(rt);
 		}
 	}
 
@@ -2942,36 +3610,70 @@ export class ObsidianAgentService {
 		const host = this.bookmarksFor(rt);
 		const release = this.sessionManager.claimOperation(path);
 		rt.bookmarkWork += 1;
-		try { return await host.list(); }
-		finally {
+		try {
+			return await host.list();
+		} finally {
 			rt.bookmarkWork -= 1;
 			release();
-			if (!rt.bookmarkWork && !rt.bookmarkClosing) await this.notifySettledState(rt);
+			if (!rt.bookmarkWork && !rt.bookmarkClosing)
+				await this.notifySettledState(rt);
 		}
 	}
 
 	private bookmarksFor(rt: SessionRuntime): BookmarkHost {
 		rt.bookmarkHost ??= new BookmarkHost({
 			assertAvailable: (session) => {
-				if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || !this.sessionManager.isLoaded(rt.sessionPath)) {
+				if (
+					rt.bookmarkClosing ||
+					this.runtimes.get(rt.sessionPath) !== rt ||
+					!this.sessionManager.isLoaded(rt.sessionPath)
+				) {
 					throw new Error(this.t().t("bookmarks.unavailable"));
 				}
-				if (!rt.agent || rt.agent.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.branchSummaryController || rt.compaction || rt.promptPreparations || rt.sessionRefreshing || rt.sessionOperations || rt.activeRunContext || rt.promptQueue.size > 0 || rt.steeredPrompts.length > 0 || rt.compactionPending) {
+				if (
+					!rt.agent ||
+					rt.agent.state.isStreaming ||
+					rt.isCompacting ||
+					rt.retryInFlight ||
+					rt.branchSummaryController ||
+					rt.compaction ||
+					rt.promptPreparations ||
+					rt.sessionRefreshing ||
+					rt.sessionOperations ||
+					rt.activeRunContext ||
+					rt.promptQueue.size > 0 ||
+					rt.steeredPrompts.length > 0 ||
+					rt.compactionPending
+				) {
 					throw new Error(this.t().t("bookmarks.busy"));
 				}
-				if (session && this.sessionManager.getSessionFor(rt.sessionPath) !== session) {
+				if (
+					session &&
+					this.sessionManager.getSessionFor(rt.sessionPath) !== session
+				) {
 					throw new Error(this.t().t("bookmarks.changed"));
 				}
 			},
 			load: async () => {
-				const result = await this.sessionManager.reconcileExternalDrift(rt.sessionPath);
-				if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) throw new Error(this.t().t("bookmarks.unavailable"));
-				if (result.action === "conflict") throw new Error(this.t().t("bookmarks.changed"));
+				const result = await this.sessionManager.reconcileExternalDrift(
+					rt.sessionPath,
+				);
+				if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt)
+					throw new Error(this.t().t("bookmarks.unavailable"));
+				if (result.action === "conflict")
+					throw new Error(this.t().t("bookmarks.changed"));
 				if (result.action === "merged") {
-					const context = await this.sessionManager.buildSessionContextFor(rt.sessionPath, rt.activeLane);
-					if (rt.bookmarkClosing) throw new Error(this.t().t("bookmarks.unavailable"));
+					const context = await this.sessionManager.buildSessionContextFor(
+						rt.sessionPath,
+						rt.activeLane,
+					);
+					if (rt.bookmarkClosing)
+						throw new Error(this.t().t("bookmarks.unavailable"));
 					await this.adoptSessionContext(rt, context);
-					rt.lastCompaction = await this.sessionManager.getLastCompactionFor(rt.sessionPath, rt.activeLane);
+					rt.lastCompaction = await this.sessionManager.getLastCompactionFor(
+						rt.sessionPath,
+						rt.activeLane,
+					);
 					rt.sessionRevision += 1;
 				}
 				return this.sessionManager.getSessionFor(rt.sessionPath);
@@ -2986,10 +3688,13 @@ export class ObsidianAgentService {
 		await this.initialize();
 		const rt = captured ?? this.current();
 		if (!rt || this.runtimes.get(rt.sessionPath) !== rt) return false;
-		try { return await this.runExtensionFor(rt, name, args); }
-		catch (error) { this.setError(rt, causeMessage(error)); return false; }
+		try {
+			return await this.runExtensionFor(rt, name, args);
+		} catch (error) {
+			this.setError(rt, causeMessage(error));
+			return false;
+		}
 	}
-
 
 	isExtensionInput(prompt: string): boolean {
 		if (hasClarifyMarker(prompt)) return true;
@@ -2997,14 +3702,41 @@ export class ObsidianAgentService {
 		if (!command) return false;
 		const explicit = command.name.startsWith("extension:");
 		const name = explicit ? command.name.slice(10) : command.name;
-		if (!explicit && (findPromptTemplate(this.promptTemplates, name) || findSkill(this.current()?.skills ?? [], name))) return false;
-		return name === "context" || Boolean(this.current()?.communityHost?.commands.some(item => item.name === name));
+		if (
+			!explicit &&
+			(findPromptTemplate(this.promptTemplates, name) ||
+				findSkill(this.current()?.skills ?? [], name))
+		)
+			return false;
+		return (
+			name === "context" ||
+			Boolean(
+				this.current()?.communityHost?.commands.some((item) => item.name === name),
+			)
+		);
 	}
 
-	private async runExtensionFor(rt: SessionRuntime, name: string, args: string): Promise<boolean> {
+	private async runExtensionFor(
+		rt: SessionRuntime,
+		name: string,
+		args: string,
+	): Promise<boolean> {
 		const host = rt.communityHost;
 		const agent = rt.agent;
-		if (!host || !agent || rt.extensionBusy || rt.extensionCommand || rt.bookmarkClosing || rt.bookmarkWork || rt.isCompacting || rt.retryInFlight || rt.sessionRefreshing || rt.sessionOperations || !agent.state.isStreaming && rt.promptPreparations || agent.state.isStreaming && name !== "continue" && name !== "context") {
+		if (
+			!host ||
+			!agent ||
+			rt.extensionBusy ||
+			rt.extensionCommand ||
+			rt.bookmarkClosing ||
+			rt.bookmarkWork ||
+			rt.isCompacting ||
+			rt.retryInFlight ||
+			rt.sessionRefreshing ||
+			rt.sessionOperations ||
+			(!agent.state.isStreaming && rt.promptPreparations) ||
+			(agent.state.isStreaming && name !== "continue" && name !== "context")
+		) {
 			this.setNotice(rt, this.t().t("extensions.busy"));
 			return false;
 		}
@@ -3013,20 +3745,45 @@ export class ObsidianAgentService {
 		rt.extensionCommand = true;
 		this.notify();
 		try {
-			if (name === "context") { rt.extensionContextRequest += 1; this.notify(); return true; }
-			if (name === "clarify" && /^model(?:\s|$)/i.test(args.trim())) return await this.configureClarify(rt, args);
-			if (name.startsWith("clarify")) rt.extensionEditor = captureExtensionEditor(() => rt.extensionUI);
-			const messages = name === "clarify-input" ? (await host.input(args), []) : await host.run(name, args);
-			if (rt.communityHost !== host || rt.stopEpoch !== epoch || rt.bookmarkClosing) return false;
+			if (name === "context") {
+				rt.extensionContextRequest += 1;
+				this.notify();
+				return true;
+			}
+			if (name === "clarify" && /^model(?:\s|$)/i.test(args.trim()))
+				return await this.configureClarify(rt, args);
+			if (name.startsWith("clarify"))
+				rt.extensionEditor = captureExtensionEditor(() => rt.extensionUI);
+			const messages =
+				name === "clarify-input"
+					? (await host.input(args), [])
+					: await host.run(name, args);
+			if (
+				rt.communityHost !== host ||
+				rt.stopEpoch !== epoch ||
+				rt.bookmarkClosing
+			)
+				return false;
 			if (!messages.length) return true;
 			if (!this.ensureCredentialReady(rt)) return false;
-			if (!agent.state.messages.some(message => message.role === "user" || message.role === "assistant")) {
+			if (
+				!agent.state.messages.some(
+					(message) => message.role === "user" || message.role === "assistant",
+				)
+			) {
 				this.setNotice(rt, this.t().t("extensions.noConversation"));
 				return false;
 			}
-			for (const message of messages) rt.promptQueue.add({ text: "/continue", imageCount: 0, stagedImages: [], message });
+			for (const message of messages)
+				rt.promptQueue.add({
+					text: "/continue",
+					imageCount: 0,
+					stagedImages: [],
+					message,
+				});
 			this.notify();
-			if (!agent.state.isStreaming) await this.sendPromptEntries(rt, rt.promptQueue.drain());
+			if (!agent.state.isStreaming)
+				await this.sendPromptEntries(rt, rt.promptQueue.drain());
 			return true;
 		} finally {
 			rt.promptPreparations -= 1;
@@ -3056,12 +3813,22 @@ export class ObsidianAgentService {
 		return task;
 	}
 
-	private async configureClarify(rt: SessionRuntime, args: string): Promise<boolean> {
+	private async configureClarify(
+		rt: SessionRuntime,
+		args: string,
+	): Promise<boolean> {
 		const parts = args.trim().split(/\s+/).slice(1);
 		if (!parts.length) {
 			const pinnedId = this.getSettings().clarifyModelId;
-			const pinned = pinnedId ? resolveModelChoice(this.getSettings(), pinnedId) : undefined;
-			this.setNotice(rt, pinned ? `${pinned.provider}/${pinned.id}` : this.t().t("extensions.clarifyCurrentModel"));
+			const pinned = pinnedId
+				? resolveModelChoice(this.getSettings(), pinnedId)
+				: undefined;
+			this.setNotice(
+				rt,
+				pinned
+					? `${pinned.provider}/${pinned.id}`
+					: this.t().t("extensions.clarifyCurrentModel"),
+			);
 			return true;
 		}
 		const epoch = rt.stopEpoch;
@@ -3069,12 +3836,25 @@ export class ObsidianAgentService {
 			if (rt.bookmarkClosing || rt.stopEpoch !== epoch) return false;
 			const settings = this.getSettings();
 			const reset = parts.length === 1 && parts[0]?.toLowerCase() === "reset";
-			const choice = reset ? undefined : configuredModels(settings).find(item => item.model.provider === parts[0] && item.model.id === parts.slice(1).join(" "));
-			if (!reset && !choice) throw new Error(this.t().t("extensions.clarifyModelMissing"));
+			const choice = reset
+				? undefined
+				: configuredModels(settings).find(
+						(item) =>
+							item.model.provider === parts[0] &&
+							item.model.id === parts.slice(1).join(" "),
+					);
+			if (!reset && !choice)
+				throw new Error(this.t().t("extensions.clarifyModelMissing"));
 			const previous = settings.clarifyModelId;
-			if (reset) delete settings.clarifyModelId; else settings.clarifyModelId = choice!.choiceId;
-			try { await this.persistSettings({ reconfigure: false }); }
-			catch (error) { if (!rt.bookmarkClosing && settings === this.getSettings()) settings.clarifyModelId = previous; throw error; }
+			if (reset) delete settings.clarifyModelId;
+			else settings.clarifyModelId = choice!.choiceId;
+			try {
+				await this.persistSettings({ reconfigure: false });
+			} catch (error) {
+				if (!rt.bookmarkClosing && settings === this.getSettings())
+					settings.clarifyModelId = previous;
+				throw error;
+			}
 			if (rt.bookmarkClosing || rt.stopEpoch !== epoch) return false;
 			this.setNotice(rt, this.t().t("extensions.clarifyModelSaved"));
 			return true;
@@ -3094,7 +3874,10 @@ export class ObsidianAgentService {
 	 * every session up front, so a superseded keystroke stops the scan at the next
 	 * session boundary — `repo.open` itself cannot be cancelled mid-read.
 	 */
-	async searchSessions(text: string, options: { limit?: number; signal?: AbortSignal } = {}): Promise<SessionSearchResult[]> {
+	async searchSessions(
+		text: string,
+		options: { limit?: number; signal?: AbortSignal } = {},
+	): Promise<SessionSearchResult[]> {
 		await this.initialize();
 		const query = text.trim();
 		if (!query) {
@@ -3105,7 +3888,10 @@ export class ObsidianAgentService {
 		const search = this.sessionManager.createStoredSessionSearch();
 		// Entry budget, not a session budget: one chatty chat could otherwise fill
 		// the whole list once the hits are folded per session.
-		for await (const hit of search.search(query, { limit: maxSessions * 20, signal: options.signal })) {
+		for await (const hit of search.search(query, {
+			limit: maxSessions * 20,
+			signal: options.signal,
+		})) {
 			hits.push(hit);
 		}
 		return aggregateSessionSearchHits(hits, query, maxSessions);
@@ -3139,13 +3925,21 @@ export class ObsidianAgentService {
 			return Promise.resolve();
 		}
 		const sequence = ++this.sessionOpenSequence;
-		const isWarm = Boolean(this.runtimes.get(path)?.agent) && this.sessionManager.isLoaded(path);
+		const isWarm =
+			Boolean(this.runtimes.get(path)?.agent) &&
+			this.sessionManager.isLoaded(path);
 		// Serialize preparation as well as the disk read: the same session must
 		// never acquire two live agents when A → B → A overtakes a cold open.
 		// Superseded requests are skipped before work and cannot move focus after it.
 		// A ready runtime needs no construction, so it must not wait behind an
 		// unrelated cold read that the user has just stopped waiting for.
-		const opening = this.approveSessionOpen(path, sequence, this.current(), beforeSwitch, isWarm);
+		const opening = this.approveSessionOpen(
+			path,
+			sequence,
+			this.current(),
+			beforeSwitch,
+			isWarm,
+		);
 		const hadPendingSelection = this.pendingSessionOpen !== null;
 		this.pendingSessionOpen = { path, promise: opening };
 		// Before the first await: the panel can announce the wait and stop sends
@@ -3158,12 +3952,29 @@ export class ObsidianAgentService {
 	}
 
 	/** Keep extension dialogs outside the disk queue so a newer choice can supersede them. */
-	private async approveSessionOpen(path: string, sequence: number, previous: SessionRuntime | null, beforeSwitch: boolean, isWarm: boolean): Promise<void> {
-		const isCurrent = () => !this.disposed && this.sessionOpenSequence === sequence;
+	private async approveSessionOpen(
+		path: string,
+		sequence: number,
+		previous: SessionRuntime | null,
+		beforeSwitch: boolean,
+		isWarm: boolean,
+	): Promise<void> {
+		const isCurrent = () =>
+			!this.disposed && this.sessionOpenSequence === sequence;
 		try {
-			if (beforeSwitch && !await this.canChangeSession(previous, { type: "session_before_switch", reason: "resume", targetSessionFile: path })) return;
+			if (
+				beforeSwitch &&
+				!(await this.canChangeSession(previous, {
+					type: "session_before_switch",
+					reason: "resume",
+					targetSessionFile: path,
+				}))
+			)
+				return;
 			if (!isCurrent() || this.current() !== previous) return;
-			const opening = (isWarm ? Promise.resolve() : this.sessionOpenQueue).then(() => this.openSessionRequest(path, sequence));
+			const opening = (isWarm ? Promise.resolve() : this.sessionOpenQueue).then(
+				() => this.openSessionRequest(path, sequence),
+			);
 			// Preserve the original serialization of cold runtime construction.
 			if (!isWarm) this.sessionOpenQueue = opening.catch(() => undefined);
 			await opening;
@@ -3184,8 +3995,12 @@ export class ObsidianAgentService {
 		this.notify();
 	}
 
-	private async openSessionRequest(path: string, sequence: number): Promise<void> {
-		const isCurrentRequest = () => !this.disposed && sequence === this.sessionOpenSequence;
+	private async openSessionRequest(
+		path: string,
+		sequence: number,
+	): Promise<void> {
+		const isCurrentRequest = () =>
+			!this.disposed && sequence === this.sessionOpenSequence;
 		let release: (() => void) | undefined;
 		let preparing: SessionRuntime | undefined;
 		try {
@@ -3202,8 +4017,14 @@ export class ObsidianAgentService {
 			if (!rt.agent) {
 				preparing = rt;
 				rt.activeLane = "main";
-				const context = await this.sessionManager.buildSessionContextFor(info.path, rt.activeLane);
-				rt.lastCompaction = await this.sessionManager.getLastCompactionFor(info.path, rt.activeLane);
+				const context = await this.sessionManager.buildSessionContextFor(
+					info.path,
+					rt.activeLane,
+				);
+				rt.lastCompaction = await this.sessionManager.getLastCompactionFor(
+					info.path,
+					rt.activeLane,
+				);
 				if (!isCurrentRequest()) return;
 				rt.compactionPending = false;
 				rt.compactionGate = null;
@@ -3231,10 +4052,16 @@ export class ObsidianAgentService {
 			if (isCurrentRequest()) this.toast("chat.sessionOpenFailed", error);
 		} finally {
 			try {
-				if (preparing && !preparing.agent && this.runtimes.get(preparing.sessionPath) === preparing) this.removeRuntime(preparing);
+				if (
+					preparing &&
+					!preparing.agent &&
+					this.runtimes.get(preparing.sessionPath) === preparing
+				)
+					this.removeRuntime(preparing);
 			} finally {
-				try { release?.(); }
-				finally {
+				try {
+					release?.();
+				} finally {
 					if (isCurrentRequest() && this.pendingSessionOpen) {
 						this.pendingSessionOpen = null;
 						this.notify();
@@ -3259,18 +4086,39 @@ export class ObsidianAgentService {
 	 * message — see the note on {@link PromptQueue} — so removing one from this
 	 * list is the whole operation.
 	 */
-	removeQueuedPrompt(id: string, currentReferences?: readonly ContextReference[], currentText?: string): TakenPrompt | null {
+	removeQueuedPrompt(
+		id: string,
+		currentReferences?: readonly ContextReference[],
+		currentText?: string,
+	): TakenPrompt | null {
 		const rt = this.current();
 		if (!rt) {
 			return null;
 		}
 		const queued = rt.promptQueue.peek(id);
-		if (queued && currentText !== undefined && appendToDraft(currentText, queued.text).length > MAX_DRAFT_LENGTH) {
-			new Notice(this.t().t("noteReference.draftFull", { limit: MAX_DRAFT_LENGTH }));
+		if (
+			queued &&
+			currentText !== undefined &&
+			appendToDraft(currentText, queued.text).length > MAX_DRAFT_LENGTH
+		) {
+			new Notice(
+				this.t().t("noteReference.draftFull", { limit: MAX_DRAFT_LENGTH }),
+			);
 			return null;
 		}
-		if (queued && currentReferences && !mergeContextReferences(currentReferences, messageReferences(queued.contextMessage) ?? [])) {
-			new Notice(this.t().t("noteReference.referenceLimit", { limit: MAX_CONTEXT_REFERENCES }));
+		if (
+			queued &&
+			currentReferences &&
+			!mergeContextReferences(
+				currentReferences,
+				messageReferences(queued.contextMessage) ?? [],
+			)
+		) {
+			new Notice(
+				this.t().t("noteReference.referenceLimit", {
+					limit: MAX_CONTEXT_REFERENCES,
+				}),
+			);
 			return null;
 		}
 		const taken = rt.promptQueue.remove(id);
@@ -3281,7 +4129,13 @@ export class ObsidianAgentService {
 		// Only the staged pictures. The rest of the message's images were resolved
 		// out of `![[…]]` embeds still written in the text going back to the
 		// composer, and restaging those would send each one twice on the next send.
-		return { text: taken.text, images: taken.stagedImages, ...(taken.contextMessage ? { references: messageReferences(taken.contextMessage) ?? [] } : {}) };
+		return {
+			text: taken.text,
+			images: taken.stagedImages,
+			...(taken.contextMessage
+				? { references: messageReferences(taken.contextMessage) ?? [] }
+				: {}),
+		};
 	}
 
 	/** Labels the active session; an empty name clears it back to the derived label. */
@@ -3311,11 +4165,20 @@ export class ObsidianAgentService {
 	 * it into a notice, while the bridge owes the extension a thrown failure. A
 	 * rename that could not be written must never report success.
 	 */
-	private async renameRuntimeSession(rt: SessionRuntime, name: string): Promise<void> {
+	private async renameRuntimeSession(
+		rt: SessionRuntime,
+		name: string,
+	): Promise<void> {
 		const trimmedName = name.trim();
 		rt.sessionOperations += 1;
-		try { await this.sessionManager.appendSessionInfoFor(rt.sessionPath, trimmedName || undefined); }
-		finally { rt.sessionOperations -= 1; }
+		try {
+			await this.sessionManager.appendSessionInfoFor(
+				rt.sessionPath,
+				trimmedName || undefined,
+			);
+		} finally {
+			rt.sessionOperations -= 1;
+		}
 		// Patch the cached summary in place: the manager summarises the active
 		// path only, and a rename already knows the one field that moved.
 		if (rt.sessionInfo) {
@@ -3343,7 +4206,10 @@ export class ObsidianAgentService {
 		const rt = this.current();
 		const transcript = (rt?.agent?.state.messages ?? []).filter(
 			(message): message is ExportableMessage =>
-				message.role === "user" || message.role === "assistant" || message.role === "toolResult" || messageReferences(message) !== null,
+				message.role === "user" ||
+				message.role === "assistant" ||
+				message.role === "toolResult" ||
+				messageReferences(message) !== null,
 		);
 		const session = this.sessionInfo;
 		if (transcript.length === 0 || !session) {
@@ -3353,7 +4219,9 @@ export class ObsidianAgentService {
 		const t = this.t();
 		// ||, not ??: firstMessage is "" for an image-only opener, and noteFileName's
 		// English fallback would leak past an empty-string title.
-		const base = noteFileName(session.name || session.firstMessage || t.t("chat.exportUntitled"));
+		const base = noteFileName(
+			session.name || session.firstMessage || t.t("chat.exportUntitled"),
+		);
 		const dir = this.getSettings().sessionDir;
 		try {
 			let path = `${dir}/${base}.md`;
@@ -3483,21 +4351,33 @@ export class ObsidianAgentService {
 			return;
 		}
 		const rt = this.runtimes.get(activePath);
-		if (!rt || rt.agent?.state.isStreaming || rt.bookmarkWork || rt.sessionRefreshing) {
+		if (
+			!rt ||
+			rt.agent?.state.isStreaming ||
+			rt.bookmarkWork ||
+			rt.sessionRefreshing
+		) {
 			return;
 		}
 		rt.sessionRefreshing = true;
 		try {
 			await this.reconcileRuntimeDrift(rt, activePath);
-		} finally { rt.sessionRefreshing = false; }
+		} finally {
+			rt.sessionRefreshing = false;
+		}
 	}
 
-	private async reconcileRuntimeDrift(rt: SessionRuntime, activePath: string): Promise<void> {
+	private async reconcileRuntimeDrift(
+		rt: SessionRuntime,
+		activePath: string,
+	): Promise<void> {
 		let outcome: SessionReconcileOutcome;
 		try {
 			outcome = await this.sessionManager.reconcileExternalDrift(activePath);
 		} catch {
-			this.log.debug("Session drift reconciliation failed; keeping the current view");
+			this.log.debug(
+				"Session drift reconciliation failed; keeping the current view",
+			);
 			return;
 		}
 		if (outcome.action === "skipped") {
@@ -3507,9 +4387,15 @@ export class ObsidianAgentService {
 			rt.syncConflict = outcome.backupPath;
 		} else {
 			rt.syncConflict = null;
-			const context = await this.sessionManager.buildSessionContextFor(activePath, rt.activeLane);
+			const context = await this.sessionManager.buildSessionContextFor(
+				activePath,
+				rt.activeLane,
+			);
 			await this.adoptSessionContext(rt, context);
-			rt.lastCompaction = await this.sessionManager.getLastCompactionFor(activePath, rt.activeLane);
+			rt.lastCompaction = await this.sessionManager.getLastCompactionFor(
+				activePath,
+				rt.activeLane,
+			);
 			rt.sessionInfo = await this.sessionManager.getActiveSessionInfo();
 			this.sessionInfo = rt.sessionInfo;
 		}
@@ -3545,7 +4431,10 @@ export class ObsidianAgentService {
 		try {
 			await this.sessionManager.deleteSession(path);
 		} catch (error) {
-			if (rt) { rt.bookmarkClosing = false; rt.bookmarkHost = undefined; }
+			if (rt) {
+				rt.bookmarkClosing = false;
+				rt.bookmarkHost = undefined;
+			}
 			this.toast("chat.sessionDeleteFailed", error);
 			return;
 		}
@@ -3637,7 +4526,10 @@ export class ObsidianAgentService {
 	 */
 	async setActiveModel(modelId: string): Promise<void> {
 		const settings = this.getSettings();
-		if (settings.activeModelId === modelId || !settings.models.some((model) => model.id === modelId)) {
+		if (
+			settings.activeModelId === modelId ||
+			!settings.models.some((model) => model.id === modelId)
+		) {
 			return;
 		}
 		settings.activeModelId = modelId;
@@ -3708,24 +4600,40 @@ export class ObsidianAgentService {
 	 * with the pending choice first also lets a user undo a mid-run selection by
 	 * selecting the still-running level again.
 	 */
-	private async setRuntimeThinkingLevel(rt: SessionRuntime, level: ThinkingLevel): Promise<void> {
+	private async setRuntimeThinkingLevel(
+		rt: SessionRuntime,
+		level: ThinkingLevel,
+	): Promise<void> {
 		const agent = rt.agent;
 		if (!agent) return;
 		if (this.isBusy(rt) || rt.configurationApplying) {
-			if ((rt.pendingConfiguration?.thinkingLevel ?? agent.state.thinkingLevel) === level) return;
-			rt.pendingConfiguration = { ...rt.pendingConfiguration, thinkingLevel: level };
+			if (
+				(rt.pendingConfiguration?.thinkingLevel ?? agent.state.thinkingLevel) ===
+				level
+			)
+				return;
+			rt.pendingConfiguration = {
+				...rt.pendingConfiguration,
+				thinkingLevel: level,
+			};
 			this.notify();
 			return;
 		}
 		rt.configurationApplying = true;
-		try { await this.applyRuntimeThinkingLevel(rt, level); }
-		finally { rt.configurationApplying = false; }
+		try {
+			await this.applyRuntimeThinkingLevel(rt, level);
+		} finally {
+			rt.configurationApplying = false;
+		}
 		this.notify();
 		await this.flushPendingConfiguration(rt);
 	}
 
 	/** The same effective value goes to the agent, session log and observers. */
-	private async applyRuntimeThinkingLevel(rt: SessionRuntime, requested: ThinkingLevel): Promise<void> {
+	private async applyRuntimeThinkingLevel(
+		rt: SessionRuntime,
+		requested: ThinkingLevel,
+	): Promise<void> {
 		const agent = rt.agent;
 		if (!agent || !this.sessionManager.isLoaded(rt.sessionPath)) return;
 		const level = clampThinkingLevel(agent.state.model, requested);
@@ -3735,35 +4643,56 @@ export class ObsidianAgentService {
 		rt.sessionOperations += 1;
 		agent.state.thinkingLevel = level;
 		try {
-			await this.sessionManager.appendThinkingLevelChangeFor(rt.sessionPath, level, rt.activeLane);
+			await this.sessionManager.appendThinkingLevelChangeFor(
+				rt.sessionPath,
+				level,
+				rt.activeLane,
+			);
 		} catch (error) {
 			if (rt.agent === agent && rt.communityHost === host && !rt.bookmarkClosing) {
-				if (agent.state.thinkingLevel === level) agent.state.thinkingLevel = previousLevel;
+				if (agent.state.thinkingLevel === level)
+					agent.state.thinkingLevel = previousLevel;
 				this.setError(rt, causeMessage(error));
 			}
 			throw error;
-		} finally { rt.sessionOperations -= 1; }
-		if (rt.agent === agent && rt.communityHost === host) await this.emitThinkingLevelChange(rt, previousLevel, level);
+		} finally {
+			rt.sessionOperations -= 1;
+		}
+		if (rt.agent === agent && rt.communityHost === host)
+			await this.emitThinkingLevelChange(rt, previousLevel, level);
 	}
 
 	/** An observer failure cannot undo a level that was already saved. */
-	private async emitThinkingLevelChange(rt: SessionRuntime, previousLevel: ThinkingLevel, level: ThinkingLevel): Promise<void> {
+	private async emitThinkingLevelChange(
+		rt: SessionRuntime,
+		previousLevel: ThinkingLevel,
+		level: ThinkingLevel,
+	): Promise<void> {
 		const host = rt.communityHost;
 		if (!host || level === previousLevel || rt.bookmarkClosing) return;
-		try { await host.emit({ type: "thinking_level_select", level, previousLevel }); }
-		catch (error) {
-			if (!(error instanceof Error && error.name === "AbortError") && rt.communityHost === host && !rt.bookmarkClosing) {
+		try {
+			await host.emit({ type: "thinking_level_select", level, previousLevel });
+		} catch (error) {
+			if (
+				!(error instanceof Error && error.name === "AbortError") &&
+				rt.communityHost === host &&
+				!rt.bookmarkClosing
+			) {
 				this.setError(rt, causeMessage(error));
-				this.log.error("Extension thinking level handler failed", () => ({ error: causeMessage(error) }));
+				this.log.error("Extension thinking level handler failed", () => ({
+					error: causeMessage(error),
+				}));
 			}
 		}
 	}
 
 	/** Disable only the diagnostics observer; model calls and other extensions keep running. */
 	refreshDiagnostics(): void {
-		if (this.getSettings().shareDiagnostics === false) this.diagnosticsDisabled = true;
+		if (this.getSettings().shareDiagnostics === false)
+			this.diagnosticsDisabled = true;
 		if (!this.diagnosticsDisabled) return;
-		for (const runtime of this.runtimes.values()) runtime.communityHost?.disableOtel();
+		for (const runtime of this.runtimes.values())
+			runtime.communityHost?.disableOtel();
 	}
 
 	async refreshConfiguration(): Promise<void> {
@@ -3782,7 +4711,10 @@ export class ObsidianAgentService {
 			return;
 		}
 		if (rt.bookmarkWork) {
-			rt.pendingConfiguration = { ...rt.pendingConfiguration, modelId: this.getSettings().activeModelId };
+			rt.pendingConfiguration = {
+				...rt.pendingConfiguration,
+				modelId: this.getSettings().activeModelId,
+			};
 			this.notify();
 			return;
 		}
@@ -3801,20 +4733,33 @@ export class ObsidianAgentService {
 	 * clamp with its session-log entry, the tool rebuild, the skill reload, and
 	 * the configuration rows the session file records.
 	 */
-	private async reconfigureRuntime(rt: SessionRuntime, thinkingLevel?: ThinkingLevel): Promise<void> {
+	private async reconfigureRuntime(
+		rt: SessionRuntime,
+		thinkingLevel?: ThinkingLevel,
+	): Promise<void> {
 		if (rt.configurationApplying) {
-			rt.pendingConfiguration = { ...rt.pendingConfiguration, modelId: this.getSettings().activeModelId,
-				...(thinkingLevel !== undefined ? { thinkingLevel } : {}) };
+			rt.pendingConfiguration = {
+				...rt.pendingConfiguration,
+				modelId: this.getSettings().activeModelId,
+				...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+			};
 			return;
 		}
 		rt.configurationApplying = true;
 		rt.sessionOperations += 1;
-		try { await this.applyRuntimeConfiguration(rt, thinkingLevel); }
-		finally { rt.sessionOperations -= 1; rt.configurationApplying = false; }
+		try {
+			await this.applyRuntimeConfiguration(rt, thinkingLevel);
+		} finally {
+			rt.sessionOperations -= 1;
+			rt.configurationApplying = false;
+		}
 		await this.flushPendingConfiguration(rt);
 	}
 
-	private async applyRuntimeConfiguration(rt: SessionRuntime, thinkingLevel?: ThinkingLevel): Promise<void> {
+	private async applyRuntimeConfiguration(
+		rt: SessionRuntime,
+		thinkingLevel?: ThinkingLevel,
+	): Promise<void> {
 		const agent = rt.agent;
 		if (!agent || !this.sessionManager.isLoaded(rt.sessionPath)) {
 			return;
@@ -3823,7 +4768,10 @@ export class ObsidianAgentService {
 		agent.state.model = model;
 		// Preserve the session's level unless a pending selection or the newly
 		// selected model changes it. One apply saves and announces that result.
-		await this.applyRuntimeThinkingLevel(rt, thinkingLevel ?? agent.state.thinkingLevel);
+		await this.applyRuntimeThinkingLevel(
+			rt,
+			thinkingLevel ?? agent.state.thinkingLevel,
+		);
 		agent.state.tools = [
 			...this.buildTools(rt),
 			// The mounted list, connect-free: a send awaits this apply on its
@@ -3847,7 +4795,11 @@ export class ObsidianAgentService {
 		// An observer may have completed another model switch while we awaited
 		// it. Persist the live result, not the pre-event configuration snapshot.
 		const appliedModel = agent.state.model;
-		await this.sessionManager.ensureConfigurationFor(rt.sessionPath, { provider: appliedModel.provider, modelId: appliedModel.id }, rt.activeLane);
+		await this.sessionManager.ensureConfigurationFor(
+			rt.sessionPath,
+			{ provider: appliedModel.provider, modelId: appliedModel.id },
+			rt.activeLane,
+		);
 		await this.refreshSessionInfo(rt);
 		this.notify();
 	}
@@ -3861,7 +4813,17 @@ export class ObsidianAgentService {
 	 */
 	private isBusy(rt: SessionRuntime): boolean {
 		const agent = rt.agent;
-		return Boolean(agent?.state.isStreaming || rt.isCompacting || rt.retryInFlight || rt.extensionCommand || rt.extensionBusy || rt.branchSummaryController || rt.compaction || rt.bookmarkWork || rt.bookmarkClosing);
+		return Boolean(
+			agent?.state.isStreaming ||
+				rt.isCompacting ||
+				rt.retryInFlight ||
+				rt.extensionCommand ||
+				rt.extensionBusy ||
+				rt.branchSummaryController ||
+				rt.compaction ||
+				rt.bookmarkWork ||
+				rt.bookmarkClosing,
+		);
 	}
 
 	/**
@@ -3921,17 +4883,20 @@ export class ObsidianAgentService {
 	/** Connects one native panel; a departed panel can never detach its successor. */
 	attachExtensionUI(path: string, adapter: ExtensionUIAdapter): () => void {
 		const rt = this.runtimes.get(path);
-		if (!rt || rt.bookmarkClosing) throw new Error("Extension conversation is unavailable.");
+		if (!rt || rt.bookmarkClosing)
+			throw new Error("Extension conversation is unavailable.");
 		rt.extensionUI = adapter;
 		const host = rt.communityHost;
 		host?.attachUI(adapter);
-		void host?.start().catch(error => {
-			if (rt.communityHost === host && rt.extensionUI === adapter) this.setError(rt, causeMessage(error));
+		void host?.start().catch((error) => {
+			if (rt.communityHost === host && rt.extensionUI === adapter)
+				this.setError(rt, causeMessage(error));
 		});
 		return () => {
 			if (rt.extensionUI !== adapter) return;
 			rt.extensionUI = undefined;
-			if (this.runtimes.get(path) === rt && !rt.bookmarkClosing) rt.communityHost?.attachUI(undefined);
+			if (this.runtimes.get(path) === rt && !rt.bookmarkClosing)
+				rt.communityHost?.attachUI(undefined);
 		};
 	}
 
@@ -3942,7 +4907,9 @@ export class ObsidianAgentService {
 	 * switches language is worded in the new one.
 	 */
 	private t(): Translator {
-		return getT(resolveLanguage(this.app.vault as LanguageHost, this.getSettings().language));
+		return getT(
+			resolveLanguage(this.app.vault as LanguageHost, this.getSettings().language),
+		);
 	}
 
 	/** The active session's vault path, or null when no chat is open. */
@@ -3951,18 +4918,28 @@ export class ObsidianAgentService {
 	}
 
 	/** Passes markdown text through registered extension transformers in order. */
-	transformMarkdown(markdown: string, context: MarkdownTransformContext, path?: string): string {
+	transformMarkdown(
+		markdown: string,
+		context: MarkdownTransformContext,
+		path?: string,
+	): string {
 		const targetPath = path ?? this.getActiveSessionPath();
 		const rt = targetPath ? this.runtimes.get(targetPath) : this.current();
 		return rt?.communityHost?.transformMarkdown(markdown, context) ?? markdown;
 	}
 
-	getMessageRenderer(customType: string, path?: string): MessageRenderer | undefined {
+	getMessageRenderer(
+		customType: string,
+		path?: string,
+	): MessageRenderer | undefined {
 		const rt = path ? this.runtimes.get(path) : this.current();
 		return rt?.communityHost?.getMessageRenderer(customType);
 	}
 
-	getEntryRenderer(customType: string, path?: string): EntryRenderer | undefined {
+	getEntryRenderer(
+		customType: string,
+		path?: string,
+	): EntryRenderer | undefined {
 		const rt = path ? this.runtimes.get(path) : this.current();
 		return rt?.communityHost?.getEntryRenderer(customType);
 	}
@@ -3983,7 +4960,10 @@ export class ObsidianAgentService {
 			// and its replacement's departure the agent is genuinely idle, but a
 			// run is on its way and the turn slot must stay Stop rather than blink
 			// back to Send (issue #289).
-			isStreaming: (agent?.state.isStreaming ?? false) || (rt?.queueInterrupt ?? false) || (rt?.extensionPreparing ?? false),
+			isStreaming:
+				(agent?.state.isStreaming ?? false) ||
+				(rt?.queueInterrupt ?? false) ||
+				(rt?.extensionPreparing ?? false),
 			// Both halves: the id pi tracks, and the tool name a reader needs. The
 			// id is for matching, never for display — an id with no captured name
 			// is dropped rather than shown raw, so a missed event cannot leak
@@ -3999,7 +4979,10 @@ export class ObsidianAgentService {
 				})
 				.filter((pending): pending is PendingToolCall => pending !== undefined),
 			unpersistedMessages: [...(rt?.unpersistedMessages ?? [])],
-			errorMessage: rt?.panelError?.message ?? this.visibleAgentError(rt, agent) ?? this.initializationError,
+			errorMessage:
+				rt?.panelError?.message ??
+				this.visibleAgentError(rt, agent) ??
+				this.initializationError,
 			errorOpensSettings: rt?.panelError?.opensSettings ?? false,
 			// Mid-run sends, waiting for the interrupted run to land so they can
 			// depart. This list is the only record of them: pi is handed a queued
@@ -4030,7 +5013,11 @@ export class ObsidianAgentService {
 			sessionRevision: rt?.sessionRevision ?? this.sessionRevision,
 			sessionRunStates: this.getSessionRunStates(),
 			usage: sumUsage(messages, rt?.overheadUsage ?? []),
-			contextFill: measureContextFill(messages, contextWindow, this.resolveCompaction(contextWindow)),
+			contextFill: measureContextFill(
+				messages,
+				contextWindow,
+				this.resolveCompaction(contextWindow),
+			),
 			isCompacting: rt?.isCompacting ?? false,
 			compactionEvent: rt?.compactionEvent ?? null,
 			compactionRetained: rt?.lastCompaction?.retainedTail.length ?? 0,
@@ -4067,14 +5054,30 @@ export class ObsidianAgentService {
 	 * bridge ask about its own conversation: skills are per-runtime while a run is
 	 * in flight, so a background chat's list is not the focused chat's.
 	 */
-	private commandList(rt: SessionRuntime | null): ChatSnapshot["availableCommands"] {
+	private commandList(
+		rt: SessionRuntime | null,
+	): ChatSnapshot["availableCommands"] {
 		return [
-			{ name: "context", description: this.t().t("extensions.contextCommand"), kind: "extension" as const, invocation: "extension:context" },
-			...(rt?.communityHost?.commands ?? []).map(command => ({
-				name: command.name,
-				description: command.name === "continue" ? this.t().t("commands.continueTask") : command.name === "clarify" ? this.t().t("extensions.clarifyCommand") : command.description ?? "",
+			{
+				name: "context",
+				description: this.t().t("extensions.contextCommand"),
 				kind: "extension" as const,
-				invocation: findPromptTemplate(this.promptTemplates, command.name) || findSkill(rt?.skills ?? [], command.name) ? `extension:${command.name}` : command.name,
+				invocation: "extension:context",
+			},
+			...(rt?.communityHost?.commands ?? []).map((command) => ({
+				name: command.name,
+				description:
+					command.name === "continue"
+						? this.t().t("commands.continueTask")
+						: command.name === "clarify"
+							? this.t().t("extensions.clarifyCommand")
+							: (command.description ?? ""),
+				kind: "extension" as const,
+				invocation:
+					findPromptTemplate(this.promptTemplates, command.name) ||
+					findSkill(rt?.skills ?? [], command.name)
+						? `extension:${command.name}`
+						: command.name,
 			})),
 			...this.promptTemplates.map((template) => ({
 				name: template.name,
@@ -4086,7 +5089,9 @@ export class ObsidianAgentService {
 				name: skill.name,
 				description: skill.description,
 				kind: "skill" as const,
-				invocation: findPromptTemplate(this.promptTemplates, skill.name) ? `skill:${skill.name}` : skill.name,
+				invocation: findPromptTemplate(this.promptTemplates, skill.name)
+					? `skill:${skill.name}`
+					: skill.name,
 				skill,
 			})),
 		];
@@ -4138,19 +5143,22 @@ export class ObsidianAgentService {
 			tags.push(rawTags);
 		}
 
-		void this.app.vault.cachedRead(file).then((content) => {
-			if (this.activeNotePath !== path) return;
-			// The scout answers whether the text moved. A perception that lands later
-			// re-renders on its own callback, so `changed` only covers the local facts.
-			const changed = this.silentScout.observe(file, content, tags, () => {
-				if (this.activeNotePath === path) {
+		void this.app.vault
+			.cachedRead(file)
+			.then((content) => {
+				if (this.activeNotePath !== path) return;
+				// The scout answers whether the text moved. A perception that lands later
+				// re-renders on its own callback, so `changed` only covers the local facts.
+				const changed = this.silentScout.observe(file, content, tags, () => {
+					if (this.activeNotePath === path) {
+						this.notify();
+					}
+				});
+				if (changed) {
 					this.notify();
 				}
-			});
-			if (changed) {
-				this.notify();
-			}
-		}).catch(() => {});
+			})
+			.catch(() => {});
 	}
 
 	/** Returns cached or staged scout insight for the specified note. */
@@ -4180,7 +5188,13 @@ export class ObsidianAgentService {
 		if (this.disposed || this.newSessionInFlight) return null;
 		if (selected) await selected.promise;
 		await this.initialize();
-		if (this.disposed || this.newSessionInFlight || sequence !== this.sessionOpenSequence || this.pendingSessionOpen) return null;
+		if (
+			this.disposed ||
+			this.newSessionInFlight ||
+			sequence !== this.sessionOpenSequence ||
+			this.pendingSessionOpen
+		)
+			return null;
 		if (selected && this.currentPath !== selected.path) return null;
 		return this.current()?.agent ? this.currentPath : null;
 	}
@@ -4188,15 +5202,23 @@ export class ObsidianAgentService {
 	/** A saved reference draft needs a durable chat identity to be found after restart. */
 	async persistContextDraft(path: string): Promise<void> {
 		const rt = this.runtimes.get(path);
-		if (!rt?.agent || this.disposed) throw new Error("Context conversation is unavailable.");
+		if (!rt?.agent || this.disposed)
+			throw new Error("Context conversation is unavailable.");
 		if (!this.sessionManager.isBlankSession(path)) return;
 		const model = rt.agent.state.model;
 		const info = await this.sessionManager.materializeIfBlank(path, {
-			provider: model.provider, modelId: model.id, thinkingLevel: rt.agent.state.thinkingLevel,
+			provider: model.provider,
+			modelId: model.id,
+			thinkingLevel: rt.agent.state.thinkingLevel,
 		});
 		rt.sessionInfo = info;
 		rt.sessionRevision++;
-		if (this.current() === rt && !this.pendingSessionOpen && !this.newSessionInFlight && !this.disposed) {
+		if (
+			this.current() === rt &&
+			!this.pendingSessionOpen &&
+			!this.newSessionInFlight &&
+			!this.disposed
+		) {
 			this.sessionManager.focusSession(path);
 			this.sessionInfo = info;
 			this.notify();
@@ -4221,7 +5243,9 @@ export class ObsidianAgentService {
 		if (!rt || !rt.pinnedNotes.pinned.includes(path)) {
 			return;
 		}
-		rt.pinnedNotes.pinned = rt.pinnedNotes.pinned.filter((pinnedPath) => pinnedPath !== path);
+		rt.pinnedNotes.pinned = rt.pinnedNotes.pinned.filter(
+			(pinnedPath) => pinnedPath !== path,
+		);
 		this.notify();
 	}
 
@@ -4248,7 +5272,10 @@ export class ObsidianAgentService {
 		}
 		for (const rt of this.runtimes.values()) {
 			const next = [...new Set(rt.pinnedNotes.pinned.map(rewrite))];
-			if (next.length !== rt.pinnedNotes.pinned.length || next.some((v, i) => v !== rt.pinnedNotes.pinned[i])) {
+			if (
+				next.length !== rt.pinnedNotes.pinned.length ||
+				next.some((v, i) => v !== rt.pinnedNotes.pinned[i])
+			) {
 				rt.pinnedNotes.pinned = next;
 				changed = true;
 			}
@@ -4263,14 +5290,17 @@ export class ObsidianAgentService {
 		if (!path) {
 			return;
 		}
-		const matches = (candidate: string): boolean => candidate === path || candidate.startsWith(`${path}/`);
+		const matches = (candidate: string): boolean =>
+			candidate === path || candidate.startsWith(`${path}/`);
 		let changed = false;
 		if (this.activeNotePath && matches(this.activeNotePath)) {
 			this.activeNotePath = null;
 			changed = true;
 		}
 		for (const rt of this.runtimes.values()) {
-			const next = rt.pinnedNotes.pinned.filter((pinnedPath) => !matches(pinnedPath));
+			const next = rt.pinnedNotes.pinned.filter(
+				(pinnedPath) => !matches(pinnedPath),
+			);
 			if (next.length !== rt.pinnedNotes.pinned.length) {
 				rt.pinnedNotes.pinned = next;
 				changed = true;
@@ -4292,7 +5322,11 @@ export class ObsidianAgentService {
 		const refs: ContextRef[] = [];
 		const active = rt && rt.pinnedNotes.followActive ? this.activeNotePath : null;
 		if (active && rt) {
-			refs.push({ kind: "active", path: active, isPinned: rt.pinnedNotes.pinned.includes(active) });
+			refs.push({
+				kind: "active",
+				path: active,
+				isPinned: rt.pinnedNotes.pinned.includes(active),
+			});
 		}
 		if (rt) {
 			for (const path of rt.pinnedNotes.pinned) {
@@ -4331,7 +5365,9 @@ export class ObsidianAgentService {
 		// main, which is the line the conversation's own history lives on.
 		rt.activeLane = "main";
 		const context = await this.sessionManager.buildSessionContext(rt.activeLane);
-		rt.lastCompaction = await this.sessionManager.getLastCompaction(rt.activeLane);
+		rt.lastCompaction = await this.sessionManager.getLastCompaction(
+			rt.activeLane,
+		);
 		if (this.disposed) return;
 		await this.adoptSessionContext(rt, context);
 		if (this.disposed) return;
@@ -4381,7 +5417,10 @@ export class ObsidianAgentService {
 		try {
 			await this.refreshPromptTemplates();
 		} catch (error) {
-			this.log.error("Prompt template load failed; continuing with builtins", () => ({ error: String(error) }));
+			this.log.error(
+				"Prompt template load failed; continuing with builtins",
+				() => ({ error: String(error) }),
+			);
 			this.promptTemplates = [...BUILTIN_PROMPT_TEMPLATES];
 			this.lastSkillLoad = { ...this.lastSkillLoad, templates: [] };
 		}
@@ -4396,7 +5435,10 @@ export class ObsidianAgentService {
 	 * is what makes {@link retryFrom} decline them.
 	 */
 	/** Adopts a loaded session; async only to gather the tool list for the fresh agent. */
-	private async adoptSessionContext(rt: SessionRuntime, context: SessionContext): Promise<void> {
+	private async adoptSessionContext(
+		rt: SessionRuntime,
+		context: SessionContext,
+	): Promise<void> {
 		rt.messageEntryIds = new WeakMap<object, string>();
 		context.messages.forEach((message, index) => {
 			const entryId = context.messageOrigins[index];
@@ -4410,7 +5452,10 @@ export class ObsidianAgentService {
 		await this.replaceAgent(
 			rt,
 			context.messages,
-			clampThinkingLevel(getSelectedModel(this.getSettings()), context.thinkingLevel),
+			clampThinkingLevel(
+				getSelectedModel(this.getSettings()),
+				context.thinkingLevel,
+			),
 		);
 	}
 
@@ -4431,11 +5476,20 @@ export class ObsidianAgentService {
 				return null;
 			}
 			const editor = resolveNoteEditor(this.app, path);
-			return { path, content: editor ? editor.getValue() : await this.app.vault.cachedRead(abstract), modifiedAt: editor ? null : abstract.stat.mtime };
+			return {
+				path,
+				content: editor
+					? editor.getValue()
+					: await this.app.vault.cachedRead(abstract),
+				modifiedAt: editor ? null : abstract.stat.mtime,
+			};
 		} catch (error) {
 			// Degrades to the path-only block; debug level because the common case
 			// (note closed mid-run) is routine, not a fault worth warning about.
-			this.log.debug("Failed to read active note; sending the path-only context block", () => ({ path, error: String(error) }));
+			this.log.debug(
+				"Failed to read active note; sending the path-only context block",
+				() => ({ path, error: String(error) }),
+			);
 			return null;
 		}
 	}
@@ -4458,11 +5512,16 @@ export class ObsidianAgentService {
 		return { refs, ...this.readRunContext(refs) };
 	}
 
-	private readRunContext(refs: readonly ContextRef[]): Omit<FrozenRunContext, "refs"> {
+	private readRunContext(
+		refs: readonly ContextRef[],
+	): Omit<FrozenRunContext, "refs"> {
 		try {
 			return probeRunContext(this.app, refs);
 		} catch (error) {
-			this.log.debug("Failed to read the run context; sending the notes-only context block", () => ({ error: String(error) }));
+			this.log.debug(
+				"Failed to read the run context; sending the notes-only context block",
+				() => ({ error: String(error) }),
+			);
 			return EMPTY_RUN_CONTEXT;
 		}
 	}
@@ -4477,9 +5536,15 @@ export class ObsidianAgentService {
 	 */
 	private promptWithEnvironment(): string {
 		try {
-			return withEnvironment(OBSIDIAN_AGENT_SYSTEM_PROMPT, probeEnvironment(this.app));
+			return withEnvironment(
+				OBSIDIAN_AGENT_SYSTEM_PROMPT,
+				probeEnvironment(this.app),
+			);
 		} catch (error) {
-			this.log.debug("Failed to read the environment facts; composing the prompt without them", () => ({ error: String(error) }));
+			this.log.debug(
+				"Failed to read the environment facts; composing the prompt without them",
+				() => ({ error: String(error) }),
+			);
 			return OBSIDIAN_AGENT_SYSTEM_PROMPT;
 		}
 	}
@@ -4562,7 +5627,9 @@ export class ObsidianAgentService {
 	 * background sync below folds in whatever a pending handshake produces.
 	 */
 	private mountedExternalTools(): AgentTool[] {
-		return this.getMountedExternalToolsFn ? [...this.getMountedExternalToolsFn()] : [];
+		return this.getMountedExternalToolsFn
+			? [...this.getMountedExternalToolsFn()]
+			: [];
 	}
 
 	/**
@@ -4577,11 +5644,18 @@ export class ObsidianAgentService {
 	private syncExternalToolsInBackground(rt: SessionRuntime): void {
 		void this.fetchExternalTools()
 			.then((external) => {
-				if (this.disposed || this.runtimes.get(rt.sessionPath) !== rt || rt.agent === null) return;
+				if (
+					this.disposed ||
+					this.runtimes.get(rt.sessionPath) !== rt ||
+					rt.agent === null
+				)
+					return;
 				rt.agent.state.tools = [...this.buildTools(rt), ...external];
 			})
 			.catch((error) => {
-				this.log.debug("Background external tool sync failed", () => ({ error: causeMessage(error) }));
+				this.log.debug("Background external tool sync failed", () => ({
+					error: causeMessage(error),
+				}));
 			});
 	}
 
@@ -4593,7 +5667,11 @@ export class ObsidianAgentService {
 	 * gathering them may connect to servers. Every caller already awaited other
 	 * work on the way here, so the extra hop costs nothing.
 	 */
-	private async replaceAgent(rt: SessionRuntime, messages: AgentMessage[], thinkingLevel: ThinkingLevel): Promise<void> {
+	private async replaceAgent(
+		rt: SessionRuntime,
+		messages: AgentMessage[],
+		thinkingLevel: ThinkingLevel,
+	): Promise<void> {
 		rt.skills = this.skills;
 		rt.unsubscribeAgent?.();
 		rt.communityHost?.dispose();
@@ -4626,7 +5704,11 @@ export class ObsidianAgentService {
 		// `agent`, and an inferred type would be circular.
 		const generation = rt.stopEpoch;
 		const assertOwner = () => {
-			if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || rt.communityHost !== community) {
+			if (
+				rt.bookmarkClosing ||
+				this.runtimes.get(rt.sessionPath) !== rt ||
+				rt.communityHost !== community
+			) {
 				throw new Error("Extension session is no longer available.");
 			}
 		};
@@ -4640,279 +5722,463 @@ export class ObsidianAgentService {
 		 * should mean to a live run.
 		 */
 		const isCurrentExtensionHost = (): boolean =>
-			!rt.bookmarkClosing && this.runtimes.get(rt.sessionPath) === rt && rt.communityHost === community;
-		const contextSession = new ContextSession({
-			load: async () => {
-				assertOwner();
-				assertOwner();
-				return this.sessionManager.getSessionFor(rt.sessionPath);
-			},
-			assertAvailable: session => {
-				assertOwner();
-				community.assertActive();
-				if (session && session !== this.sessionManager.getSessionFor(rt.sessionPath)) throw new Error("Conversation changed during extension work.");
-			},
-			navigate: async (request, session) => {
-				if (rt.unpersistedMessages.size) throw new Error("Save the conversation before changing its context.");
-				const epoch = rt.stopEpoch;
-				const check = () => { assertOwner(); community.assertActive(); if (rt.stopEpoch !== epoch) throw new Error("Context navigation was cancelled."); };
-				check();
-				const release = this.sessionManager.claimOperation(rt.sessionPath);
-				rt.sessionOperations += 1;
-				try { await navigateExtensionSummary(session, request, check); }
-				finally {
-					// A Vault write already in progress may commit after Stop. Adopt the
-					// saved branch without asking an expired host to write a rollback.
+			!rt.bookmarkClosing &&
+			this.runtimes.get(rt.sessionPath) === rt &&
+			rt.communityHost === community;
+		const contextSession = new ContextSession(
+			{
+				load: async () => {
+					assertOwner();
+					assertOwner();
+					return this.sessionManager.getSessionFor(rt.sessionPath);
+				},
+				assertAvailable: (session) => {
+					assertOwner();
+					community.assertActive();
+					if (
+						session &&
+						session !== this.sessionManager.getSessionFor(rt.sessionPath)
+					)
+						throw new Error("Conversation changed during extension work.");
+				},
+				navigate: async (request, session) => {
+					if (rt.unpersistedMessages.size)
+						throw new Error("Save the conversation before changing its context.");
+					const epoch = rt.stopEpoch;
+					const check = () => {
+						assertOwner();
+						community.assertActive();
+						if (rt.stopEpoch !== epoch)
+							throw new Error("Context navigation was cancelled.");
+					};
+					check();
+					const release = this.sessionManager.claimOperation(rt.sessionPath);
+					rt.sessionOperations += 1;
 					try {
-						if (!rt.bookmarkClosing && rt.communityHost === community && rt.agent) {
-							const saved = await this.sessionManager.buildSessionContextFor(rt.sessionPath, rt.activeLane);
-							if (!rt.bookmarkClosing && rt.communityHost === community) {
-								rt.messageEntryIds = new WeakMap();
-								saved.messages.forEach((message, index) => { const id = saved.messageOrigins[index]; if (id) rt.messageEntryIds.set(message, id); });
-								rt.agent.state.messages = saved.messages;
-								rt.sessionRevision += 1;
-							}
-						}
+						await navigateExtensionSummary(session, request, check);
 					} finally {
-						rt.sessionOperations -= 1;
-						release();
+						// A Vault write already in progress may commit after Stop. Adopt the
+						// saved branch without asking an expired host to write a rollback.
+						try {
+							if (!rt.bookmarkClosing && rt.communityHost === community && rt.agent) {
+								const saved = await this.sessionManager.buildSessionContextFor(
+									rt.sessionPath,
+									rt.activeLane,
+								);
+								if (!rt.bookmarkClosing && rt.communityHost === community) {
+									rt.messageEntryIds = new WeakMap();
+									saved.messages.forEach((message, index) => {
+										const id = saved.messageOrigins[index];
+										if (id) rt.messageEntryIds.set(message, id);
+									});
+									rt.agent.state.messages = saved.messages;
+									rt.sessionRevision += 1;
+								}
+							}
+						} finally {
+							rt.sessionOperations -= 1;
+							release();
+						}
 					}
-				}
+				},
 			},
-		}, rt.activeLane);
+			rt.activeLane,
+		);
 		const extensionFetch = createObsidianRequestUrlFetch();
 		const view = extensionSessionView({
-			sessions: this.sessionManager, path: rt.sessionPath, lane: () => rt.activeLane, assertOwner,
+			sessions: this.sessionManager,
+			path: rt.sessionPath,
+			lane: () => rt.activeLane,
+			assertOwner,
 		});
-		const community = await CommunityHost.create({
-			session: contextSession,
-			otelEnvironment: () => this.diagnosticsDisabled ? {} : this.telemetryEnvironment,
-			// Read live so a toggle on the Extensions tab reaches the next conversation
-			// build; the current chat keeps its extensions until it is rebuilt.
-			disabledExtensionIds: () => this.getSettings().disabledExtensions,
-			logger: this.log,
-			prepare: async () => { assertOwner(); await view.refresh(); await contextSession.refresh(); },
-			platform: {
-				backgroundFetch: this.extensionBackgroundFetch,
-				fetch: (input, init) => {
+		const community = await CommunityHost.create(
+			{
+				session: contextSession,
+				otelEnvironment: () =>
+					this.diagnosticsDisabled ? {} : this.telemetryEnvironment,
+				// Read live so a toggle on the Extensions tab reaches the next conversation
+				// build; the current chat keeps its extensions until it is rebuilt.
+				disabledExtensionIds: () => this.getSettings().disabledExtensions,
+				logger: this.log,
+				prepare: async () => {
 					assertOwner();
-					// The platform owns cancellation and tracks the actual request promise.
-					return extensionFetch(input, { ...init, signal: undefined });
+					await view.refresh();
+					await contextSession.refresh();
 				},
-
-				config: createExtensionConfigStore({
-					getData: () => this.getSettings().extensionConfig,
-					setData: data => {
+				platform: {
+					backgroundFetch: this.extensionBackgroundFetch,
+					fetch: (input, init) => {
 						assertOwner();
-						const settings = this.getSettings();
-						if (data) settings.extensionConfig = data; else delete settings.extensionConfig;
+						// The platform owns cancellation and tracks the actual request promise.
+						return extensionFetch(input, { ...init, signal: undefined });
 					},
-					persist: () => this.persistSettings({ reconfigure: false }),
-					// Shares one tail with `/clarify model`, so two writers cannot
-					// interleave a read-modify-write over the same settings object.
-					queue: work => this.queueExtensionSettingsWrite(work),
-					projections: [clarifyModelProjection({
-						getSettings: () => this.getSettings(),
+
+					config: createExtensionConfigStore({
+						getData: () => this.getSettings().extensionConfig,
+						setData: (data) => {
+							assertOwner();
+							const settings = this.getSettings();
+							if (data) settings.extensionConfig = data;
+							else delete settings.extensionConfig;
+						},
 						persist: () => this.persistSettings({ reconfigure: false }),
-						assertOwner,
-					})],
-				}),
-				onError: error => { if (!rt.bookmarkClosing && rt.communityHost === community) this.setError(rt, causeMessage(error)); },
-				// The agent-team bridge's host half (design decision 3 of five): a
-				// member session is a first-class pool session, anchored to this
-				// conversation through parentSessionId and claimed for the team's
-				// lifetime. The bridge normalizes what pi's own createAgentSession
-				// machinery would have done; this host is what answers it.
-				createMemberSession: spec => {
-					assertOwner();
-					return this.createTeamMemberSession(rt, spec);
-				},
-				activityChanged: busy => { if (rt.communityHost === community) { rt.extensionBusy = busy; this.notify(); } },
-			},
-			getEntries: () => { assertOwner(); return view.getEntries(); },
-			getBranch: () => { assertOwner(); return view.getBranch(); },
-			getSessionId: () => { assertOwner(); return rt.sessionInfo?.id ?? rt.sessionPath; },
-			getSessionFile: () => { assertOwner(); return rt.sessionPath; },
-			getSessionName: () => { assertOwner(); return rt.sessionInfo?.name; },
-			refreshSession: async () => { await view.refresh(); await contextSession.refresh(); },
-			getLabel: id => contextSession.getLabel(id),
-			setLabel: (id, label) => {
-				if (rt.unpersistedMessages.size) throw new Error("Save the conversation before changing its context.");
-				contextSession.setLabel(id, label);
-			},
-			notify: (message, type) => { assertOwner(); if (type === "error") this.setError(rt, message); else this.setNotice(rt, message); },
-			getEditorText: () => { assertOwner(); return rt.extensionEditor?.read() ?? rt.extensionUI?.getEditorText() ?? ""; },
-			setEditorText: text => { assertOwner(); if (rt.extensionEditor) rt.extensionEditor.replace(text); else if (rt.extensionUI) rt.extensionUI.setEditorText(text); else throw new Error("The draft editor is no longer available."); },
-			getModel: () => { assertOwner(); return rt.agent?.state.model; },
-			getModels: () => { assertOwner(); return configuredModels(this.getSettings()).map(choice => choice.model); },
-			complete: async (selected, context, options) => {
-				assertOwner();
-				const bundle = this.requireModelsBundle();
-				const underlying: Promise<void>[] = [];
-				const fetch = this.getSettings().networkTransport === "requestUrl"
-					? createObsidianRequestUrlFetch({ onRequest: settled => { underlying.push(settled); } }) : bundle.fetch;
-				try {
-					const result = await bundle.models.complete(selected, context, {
-						...options,
-						apiKey: this.getApiKey(selected.provider),
-						...requestDefaults(fetch, options.cacheRetention ?? this.getSettings().cacheRetention, this.resolveRetryMaxRetries()),
-					});
-					// Count returned usage on its owner even when Stop discarded the
-					// result. Providers can omit usage for an interrupted request.
-					this.recordOverheadUsage(rt, result.usage);
-					return result;
-				} finally {
-					// requestUrl's network cannot be cancelled. The host has already
-					// released the user; retain its concurrency slot until IO finishes.
-					await Promise.all(underlying);
-				}
-			},
-			getAuth: async requestedModel => {
-				assertOwner();
-				const auth = await this.requireModelsBundle().models.getAuth(requestedModel, { apiKey: this.getApiKey(requestedModel.provider), signal: community.getSignal() });
-				community.assertActive();
-				if (!auth) return { ok: false as const, error: "No credential is configured for this model." };
-				const headers: Record<string, string> = {};
-				for (const [key, value] of Object.entries(auth.auth.headers ?? {})) if (value !== null) headers[key] = value;
-				return { ok: true as const, ...auth.auth, headers };
-			},
-			setModel: async requestedModel => {
-				const switched = await this.extensionModelSwitch.switch({
-					runtime: rt, agent, isCurrent: () => this.runtimes.get(rt.sessionPath) === rt,
-					refresh: () => this.refreshSessionInfo(rt),
-					thinkingLevelChanged: async (previousLevel, level) => {
-						if (isCurrentExtensionHost() && rt.agent === agent) await this.emitThinkingLevelChange(rt, previousLevel, level);
+						// Shares one tail with `/clarify model`, so two writers cannot
+						// interleave a read-modify-write over the same settings object.
+						queue: (work) => this.queueExtensionSettingsWrite(work),
+						projections: [
+							clarifyModelProjection({
+								getSettings: () => this.getSettings(),
+								persist: () => this.persistSettings({ reconfigure: false }),
+								assertOwner,
+							}),
+						],
+					}),
+					onError: (error) => {
+						if (!rt.bookmarkClosing && rt.communityHost === community)
+							this.setError(rt, causeMessage(error));
 					},
-				}, requestedModel);
-				if (switched) await community.syncModel();
-				return switched;
+					// The agent-team bridge's host half (design decision 3 of five): a
+					// member session is a first-class pool session, anchored to this
+					// conversation through parentSessionId and claimed for the team's
+					// lifetime. The bridge normalizes what pi's own createAgentSession
+					// machinery would have done; this host is what answers it.
+					createMemberSession: (spec) => {
+						assertOwner();
+						return this.createTeamMemberSession(rt, spec);
+					},
+					activityChanged: (busy) => {
+						if (rt.communityHost === community) {
+							rt.extensionBusy = busy;
+							this.notify();
+						}
+					},
+				},
+				getEntries: () => {
+					assertOwner();
+					return view.getEntries();
+				},
+				getBranch: () => {
+					assertOwner();
+					return view.getBranch();
+				},
+				getSessionId: () => {
+					assertOwner();
+					return rt.sessionInfo?.id ?? rt.sessionPath;
+				},
+				getSessionFile: () => {
+					assertOwner();
+					return rt.sessionPath;
+				},
+				getSessionName: () => {
+					assertOwner();
+					return rt.sessionInfo?.name;
+				},
+				refreshSession: async () => {
+					await view.refresh();
+					await contextSession.refresh();
+				},
+				getLabel: (id) => contextSession.getLabel(id),
+				setLabel: (id, label) => {
+					if (rt.unpersistedMessages.size)
+						throw new Error("Save the conversation before changing its context.");
+					contextSession.setLabel(id, label);
+				},
+				notify: (message, type) => {
+					assertOwner();
+					if (type === "error") this.setError(rt, message);
+					else this.setNotice(rt, message);
+				},
+				getEditorText: () => {
+					assertOwner();
+					return rt.extensionEditor?.read() ?? rt.extensionUI?.getEditorText() ?? "";
+				},
+				setEditorText: (text) => {
+					assertOwner();
+					if (rt.extensionEditor) rt.extensionEditor.replace(text);
+					else if (rt.extensionUI) rt.extensionUI.setEditorText(text);
+					else throw new Error("The draft editor is no longer available.");
+				},
+				getModel: () => {
+					assertOwner();
+					return rt.agent?.state.model;
+				},
+				getModels: () => {
+					assertOwner();
+					return configuredModels(this.getSettings()).map((choice) => choice.model);
+				},
+				complete: async (selected, context, options) => {
+					assertOwner();
+					const bundle = this.requireModelsBundle();
+					const underlying: Promise<void>[] = [];
+					const fetch =
+						this.getSettings().networkTransport === "requestUrl"
+							? createObsidianRequestUrlFetch({
+									onRequest: (settled) => {
+										underlying.push(settled);
+									},
+								})
+							: bundle.fetch;
+					try {
+						const result = await bundle.models.complete(selected, context, {
+							...options,
+							apiKey: this.getApiKey(selected.provider),
+							...requestDefaults(
+								fetch,
+								options.cacheRetention ?? this.getSettings().cacheRetention,
+								this.resolveRetryMaxRetries(),
+							),
+						});
+						// Count returned usage on its owner even when Stop discarded the
+						// result. Providers can omit usage for an interrupted request.
+						this.recordOverheadUsage(rt, result.usage);
+						return result;
+					} finally {
+						// requestUrl's network cannot be cancelled. The host has already
+						// released the user; retain its concurrency slot until IO finishes.
+						await Promise.all(underlying);
+					}
+				},
+				getAuth: async (requestedModel) => {
+					assertOwner();
+					const auth = await this.requireModelsBundle().models.getAuth(
+						requestedModel,
+						{
+							apiKey: this.getApiKey(requestedModel.provider),
+							signal: community.getSignal(),
+						},
+					);
+					community.assertActive();
+					if (!auth)
+						return {
+							ok: false as const,
+							error: "No credential is configured for this model.",
+						};
+					const headers: Record<string, string> = {};
+					for (const [key, value] of Object.entries(auth.auth.headers ?? {}))
+						if (value !== null) headers[key] = value;
+					return { ok: true as const, ...auth.auth, headers };
+				},
+				setModel: async (requestedModel) => {
+					const switched = await this.extensionModelSwitch.switch(
+						{
+							runtime: rt,
+							agent,
+							isCurrent: () => this.runtimes.get(rt.sessionPath) === rt,
+							refresh: () => this.refreshSessionInfo(rt),
+							thinkingLevelChanged: async (previousLevel, level) => {
+								if (isCurrentExtensionHost() && rt.agent === agent)
+									await this.emitThinkingLevelChange(rt, previousLevel, level);
+							},
+						},
+						requestedModel,
+					);
+					if (switched) await community.syncModel();
+					return switched;
+				},
+				getThinkingLevel: () => {
+					assertOwner();
+					return rt.agent?.state.thinkingLevel ?? thinkingLevel;
+				},
+				/*
+				 * The four mutating capabilities below share one shape, and it is the
+				 * shape that makes them safe.
+				 *
+				 * Each targets `rt` — the runtime this host was built for — rather than
+				 * `this.current()`, which is the focused conversation. The service's
+				 * public `setThinkingLevel` / `renameSession` / `compactNow` all read
+				 * `current()`, so calling them here would let an extension in a
+				 * background chat move the level, the name or the transcript of whatever
+				 * the reader happens to be looking at. That is why each has a
+				 * `*Runtime*` sibling.
+				 *
+				 * `assertOwner()` runs before the write and again after it. Before,
+				 * because a host retired by Stop or a session switch must not begin a
+				 * Vault write; after, because the await is long enough for the
+				 * conversation to have moved on, and the host must not report success
+				 * for a write whose owner is gone. `ExtensionModelSwitch` above holds
+				 * the same contract for the same reason.
+				 */
+				setThinkingLevel: async (level) => {
+					assertOwner();
+					await this.setRuntimeThinkingLevel(rt, level);
+					assertOwner();
+				},
+				setSessionName: async (name) => {
+					assertOwner();
+					// The bookmark guard the panel path turns into a notice is a thrown
+					// refusal here: an extension gets its answer in its own call, and a
+					// rename that was not written must never look like one that was.
+					if (rt.bookmarkWork || rt.bookmarkClosing)
+						throw new Error(
+							"The conversation is being saved; try again once it settles.",
+						);
+					await this.renameRuntimeSession(rt, name);
+					assertOwner();
+				},
+				compact: async (options) => {
+					assertOwner();
+					const compacted = await this.compactRuntimeNow(rt, options);
+					assertOwner();
+					return compacted;
+				},
+				// Live tools; `extensionRegistry` owns what an extension may see of
+				// them. Read from the agent rather than rebuilt, so this list and
+				// `getActiveTools` below describe the same set.
+				getAllTools: () => {
+					assertOwner();
+					return rt.agent?.state.tools ?? [];
+				},
+				getCommands: () => {
+					assertOwner();
+					return this.commandList(rt);
+				},
+				isIdle: () => {
+					assertOwner();
+					return !rt.agent?.state.isStreaming;
+				},
+				getSignal: () => {
+					assertOwner();
+					return rt.agent?.signal;
+				},
+				hasPendingMessages: () => {
+					assertOwner();
+					return rt.promptQueue.size > 0 || rt.steeredPrompts.length > 0;
+				},
+				getSystemPrompt: () => {
+					assertOwner();
+					return rt.agent?.state.systemPrompt ?? "";
+				},
+				getActiveTools: () => {
+					assertOwner();
+					return rt.agent?.state.tools.map((tool) => tool.name) ?? [];
+				},
+				setActiveTools: (names) => {
+					assertOwner();
+					if (!rt.agent) return;
+					const available = new Map(
+						[...rt.agent.state.tools, ...this.buildTools(rt)].map((tool) => [
+							tool.name,
+							tool,
+						]),
+					);
+					rt.agent.state.tools = names.flatMap((name) => {
+						const tool = available.get(name);
+						return tool ? [tool] : [];
+					});
+				},
+				getContextUsage: () => {
+					const activeModel = rt.agent?.state.model ?? model;
+					const fill = measureContextFill(
+						rt.agent?.state.messages ?? messages,
+						activeModel.contextWindow,
+						this.resolveCompaction(activeModel.contextWindow),
+					);
+					return {
+						tokens: fill.tokens,
+						contextWindow: fill.contextWindow,
+						percent: fill.ratio * 100,
+					};
+				},
+				abort: () => {
+					assertOwner();
+					if (this.extensionFactories) void this.abortSession(rt.sessionPath);
+					else {
+						rt.compactionPending = false;
+						rt.extensionStopAfterTurn = true;
+					}
+				},
+				newSession: async () => {
+					assertOwner();
+					await this.newSession();
+					return { cancelled: false };
+				},
+				fork: async (entryId, options) => {
+					assertOwner();
+					return this.forkSessionAtEntry(rt, entryId, options);
+				},
+				switchSession: async (sessionPath) => {
+					assertOwner();
+					await this.openSession(sessionPath);
+					return { cancelled: this.currentPath !== sessionPath };
+				},
+				registerNativeProvider: (provider) => {
+					assertOwner();
+					const bundle = this.requireModelsBundle();
+					const registry = bundle.models as unknown as {
+						setProvider?: (p: unknown) => void;
+					};
+					if (typeof registry.setProvider === "function") {
+						registry.setProvider(provider);
+					}
+				},
+				registerProvider: (name, config) => {
+					assertOwner();
+					const bundle = this.requireModelsBundle();
+					const registry = bundle.models as unknown as {
+						registerProvider?: (n: string, c: unknown) => void;
+					};
+					if (typeof registry.registerProvider === "function") {
+						registry.registerProvider(name, config);
+					}
+				},
+				unregisterProvider: (name) => {
+					assertOwner();
+					const bundle = this.requireModelsBundle();
+					const registry = bundle.models as unknown as {
+						deleteProvider?: (n: string) => void;
+					};
+					if (typeof registry.deleteProvider === "function") {
+						registry.deleteProvider(name);
+					}
+				},
+				waitForIdle: async () => {
+					assertOwner();
+					// The only caller is the extension timer gate (`beforeTimer`). A timer
+					// scheduled by this session's own in-flight run — the team runtime's
+					// reaction pacing runs inside its `team_start` tool call — must not
+					// gate on that same run's idleness: waiting for yourself is the one
+					// deadlock this guard exists to omit. pi runs timer bodies while the
+					// scheduling operation is open; piem's idle gate is the extra, and
+					// the extra is what turns self-scheduling into a lock-up.
+					if (rt.agent?.state.isStreaming) return;
+					await rt.agent?.waitForIdle();
+					community.assertActive();
+					assertOwner();
+				},
+				deliver: (pending) => {
+					assertOwner();
+					for (const message of pending)
+						rt.promptQueue.add({
+							text: "/continue",
+							imageCount: 0,
+							stagedImages: [],
+							message,
+						});
+					this.notify();
+					void community
+						.drain()
+						.then(async () => {
+							if (rt.communityHost !== community || rt.bookmarkClosing) return;
+							await agent.waitForIdle();
+							if (
+								rt.communityHost === community &&
+								!rt.bookmarkClosing &&
+								rt.promptQueue.size
+							)
+								await this.sendPromptEntries(rt, rt.promptQueue.drain());
+						})
+						.catch((error) => {
+							if (!rt.bookmarkClosing) this.setError(rt, causeMessage(error));
+						});
+				},
 			},
-			getThinkingLevel: () => { assertOwner(); return rt.agent?.state.thinkingLevel ?? thinkingLevel; },
-			/*
-			 * The four mutating capabilities below share one shape, and it is the
-			 * shape that makes them safe.
-			 *
-			 * Each targets `rt` — the runtime this host was built for — rather than
-			 * `this.current()`, which is the focused conversation. The service's
-			 * public `setThinkingLevel` / `renameSession` / `compactNow` all read
-			 * `current()`, so calling them here would let an extension in a
-			 * background chat move the level, the name or the transcript of whatever
-			 * the reader happens to be looking at. That is why each has a
-			 * `*Runtime*` sibling.
-			 *
-			 * `assertOwner()` runs before the write and again after it. Before,
-			 * because a host retired by Stop or a session switch must not begin a
-			 * Vault write; after, because the await is long enough for the
-			 * conversation to have moved on, and the host must not report success
-			 * for a write whose owner is gone. `ExtensionModelSwitch` above holds
-			 * the same contract for the same reason.
-			 */
-			setThinkingLevel: async level => {
-				assertOwner();
-				await this.setRuntimeThinkingLevel(rt, level);
-				assertOwner();
-			},
-			setSessionName: async name => {
-				assertOwner();
-				// The bookmark guard the panel path turns into a notice is a thrown
-				// refusal here: an extension gets its answer in its own call, and a
-				// rename that was not written must never look like one that was.
-				if (rt.bookmarkWork || rt.bookmarkClosing) throw new Error("The conversation is being saved; try again once it settles.");
-				await this.renameRuntimeSession(rt, name);
-				assertOwner();
-			},
-			compact: async options => {
-				assertOwner();
-				const compacted = await this.compactRuntimeNow(rt, options);
-				assertOwner();
-				return compacted;
-			},
-			// Live tools; `extensionRegistry` owns what an extension may see of
-			// them. Read from the agent rather than rebuilt, so this list and
-			// `getActiveTools` below describe the same set.
-			getAllTools: () => { assertOwner(); return rt.agent?.state.tools ?? []; },
-			getCommands: () => { assertOwner(); return this.commandList(rt); },
-			isIdle: () => { assertOwner(); return !rt.agent?.state.isStreaming; },
-			getSignal: () => { assertOwner(); return rt.agent?.signal; },
-			hasPendingMessages: () => { assertOwner(); return rt.promptQueue.size > 0 || rt.steeredPrompts.length > 0; },
-			getSystemPrompt: () => { assertOwner(); return rt.agent?.state.systemPrompt ?? ""; },
-			getActiveTools: () => { assertOwner(); return rt.agent?.state.tools.map(tool => tool.name) ?? []; },
-			setActiveTools: names => {
-				assertOwner();
-				if (!rt.agent) return;
-				const available = new Map([...rt.agent.state.tools, ...this.buildTools(rt)].map(tool => [tool.name, tool]));
-				rt.agent.state.tools = names.flatMap(name => { const tool = available.get(name); return tool ? [tool] : []; });
-			},
-			getContextUsage: () => {
-				const activeModel = rt.agent?.state.model ?? model;
-				const fill = measureContextFill(rt.agent?.state.messages ?? messages, activeModel.contextWindow, this.resolveCompaction(activeModel.contextWindow));
-				return { tokens: fill.tokens, contextWindow: fill.contextWindow, percent: fill.ratio * 100 };
-			},
-			abort: () => { assertOwner(); if (this.extensionFactories) void this.abortSession(rt.sessionPath); else { rt.compactionPending = false; rt.extensionStopAfterTurn = true; } },
-			newSession: async () => {
-				assertOwner();
-				await this.newSession();
-				return { cancelled: false };
-			},
-			fork: async (entryId, options) => {
-				assertOwner();
-				return this.forkSessionAtEntry(rt, entryId, options);
-			},
-			switchSession: async sessionPath => {
-				assertOwner();
-				await this.openSession(sessionPath);
-				return { cancelled: this.currentPath !== sessionPath };
-			},
-			registerNativeProvider: provider => {
-				assertOwner();
-				const bundle = this.requireModelsBundle();
-				const registry = bundle.models as unknown as { setProvider?: (p: unknown) => void };
-				if (typeof registry.setProvider === "function") {
-					registry.setProvider(provider);
-				}
-			},
-			registerProvider: (name, config) => {
-				assertOwner();
-				const bundle = this.requireModelsBundle();
-				const registry = bundle.models as unknown as { registerProvider?: (n: string, c: unknown) => void };
-				if (typeof registry.registerProvider === "function") {
-					registry.registerProvider(name, config);
-				}
-			},
-			unregisterProvider: name => {
-				assertOwner();
-				const bundle = this.requireModelsBundle();
-				const registry = bundle.models as unknown as { deleteProvider?: (n: string) => void };
-				if (typeof registry.deleteProvider === "function") {
-					registry.deleteProvider(name);
-				}
-			},
-			waitForIdle: async () => {
-				assertOwner();
-				// The only caller is the extension timer gate (`beforeTimer`). A timer
-				// scheduled by this session's own in-flight run — the team runtime's
-				// reaction pacing runs inside its `team_start` tool call — must not
-				// gate on that same run's idleness: waiting for yourself is the one
-				// deadlock this guard exists to omit. pi runs timer bodies while the
-				// scheduling operation is open; piem's idle gate is the extra, and
-				// the extra is what turns self-scheduling into a lock-up.
-				if (rt.agent?.state.isStreaming) return;
-				await rt.agent?.waitForIdle();
-				community.assertActive();
-				assertOwner();
-			},
-			deliver: pending => {
-				assertOwner();
-				for (const message of pending) rt.promptQueue.add({ text: "/continue", imageCount: 0, stagedImages: [], message });
-				this.notify();
-				void community.drain().then(async () => {
-					if (rt.communityHost !== community || rt.bookmarkClosing) return;
-					await agent.waitForIdle();
-					if (rt.communityHost === community && !rt.bookmarkClosing && rt.promptQueue.size) await this.sendPromptEntries(rt, rt.promptQueue.drain());
-				}).catch(error => { if (!rt.bookmarkClosing) this.setError(rt, causeMessage(error)); });
-			},
-		}, this.extensionFactories);
-		if (rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt || rt.stopEpoch !== generation) {
+			this.extensionFactories,
+		);
+		if (
+			rt.bookmarkClosing ||
+			this.runtimes.get(rt.sessionPath) !== rt ||
+			rt.stopEpoch !== generation
+		) {
 			community.dispose();
 			throw new Error("Extension session is no longer available.");
 		}
@@ -4925,7 +6191,10 @@ export class ObsidianAgentService {
 			// never rides this await: a server that cannot be reached would hold
 			// the session switch for the full connect timeout, and the background
 			// sync below hands the tools over the moment they exist.
-			tools = [...(await this.buildToolsAsync(rt)), ...this.mountedExternalTools()];
+			tools = [
+				...(await this.buildToolsAsync(rt)),
+				...this.mountedExternalTools(),
+			];
 			assertOwner();
 		} catch (error) {
 			community.dispose();
@@ -4939,33 +6208,39 @@ export class ObsidianAgentService {
 			// only the provider registration differs. Resolved per request rather
 			// than captured here, so an endpoint configured after this agent was
 			// built is still reachable — see `resolveStreamFn`.
-			streamFn: withTurnRetry((requestModel, context, options) => stream(requestModel, context, {
-				...options,
-				// Native provider callbacks, bound to this request's signal. A late
-				// callback must not adopt a new run's signal after Stop and resend.
-				// Only serialized body/response metadata cross into extensions.
-				onPayload: async payload => {
-					assertOwner();
-					if (options?.signal?.aborted) throw new DOMException("Provider request was cancelled.", "AbortError");
-					const replacement = await community.beforeProviderRequest(payload);
-					assertOwner();
-					if (options?.signal?.aborted) throw new DOMException("Provider request was cancelled.", "AbortError");
-					return replacement;
+			streamFn: withTurnRetry(
+				(requestModel, context, options) =>
+					stream(requestModel, context, {
+						...options,
+						// Native provider callbacks, bound to this request's signal. A late
+						// callback must not adopt a new run's signal after Stop and resend.
+						// Only serialized body/response metadata cross into extensions.
+						onPayload: async (payload) => {
+							assertOwner();
+							if (options?.signal?.aborted)
+								throw new DOMException("Provider request was cancelled.", "AbortError");
+							const replacement = await community.beforeProviderRequest(payload);
+							assertOwner();
+							if (options?.signal?.aborted)
+								throw new DOMException("Provider request was cancelled.", "AbortError");
+							return replacement;
+						},
+						onResponse: async (response) => {
+							if (!isCurrentExtensionHost() || options?.signal?.aborted) return;
+							await community.afterProviderResponse(response);
+						},
+					}),
+				{
+					// Live-read per call: the wrapper outlives any one settings revision,
+					// so a budget changed in the panel reaches the next turn rather than
+					// the next reload — the same contract `resolveStreamFn` holds itself to.
+					policy: (): TurnRetryPolicy => ({
+						...resolveRetrySettings(this.getSettings().retry),
+						maxDelayMs: DEFAULT_TURN_MAX_DELAY_MS,
+					}),
+					callbacks: this.retryCallbacksFor(rt),
 				},
-				onResponse: async response => {
-					if (!isCurrentExtensionHost() || options?.signal?.aborted) return;
-					await community.afterProviderResponse(response);
-				},
-			}), {
-				// Live-read per call: the wrapper outlives any one settings revision,
-				// so a budget changed in the panel reaches the next turn rather than
-				// the next reload — the same contract `resolveStreamFn` holds itself to.
-				policy: (): TurnRetryPolicy => ({
-					...resolveRetrySettings(this.getSettings().retry),
-					maxDelayMs: DEFAULT_TURN_MAX_DELAY_MS,
-				}),
-				callbacks: this.retryCallbacksFor(rt),
-			}),
+			),
 			// pi's converter renders compaction summaries into the request. The agent's
 			// default one silently filters that role out, which would discard every
 			// compacted turn without surfacing an error.
@@ -5001,7 +6276,11 @@ export class ObsidianAgentService {
 				// (`initializeAgent` / `openSession` / `newSession` all await
 				// `reloadSkills` first), so the composed prompt is current; a live
 				// agent gets its prompt refreshed by `reloadSkills` itself.
-				systemPrompt: composeSystemPrompt(this.promptWithEnvironment(), rt.skills, rt.communityHost?.toolPromptGuidelines()),
+				systemPrompt: composeSystemPrompt(
+					this.promptWithEnvironment(),
+					rt.skills,
+					rt.communityHost?.toolPromptGuidelines(),
+				),
 				model,
 				// The caller resolves this: the loaded session's own level, or the
 				// seed a new session was created with. Global settings have no say.
@@ -5012,7 +6291,10 @@ export class ObsidianAgentService {
 			getApiKey: (provider) => this.getApiKey(provider),
 			// Pi snapshots its model for each request. A tool switch takes effect at
 			// the supported turn seam, after the previous model's tools have settled.
-			prepareNextTurn: () => ({ model: agent.state.model, thinkingLevel: agent.state.thinkingLevel }),
+			prepareNextTurn: () => ({
+				model: agent.state.model,
+				thinkingLevel: agent.state.thinkingLevel,
+			}),
 			// The two interception points extensions get on a tool call, wired to
 			// pi's own `tool_call` / `tool_result` events. Unlike the
 			// `tool_execution_*` trio — which `handleAgentEvent` forwards purely as
@@ -5046,13 +6328,24 @@ export class ObsidianAgentService {
 				// `event.input` in place patches the arguments the tool receives,
 				// and because the clone is not the stored call, the session log and
 				// the panel still show what the model actually asked for.
-				return community.toolCall({ type: "tool_call", toolName: toolCall.name, toolCallId: toolCall.id, input: args as Record<string, unknown> });
+				return community.toolCall({
+					type: "tool_call",
+					toolName: toolCall.name,
+					toolCallId: toolCall.id,
+					input: args as Record<string, unknown>,
+				});
 			},
 			afterToolCall: async ({ toolCall, args, result, isError }) => {
 				if (!isCurrentExtensionHost()) return undefined;
 				return community.toolResult({
-					type: "tool_result", toolName: toolCall.name, toolCallId: toolCall.id,
-					input: args as Record<string, unknown>, content: result.content ?? [], details: result.details, isError, usage: result.usage,
+					type: "tool_result",
+					toolName: toolCall.name,
+					toolCallId: toolCall.id,
+					input: args as Record<string, unknown>,
+					content: result.content ?? [],
+					details: result.details,
+					isError,
+					usage: result.usage,
 				});
 			},
 			// Fires after a turn's tool calls finish and before the next provider
@@ -5065,7 +6358,10 @@ export class ObsidianAgentService {
 			// `this.agent` is what lets `performCompaction` tell a stale result
 			// from a current one.
 			shouldStopAfterTurn: (context, signal) => {
-				if (rt.extensionStopAfterTurn) { rt.extensionStopAfterTurn = false; return true; }
+				if (rt.extensionStopAfterTurn) {
+					rt.extensionStopAfterTurn = false;
+					return true;
+				}
 				// Before the stop check, and unconditionally: pi polls its steering
 				// queue immediately after this hook returns, so a `false` return
 				// still lets an offered message be injected before the model speaks
@@ -5101,7 +6397,9 @@ export class ObsidianAgentService {
 			toolExecution: "parallel",
 		});
 		rt.agent = agent;
-		rt.unsubscribeAgent = agent.subscribe((event) => this.handleAgentEvent(rt, event));
+		rt.unsubscribeAgent = agent.subscribe((event) =>
+			this.handleAgentEvent(rt, event),
+		);
 		if (rt.extensionUI) {
 			community.attachUI(rt.extensionUI);
 			await community.start("reload");
@@ -5131,7 +6429,10 @@ export class ObsidianAgentService {
 	 * the panel's focus or the reopen-on-launch record — members are not what
 	 * the user is looking at.
 	 */
-	private async createTeamMemberSession(parent: SessionRuntime, spec: MemberSessionSpec): Promise<MemberSessionHandle> {
+	private async createTeamMemberSession(
+		parent: SessionRuntime,
+		spec: MemberSessionSpec,
+	): Promise<MemberSessionHandle> {
 		const settings = this.getSettings();
 		const parentModel = parent.agent?.state.model;
 		const selected = getSelectedModel(settings);
@@ -5177,21 +6478,26 @@ export class ObsidianAgentService {
 		rt.stopEpoch += 1;
 		this.forgetPendingToolCalls(rt);
 		const settings = this.getSettings();
-		const model = (spec.model as Model<string> | undefined) ?? getSelectedModel(settings);
+		const model =
+			(spec.model as Model<string> | undefined) ?? getSelectedModel(settings);
 		// The package already lowered `max` to `medium`; anything left is cast
 		// through unchanged, with the plugin's default guarding an absent level.
-		const memberLevel = (spec.thinkingLevel ?? DEFAULT_THINKING_LEVEL) as ThinkingLevel;
+		const memberLevel = (spec.thinkingLevel ??
+			DEFAULT_THINKING_LEVEL) as ThinkingLevel;
 		const stream = this.resolveStreamFn();
 		const agent: Agent = new Agent({
 			// Same retry wrapper as the focused build: a member turn rides the
 			// same transport policy as every other provider request in the plugin.
-			streamFn: withTurnRetry((requestModel, context, options) => stream(requestModel, context, options), {
-				policy: (): TurnRetryPolicy => ({
-					...resolveRetrySettings(this.getSettings().retry),
-					maxDelayMs: DEFAULT_TURN_MAX_DELAY_MS,
-				}),
-				callbacks: this.retryCallbacksFor(rt),
-			}),
+			streamFn: withTurnRetry(
+				(requestModel, context, options) => stream(requestModel, context, options),
+				{
+					policy: (): TurnRetryPolicy => ({
+						...resolveRetrySettings(this.getSettings().retry),
+						maxDelayMs: DEFAULT_TURN_MAX_DELAY_MS,
+					}),
+					callbacks: this.retryCallbacksFor(rt),
+				},
+			),
 			convertToLlm,
 			initialState: {
 				// The package's member doctrine replaces the Obsidian agent prompt;
@@ -5203,13 +6509,18 @@ export class ObsidianAgentService {
 				tools: this.buildMemberTools(rt, spec),
 				messages: [],
 			},
-			getApiKey: provider => this.getApiKey(provider),
-			prepareNextTurn: () => ({ model: agent.state.model, thinkingLevel: agent.state.thinkingLevel }),
+			getApiKey: (provider) => this.getApiKey(provider),
+			prepareNextTurn: () => ({
+				model: agent.state.model,
+				thinkingLevel: agent.state.thinkingLevel,
+			}),
 			sessionId: rt.sessionInfo?.id,
 			toolExecution: "parallel",
 		});
 		rt.agent = agent;
-		rt.unsubscribeAgent = agent.subscribe((event) => this.handleAgentEvent(rt, event));
+		rt.unsubscribeAgent = agent.subscribe((event) =>
+			this.handleAgentEvent(rt, event),
+		);
 	}
 
 	/** piem's skill list through the package's filter — no override means all. */
@@ -5230,14 +6541,20 @@ export class ObsidianAgentService {
 	 * member), plus the package's team coordination tools as 4-parameter
 	 * agent tools.
 	 */
-	private buildMemberTools(rt: SessionRuntime, spec: MemberSessionSpec): AgentTool[] {
+	private buildMemberTools(
+		rt: SessionRuntime,
+		spec: MemberSessionSpec,
+	): AgentTool[] {
 		const excluded = new Set(["write", "spawn_subagent", "wait_subagent"]);
 		// The shared build wraps every execute with this member runtime as the
 		// current one, so read_skill's snapshot and ask_user's ownership resolve
 		// against the member conversation, not the panel's.
-		const vaultTools = this.buildTools(rt).filter(tool => tool.name && !excluded.has(tool.name));
-		const coordination = (spec.customTools as unknown as Parameters<typeof adaptHarnessTool>[0][]).map(def =>
-			adaptHarnessTool(def, { context: {} }));
+		const vaultTools = this.buildTools(rt).filter(
+			(tool) => tool.name && !excluded.has(tool.name),
+		);
+		const coordination = (
+			spec.customTools as unknown as Parameters<typeof adaptHarnessTool>[0][]
+		).map((def) => adaptHarnessTool(def, { context: {} }));
 		return [...vaultTools, ...coordination];
 	}
 
@@ -5256,7 +6573,9 @@ export class ObsidianAgentService {
 				}
 				await agent.prompt(text);
 			},
-			abort: async (): Promise<void> => { rt.agent?.abort(); },
+			abort: async (): Promise<void> => {
+				rt.agent?.abort();
+			},
 			dispose: async (): Promise<void> => {
 				if (this.runtimes.get(rt.sessionPath) === rt) {
 					this.removeRuntime(rt);
@@ -5267,19 +6586,29 @@ export class ObsidianAgentService {
 				// logged, not swallowed: the member keeps working, but the list
 				// must show what it is named, and silently keeping the unnamed
 				// file would hide the linkage the manifest points at.
-				void this.sessionManager.appendSessionInfoFor(rt.sessionPath, name).catch(
-					error => this.log.warn("Member session naming failed", () => ({ path: rt.sessionPath, error: causeMessage(error) })),
-				);
+				void this.sessionManager
+					.appendSessionInfoFor(rt.sessionPath, name)
+					.catch((error) =>
+						this.log.warn("Member session naming failed", () => ({
+							path: rt.sessionPath,
+							error: causeMessage(error),
+						})),
+					);
 			},
 			getLastAssistantText: (): string | undefined => {
 				const messages = rt.agent?.state.messages ?? [];
 				for (let index = messages.length - 1; index >= 0; index--) {
 					const message = messages[index];
 					if (message?.role !== "assistant") continue;
-					return message.content.filter((part): part is { type: "text"; text: string } => part.type === "text")
-						.map(part => part.text)
-						.join("\n")
-						.trim() || undefined;
+					return (
+						message.content
+							.filter(
+								(part): part is { type: "text"; text: string } => part.type === "text",
+							)
+							.map((part) => part.text)
+							.join("\n")
+							.trim() || undefined
+					);
 				}
 				return undefined;
 			},
@@ -5304,7 +6633,9 @@ export class ObsidianAgentService {
 	 */
 	private async reloadSkills(): Promise<void> {
 		// Serialize refreshes: settings and a send may both reread the same files.
-		const task = (this.skillReload ?? Promise.resolve()).catch(() => undefined).then(() => this.loadSkillFiles());
+		const task = (this.skillReload ?? Promise.resolve())
+			.catch(() => undefined)
+			.then(() => this.loadSkillFiles());
 		this.skillReload = task;
 		try {
 			await task;
@@ -5317,31 +6648,62 @@ export class ObsidianAgentService {
 		const [builtin, vault, user] = await Promise.allSettled([
 			loadBuiltinSkills(this.env),
 			loadVaultSkills(this.env),
-			Promise.resolve().then(() => this.loadUserSkillsFn(this.getSettings().userSkillsDir)),
+			Promise.resolve().then(() =>
+				this.loadUserSkillsFn(this.getSettings().userSkillsDir),
+			),
 		]);
 		const failure = (error: unknown, path: string): SkillDiagnostic => ({
-			type: "warning", code: "read_failed", path, message: String(error),
+			type: "warning",
+			code: "read_failed",
+			path,
+			message: String(error),
 		});
 		// Each source fails on its own. A missing/deleted file is absent, never
 		// recreated by the loader or replaced by a hidden in-memory default.
-		const builtinLoad = builtin.status === "fulfilled" ? builtin.value
-			: { skills: [], diagnostics: [failure(builtin.reason, BUILTIN_SKILLS_DIR)] };
-		const vaultLoad = vault.status === "fulfilled" ? vault.value
-			: { skills: [], diagnostics: [failure(vault.reason, "Piem/skills")] };
-		const userLoad: UserSkillsLoad = user.status === "fulfilled" ? user.value
-			: { skills: [], diagnostics: [failure(user.reason, this.getSettings().userSkillsDir || "~")], searched: [] };
-		const catalog = mergeSkillsWithSource(builtinLoad.skills, userLoad.skills, vaultLoad.skills);
+		const builtinLoad =
+			builtin.status === "fulfilled"
+				? builtin.value
+				: {
+						skills: [],
+						diagnostics: [failure(builtin.reason, BUILTIN_SKILLS_DIR)],
+					};
+		const vaultLoad =
+			vault.status === "fulfilled"
+				? vault.value
+				: { skills: [], diagnostics: [failure(vault.reason, "Piem/skills")] };
+		const userLoad: UserSkillsLoad =
+			user.status === "fulfilled"
+				? user.value
+				: {
+						skills: [],
+						diagnostics: [
+							failure(user.reason, this.getSettings().userSkillsDir || "~"),
+						],
+						searched: [],
+					};
+		const catalog = mergeSkillsWithSource(
+			builtinLoad.skills,
+			userLoad.skills,
+			vaultLoad.skills,
+		);
 		this.skillCatalog = catalog;
 		// One filter point for every consumer — prompt, read_skill, slash
 		// commands and new subagent runs share this set. Filtering by name on the
 		// merged output (not per layer) is what makes a disabled "summarize"
 		// stay disabled even when a vault file of that name shadows the builtin.
 		const disabled = new Set(this.getSettings().disabledSkills);
-		const skills = catalog.map((entry) => entry.skill).filter((skill) => !disabled.has(skill.name));
+		const skills = catalog
+			.map((entry) => entry.skill)
+			.filter((skill) => !disabled.has(skill.name));
 		this.skills = skills;
 		this.lastSkillLoad = {
-			...this.lastSkillLoad, vault: vaultLoad.diagnostics, user: userLoad,
-			builtin: { diagnostics: builtinLoad.diagnostics, install: this.builtinSkills?.report() ?? emptyBuiltinSkillReport() },
+			...this.lastSkillLoad,
+			vault: vaultLoad.diagnostics,
+			user: userLoad,
+			builtin: {
+				diagnostics: builtinLoad.diagnostics,
+				install: this.builtinSkills?.report() ?? emptyBuiltinSkillReport(),
+			},
 		};
 		this.logCommandDiagnostics();
 		// Idle runtimes adopt the fresh set together. An active run keeps the
@@ -5349,7 +6711,11 @@ export class ObsidianAgentService {
 		for (const rt of this.runtimes.values()) {
 			if (rt.agent && !this.isBusy(rt)) {
 				rt.skills = skills;
-				rt.agent.state.systemPrompt = composeSystemPrompt(this.promptWithEnvironment(), skills, rt.communityHost?.toolPromptGuidelines());
+				rt.agent.state.systemPrompt = composeSystemPrompt(
+					this.promptWithEnvironment(),
+					skills,
+					rt.communityHost?.toolPromptGuidelines(),
+				);
 			}
 		}
 	}
@@ -5379,12 +6745,18 @@ export class ObsidianAgentService {
 		const unknown = t.t("chat.unknownCommand", { name });
 		const { vault, user, builtin } = this.lastSkillLoad;
 		const builtinName = name.replace(/^skill:/, "");
-		if (this.builtinSkills?.names.includes(builtinName) && !this.getSettings().disabledSkills.includes(builtinName)
-			&& !this.skills.some((skill) => skill.name === builtinName)) {
+		if (
+			this.builtinSkills?.names.includes(builtinName) &&
+			!this.getSettings().disabledSkills.includes(builtinName) &&
+			!this.skills.some((skill) => skill.name === builtinName)
+		) {
 			return t.t("chat.builtinSkillUnavailable", { name });
 		}
-		const problems = vault.length + user.diagnostics.length + builtin.diagnostics.length;
-		return problems === 0 ? unknown : `${unknown}\n${t.t("chat.unknownCommandSkillProblems")}`;
+		const problems =
+			vault.length + user.diagnostics.length + builtin.diagnostics.length;
+		return problems === 0
+			? unknown
+			: `${unknown}\n${t.t("chat.unknownCommandSkillProblems")}`;
 	}
 
 	/**
@@ -5408,7 +6780,10 @@ export class ObsidianAgentService {
 		try {
 			await this.reloadSkills();
 		} catch (error) {
-			this.log.error("Skill refresh failed; keeping the previous file snapshot", () => ({ error: String(error) }));
+			this.log.error(
+				"Skill refresh failed; keeping the previous file snapshot",
+				() => ({ error: String(error) }),
+			);
 		}
 	}
 
@@ -5451,12 +6826,26 @@ export class ObsidianAgentService {
 	private logCommandDiagnostics(): void {
 		const { vault, user, templates, builtin } = this.lastSkillLoad;
 		const all = [
-			...builtin.diagnostics.map((diagnostic) => ({ layer: "builtin-skills", diagnostic })),
+			...builtin.diagnostics.map((diagnostic) => ({
+				layer: "builtin-skills",
+				diagnostic,
+			})),
 			...vault.map((diagnostic) => ({ layer: "vault-skills", diagnostic })),
-			...user.diagnostics.map((diagnostic) => ({ layer: "user-skills", diagnostic })),
-			...templates.map((diagnostic) => ({ layer: "prompt-templates", diagnostic })),
+			...user.diagnostics.map((diagnostic) => ({
+				layer: "user-skills",
+				diagnostic,
+			})),
+			...templates.map((diagnostic) => ({
+				layer: "prompt-templates",
+				diagnostic,
+			})),
 		];
-		const key = all.map(({ layer, diagnostic }) => `${layer}:${diagnostic.code}:${diagnostic.path}:${diagnostic.message}`).join("\n");
+		const key = all
+			.map(
+				({ layer, diagnostic }) =>
+					`${layer}:${diagnostic.code}:${diagnostic.path}:${diagnostic.message}`,
+			)
+			.join("\n");
 		if (key === this.loggedDiagnosticsKey) {
 			return;
 		}
@@ -5471,7 +6860,10 @@ export class ObsidianAgentService {
 		}
 	}
 
-	private async handleAgentEvent(rt: SessionRuntime, event: AgentEvent): Promise<void> {
+	private async handleAgentEvent(
+		rt: SessionRuntime,
+		event: AgentEvent,
+	): Promise<void> {
 		if (event.type === "message_start") {
 			const accepted = this.promptAccepted.get(event.message);
 			this.promptAccepted.delete(event.message);
@@ -5489,13 +6881,18 @@ export class ObsidianAgentService {
 			// not when the awaited prompt resolves after the entire reply.
 			rt.retryInFlight = false;
 		}
-		try { if (event.type !== "agent_end") await rt.communityHost?.emitAgentEvent(event); }
-		catch (error) {
+		try {
+			if (event.type !== "agent_end")
+				await rt.communityHost?.emitAgentEvent(event);
+		} catch (error) {
 			// Observer errors must not skip persistence or leave the run ledger
 			// open. Context and before_agent_start keep their fail-closed paths.
 			if (!(error instanceof Error && error.name === "AbortError")) {
 				this.setError(rt, causeMessage(error));
-				this.log.error("Extension lifecycle handler failed", () => ({ event: event.type, error: causeMessage(error) }));
+				this.log.error("Extension lifecycle handler failed", () => ({
+					event: event.type,
+					error: causeMessage(error),
+				}));
 			}
 		}
 		if (event.type === "tool_execution_start") {
@@ -5572,11 +6969,22 @@ export class ObsidianAgentService {
 			// replies this is about, and the transcript reports it under each of
 			// them — which is the only place that can say *which* reply is not on
 			// disk, and the only report the next send cannot erase.
-			this.log.error("Failed to persist agent output", () => ({ event: event.type, error: message }));
+			this.log.error("Failed to persist agent output", () => ({
+				event: event.type,
+				error: message,
+			}));
 		}
 		if (event.type === "agent_end" && rt.communityHost) {
-			try { await rt.communityHost.emitAgentEvent(event); }
-			catch (error) { if (!rt.bookmarkClosing) { this.setError(rt, causeMessage(error)); this.log.warn("Extension event failed", () => ({ error: causeMessage(error) })); } }
+			try {
+				await rt.communityHost.emitAgentEvent(event);
+			} catch (error) {
+				if (!rt.bookmarkClosing) {
+					this.setError(rt, causeMessage(error));
+					this.log.warn("Extension event failed", () => ({
+						error: causeMessage(error),
+					}));
+				}
+			}
 		}
 		if (event.type === "agent_end") {
 			// Outside the persist guard on purpose: the dispatch has its own
@@ -5706,7 +7114,12 @@ export class ObsidianAgentService {
 	 * old `MAX_MID_RUN_COMPACTIONS` counter, which needed a budget precisely
 	 * because it could not tell this case from a healthy one.
 	 */
-	private shouldStopForCompaction(rt: SessionRuntime, agent: Agent, context: ShouldStopAfterTurnContext, signal?: AbortSignal): boolean {
+	private shouldStopForCompaction(
+		rt: SessionRuntime,
+		agent: Agent,
+		context: ShouldStopAfterTurnContext,
+		signal?: AbortSignal,
+	): boolean {
 		if (signal?.aborted) {
 			return false;
 		}
@@ -5731,8 +7144,12 @@ export class ObsidianAgentService {
 			// would re-derive the stale pre-compaction total the gate exists
 			// to refuse.
 			const usage = context.message.usage;
-			const floor = usage === undefined ? undefined : calculateContextTokens(usage);
-			if (floor !== undefined && shouldCompact(floor, model.contextWindow, settings)) {
+			const floor =
+				usage === undefined ? undefined : calculateContextTokens(usage);
+			if (
+				floor !== undefined &&
+				shouldCompact(floor, model.contextWindow, settings)
+			) {
 				rt.compactionGate = "futile";
 				return false;
 			}
@@ -5757,7 +7174,10 @@ export class ObsidianAgentService {
 	 * inside a run are {@link shouldStopForCompaction}'s job: the hook ends the
 	 * run and the tidy happens outside it.
 	 */
-	private async compactContextIfNeeded(rt: SessionRuntime, agent: Agent): Promise<void> {
+	private async compactContextIfNeeded(
+		rt: SessionRuntime,
+		agent: Agent,
+	): Promise<void> {
 		await this.runExclusiveCompaction(rt, agent);
 	}
 
@@ -5780,10 +7200,18 @@ export class ObsidianAgentService {
 	 * call while `rt.isCompacting` awaits the first instead of starting a rival
 	 * summarization against the same transcript.
 	 */
-	private async compactRuntimeNow(rt: SessionRuntime, options?: CompactOptions): Promise<CompactionResult | boolean> {
+	private async compactRuntimeNow(
+		rt: SessionRuntime,
+		options?: CompactOptions,
+	): Promise<CompactionResult | boolean> {
 		const agent = rt.agent;
 		// A failed start leaves no agent to compact, matching `compactNow`.
-		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
+		if (
+			!agent ||
+			agent.state.isStreaming ||
+			rt.bookmarkWork ||
+			rt.bookmarkClosing
+		) {
 			return false;
 		}
 		if (!this.hasApiKey()) {
@@ -5800,10 +7228,13 @@ export class ObsidianAgentService {
 			onError: options?.onError,
 		});
 		if (outcome.status === "failed") {
-			if (outcome.aborted) throw new DOMException("Compaction cancelled", "AbortError");
+			if (outcome.aborted)
+				throw new DOMException("Compaction cancelled", "AbortError");
 			throw new Error(outcome.message);
 		}
-		return outcome.status === "compacted" ? (outcome.result as unknown as CompactionResult) : false;
+		return outcome.status === "compacted"
+			? (outcome.result as unknown as CompactionResult)
+			: false;
 	}
 
 	/**
@@ -5823,23 +7254,40 @@ export class ObsidianAgentService {
 		// A failed start leaves no agent, and the banner already carries why —
 		// same reasoning as the matching guard in `sendPrompt`.
 		const agent = rt.agent;
-		if (!agent || agent.state.isStreaming || rt.bookmarkWork || rt.bookmarkClosing) {
+		if (
+			!agent ||
+			agent.state.isStreaming ||
+			rt.bookmarkWork ||
+			rt.bookmarkClosing
+		) {
 			return;
 		}
 		if (!this.hasApiKey()) {
 			const t = this.t();
 			// Same recovery as `needsKeyToSend` above: the fix lives in settings.
-			this.setError(rt, t.t("target.needsKeyToCompact", { target: describeModelTarget(this.getSettings(), t) }), true);
+			this.setError(
+				rt,
+				t.t("target.needsKeyToCompact", {
+					target: describeModelTarget(this.getSettings(), t),
+				}),
+				true,
+			);
 			return;
 		}
 
 		try {
 			rt.panelError = undefined;
 			rt.noticeMessage = undefined;
-			const outcome = await this.runExclusiveCompaction(rt, agent, { force: true });
+			const outcome = await this.runExclusiveCompaction(rt, agent, {
+				force: true,
+			});
 			// A failure is already on its own transcript row, and "nothing to tidy" on
 			// top of it would contradict it.
-			if (outcome.status === "skipped" && !rt.panelError && rt.compactionEvent === null) {
+			if (
+				outcome.status === "skipped" &&
+				!rt.panelError &&
+				rt.compactionEvent === null
+			) {
 				this.setNotice(rt, this.t().t("chat.nothingToCompact"));
 			}
 		} finally {
@@ -5861,12 +7309,18 @@ export class ObsidianAgentService {
 	 * Failures are surfaced, not thrown. Observers run after this attempt releases
 	 * its single-flight slot, so a handler can compact again without awaiting itself.
 	 */
-	private async runExclusiveCompaction(rt: SessionRuntime, agent: Agent, options: CompactionRunOptions = {}): Promise<CompactionOutcome> {
+	private async runExclusiveCompaction(
+		rt: SessionRuntime,
+		agent: Agent,
+		options: CompactionRunOptions = {},
+	): Promise<CompactionOutcome> {
 		if (rt.compaction) {
 			const ongoingInstructions = rt.compaction.customInstructions;
 			const requestedInstructions = options.customInstructions;
 			if (ongoingInstructions !== requestedInstructions) {
-				const error = new Error("Cannot run concurrent compaction with conflicting custom instructions.");
+				const error = new Error(
+					"Cannot run concurrent compaction with conflicting custom instructions.",
+				);
 				options.onError?.(error);
 				return { status: "failed", message: error.message, aborted: false };
 			}
@@ -5884,7 +7338,13 @@ export class ObsidianAgentService {
 			rt.compactionController = controller;
 			const onCompleteCallbacks = options.onComplete ? [options.onComplete] : [];
 			const onErrorCallbacks = options.onError ? [options.onError] : [];
-			const result = this.trackCompaction(rt, agent, controller.signal, options.force === true, options).finally(() => {
+			const result = this.trackCompaction(
+				rt,
+				agent,
+				controller.signal,
+				options.force === true,
+				options,
+			).finally(() => {
 				if (rt.compaction?.result === result) {
 					rt.compaction = null;
 					rt.compactionController = null;
@@ -5898,37 +7358,54 @@ export class ObsidianAgentService {
 				onErrorCallbacks,
 			};
 			rt.compaction = attempt;
-			attempt.notified = result.then(async outcome => {
-				if (outcome.status === "skipped") return;
-				if (controller.signal.aborted) await host?.drain();
-				if (rt.communityHost === host) await this.reportCompactionOutcome(rt, agent, options.force === true, outcome, options);
-				if (outcome.status === "compacted") {
-					const compactionResult = {
-						summary: outcome.result.summary,
-						firstKeptEntryId: outcome.result.firstKeptEntryId ?? "",
-						tokensBefore: outcome.result.tokensBefore,
-						estimatedTokensAfter: estimateContextTokens(outcome.messages).tokens,
-						usage: outcome.result.usage,
-						details: outcome.result.details,
-					};
-					for (const cb of attempt.onCompleteCallbacks ?? []) {
-						try {
-							cb(compactionResult);
-						} catch (err) {
-							this.log.debug("onComplete callback failed", () => ({ error: causeMessage(err) }));
+			attempt.notified = result
+				.then(async (outcome) => {
+					if (outcome.status === "skipped") return;
+					if (controller.signal.aborted) await host?.drain();
+					if (rt.communityHost === host)
+						await this.reportCompactionOutcome(
+							rt,
+							agent,
+							options.force === true,
+							outcome,
+							options,
+						);
+					if (outcome.status === "compacted") {
+						const compactionResult = {
+							summary: outcome.result.summary,
+							firstKeptEntryId: outcome.result.firstKeptEntryId ?? "",
+							tokensBefore: outcome.result.tokensBefore,
+							estimatedTokensAfter: estimateContextTokens(outcome.messages).tokens,
+							usage: outcome.result.usage,
+							details: outcome.result.details,
+						};
+						for (const cb of attempt.onCompleteCallbacks ?? []) {
+							try {
+								cb(compactionResult);
+							} catch (err) {
+								this.log.debug("onComplete callback failed", () => ({
+									error: causeMessage(err),
+								}));
+							}
+						}
+					} else if (outcome.status === "failed") {
+						const err = new Error(outcome.message);
+						for (const cb of attempt.onErrorCallbacks ?? []) {
+							try {
+								cb(err);
+							} catch (cbErr) {
+								this.log.debug("onError callback failed", () => ({
+									error: causeMessage(cbErr),
+								}));
+							}
 						}
 					}
-				} else if (outcome.status === "failed") {
-					const err = new Error(outcome.message);
-					for (const cb of attempt.onErrorCallbacks ?? []) {
-						try {
-							cb(err);
-						} catch (cbErr) {
-							this.log.debug("onError callback failed", () => ({ error: causeMessage(cbErr) }));
-						}
-					}
-				}
-			}).catch(error => { this.log.debug("Compaction observer did not settle", () => ({ error: causeMessage(error) })); });
+				})
+				.catch((error) => {
+					this.log.debug("Compaction observer did not settle", () => ({
+						error: causeMessage(error),
+					}));
+				});
 		}
 		const attempt = rt.compaction;
 		const outcome = await attempt.result;
@@ -5946,17 +7423,34 @@ export class ObsidianAgentService {
 		// The anchor is read here rather than in `performCompaction` because the row
 		// has to appear at the tail the reader is looking at *now* — a prompt's
 		// pre-flight tidy runs before the user's own message joins the transcript.
-		rt.compactionEvent = { state: "running", anchor: agent.state.messages.length };
+		rt.compactionEvent = {
+			state: "running",
+			anchor: agent.state.messages.length,
+		};
 		try {
 			let outcome: SavedCompactionOutcome;
 			try {
 				this.notify();
 				outcome = await this.performCompaction(rt, agent, signal, force, options);
 			} catch (error) {
-				outcome = { status: "failed", message: causeMessage(error), aborted: signal.aborted || (error instanceof Error && error.name === "AbortError") };
+				outcome = {
+					status: "failed",
+					message: causeMessage(error),
+					aborted:
+						signal.aborted || (error instanceof Error && error.name === "AbortError"),
+				};
 			}
-			if (outcome.status === "failed" && !outcome.aborted && rt.agent === agent && !rt.bookmarkClosing) {
-				rt.compactionEvent = { state: "failed", anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length, error: outcome.message };
+			if (
+				outcome.status === "failed" &&
+				!outcome.aborted &&
+				rt.agent === agent &&
+				!rt.bookmarkClosing
+			) {
+				rt.compactionEvent = {
+					state: "failed",
+					anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length,
+					error: outcome.message,
+				};
 			}
 			return outcome;
 		} finally {
@@ -5982,17 +7476,24 @@ export class ObsidianAgentService {
 		options?: CompactionRunOptions,
 	): Promise<SavedCompactionOutcome> {
 		const model = getSelectedModel(this.getSettings());
-		const settings = this.resolveCompaction(agent.state.model.contextWindow ?? model.contextWindow);
+		const settings = this.resolveCompaction(
+			agent.state.model.contextWindow ?? model.contextWindow,
+		);
 
 		// Prepare messageOrigins from agent.state.messages
-		const messageOrigins = agent.state.messages.map((msg) => rt.messageEntryIds.get(msg) ?? null);
+		const messageOrigins = agent.state.messages.map(
+			(msg) => rt.messageEntryIds.get(msg) ?? null,
+		);
 
 		let fallbackFirstKeptEntryId = "";
 		try {
 			const session = this.sessionManager.getSessionFor(rt.sessionPath);
-			const branchEntries = await session.view(rt.activeLane).findEntriesOnBranch({ order: "oldestFirst" });
+			const branchEntries = await session
+				.view(rt.activeLane)
+				.findEntriesOnBranch({ order: "oldestFirst" });
 			if (branchEntries.length > 0) {
-				fallbackFirstKeptEntryId = branchEntries[branchEntries.length - 1]?.id ?? "";
+				fallbackFirstKeptEntryId =
+					branchEntries[branchEntries.length - 1]?.id ?? "";
 			}
 		} catch {
 			// Fallback first kept entry ID remains empty if branch entries are not available.
@@ -6011,13 +7512,18 @@ export class ObsidianAgentService {
 			customInstructions: options?.customInstructions,
 			fallbackFirstKeptEntryId,
 			beforeCompact: async (preparation) => {
-				if (!rt.communityHost?.hasHandlers("session_before_compact")) return undefined;
+				if (!rt.communityHost?.hasHandlers("session_before_compact"))
+					return undefined;
 				const session = this.sessionManager.getSessionFor(rt.sessionPath);
-				const branchEntries = (await session.view(rt.activeLane).findEntriesOnBranch({ order: "oldestFirst" })) ?? [];
+				const branchEntries =
+					(await session
+						.view(rt.activeLane)
+						.findEntriesOnBranch({ order: "oldestFirst" })) ?? [];
 				return rt.communityHost.beforeCompact({
 					type: "session_before_compact",
 					preparation,
-					branchEntries: branchEntries as unknown as SessionBeforeCompactEvent["branchEntries"],
+					branchEntries:
+						branchEntries as unknown as SessionBeforeCompactEvent["branchEntries"],
 					customInstructions: options?.customInstructions,
 					reason: force ? "manual" : "threshold",
 					willRetry: false,
@@ -6042,12 +7548,21 @@ export class ObsidianAgentService {
 		// about what the transcript's usage describes. A skipped tidy changed
 		// nothing either and is not an attempt; an aborted one was called off by
 		// the user, and the abort path resets the latch itself.
-		if (outcome.status !== "skipped" && !signal.aborted && !(outcome.status === "failed" && outcome.aborted)) {
+		if (
+			outcome.status !== "skipped" &&
+			!signal.aborted &&
+			!(outcome.status === "failed" && outcome.aborted)
+		) {
 			rt.compactionGate = "awaiting";
 		}
 
 		if (outcome.status !== "compacted") return outcome;
-		if (signal.aborted) return { status: "failed", message: "Compaction was cancelled.", aborted: true };
+		if (signal.aborted)
+			return {
+				status: "failed",
+				message: "Compaction was cancelled.",
+				aborted: true,
+			};
 
 		// The meter is blind until the next reply records: every assistant usage the
 		// transcript now holds reports the pre-compaction total, so the turn
@@ -6056,7 +7571,11 @@ export class ObsidianAgentService {
 		// the hook to do.
 		this.recordOverheadUsage(rt, outcome.result.usage);
 
-		const entryId = await this.sessionManager.appendCompactionFor(rt.sessionPath, outcome.result, rt.activeLane);
+		const entryId = await this.sessionManager.appendCompactionFor(
+			rt.sessionPath,
+			outcome.result,
+			rt.activeLane,
+		);
 		if (rt.agent !== agent) return { status: "skipped" };
 
 		agent.state.messages = outcome.messages;
@@ -6086,30 +7605,64 @@ export class ObsidianAgentService {
 		outcome: Exclude<SavedCompactionOutcome, { status: "skipped" }>,
 		options?: CompactionRunOptions,
 	): Promise<void> {
-		if (this.disposed || rt.agent !== agent || rt.bookmarkClosing || this.runtimes.get(rt.sessionPath) !== rt) return;
+		if (
+			this.disposed ||
+			rt.agent !== agent ||
+			rt.bookmarkClosing ||
+			this.runtimes.get(rt.sessionPath) !== rt
+		)
+			return;
 		const host = rt.communityHost;
 		const aborted = outcome.status === "failed" && outcome.aborted;
 		try {
 			let entry: Extract<Entry, { type: "compaction" }> | undefined;
 			let firstKeptEntryId: string | null = null;
 			if (outcome.status === "compacted") {
-				const saved = await this.sessionManager.getSessionFor(rt.sessionPath).getEntry(outcome.entryId);
-				if (saved?.type !== "compaction") throw new Error("Saved compaction entry is missing.");
+				const saved = await this.sessionManager
+					.getSessionFor(rt.sessionPath)
+					.getEntry(outcome.entryId);
+				if (saved?.type !== "compaction")
+					throw new Error("Saved compaction entry is missing.");
 				entry = saved;
-				if (this.disposed || rt.agent !== agent || rt.communityHost !== host || rt.bookmarkClosing) return;
-				firstKeptEntryId = (saved as unknown as { firstKeptEntryId?: string }).firstKeptEntryId ?? outcome.result.firstKeptEntryId ?? null;
+				if (
+					this.disposed ||
+					rt.agent !== agent ||
+					rt.communityHost !== host ||
+					rt.bookmarkClosing
+				)
+					return;
+				firstKeptEntryId =
+					(saved as unknown as { firstKeptEntryId?: string }).firstKeptEntryId ??
+					outcome.result.firstKeptEntryId ??
+					null;
 			}
-			await host?.emit({
-				...(outcome.status === "compacted"
-					? { type: "session_compact" as const, compactionEntry: extensionCompactionEntry(entry!, firstKeptEntryId) }
-					: { type: "session_compact_failed" as const, aborted, ...(aborted ? {} : { errorMessage: outcome.message }) }),
-				reason: force ? "manual" : "threshold",
-				willRetry: false,
-				fromExtension: outcome.status === "compacted" ? (Boolean(outcome.fromExtension) || Boolean(options?.fromExtension)) : false,
-			}, true);
+			await host?.emit(
+				{
+					...(outcome.status === "compacted"
+						? {
+								type: "session_compact" as const,
+								compactionEntry: extensionCompactionEntry(entry!, firstKeptEntryId),
+							}
+						: {
+								type: "session_compact_failed" as const,
+								aborted,
+								...(aborted ? {} : { errorMessage: outcome.message }),
+							}),
+					reason: force ? "manual" : "threshold",
+					willRetry: false,
+					fromExtension:
+						outcome.status === "compacted"
+							? Boolean(outcome.fromExtension) || Boolean(options?.fromExtension)
+							: false,
+				},
+				true,
+			);
 		} catch (error) {
-			if (rt.agent === agent && rt.communityHost === host && !aborted) this.setError(rt, causeMessage(error));
-			this.log.debug("Extension compaction handler failed", () => ({ error: causeMessage(error) }));
+			if (rt.agent === agent && rt.communityHost === host && !aborted)
+				this.setError(rt, causeMessage(error));
+			this.log.debug("Extension compaction handler failed", () => ({
+				error: causeMessage(error),
+			}));
 		}
 	}
 
@@ -6122,7 +7675,10 @@ export class ObsidianAgentService {
 	 * call site. Absent usage is a no-op: a provider that reports none is normal,
 	 * and it must not be booked as a zero-cost request in the count.
 	 */
-	private recordOverheadUsage(rt: SessionRuntime, usage: Usage | undefined): void {
+	private recordOverheadUsage(
+		rt: SessionRuntime,
+		usage: Usage | undefined,
+	): void {
 		if (!usage) {
 			return;
 		}
@@ -6138,7 +7694,10 @@ export class ObsidianAgentService {
 	 * how the bar and the threshold drift apart.
 	 */
 	private resolveCompaction(contextWindow: number): CompactionSettings {
-		return resolveCompactionSettings(this.getSettings().compaction, contextWindow);
+		return resolveCompactionSettings(
+			this.getSettings().compaction,
+			contextWindow,
+		);
 	}
 
 	private requireModelsBundle(): ObsidianModelsBundle {
@@ -6150,7 +7709,10 @@ export class ObsidianAgentService {
 		// excluded, as they are supplied per request.
 		const settings = this.getSettings();
 		const providerKey = settings.providers
-			.map((provider) => `${provider.id}|${provider.baseUrl}|${provider.protocol}|${provider.oauthFlow}`)
+			.map(
+				(provider) =>
+					`${provider.id}|${provider.baseUrl}|${provider.protocol}|${provider.oauthFlow}`,
+			)
 			.join(",");
 		const bundleKey = `${settings.networkTransport}:${providerKey}`;
 		if (!this.modelsBundle || this.modelsBundleKey !== bundleKey) {
@@ -6225,7 +7787,11 @@ export class ObsidianAgentService {
 			// reach the next turn rather than the next reload.
 			return models.streamSimple(model, context, {
 				...streamOptions,
-				...requestDefaults(fetchImpl, this.getSettings().cacheRetention, this.resolveRetryMaxRetries()),
+				...requestDefaults(
+					fetchImpl,
+					this.getSettings().cacheRetention,
+					this.resolveRetryMaxRetries(),
+				),
 			});
 		};
 	}
@@ -6284,7 +7850,10 @@ export class ObsidianAgentService {
 		};
 	}
 
-	private async persistMessage(rt: SessionRuntime, message: AgentMessage): Promise<void> {
+	private async persistMessage(
+		rt: SessionRuntime,
+		message: AgentMessage,
+	): Promise<void> {
 		const key = message as object;
 		if (rt.messageEntryIds.has(key)) {
 			return;
@@ -6297,7 +7866,14 @@ export class ObsidianAgentService {
 		// text placeholder; dedup still keys on the original object identity.
 		const logged = sanitizeMessageForLog(message);
 		try {
-			rt.messageEntryIds.set(key, await this.sessionManager.appendMessageFor(rt.sessionPath, logged, rt.activeLane));
+			rt.messageEntryIds.set(
+				key,
+				await this.sessionManager.appendMessageFor(
+					rt.sessionPath,
+					logged,
+					rt.activeLane,
+				),
+			);
 			rt.unpersistedMessages.delete(key);
 		} catch (error) {
 			// Marked here, where the identity is, so the transcript can put the
@@ -6329,7 +7905,7 @@ export class ObsidianAgentService {
 	private async readVaultImages(
 		rt: SessionRuntime,
 		paths: readonly string[],
-		sourcePath: string | null
+		sourcePath: string | null,
 	): Promise<ImageContent[]> {
 		if (paths.length === 0) {
 			return [];
@@ -6337,7 +7913,9 @@ export class ObsidianAgentService {
 		const t = this.t();
 		const images: ImageContent[] = [];
 		for (const path of paths) {
-			const file = this.app.vault.getFileByPath(path) ?? this.resolveLinkpathDest(path, sourcePath);
+			const file =
+				this.app.vault.getFileByPath(path) ??
+				this.resolveLinkpathDest(path, sourcePath);
 			if (!file) {
 				// `appendNotice`, not `setNotice`: this runs once per embed, and
 				// assigning meant three missing images reported as one — the last.
@@ -6351,7 +7929,11 @@ export class ObsidianAgentService {
 				// that named it: the two carry the same extension for a full path, but
 				// a shortest-path embed resolved through the index may spell the
 				// folder differently and the file is what the bytes came from.
-				images.push({ type: "image", data: arrayBufferToBase64(buffer), mimeType: mimeTypeForPath(file.path) });
+				images.push({
+					type: "image",
+					data: arrayBufferToBase64(buffer),
+					mimeType: mimeTypeForPath(file.path),
+				});
 			} catch {
 				this.appendNotice(rt, t.t("chat.imageNotFound", { path }));
 				this.appendNotice(rt, t.t("chat.imageNotFound", { path }));
@@ -6377,9 +7959,15 @@ export class ObsidianAgentService {
 	 * is a plain miss: `readVaultImages` reports it like any other unresolvable
 	 * embed, never as an error.
 	 */
-	private resolveLinkpathDest(path: string, sourcePath: string | null): TFile | null {
+	private resolveLinkpathDest(
+		path: string,
+		sourcePath: string | null,
+	): TFile | null {
 		const linkpath = parseLinktext(path).path;
-		return this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath ?? "");
+		return this.app.metadataCache.getFirstLinkpathDest(
+			linkpath,
+			sourcePath ?? "",
+		);
 	}
 
 	private getSessionDefaults(): SessionDefaults {
@@ -6421,7 +8009,10 @@ export class ObsidianAgentService {
 	 * failure raised before anything departed, or one whose markers disagree.
 	 * See {@link isReportedInTranscript}.
 	 */
-	private visibleAgentError(rt: SessionRuntime | null, agent: Agent | null): string | undefined {
+	private visibleAgentError(
+		rt: SessionRuntime | null,
+		agent: Agent | null,
+	): string | undefined {
 		const agentError = agent?.state.errorMessage;
 		if (!agentError || !rt || agentError === rt.dismissedAgentError) {
 			return undefined;
@@ -6452,7 +8043,11 @@ export class ObsidianAgentService {
 	 * off `state.messages`; a throw that leaves no failed assistant turn behind
 	 * has nowhere else to be seen and always reaches the banner.
 	 */
-	private reportDispatchFailure(rt: SessionRuntime, error: unknown, tailBefore: AgentMessage | undefined): void {
+	private reportDispatchFailure(
+		rt: SessionRuntime,
+		error: unknown,
+		tailBefore: AgentMessage | undefined,
+	): void {
 		const message = causeMessage(error);
 		const lastAssistant = lastAssistantTurn(rt.agent?.state.messages ?? []);
 		if (
@@ -6466,7 +8061,11 @@ export class ObsidianAgentService {
 		rt.panelError = { message, opensSettings: false };
 	}
 
-	private setError(rt: SessionRuntime, message: string, opensSettings = false): void {
+	private setError(
+		rt: SessionRuntime,
+		message: string,
+		opensSettings = false,
+	): void {
 		rt.panelError = { message, opensSettings };
 		rt.dismissedAgentError = undefined;
 		this.notify();
@@ -6499,7 +8098,9 @@ export class ObsidianAgentService {
 
 	/** Adds a second non-failure message without hiding an earlier loader warning. */
 	private appendNotice(rt: SessionRuntime, message: string): void {
-		rt.noticeMessage = rt.noticeMessage ? `${rt.noticeMessage}\n${message}` : message;
+		rt.noticeMessage = rt.noticeMessage
+			? `${rt.noticeMessage}\n${message}`
+			: message;
 		this.notify();
 	}
 
@@ -6527,12 +8128,18 @@ export class ObsidianAgentService {
 		try {
 			await this.flushPendingConfiguration(rt);
 		} catch (error) {
-			this.log.error("Failed to apply the pending configuration after settling a run", () => ({ error: String(error) }));
+			this.log.error(
+				"Failed to apply the pending configuration after settling a run",
+				() => ({ error: String(error) }),
+			);
 		}
 		try {
 			await this.refreshSessionInfo(rt);
 		} catch (error) {
-			this.log.error("Failed to refresh session info after settling a run", () => ({ error: String(error) }));
+			this.log.error(
+				"Failed to refresh session info after settling a run",
+				() => ({ error: String(error) }),
+			);
 		}
 		this.notify();
 	}

@@ -1,6 +1,21 @@
-import { Notice, Plugin, type DataAdapter, type Editor, type WorkspaceLeaf } from "obsidian";
-import { PiemSettingTab, normalizeSettings, type PiemSettings } from "./settings";
-import { VIEW_TYPE_PIEM_CHAT, VIEW_TYPE_PIEM_LOGS, VIEW_TYPE_PIEM_SUBAGENTS, PLUGIN_ID } from "./constants";
+import {
+	Notice,
+	Plugin,
+	type DataAdapter,
+	type Editor,
+	type WorkspaceLeaf,
+} from "obsidian";
+import {
+	PiemSettingTab,
+	normalizeSettings,
+	type PiemSettings,
+} from "./settings";
+import {
+	VIEW_TYPE_PIEM_CHAT,
+	VIEW_TYPE_PIEM_LOGS,
+	VIEW_TYPE_PIEM_SUBAGENTS,
+	PLUGIN_ID,
+} from "./constants";
 import { createPluginLogger, type PluginLogger } from "./logging/pluginLogger";
 import { getLogFilePath } from "./logging/logFile";
 import { PiemLogView } from "./logging/logView";
@@ -16,21 +31,42 @@ import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
 import { ObsidianAgentService } from "./agent/ObsidianAgentService";
 import { McpManager } from "./mcp/mcpManager";
-import { emptySkillLoadReport, type SkillCatalogEntry, type SkillLoadReport } from "./agent/skillLoader";
-import { BUILTIN_SKILL_ASSET, BUILTIN_SKILLS_DEVELOPMENT } from "./skills/builtinSkillAsset";
+import {
+	emptySkillLoadReport,
+	type SkillCatalogEntry,
+	type SkillLoadReport,
+} from "./agent/skillLoader";
+import {
+	BUILTIN_SKILL_ASSET,
+	BUILTIN_SKILLS_DEVELOPMENT,
+} from "./skills/builtinSkillAsset";
 import { BuiltinSkillInstaller } from "./skills/builtinSkillInstaller";
 import { builtinSkillVault } from "./skills/builtinSkillVault";
 import { emptyBuiltinSkillReport } from "./skills/builtinSkillState";
 import { BookmarkDialogs } from "./ui/bookmarkDialogs";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
-import { collectNoteReference, warnIfTruncated } from "./ui/noteReferenceCommand";
+import {
+	collectNoteReference,
+	warnIfTruncated,
+} from "./ui/noteReferenceCommand";
 import { registerContextMenus } from "./ui/fileMenuEntry";
-import { deliverContextRequest, type ContextRequest } from "./ui/contextRequest";
-import { openSessionDeleteConfirm, openSessionPicker } from "./ui/sessionDialogs";
+import {
+	deliverContextRequest,
+	type ContextRequest,
+} from "./ui/contextRequest";
+import {
+	openSessionDeleteConfirm,
+	openSessionPicker,
+} from "./ui/sessionDialogs";
 import { BRAND_ICON_ID, registerBrandIcon } from "./brandIcon";
 import { registerVendorIcons } from "./net/vendorIcons";
-import { getT, resolveLanguage, type LanguageHost, type Translator } from "./i18n";
+import {
+	getT,
+	resolveLanguage,
+	type LanguageHost,
+	type Translator,
+} from "./i18n";
 import { AskUserBroker } from "./tools/askUserBroker";
 import { AskUserModal } from "./ui/AskUserModal";
 import { isChatPanelVisible } from "./ui/panelVisibility";
@@ -142,7 +178,10 @@ export default class PiemPlugin extends Plugin {
 	 * because this sits on the `onload` path, that took the whole plugin down.
 	 */
 	private requireSecretEnvironment(): SecretEnvironment {
-		this.secretEnvironment ??= createSecretEnvironment({ host: this.app, log: (message) => this.log.debug(message) });
+		this.secretEnvironment ??= createSecretEnvironment({
+			host: this.app,
+			log: (message) => this.log.debug(message),
+		});
 		return this.secretEnvironment;
 	}
 
@@ -248,7 +287,9 @@ export default class PiemPlugin extends Plugin {
 	 * Obsidian plugin has.
 	 */
 	private t(): Translator {
-		return getT(resolveLanguage(this.app.vault as LanguageHost, this.settings.language));
+		return getT(
+			resolveLanguage(this.app.vault as LanguageHost, this.settings.language),
+		);
 	}
 
 	async onload(): Promise<void> {
@@ -278,7 +319,12 @@ export default class PiemPlugin extends Plugin {
 		// The manager reads the folder and the cap through this closure rather than
 		// from a snapshot, so a change in the Sessions tab reaches the next chat
 		// without reloading the plugin.
-		const sessionManager = ObsidianSessionManager.forPlugin(this.app, this, () => this.settings, this.log.child("session"));
+		const sessionManager = ObsidianSessionManager.forPlugin(
+			this.app,
+			this,
+			() => this.settings,
+			this.log.child("session"),
+		);
 		this.sessionManager = sessionManager;
 		/*
 		 * The escalation ladder, wired here and nowhere else.
@@ -331,46 +377,67 @@ export default class PiemPlugin extends Plugin {
 					try {
 						await this.saveSettings({ reconfigure: false });
 					} catch (error) {
-						if (this.settings.builtinSkillState === state) this.settings.builtinSkillState = previous;
+						if (this.settings.builtinSkillState === state)
+							this.settings.builtinSkillState = previous;
 						throw error;
 					}
 				},
 				// Watch builds ship the JSON beside main.js; this branch is removed
 				// in production, whose asset always comes from the matching release.
 				readPackage: BUILTIN_SKILLS_DEVELOPMENT
-					? () => this.app.vault.adapter.read(`${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`}/builtin-skills.json`)
+					? () =>
+							this.app.vault.adapter.read(
+								`${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`}/builtin-skills.json`,
+							)
 					: undefined,
 			});
 		}
-		this.agentService = new ObsidianAgentService(this.app, () => this.settings, sessionManager, {
-			pluginVersion: this.manifest.version,
-			builtinSkills: {
-				names: BUILTIN_SKILL_ASSET?.names ?? [],
-				report: () => this.builtinSkillInstaller?.getReport() ?? emptyBuiltinSkillReport(),
+		this.agentService = new ObsidianAgentService(
+			this.app,
+			() => this.settings,
+			sessionManager,
+			{
+				pluginVersion: this.manifest.version,
+				builtinSkills: {
+					names: BUILTIN_SKILL_ASSET?.names ?? [],
+					report: () =>
+						this.builtinSkillInstaller?.getReport() ?? emptyBuiltinSkillReport(),
+				},
+				logger: this.requirePluginLogger().logger,
+				askUserBroker,
+				// The chat panel's model switcher writes `activeModelId`; this is what
+				// makes that write survive a reload, and it reconfigures the running
+				// agent on the way back. A mid-run write (issue #252) passes
+				// `reconfigure: false` — `data.json` still goes to disk at once, but
+				// the deferred flush owns the agent reconfigure.
+				persistSettings: (options) => this.saveSettings(options),
+				// MCP tools join the vault tools on every build or reconfigure; the
+				// manager owns connecting and skips servers whose config is unchanged.
+				getExternalTools: async () => {
+					await this.mcpManager.connect();
+					return this.mcpManager.buildAgentTools();
+				},
+				// What is already mounted, connect-free — the subagent side reads this
+				// at spawn time so a child's set is the servers' current list without
+				// ever paying (or awaiting) a handshake itself.
+				getMountedExternalTools: () => this.mcpManager.buildAgentTools(),
+				// The one instance for the session; see `requireCredentialStore`.
+				credentials: this.requireCredentialStore(),
+				// The same read-only view provider bindings resolve through, so a
+				// `web_fetch` `{{secret:id}}` placeholder reaches any keychain entry the
+				// user created — the value substituted in at the transport, never in the
+				// transcript.
+				keychain: this.requireSecretEnvironment().keychain(),
 			},
-			logger: this.requirePluginLogger().logger,
-			askUserBroker,
-			// The chat panel's model switcher writes `activeModelId`; this is what
-			// makes that write survive a reload, and it reconfigures the running
-			// agent on the way back. A mid-run write (issue #252) passes
-			// `reconfigure: false` — `data.json` still goes to disk at once, but
-			// the deferred flush owns the agent reconfigure.
-			persistSettings: (options) => this.saveSettings(options),
-			// MCP tools join the vault tools on every build or reconfigure; the
-			// manager owns connecting and skips servers whose config is unchanged.
-			getExternalTools: async () => {
-				await this.mcpManager.connect();
-				return this.mcpManager.buildAgentTools();
-			},
-			// What is already mounted, connect-free — the subagent side reads this
-			// at spawn time so a child's set is the servers' current list without
-			// ever paying (or awaiting) a handshake itself.
-			getMountedExternalTools: () => this.mcpManager.buildAgentTools(),
-			// The one instance for the session; see `requireCredentialStore`.
-			credentials: this.requireCredentialStore(),
-		});
-		this.bookmarkDialogs = new BookmarkDialogs(this.app, this.agentService, () => this.t());
-		this.draftStore = DraftStore.forPlugin(this.app, this, this.requirePluginLogger().logger);
+		);
+		this.bookmarkDialogs = new BookmarkDialogs(this.app, this.agentService, () =>
+			this.t(),
+		);
+		this.draftStore = DraftStore.forPlugin(
+			this.app,
+			this,
+			this.requirePluginLogger().logger,
+		);
 		// A chat that loses its session file loses its draft file with it, or the
 		// draft outlives its conversation forever — retention eviction in
 		// particular removes sessions this window never opened, so nothing else
@@ -392,8 +459,15 @@ export default class PiemPlugin extends Plugin {
 				),
 		);
 		this.registerView(VIEW_TYPE_PIEM_LOGS, (leaf) => this.createLogView(leaf));
-		this.registerView(VIEW_TYPE_PIEM_SUBAGENTS, (leaf) => new PiemSubagentView(leaf, this.requireAgentService()));
-		this.settingsTab = new PiemSettingTab(this.app, this, this.requireSecretEnvironment());
+		this.registerView(
+			VIEW_TYPE_PIEM_SUBAGENTS,
+			(leaf) => new PiemSubagentView(leaf, this.requireAgentService()),
+		);
+		this.settingsTab = new PiemSettingTab(
+			this.app,
+			this,
+			this.requireSecretEnvironment(),
+		);
 		this.addSettingTab(this.settingsTab);
 		this.addCommand({
 			id: "open-chat",
@@ -430,12 +504,46 @@ export default class PiemPlugin extends Plugin {
 				void this.openSessionSearch();
 			},
 		});
-		this.addCommand({ id: "continue-task", name: t.t("commands.continueTask"), callback: () => { void this.agentService?.runExtensionCommand("continue"); } });
-		this.addCommand({ id: "clarify-draft", name: t.t("extensions.clarifyCommand"), callback: () => { void this.agentService?.runExtensionCommand("clarify"); } });
-		this.addCommand({ id: "show-context", name: t.t("extensions.contextCommand"), callback: () => { void this.agentService?.runExtensionCommand("context"); } });
-		this.addCommand({ id: "bookmark-reply", name: t.t("commands.addBookmark"), callback: () => this.bookmarkDialogs?.add() });
-		this.addCommand({ id: "unbookmark-reply", name: t.t("commands.removeBookmark"), callback: () => { void this.bookmarkDialogs?.remove(); } });
-		this.addCommand({ id: "view-bookmarks", name: t.t("commands.listBookmarks"), callback: () => { void this.bookmarkDialogs?.list(); } });
+		this.addCommand({
+			id: "continue-task",
+			name: t.t("commands.continueTask"),
+			callback: () => {
+				void this.agentService?.runExtensionCommand("continue");
+			},
+		});
+		this.addCommand({
+			id: "clarify-draft",
+			name: t.t("extensions.clarifyCommand"),
+			callback: () => {
+				void this.agentService?.runExtensionCommand("clarify");
+			},
+		});
+		this.addCommand({
+			id: "show-context",
+			name: t.t("extensions.contextCommand"),
+			callback: () => {
+				void this.agentService?.runExtensionCommand("context");
+			},
+		});
+		this.addCommand({
+			id: "bookmark-reply",
+			name: t.t("commands.addBookmark"),
+			callback: () => this.bookmarkDialogs?.add(),
+		});
+		this.addCommand({
+			id: "unbookmark-reply",
+			name: t.t("commands.removeBookmark"),
+			callback: () => {
+				void this.bookmarkDialogs?.remove();
+			},
+		});
+		this.addCommand({
+			id: "view-bookmarks",
+			name: t.t("commands.listBookmarks"),
+			callback: () => {
+				void this.bookmarkDialogs?.list();
+			},
+		});
 		this.addCommand({
 			id: "abort-chat",
 			name: t.t("commands.stopResponse"),
@@ -443,7 +551,12 @@ export default class PiemPlugin extends Plugin {
 			// must stay behind the `!checking` guard or merely opening the palette fires it.
 			checkCallback: (checking) => {
 				const service = this.agentService;
-				if (!service || (service.getSnapshot().isStreaming === false && !service.getSnapshot().isCompacting && !service.getSnapshot().isExtensionBusy)) {
+				if (
+					!service ||
+					(service.getSnapshot().isStreaming === false &&
+						!service.getSnapshot().isCompacting &&
+						!service.getSnapshot().isExtensionBusy)
+				) {
 					return false;
 				}
 				if (!checking) {
@@ -459,7 +572,11 @@ export default class PiemPlugin extends Plugin {
 			// only be resolved by waiting for the automatic threshold.
 			checkCallback: (checking) => {
 				const service = this.agentService;
-				if (!service || service.getSnapshot().isStreaming || service.getSnapshot().isCompacting) {
+				if (
+					!service ||
+					service.getSnapshot().isStreaming ||
+					service.getSnapshot().isCompacting
+				) {
 					return false;
 				}
 				if (!checking) {
@@ -493,23 +610,43 @@ export default class PiemPlugin extends Plugin {
 			id: "ask-about-note",
 			name: t.t("commands.askAboutNote"),
 			editorCallback: (editor, info) => {
-				void this.askPiemAboutSelection(editor, info.file?.path ?? null, { selectionOnly: false });
+				void this.askPiemAboutSelection(editor, info.file?.path ?? null, {
+					selectionOnly: false,
+				});
 			},
 		});
 		this.addRibbonIcon(BRAND_ICON_ID, t.t("commands.ribbonOpenChat"), () => {
 			void this.activateChatView();
 		});
-		registerContextMenus(this, t, request => { void this.deliverContext(request); });
+		registerContextMenus(this, t, (request) => {
+			void this.deliverContext(request);
+		});
 		const installer = this.builtinSkillInstaller;
 		if (installer) {
 			this.app.workspace.onLayoutReady(() => {
 				if (this.builtinSkillInstaller !== installer) return;
-				void installer.prepare().then(async (report) => {
-					if (this.builtinSkillInstaller !== installer) return;
-					if (report.status === "failed" || report.problems.length) this.log.warn("Built-in skill preparation needs attention", () => ({ status: report.status, error: report.error ?? "", problems: report.problems.map((problem) => ({ path: problem.path, reason: problem.reason, message: problem.message ?? "" })) }));
-					await this.refreshAgentSkills();
-					if (this.settingsTab?.containerEl.isConnected) this.settingsTab.update();
-				}).catch((error: unknown) => this.log.warn("Built-in skill refresh failed", () => ({ error: String(error) })));
+				void installer
+					.prepare()
+					.then(async (report) => {
+						if (this.builtinSkillInstaller !== installer) return;
+						if (report.status === "failed" || report.problems.length)
+							this.log.warn("Built-in skill preparation needs attention", () => ({
+								status: report.status,
+								error: report.error ?? "",
+								problems: report.problems.map((problem) => ({
+									path: problem.path,
+									reason: problem.reason,
+									message: problem.message ?? "",
+								})),
+							}));
+						await this.refreshAgentSkills();
+						if (this.settingsTab?.containerEl.isConnected) this.settingsTab.update();
+					})
+					.catch((error: unknown) =>
+						this.log.warn("Built-in skill refresh failed", () => ({
+							error: String(error),
+						})),
+					);
 			});
 		}
 	}
@@ -576,7 +713,10 @@ export default class PiemPlugin extends Plugin {
 		const dir = getLegacySessionDir(configDir, this.manifest.id);
 		// Compared through `isLegacySessionDir` rather than by string: the manager
 		// hands back a normalized path, which the raw legacy path need not match.
-		if (!this.sessionManager || isLegacySessionDir(this.getActiveSessionDir(), configDir, this.manifest.id)) {
+		if (
+			!this.sessionManager ||
+			isLegacySessionDir(this.getActiveSessionDir(), configDir, this.manifest.id)
+		) {
 			return { count: 0, dir };
 		}
 		return { count: await this.sessionManager.countSessionsIn(dir), dir };
@@ -593,7 +733,7 @@ export default class PiemPlugin extends Plugin {
 	 * resolves to an empty key the panel reports.
 	 */
 	async loadSettings(): Promise<void> {
-		const raw = await this.loadData() as Partial<PiemSettings> | null;
+		const raw = (await this.loadData()) as Partial<PiemSettings> | null;
 		this.settings = normalizeSettings(raw);
 		resolveSecretRefs(this.settings, this.requireSecretEnvironment().keychain());
 	}
@@ -616,7 +756,8 @@ export default class PiemPlugin extends Plugin {
 		this.agentService?.refreshDiagnostics();
 		// Snapshot inside the queue: a concurrent installer save must include the
 		// user's latest settings, and an older write must never finish last.
-		const write = (this.settingsWrite ?? Promise.resolve()).catch(() => undefined)
+		const write = (this.settingsWrite ?? Promise.resolve())
+			.catch(() => undefined)
 			.then(() => this.saveData(persistedSettings(this.settings)));
 		this.settingsWrite = write;
 		await write;
@@ -642,8 +783,14 @@ export default class PiemPlugin extends Plugin {
 
 	/** Explicit retry or restoration; ordinary skill reloads never install files. */
 	async prepareBuiltinSkills(restore = false): Promise<void> {
-		const report = await this.builtinSkillInstaller?.prepare({ retry: true, restore });
-		if (report?.status === "failed") this.log.warn("Built-in skill preparation failed", () => ({ error: report.error ?? "" }));
+		const report = await this.builtinSkillInstaller?.prepare({
+			retry: true,
+			restore,
+		});
+		if (report?.status === "failed")
+			this.log.warn("Built-in skill preparation failed", () => ({
+				error: report.error ?? "",
+			}));
 		await this.refreshAgentSkills();
 	}
 
@@ -683,20 +830,39 @@ export default class PiemPlugin extends Plugin {
 	 * composer registers, so ordering here is what keeps the reference from
 	 * landing in a not-yet-existing input.
 	 */
-	private async askPiemAboutSelection(editor: Editor, path: string | null, options = { selectionOnly: true }): Promise<void> {
+	private async askPiemAboutSelection(
+		editor: Editor,
+		path: string | null,
+		options = { selectionOnly: true },
+	): Promise<void> {
 		const reference = collectNoteReference(editor, path, options.selectionOnly);
-		if (!reference) { new Notice(this.t().t("commands.noActiveNote")); return; }
-		warnIfTruncated(reference.kind === "selection" && reference.truncated === true, this.t());
+		if (!reference) {
+			new Notice(this.t().t("commands.noActiveNote"));
+			return;
+		}
+		warnIfTruncated(
+			reference.kind === "selection" && reference.truncated === true,
+			this.t(),
+		);
 		await this.deliverContext({ references: [reference] });
 	}
 
 	private async deliverContext(request: ContextRequest): Promise<void> {
 		const service = this.agentService;
-		if (!service) { new Notice(this.t().t("commands.couldNotOpenChat")); return; }
-		await deliverContextRequest(request, this.app, service, async () => {
-			await this.activateChatView();
-			return this.findChatView();
-		}, this.t());
+		if (!service) {
+			new Notice(this.t().t("commands.couldNotOpenChat"));
+			return;
+		}
+		await deliverContextRequest(
+			request,
+			this.app,
+			service,
+			async () => {
+				await this.activateChatView();
+				return this.findChatView();
+			},
+			this.t(),
+		);
 	}
 
 	/**
@@ -722,7 +888,13 @@ export default class PiemPlugin extends Plugin {
 			sessions,
 			{
 				onOpen: (path) => void service.openSession(path),
-				onDelete: (session) => openSessionDeleteConfirm(this.app, session, () => void service.deleteSession(session.path), t),
+				onDelete: (session) =>
+					openSessionDeleteConfirm(
+						this.app,
+						session,
+						() => void service.deleteSession(session.path),
+						t,
+					),
 				searchSessions: (text, options) => service.searchSessions(text, options),
 			},
 			t,
@@ -731,12 +903,14 @@ export default class PiemPlugin extends Plugin {
 	}
 
 	private findChatView(): PiemChatView | null {
-		const view = this.app?.workspace?.getLeavesOfType(VIEW_TYPE_PIEM_CHAT)[0]?.view;
+		const view =
+			this.app?.workspace?.getLeavesOfType(VIEW_TYPE_PIEM_CHAT)[0]?.view;
 		return view instanceof PiemChatView ? view : null;
 	}
 
 	private async activateChatView(): Promise<void> {
-		const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PIEM_CHAT)[0];
+		const existingLeaf =
+			this.app.workspace.getLeavesOfType(VIEW_TYPE_PIEM_CHAT)[0];
 		if (existingLeaf) {
 			await this.app.workspace.revealLeaf(existingLeaf);
 			return;
@@ -777,7 +951,9 @@ export default class PiemPlugin extends Plugin {
 			revealFile: () => {
 				// `revealInFinder` is desktop-only; the file hint names the path for
 				// mobile users, who can reach it over sync instead.
-				const adapter = this.app.vault.adapter as DataAdapter & { revealInFinder?: (path: string) => boolean };
+				const adapter = this.app.vault.adapter as DataAdapter & {
+					revealInFinder?: (path: string) => boolean;
+				};
 				adapter.revealInFinder?.(getLogFilePath(configDir, PLUGIN_ID));
 			},
 		});
@@ -790,7 +966,8 @@ export default class PiemPlugin extends Plugin {
 	 * drive `saveSettings` against a plugin stub with no workspace at all.
 	 */
 	private findSubagentView(): PiemSubagentView | null {
-		const view = this.app?.workspace?.getLeavesOfType(VIEW_TYPE_PIEM_SUBAGENTS)[0]?.view;
+		const view = this.app?.workspace?.getLeavesOfType(VIEW_TYPE_PIEM_SUBAGENTS)[0]
+			?.view;
 		return view instanceof PiemSubagentView ? view : null;
 	}
 
@@ -801,8 +978,12 @@ export default class PiemPlugin extends Plugin {
 	 * activates the leaf and names a run in one awaited sequence, and a latched
 	 * request means the naming survives a leaf that has not mounted React yet.
 	 */
-	async activateSubagentView(subagentId?: string): Promise<PiemSubagentView | null> {
-		const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PIEM_SUBAGENTS)[0];
+	async activateSubagentView(
+		subagentId?: string,
+	): Promise<PiemSubagentView | null> {
+		const existingLeaf = this.app.workspace.getLeavesOfType(
+			VIEW_TYPE_PIEM_SUBAGENTS,
+		)[0];
 		if (existingLeaf) {
 			await this.app.workspace.revealLeaf(existingLeaf);
 		} else {
@@ -822,7 +1003,8 @@ export default class PiemPlugin extends Plugin {
 	}
 
 	private async activateLogView(): Promise<void> {
-		const existingLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PIEM_LOGS)[0];
+		const existingLeaf =
+			this.app.workspace.getLeavesOfType(VIEW_TYPE_PIEM_LOGS)[0];
 		if (existingLeaf) {
 			await this.app.workspace.revealLeaf(existingLeaf);
 			return;
