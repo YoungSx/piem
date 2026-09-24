@@ -390,6 +390,9 @@ and [the data disclosure](security.md#opentelemetry-export).
    `scripts/smoke-research-extensions-obsidian.mjs` against a disposable real
    Obsidian vault, on desktop and with official mobile emulation.
 
+All real-Obsidian smokes share one rig: see [Obsidian smoke rig](obsidian-smoke-rig.md)
+for the one-command setup and the pitfall list.
+
 `scripts/smoke-extension-ui-obsidian.mjs` exercises native dialogs, composer
 completions, lifecycle and model requests with a local test factory in the
 shipped service. Use `scripts/smoke-generic-bridge-obsidian.mjs` to verify the
