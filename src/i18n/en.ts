@@ -928,7 +928,8 @@ export const en = {
 		runningAction: "Running action…",
 		actionFailed: "This action failed. Try again.",
 		entryAria: "Extension actions",
-		todoBadgeAria: "Todos — {completed} of {total} done",
+		todoBadgeAria: "{completed} of {total} done",
+		entryWithBadge: "{action}, {badge}",
 	},
 
 	/** Session dialogs: titles, search, and chat actions. */

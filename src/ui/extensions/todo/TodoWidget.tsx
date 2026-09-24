@@ -1,14 +1,21 @@
 import React, { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { NativeExtensionSurface } from "../../../extensions/extensionUI";
 import type { ExtensionUISnapshot } from "../../ObsidianExtensionUI";
+import type { ExtensionEntryBadge } from "../../ExtensionEntryIcon";
 import { NativeExtensionComponents } from "../../NativeExtensionComponents";
-import { ExtensionEntryIcon } from "../../ExtensionEntryIcon";
 import { useT } from "../../TranslatorContext";
 import { TODO_WIDGET_KEY, readTodoModel, type TodoModel } from "./todoModel";
 
-/** The mounted rpiv-todo overlay surface in this snapshot, if any. */
+/**
+ * The mounted rpiv-todo overlay surface, if any. Matched by key AND placement:
+ * TodoCard renders in the aboveEditor feed tail, so it must not claim a surface
+ * that (on a future, unpinned version) mounts belowEditor — that one stays with
+ * the generic renderer, and neither surface double-renders it.
+ */
 export function findTodoSurface(snapshot: ExtensionUISnapshot): NativeExtensionSurface | undefined {
-	return snapshot.componentWidgets?.find((widget) => widget.key === TODO_WIDGET_KEY)?.surface;
+	return snapshot.componentWidgets?.find(
+		(widget) => widget.key === TODO_WIDGET_KEY && widget.placement === "aboveEditor",
+	)?.surface;
 }
 
 /**
@@ -42,19 +49,19 @@ export function TodoCard({ surface }: { surface: NativeExtensionSurface }): Reac
 }
 
 /**
- * The context-row extension entry icon, wearing the todo progress as a badge.
- * The icon stays generic; this only derives the badge and hands it over, so a
- * different extension mounting the same entry shows the icon with no badge.
+ * The todo progress as a badge for the generic context-row entry icon, or
+ * undefined when no todo overlay is mounted. Only a badge crosses the seam — the
+ * icon keeps its own generic call site in ChatApp and never learns about todos,
+ * mirroring how TodoCard sits beside (not inside) the generic ExtensionSurfaces.
  */
-export function TodoEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot }): React.JSX.Element | null {
+export function useTodoBadge(snapshot: ExtensionUISnapshot): ExtensionEntryBadge | undefined {
 	const t = useT();
 	const model = useTodoModel(findTodoSurface(snapshot));
-	const badge = model
+	return model
 		? {
 			text: `${model.completed}/${model.total}`,
 			settled: !model.active,
 			label: t.t("extensionUI.todoBadgeAria", { completed: model.completed, total: model.total }),
 		}
 		: undefined;
-	return <ExtensionEntryIcon snapshot={snapshot} badge={badge} />;
 }

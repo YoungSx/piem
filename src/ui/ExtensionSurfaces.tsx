@@ -6,17 +6,19 @@ import { plainText } from "../extensions/compat/textMetrics";
 import { ExtensionStyledText, trimEdgeBlankLines } from "./extensionStyledText";
 
 /** Plain extension text follows the host theme and wraps inside a narrow leaf. */
-export function ExtensionSurfaces({ snapshot, placement, excludeKeys }: {
+export function ExtensionSurfaces({ snapshot, placement, excludeComponentKeys }: {
 	snapshot: ExtensionUISnapshot;
 	placement: "aboveEditor" | "belowEditor";
-	/** Widget keys another surface renders instead — kept generic so this renderer
-	 *  never learns an extension's identity; the composition layer names them. */
-	excludeKeys?: readonly string[];
+	/** Component-widget keys another surface renders instead — kept generic so
+	 *  this renderer never learns an extension's identity; the composition layer
+	 *  names them. Scoped to component widgets only, matching what those surfaces
+	 *  recover, so a same-key text widget still falls through to the generic path. */
+	excludeComponentKeys?: readonly string[];
 }): React.JSX.Element | null {
 	const t = useT();
-	const excluded = (key: string): boolean => excludeKeys?.includes(key) ?? false;
-	const widgets = snapshot.widgets.filter((widget) => widget.placement === placement && !excluded(widget.key));
-	const components = snapshot.componentWidgets?.filter(widget => widget.placement === placement && !excluded(widget.key)) ?? [];
+	const excludedComponent = (key: string): boolean => excludeComponentKeys?.includes(key) ?? false;
+	const widgets = snapshot.widgets.filter((widget) => widget.placement === placement);
+	const components = snapshot.componentWidgets?.filter(widget => widget.placement === placement && !excludedComponent(widget.key)) ?? [];
 	const statuses = placement === "belowEditor" ? snapshot.statuses : [];
 	const workingMessage = placement === "belowEditor" ? snapshot.workingMessage : undefined;
 	if (widgets.length === 0 && statuses.length === 0 && components.length === 0 && !workingMessage) return null;

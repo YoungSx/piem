@@ -40,6 +40,8 @@ const ACTIVE_DOT = "●"; // ●
 const TASK_GLYPH = /^[○◐✓]/; // ○ ◐ ✓
 // The "├─ " / "└─ " tree prefix before every body row.
 const TREE_PREFIX = /^[├└][─\s]*/; // ├ └ ─
+// The "+N more (…)" overflow summary row the overlay appends when rows are hidden.
+const OVERFLOW_ROW = /^\+/;
 
 function flattenText(node: NativeComponentNode | undefined): string {
 	if (!node) return "";
@@ -66,12 +68,17 @@ export function readTodoModel(node: NativeComponentNode | undefined): TodoModel 
 	if (!count) return null;
 
 	const body = lines.slice(1);
-	const hasTaskRow = body.some((line) => TASK_GLYPH.test(line.replace(TREE_PREFIX, "")));
-	// Collapsed = the heading plus only its "… to expand" hint. Any body row that
-	// is a task keeps it expanded; ≥2 body rows are always tasks, so glyph
-	// recognition is leaned on only for the single-row case — a glyph drift can
-	// never hide a real multi-task list, at worst it boxes a collapsed hint.
-	const collapsed = body.length <= 1 && !hasTaskRow;
+	const bodyContent = (line: string): string => line.replace(TREE_PREFIX, "");
+	const hasTaskRow = body.some((line) => TASK_GLYPH.test(bodyContent(line)));
+	const hasOverflowRow = body.some((line) => OVERFLOW_ROW.test(bodyContent(line)));
+	// Collapsed = the heading plus only its "… to expand" hint. Recognized only
+	// negatively (the hint is localized prose, so it is never matched directly):
+	// a body that is neither a task row nor a "+N more" overflow, in ≤1 line, is
+	// the hint. ≥2 body rows are always real content, so glyph recognition is
+	// leaned on for the single-row case alone — a glyph drift can never hide a
+	// real list, at worst it boxes a collapsed hint. Any positively-recognized
+	// content (task or overflow) keeps it expanded rather than hidden.
+	const collapsed = body.length <= 1 && !hasTaskRow && !hasOverflowRow;
 
 	return {
 		completed: Number(count[1]),

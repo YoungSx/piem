@@ -22,7 +22,7 @@ import { contextLevel } from "./headerCopy";
 import { ContextRow } from "./ContextRow";
 import { openForkConfirm } from "./forkConfirmModal";
 import { SubagentEntryIcon } from "./SubagentEntryIcon";
-import { hasExtensionEntry } from "./ExtensionEntryIcon";
+import { ExtensionEntryIcon, hasExtensionEntry } from "./ExtensionEntryIcon";
 import { MessageList } from "./MessageList";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { ThinkingLevelSelector } from "./ThinkingLevelSelector";
@@ -36,7 +36,7 @@ import { fileToPendingImage, newPendingImageId, toImageContents, type PendingIma
 import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
 import { useExtensionUI } from "./useExtensionUI";
 import { ExtensionSurfaces } from "./ExtensionSurfaces";
-import { TodoCard, TodoEntryIcon, findTodoSurface } from "./extensions/todo/TodoWidget";
+import { TodoCard, findTodoSurface, useTodoBadge } from "./extensions/todo/TodoWidget";
 import { TODO_WIDGET_KEY } from "./extensions/todo/todoModel";
 import { ReferenceCards } from "./ReferenceCards";
 import { projectComposerDraft } from "./composerDraft";
@@ -188,12 +188,15 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			return (
 				<>
 					{todoSurface ? <TodoCard surface={todoSurface} /> : null}
-					<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" excludeKeys={TODO_EXCLUDE} />
+					<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" excludeComponentKeys={TODO_EXCLUDE} />
 				</>
 			);
 		},
 		[extensionUI.snapshot],
 	);
+	// The todo progress, as a badge for the generic entry icon below. Kept beside
+	// the icon (not wrapped around it) so ExtensionEntryIcon stays extension-agnostic.
+	const todoBadge = useTodoBadge(extensionUI.snapshot);
 	const effectiveTraceExpand = extensionUI.snapshot.toolsExpanded !== undefined
 		? (extensionUI.snapshot.toolsExpanded ? "expanded" : "collapsed")
 		: snapshot.traceExpand;
@@ -984,7 +987,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 							trailing={
 								hasExtensionEntry(extensionUI.snapshot) || (onOpenSubagents && ownSubagents.length > 0) ? (
 									<>
-									<TodoEntryIcon snapshot={extensionUI.snapshot} />
+									<ExtensionEntryIcon snapshot={extensionUI.snapshot} badge={todoBadge} />
 										{onOpenSubagents && ownSubagents.length > 0 ? (
 											<SubagentEntryIcon
 												snapshots={ownSubagents}
