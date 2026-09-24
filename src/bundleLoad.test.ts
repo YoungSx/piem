@@ -374,7 +374,7 @@ describe("built bundle installs the separate official skill resource", () => {
 			expect(plugin.agentSkillLoad().builtin.diagnostics).toEqual([]);
 			expect(requests).toBe(1);
 			const catalog = plugin.agentSkillCatalog();
-			expect(catalog.filter((entry) => entry.source === "builtin")).toHaveLength(9);
+			expect(catalog.filter((entry) => entry.source === "builtin")).toHaveLength(10);
 			const summary = catalog.find((entry) => entry.skill.name === "summarize")!;
 			expect(summary.skill.filePath).toBe("/Piem/builtin-skills/summarize/SKILL.md");
 			expect(contents.get(summary.skill.filePath.slice(1))).toContain("name: summarize");
