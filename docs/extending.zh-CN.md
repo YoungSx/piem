@@ -12,7 +12,8 @@ Piem 按以下顺序合并三处技能，后面的同名技能覆盖前面的：
 
 1. **内置** —— `Piem/builtin-skills/<名字>/SKILL.md` 中的标准文件。包含
    `summarize`、`link-graph`、`tag-organize`、`find-skills`、
-   `efficient-web-research`、`vault-memory` 和 `distill-skill`。
+   `efficient-web-research`、`vault-memory`、`distill-skill` 和
+   `mineru-parse`。
 2. **用户级** —— 桌面端的 `~/.pi/agent/skills`、`~/.agents/skills`，以及设置中
    可选的额外目录。这些目录内部仍沿用现有优先级。
 3. **笔记库** —— `Piem/skills/<名字>/SKILL.md` 中自己写的或导入的技能。
