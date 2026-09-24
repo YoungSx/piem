@@ -10,8 +10,9 @@ await env.cleanup(BACKGROUND_CONTEXT);
 expect(diagnostics).toEqual([]);
 
 describe("builtinSkills", () => {
-	it("loads all nine standard skill directories", () => {
+	it("loads all ten standard skill directories", () => {
 		expect(skills.map((skill) => skill.name).sort()).toEqual([
+			"build-knowledge-base",
 			"distill-skill",
 			"efficient-web-research",
 			"find-skills",

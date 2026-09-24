@@ -13,8 +13,8 @@ later sources overriding earlier skills of the same name:
 
 1. **Built-in** — standard files under `Piem/builtin-skills/<name>/SKILL.md`.
    Includes `summarize`, `link-graph`, `tag-organize`, `find-skills`,
-   `efficient-web-research`, `vault-memory`, `distill-skill`, and
-   `mineru-parse`.
+   `efficient-web-research`, `vault-memory`, `distill-skill`, `mineru-parse`,
+   and `build-knowledge-base`.
 2. **User-level** — on desktop, `~/.pi/agent/skills` and `~/.agents/skills`, plus
    the optional extra directory in settings. These keep their existing priority
    within the user-level source.
