@@ -3,6 +3,11 @@ import { Type } from "typebox";
 import { createObsidianRequestUrlFetch } from "../net/obsidianFetch";
 import { throwIfAborted } from "./toolResult";
 import { truncateToolOutputDetailed } from "../vault/truncate";
+import type { Keychain } from "../keychain";
+import {
+	resolveRequestSecrets,
+	SECRET_PLACEHOLDER_SYNTAX,
+} from "./secretPlaceholders";
 
 /**
  * Agent-facing HTTP request tool.
@@ -56,7 +61,15 @@ const WebFetchParameters = Type.Object({
 	),
 });
 
-export function createWebFetchTool(): AgentTool<typeof WebFetchParameters> {
+/**
+ * @param keychain Read-only keychain used to resolve `{{secret:id}}`
+ * placeholders in the url, headers, and body before the request leaves the
+ * vault. Omitted (the default in tests) leaves placeholders verbatim — no
+ * substitution happens and nothing is read from any store.
+ */
+export function createWebFetchTool(
+	keychain?: Keychain,
+): AgentTool<typeof WebFetchParameters> {
 	const fetchFn = createObsidianRequestUrlFetch();
 	return {
 		name: "web_fetch",
@@ -72,6 +85,12 @@ export function createWebFetchTool(): AgentTool<typeof WebFetchParameters> {
 			"Make an HTTP request to an external URL and return the response body as text. " +
 			"This sends data to a server outside the vault and Obsidian. " +
 			"Use it only when a task genuinely needs information that is not in the vault. " +
+			"To authenticate a request with a credential from Obsidian's keychain, write " +
+			`the placeholder ${SECRET_PLACEHOLDER_SYNTAX} in the url, a header value, or the body ` +
+			"(e.g. an 'Authorization' header of 'Bearer {{secret:my-api-token}}'); the entry id is " +
+			"the label the user gave it in Obsidian's keychain settings. The value is substituted in " +
+			"just before the request is sent and never appears in this conversation, so you never see " +
+			"the credential itself — use the placeholder, do not ask for the value. " +
 			"Only the first 50KB of the body is shown; for anything large or of unknown size, " +
 			"pass a Range header (e.g. 'Range: bytes=0-65535') to fetch a window at a time — " +
 			"a 206 response means the server honours ranges, and 'Content-Range: bytes 0-65535/TOTAL' " +
@@ -81,10 +100,32 @@ export function createWebFetchTool(): AgentTool<typeof WebFetchParameters> {
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
 			const method = (params.method ?? "GET").toUpperCase();
-			const response = await fetchFn(params.url, {
+			// Substitute keychain placeholders at the boundary: the model authored
+			// with `{{secret:id}}`, the transcript kept the placeholder, and the
+			// cleartext exists only in the arguments handed to the transport below.
+			// An unknown id fails the tool with the id named back — the id is a
+			// user-chosen label, not the secret — rather than sending a request that
+			// silently drops the credential and 401s for a reason the model cannot see.
+			const request = keychain
+				? resolveRequestSecrets(
+						{ url: params.url, headers: params.headers, body: params.body },
+						keychain,
+					)
+				: {
+						resolved: { url: params.url, headers: params.headers, body: params.body },
+						unknownIds: [],
+					};
+			if (request.unknownIds.length > 0) {
+				throw new Error(
+					`No keychain entry named: ${request.unknownIds.join(", ")}. ` +
+						"Check the entry id in Obsidian's keychain settings, or ask the user to create it. " +
+						"The request was not sent.",
+				);
+			}
+			const response = await fetchFn(request.resolved.url, {
 				method,
-				headers: params.headers,
-				body: params.body,
+				headers: request.resolved.headers,
+				body: request.resolved.body,
 				signal,
 			});
 			throwIfAborted(signal);
@@ -113,6 +154,9 @@ export function createWebFetchTool(): AgentTool<typeof WebFetchParameters> {
 			const result: AgentToolResult<Record<string, unknown>> = {
 				content: [{ type: "text", text: output }],
 				details: {
+					// The pre-substitution url, so the transcript's record of where the
+					// request went keeps the placeholder rather than a resolved secret in
+					// a query string.
 					url: params.url,
 					method,
 					status: response.status,

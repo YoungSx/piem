@@ -86,6 +86,21 @@ Piem uses, so egress stays inspectable in one place — and it reaches ordinary
 web pages, which the `fetch` transport's CORS rules would block. The
 `requestUrl`-vs-`fetch` setting affects token streaming only.
 
+To authenticate a request against a credential you keep in Obsidian's keychain,
+the agent writes the placeholder `{{secret:<entry-id>}}` into the URL, a header
+value, or the body — for example an `Authorization` header of
+`Bearer {{secret:my-api-token}}`, where `my-api-token` is the id you gave the
+entry in **Settings → the plugin's keychain**. The value is looked up and
+substituted in the instant before the request leaves the vault, so it never
+enters the conversation: the transcript keeps the placeholder, the model never
+sees the credential, and there is no tool that returns a secret in cleartext.
+The agent can reference any entry by id — there is no allowlist — and a
+placeholder that names no entry fails the call (naming the id, which is a label,
+not the secret) rather than sending an empty credential. One thing this does not
+guard: if the server you call echoes the credential back in its response, that
+response is the model's to read — the placeholder keeps the secret out of what
+the agent *writes*, not out of what a server chooses to send back.
+
 ## Conversation checkpoints
 
 `context_checkpoint` saves a named history anchor; `context_timeline` shows the
