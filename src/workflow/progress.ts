@@ -41,6 +41,14 @@ export interface WorkflowAgentEntry {
 	agentId?: string;
 	agentType?: string;
 	/**
+	 * The child's own id in the subagent registry, once it has one.
+	 *
+	 * Distinct from {@link agentId}, the run's `wf-agent-N` handle that means
+	 * nothing outside the runtime. This is what a future inspector opens a
+	 * conversation on, reported the moment the host issues it.
+	 */
+	recordId?: string;
+	/**
 	 * Short model label for tight rows, e.g. `haiku 4.5`.
 	 *
 	 * Seeded from what the script asked for and then REPLACED by what the child
@@ -48,6 +56,8 @@ export interface WorkflowAgentEntry {
 	 * effective-not-requested rule every other subagent surface follows.
 	 */
 	model?: string;
+	/** Canonical `provider/model-id`, for a surface with room for it. */
+	modelId?: string;
 	/** The level actually in effect, once the child's session reports one. */
 	thinking?: string;
 	/**

@@ -157,6 +157,18 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * bring the combined build to 1,884,024 B (+4,295 B over the generic bridge).
  * The existing 1.80 MiB ceiling still fits; no new dependency was introduced.
  *
+ * 26. The workflow engine (a vendored port of tintinweb/pi-subagents' workflow
+ *     runtime, adapted for the WebView: blob-URL Web Worker instead of node
+ *     worker_threads, the vm realm folded into the worker behind parameter
+ *     shadowing, Web Crypto journal keys) plus the piem host adapter, child
+ *     runner, `run_workflow` tool and typebox/value answer-schema validation
+ *     measured 2,439,131 B (+~48 KiB). The ceiling follows to 2.33 MiB. The
+ *     largest single cost is the worker source, which ships as a runtime string
+ *     literal and so cannot be minified; the `meta` block is parsed by a small
+ *     literal parser rather than `eval`/`new Function`, which the Obsidian
+ *     guidelines forbid. No terminal runtime or filesystem image was added, and
+ *     the children run through the existing subagent transport.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -166,7 +178,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.29 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.33 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
