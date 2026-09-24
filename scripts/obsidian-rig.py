@@ -203,7 +203,7 @@ def find_runtime(root, explicit, download):
     print(f"Downloading Obsidian {OBSIDIAN_VERSION} (aarch64)...")
     urllib.request.urlretrieve(OBSIDIAN_URL, tar_path)
     with tarfile.open(tar_path) as tar:
-        tar.extractall(runtime_dir)
+        tar.extractall(runtime_dir, filter="data")
     tar_path.unlink()
     runtime = runtime_dir / f"obsidian-{OBSIDIAN_VERSION}-arm64" / "obsidian"
     if not runtime.exists():
@@ -347,6 +347,10 @@ def main():
     parser.add_argument("--skip-build", action="store_true", help="deploy the existing main.js instead of building")
     parser.add_argument("--data", default=None, help="seed the vault plugin data.json from this file")
     args = parser.parse_args()
+
+    # Piped runs (background shells) would otherwise block-buffer every status
+    # line and hide progress behind the next flush.
+    sys.stdout.reconfigure(line_buffering=True)
 
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
