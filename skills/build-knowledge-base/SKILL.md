@@ -46,7 +46,9 @@ Run `web_search` with several sharpened queries covering the topic from
 different angles, then select the strongest sources — official docs, primary
 material, and well-regarded writing over aggregators. If `web_search` is
 unavailable (it needs a provider with native search), ask the user for the
-source URLs instead and gather those. For each selected source,
+source URLs instead and gather those. When appending to an existing base,
+`grep` the folder for the `source:` field first and drop any URL already stored
+— tell the user which ones you skipped as duplicates. For each remaining source,
 `web_fetch` the page and keep the main body only, stripping navigation, ads, and
 boilerplate as the `efficient-web-research` skill directs. If one source fails
 to fetch, skip it and note the gap rather than aborting the whole base.
@@ -99,6 +101,23 @@ This list is the spider map: the index links out to each numbered source, each
 source links back, and Obsidian's graph view renders the whole base around the
 index as its hub. When appending to an existing base, extend the list and its
 numbering rather than starting over.
+
+## Maintaining an existing base
+
+When the user asks to update a base that already exists rather than add sources,
+work over the existing notes:
+
+- **Refresh a source** — `web_fetch` the note's `source:` URL again, re-translate
+  the body, and `edit` the note in place. Keep its number, slug, and index
+  back-link unchanged so no link breaks.
+- **Remove a dead source** — if a URL no longer resolves, confirm with the user,
+  then `trash_note` the note and drop its line from `00-index.md`. Leave the
+  other numbers as they are; a gap from a removal is expected, unlike a gap in a
+  fresh sequence.
+- **Repair the index** — `ls` the folder, compare against `00-index.md`, and add a
+  line for any source note missing from the list so nothing is orphaned.
+
+Read a note before editing it, and check the result before reporting success.
 
 ## Done means
 
