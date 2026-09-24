@@ -44,9 +44,12 @@ guess between two candidates.
 
 Run `web_search` with several sharpened queries covering the topic from
 different angles, then select the strongest sources — official docs, primary
-material, and well-regarded writing over aggregators. For each selected source,
+material, and well-regarded writing over aggregators. If `web_search` is
+unavailable (it needs a provider with native search), ask the user for the
+source URLs instead and gather those. For each selected source,
 `web_fetch` the page and keep the main body only, stripping navigation, ads, and
-boilerplate as the `efficient-web-research` skill directs.
+boilerplate as the `efficient-web-research` skill directs. If one source fails
+to fetch, skip it and note the gap rather than aborting the whole base.
 
 **Translate each body into the user's language and store only the translation.**
 Keep the original URL as the citation; the reader gets clean prose in their own
