@@ -116,11 +116,15 @@ describe("buildSettingDefinitions", () => {
 	it("builds without probing live state, so indexing costs nothing", () => {
 		let reads = 0;
 		const host = stubHost({
-			// Resolving the active target reads the selected model; the Models page
-			// defers it into a render callback for exactly this reason.
+			// The Models entry's value and warning both read live state; both are wired
+			// as functions so the index pass — which builds every tab — invokes neither.
 			describeTarget: () => {
 				reads++;
 				return "target";
+			},
+			missingBuiltinModel: () => {
+				reads++;
+				return undefined;
 			},
 		});
 
@@ -139,6 +143,31 @@ describe("buildSettingDefinitions", () => {
 			expect((page as { items?: unknown[] }).items).toBeArray();
 			expect((page as { page?: unknown }).page).toBeUndefined();
 		}
+	});
+
+	it("rides the active target onto the Models entry, and warns only when a builtin is missing", () => {
+		const clean = buildSettingDefinitions(stubHost({ describeTarget: () => "Claude" }), new SettingsPanelState());
+		const models = clean[0] as { displayValue?: () => string; status?: () => "warning" | null };
+		expect(models.displayValue?.()).toBe("Claude");
+		// No stand-in in play: the entry stays unmarked rather than crying wolf.
+		expect(models.status?.()).toBeNull();
+
+		const substituted = buildSettingDefinitions(
+			stubHost({ missingBuiltinModel: () => ({ provider: "p", modelId: "m" }) }),
+			new SettingsPanelState(),
+		);
+		expect((substituted[0] as { status?: () => "warning" | null }).status?.()).toBe("warning");
+	});
+
+	it("shows the build version on the General entry", () => {
+		const definitions = buildSettingDefinitions(stubHost({ manifest: { version: "9.9.9" } }), new SettingsPanelState());
+		expect((definitions[3] as { displayValue?: () => string }).displayValue?.()).toBe("9.9.9");
+	});
+
+	it("describes the Chat and Extensions entries so the bare links read as sections", () => {
+		const definitions = buildSettingDefinitions(stubHost(), new SettingsPanelState());
+		expect((definitions[1] as { desc?: string }).desc).toBe(en.t("settings.tabChatDesc"));
+		expect((definitions[2] as { desc?: string }).desc).toBe(en.t("settings.tabExtensionsDesc"));
 	});
 
 	it("puts the Chat tab's ordinary toggle in a real control definition", () => {

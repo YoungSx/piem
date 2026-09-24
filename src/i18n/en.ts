@@ -1030,6 +1030,10 @@ export const en = {
 		tabChat: "Chat",
 		tabExtensions: "Extensions",
 		tabGeneral: "General",
+		// One line under the two entries that carry no live value, so the bare links
+		// read as sections rather than unlabelled buttons.
+		tabChatDesc: "Manage your chat settings",
+		tabExtensionsDesc: "Manage skills, MCP servers, and Pi extensions",
 
 		logLevelHeading: "Log level",
 		logLevelDesc:
