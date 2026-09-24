@@ -10,12 +10,13 @@ await env.cleanup(BACKGROUND_CONTEXT);
 expect(diagnostics).toEqual([]);
 
 describe("builtinSkills", () => {
-	it("loads all eight standard skill directories", () => {
+	it("loads all nine standard skill directories", () => {
 		expect(skills.map((skill) => skill.name).sort()).toEqual([
 			"distill-skill",
 			"efficient-web-research",
 			"find-skills",
 			"link-graph",
+			"mineru-parse",
 			// The agent team operator manual, vendored verbatim from
 			// @geminixiang/pi-agent-team (see communityTeamHost.test.ts for the
 			// equality pin) so the parent model can read what pi's CLI would
@@ -29,7 +30,9 @@ describe("builtinSkills", () => {
 
 	it("carries the file body verbatim, not rendered HTML", () => {
 		// Files are raw Markdown; no bundler-specific text loader is involved.
-		const research = skills.find((skill) => skill.name === "efficient-web-research");
+		const research = skills.find(
+			(skill) => skill.name === "efficient-web-research",
+		);
 		expect(research?.content).toContain("## Search Protocol");
 		expect(research?.content).not.toContain("<h2>");
 	});
@@ -55,7 +58,9 @@ describe("builtinSkills", () => {
 		// The division of labour with vault-memory is the reason these are two
 		// skills rather than one: facts to memory, procedures to a skill file.
 		expect(distill?.content).toContain("Piem/memory/");
-		expect(skills.find((skill) => skill.name === "vault-memory")?.content).toContain("distill-skill");
+		expect(
+			skills.find((skill) => skill.name === "vault-memory")?.content,
+		).toContain("distill-skill");
 	});
 
 	it("uses real source paths and parses frontmatter separately", () => {
@@ -67,5 +72,4 @@ describe("builtinSkills", () => {
 			expect(skill.description).toBeTruthy();
 		}
 	});
-
 });
