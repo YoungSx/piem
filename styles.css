@@ -5387,6 +5387,40 @@ button.piem-chat__latest--asking {
 	width: 0.5em;
 }
 
+/*
+ * The todo progress count, on the icon's corner like the failure dot above and
+ * the subagent badge beside it — same geometry as `.piem-chat__subagents-badge`
+ * so the two adjacent context-row icons wear one badge. Absolutely positioned so
+ * it costs the row no width; `aria-hidden` because the button's accessible name
+ * already reads the progress as a sentence.
+ */
+.piem-chat__extension-entry-badge {
+	align-items: center;
+	background: var(--interactive-accent);
+	border-radius: var(--radius-s);
+	color: var(--text-on-accent);
+	display: inline-flex;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-bold);
+	justify-content: center;
+	line-height: 1;
+	min-height: 1.1em;
+	min-width: 1.1em;
+	padding: 1px 3px;
+	pointer-events: none;
+	position: absolute;
+	inset-block-start: 0;
+	inset-inline-end: 0;
+	transform: scale(0.75);
+	transform-origin: top right;
+}
+
+/* All todos done: quiet, the way the settled subagent count is. */
+.piem-chat__extension-entry-badge--settled {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
 /* The run-in-flight breath, on the shared curve the subagent icon uses. */
 @media (prefers-reduced-motion: no-preference) {
 
@@ -6341,6 +6375,33 @@ input.piem-ask-other::placeholder {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	padding: var(--size-4-2) var(--size-4-3);
+}
+
+/*
+ * The todo overlay's dedicated card (src/ui/extensions/todo/TodoWidget.tsx).
+ * rpiv-todo is pulled out of the generic feed surface so the card can vanish
+ * while the overlay is collapsed — its count lives on the context-row badge
+ * then — instead of leaving a "… to expand" ghost line. Same card tokens as the
+ * generic panel-widget box above, so the two read as one family; the inner
+ * `.piem-native-extension` is bare here (its box rule is scoped to the feed
+ * surface) so there is no card-in-card.
+ */
+.piem-todo-card {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	color: var(--text-normal);
+	margin-block: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3);
+}
+
+.piem-todo-card .piem-native-extension__text {
+	line-height: var(--line-height-normal);
+}
+
+/* Keep the width probe out of the card's inner box, as the feed surface does. */
+.piem-todo-card .piem-native-extension__measure {
+	left: calc(-1 * var(--size-4-3));
 }
 
 /* The compat theme's decoded palette (see EXTENSION_FG_PALETTE in
