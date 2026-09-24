@@ -246,6 +246,8 @@ export interface SettingsPanelSettings {
 	userSkillsDir: string;
 	/** Names of skills switched off; read by the toggle rows, written by them too. */
 	disabledSkills: string[];
+	/** Ids of built-in extensions switched off; read and written by the toggle rows. */
+	disabledExtensions: string[];
 	mcpServers: McpServerConfig[];
 	shareDiagnostics?: boolean;
 	logLevel: LogLevelSetting;

@@ -54,6 +54,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}, record?: Recorder)
 			sessionDir: "piem/chats",
 			userSkillsDir: "",
 			disabledSkills: [],
+			disabledExtensions: [],
 			mcpServers: [],
 			logLevel: "info",
 		},

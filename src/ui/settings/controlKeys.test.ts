@@ -32,6 +32,7 @@ function settings(overrides: Partial<SettingsPanelSettings> = {}): SettingsPanel
 		sessionDir: "piem/chats",
 		userSkillsDir: "",
 		disabledSkills: [],
+		disabledExtensions: [],
 		mcpServers: [],
 		logLevel: "info",
 		...overrides,

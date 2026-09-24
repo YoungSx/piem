@@ -4687,6 +4687,9 @@ export class ObsidianAgentService {
 		const community = await CommunityHost.create({
 			session: contextSession,
 			otelEnvironment: () => this.diagnosticsDisabled ? {} : this.telemetryEnvironment,
+			// Read live so a toggle on the Extensions tab reaches the next conversation
+			// build; the current chat keeps its extensions until it is rebuilt.
+			disabledExtensionIds: () => this.getSettings().disabledExtensions,
 			logger: this.log,
 			prepare: async () => { assertOwner(); await view.refresh(); await contextSession.refresh(); },
 			platform: {

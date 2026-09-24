@@ -32,6 +32,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
 			sessionDir: "piem/chats",
 			userSkillsDir: "",
 			disabledSkills: [],
+			disabledExtensions: [],
 			mcpServers: [],
 			logLevel: "info",
 		},

@@ -39,6 +39,7 @@ import {
 } from "./userSkillsCopy";
 import { rowAction, type SettingsPanelHost } from "./panelHost";
 import { sectionNote, sectionNoteWithHeadingBadge } from "./sectionNote";
+import { COMMUNITY_EXTENSION_CATALOG } from "./communityExtensionCatalog";
 
 /**
  * Records a failed skill action.
@@ -161,7 +162,7 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		...problemRows(snapshot?.load.builtin.diagnostics ?? [], vaultSkillProblemsCopy(host.t)),
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
-		{ name: host.t.t("extensions.included"), desc: host.t.t("extensions.description"), render: () => undefined },
+		communityExtensionsGroup(host),
 		{
 			name: host.t.t("extensions.shareDiagnostics"),
 			desc: host.t.t("extensions.shareDiagnosticsDesc"),
@@ -169,6 +170,48 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		},
 		mcpList(host),
 	];
+}
+
+/**
+ * The built-in Pi extensions, one switch each, over {@link COMMUNITY_EXTENSION_CATALOG}.
+ *
+ * A `group`, not a `list`: the set is fixed, so there is nothing to add or
+ * remove — only to turn on and off. The intro and the "applies next chat" caveat
+ * ride a `sectionNote`, since a group has no description slot of its own.
+ */
+function communityExtensionsGroup(host: SettingsPanelHost): SettingDefinitionItem {
+	const { t } = host;
+	return {
+		type: "group",
+		heading: t.t("extensions.included"),
+		items: [
+			sectionNote(t.t("extensions.description"), t.t("extensions.applyNote")),
+			...COMMUNITY_EXTENSION_CATALOG.map((row): SettingGroupItem => ({
+				name: t.t(row.nameKey),
+				desc: t.t(row.descKey),
+				render: (setting) => configureExtensionToggle(setting, host, row.id),
+			})),
+		],
+	};
+}
+
+/**
+ * One built-in extension's enable switch, over the `disabledExtensions`
+ * blocklist. Mirrors {@link configureSkillToggle}: the value is set before the
+ * change handler so the first render does not save, and the row is left where
+ * the user put it — the save's `refreshConfiguration` is the reconciliation, and
+ * the new extension set rides the next conversation build.
+ */
+function configureExtensionToggle(setting: Setting, host: SettingsPanelHost, id: string): void {
+	setting.addToggle((toggle) => {
+		toggle.setValue(!host.settings.disabledExtensions.includes(id));
+		toggle.onChange((enabled) => {
+			host.settings.disabledExtensions = enabled
+				? host.settings.disabledExtensions.filter((row) => row !== id)
+				: [...host.settings.disabledExtensions, id];
+			void host.save();
+		});
+	});
 }
 
 /**

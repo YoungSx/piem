@@ -47,6 +47,12 @@ export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMe
 	/** Configured values for the original OTel factory's private environment. */
 	otelEnvironment?(): Readonly<Record<string, string>>;
 	/**
+	 * Ids the host has turned off, read each time a conversation's extensions are
+	 * assembled so a toggle takes effect on the next build without a plugin
+	 * reload. Absent (tests, or an unset host) loads the full static list.
+	 */
+	disabledExtensionIds?(): Iterable<string>;
+	/**
 	 * Where this host's load verdicts go.
 	 *
 	 * The extension host deliberately holds no logger — it is a bridge, and a
@@ -127,7 +133,12 @@ export class CommunityHost {
 				return createOtel(platform);
 			} },
 		];
-		const factories = extensions.map(extension => {
+		// A host-owned blocklist (the Extensions tab) drops entries before load;
+		// absent or empty leaves every bundled extension in place. Read now, not
+		// cached, so the next conversation build reflects the current toggles
+		// without a plugin reload.
+		const disabled = new Set(callbacks.disabledExtensionIds?.() ?? []);
+		const factories = (disabled.size ? extensions.filter(extension => !disabled.has(extension.id)) : extensions).map(extension => {
 			if ("factory" in extension) return extension;
 			if (this.backgrounds.has(extension.id)) throw new Error(`Duplicate background extension: ${extension.id}`);
 			const resources = this.platform.forBackgroundExtension(extension.id);
