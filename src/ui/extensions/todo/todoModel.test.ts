@@ -39,6 +39,13 @@ describe("readTodoModel", () => {
 		expect(model?.collapsed).toBe(false);
 	});
 
+	it("never hides a lone '+N more' overflow row (shown, not collapsed)", () => {
+		// A single body row that is an overflow summary must not read as the
+		// collapsed hint, or the overlay would vanish with no generic fallback.
+		const model = readTodoModel(textNode("● Todos (0/5)", "└─ +5 more (5 pending)"));
+		expect(model?.collapsed).toBe(false);
+	});
+
 	it("never hides a multi-row list, even if the glyphs are unrecognized", () => {
 		// Two body rows → expanded by count alone, so a future glyph change cannot
 		// swallow a real list.

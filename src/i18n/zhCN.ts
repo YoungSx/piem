@@ -544,7 +544,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		runningAction: "正在执行…",
 		actionFailed: "操作失败，请重试。",
 		entryAria: "扩展操作",
-		todoBadgeAria: "待办 — 共 {total} 项，完成 {completed} 项",
+		todoBadgeAria: "已完成 {completed}/{total}",
+		entryWithBadge: "{action}，{badge}",
 	},
 
 	session: {

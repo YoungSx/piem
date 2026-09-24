@@ -105,10 +105,17 @@ export function ExtensionEntryIcon({ snapshot, badge }: { snapshot: ExtensionUIS
 		? (singleAction.description ? `${singleAction.description} (${singleAction.key})` : singleAction.key)
 		: undefined;
 	// A failed run owns the corner with its dot, so the badge stands down until the
-	// failure clears; when it shows, the count becomes the icon's accessible name —
-	// the digit itself is aria-hidden, the way the subagent badge's is.
+	// failure clears.
 	const badgeVisible = Boolean(badge) && !failed;
-	const label = (badgeVisible ? badge?.label : undefined) ?? singleActionLabel ?? t.t("extensionUI.entryAria");
+	// The badge's progress augments the action name rather than replacing it: the
+	// accessible name — and the hover tooltip Obsidian derives from it — keeps
+	// naming what the button does and its hotkey, which is the only place that
+	// affordance still surfaces now the collapsed panel's hint line is hidden. The
+	// visible digit itself stays aria-hidden, the way the subagent badge's is.
+	const baseLabel = singleActionLabel ?? t.t("extensionUI.entryAria");
+	const label = badgeVisible && badge
+		? t.t("extensionUI.entryWithBadge", { action: baseLabel, badge: badge.label })
+		: baseLabel;
 
 	const handleButtonClick = () => {
 		if (hasMultipleActions || pending || failed) {
