@@ -612,6 +612,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		tabChat: "对话",
 		tabExtensions: "扩展能力",
 		tabGeneral: "通用",
+		// 给没有实时值的两个入口各配一句说明，让光秃秃的链接读起来像分区，而不是没标签的按钮。
+		tabChatDesc: "在这里管理你的对话设置",
+		tabExtensionsDesc: "管理 Skill、MCP、Pi 扩展等",
 
 		logLevelHeading: "日志级别",
 		logLevelDesc:
