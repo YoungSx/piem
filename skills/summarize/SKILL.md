@@ -6,7 +6,7 @@ compatibility: Requires Piem's Obsidian vault tools.
 
 Summarize the active Markdown note.
 
-1. Call get_active_note with includeContent and includeSelection enabled. If a selection exists, summarize it unless the additional instruction explicitly asks for the whole note.
+1. Call get_active_note with includeContent and includeSelection enabled. If a selection exists, summarize it unless the appended instruction explicitly asks for the whole note.
 2. If the returned content is truncated, read the remaining note in bounded chunks before drawing conclusions.
 3. Preserve facts, terminology, and meaningful links. Do not invent missing context.
 4. Lead with a compact summary, then list key points and only the action items that actually appear in the note.

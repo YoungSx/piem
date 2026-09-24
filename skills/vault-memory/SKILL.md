@@ -16,8 +16,8 @@ user-editable.
 
 Before starting work, read `Piem/memory/MEMORY.md`. Done means: you have read
 it and can name which entries bear on this task. If entries point at daily logs
-or other notes, follow the pointers the task needs — `grep -r "keyword"
-Piem/memory/` finds older context. A missing file or folder means the vault is
+or other notes, follow the pointers the task needs — grep with the pattern
+`"keyword"` and path `Piem/memory` finds older context (grep recurses over the path). A missing file or folder means the vault is
 new: proceed without asking the user to create it, and treat a failed read the
 same way — memory stays empty, not proven absent.
 
