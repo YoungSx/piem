@@ -22,7 +22,7 @@ import { contextLevel } from "./headerCopy";
 import { ContextRow } from "./ContextRow";
 import { openForkConfirm } from "./forkConfirmModal";
 import { SubagentEntryIcon } from "./SubagentEntryIcon";
-import { ExtensionEntryIcon, hasExtensionEntry } from "./ExtensionEntryIcon";
+import { hasExtensionEntry } from "./ExtensionEntryIcon";
 import { MessageList } from "./MessageList";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { ThinkingLevelSelector } from "./ThinkingLevelSelector";
@@ -36,9 +36,14 @@ import { fileToPendingImage, newPendingImageId, toImageContents, type PendingIma
 import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
 import { useExtensionUI } from "./useExtensionUI";
 import { ExtensionSurfaces } from "./ExtensionSurfaces";
+import { TodoCard, TodoEntryIcon, findTodoSurface } from "./extensions/todo/TodoWidget";
+import { TODO_WIDGET_KEY } from "./extensions/todo/todoModel";
 import { ReferenceCards } from "./ReferenceCards";
 import { projectComposerDraft } from "./composerDraft";
 import { MAX_CONTEXT_REFERENCES, mergeContextReferences, promptReferences, referenceKey, type ContextReference } from "../agent/contextReference";
+
+/** The todo overlay is rendered by TodoCard, not the generic feed surface. */
+const TODO_EXCLUDE: readonly string[] = [TODO_WIDGET_KEY];
 
 interface ChatAppProps {
 	service: ObsidianAgentService;
@@ -176,7 +181,17 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 * node only when a widget actually appeared or changed.
 	 */
 	const extensionFeedTail = useMemo(
-		() => <ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" />,
+		() => {
+			// The todo overlay gets a card of its own and hides while collapsed
+			// (see TodoWidget); every other extension surface renders generically.
+			const todoSurface = findTodoSurface(extensionUI.snapshot);
+			return (
+				<>
+					{todoSurface ? <TodoCard surface={todoSurface} /> : null}
+					<ExtensionSurfaces snapshot={extensionUI.snapshot} placement="aboveEditor" excludeKeys={TODO_EXCLUDE} />
+				</>
+			);
+		},
 		[extensionUI.snapshot],
 	);
 	const effectiveTraceExpand = extensionUI.snapshot.toolsExpanded !== undefined
@@ -969,7 +984,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 							trailing={
 								hasExtensionEntry(extensionUI.snapshot) || (onOpenSubagents && ownSubagents.length > 0) ? (
 									<>
-										<ExtensionEntryIcon snapshot={extensionUI.snapshot} />
+									<TodoEntryIcon snapshot={extensionUI.snapshot} />
 										{onOpenSubagents && ownSubagents.length > 0 ? (
 											<SubagentEntryIcon
 												snapshots={ownSubagents}

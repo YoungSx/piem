@@ -60,7 +60,18 @@ function entryIcon(actions: readonly ExtensionShortcutAction[]): string {
  * triggered outlives the panel that caused it until the next action or a
  * session rebuild clears it.
  */
-export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot }): React.JSX.Element | null {
+/**
+ * A count riding on the icon's corner. The caller localizes `label` (the icon's
+ * accessible name while the badge shows) and picks `settled`; the icon itself
+ * stays extension-agnostic and never reads what the number means.
+ */
+export interface ExtensionEntryBadge {
+	readonly text: string;
+	readonly settled: boolean;
+	readonly label: string;
+}
+
+export function ExtensionEntryIcon({ snapshot, badge }: { snapshot: ExtensionUISnapshot; badge?: ExtensionEntryBadge }): React.JSX.Element | null {
 	const t = useT();
 	const actions = snapshot.shortcuts ?? [];
 	const [isOpen, setIsOpen] = useState(false);
@@ -93,7 +104,11 @@ export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot
 	const singleActionLabel = singleAction
 		? (singleAction.description ? `${singleAction.description} (${singleAction.key})` : singleAction.key)
 		: undefined;
-	const label = singleActionLabel ?? t.t("extensionUI.entryAria");
+	// A failed run owns the corner with its dot, so the badge stands down until the
+	// failure clears; when it shows, the count becomes the icon's accessible name —
+	// the digit itself is aria-hidden, the way the subagent badge's is.
+	const badgeVisible = Boolean(badge) && !failed;
+	const label = (badgeVisible ? badge?.label : undefined) ?? singleActionLabel ?? t.t("extensionUI.entryAria");
 
 	const handleButtonClick = () => {
 		if (hasMultipleActions || pending || failed) {
@@ -172,6 +187,14 @@ export function ExtensionEntryIcon({ snapshot }: { snapshot: ExtensionUISnapshot
 				onClick={handleButtonClick}
 			>
 				<ObsidianIcon name={entryIcon(actions)} className="piem-chat__extension-entry-icon" />
+				{badgeVisible ? (
+					<span
+						className={`piem-chat__extension-entry-badge${badge?.settled ? " piem-chat__extension-entry-badge--settled" : ""}`}
+						aria-hidden="true"
+					>
+						{badge?.text}
+					</span>
+				) : null}
 				{failed ? <span className="piem-chat__extension-entry-failed-dot" aria-hidden="true" /> : null}
 			</button>
 			{isOpen ? (
