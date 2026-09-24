@@ -169,6 +169,13 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     guidelines forbid. No terminal runtime or filesystem image was added, and
  *     the children run through the existing subagent transport.
  *
+ * 27. Per-extension enable switches on the Extensions tab — a `disabledExtensions`
+ *     blocklist, the CommunityHost load-time filter that reads it, a display
+ *     catalog for the eight offered ids and bilingual copy — measured
+ *     2,442,962 B (+~3.7 KiB over #26). The ceiling follows to 2.34 MiB. No new
+ *     dependency; the switch reuses the `disabledSkills` toggle shape, and the
+ *     filter runs before load so nothing new ships in the graph.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -178,7 +185,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.33 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.34 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
