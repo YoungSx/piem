@@ -23,7 +23,10 @@ import { summarizeToolPayload } from "./traceSummary";
 const MAX_STEP_LENGTH = 160;
 
 /** The status word, which is also the only channel a colour-blind reader has. */
-export function statusText(status: SubagentSnapshot["status"], t: Translator): string {
+export function statusText(
+	status: SubagentSnapshot["status"],
+	t: Translator,
+): string {
 	return t.t(`subagents.status.${status}`);
 }
 
@@ -57,7 +60,9 @@ export function formatDuration(durationMs: number): string {
  * repeat it.
  */
 export function timingLine(snapshot: SubagentSnapshot, t: Translator): string {
-	return t.t("subagents.ranFor", { duration: formatDuration(snapshot.durationMs) });
+	return t.t("subagents.ranFor", {
+		duration: formatDuration(snapshot.durationMs),
+	});
 }
 
 /**
@@ -69,7 +74,10 @@ export function timingLine(snapshot: SubagentSnapshot, t: Translator): string {
  * shown as two badges because a reader hitting a partial report reads a
  * sentence, not a legend.
  */
-export function incompleteNote(snapshot: SubagentSnapshot, t: Translator): string | null {
+export function incompleteNote(
+	snapshot: SubagentSnapshot,
+	t: Translator,
+): string | null {
 	const parts: string[] = [];
 	if (snapshot.incomplete) {
 		parts.push(t.t("subagents.incompletePartial"));
@@ -102,12 +110,26 @@ export interface ConfigItem {
 }
 
 /** The setup block: what this run actually ran as, after resolution and clamping. */
-export function configItems(snapshot: SubagentSnapshot, t: Translator): ConfigItem[] {
+export function configItems(
+	snapshot: SubagentSnapshot,
+	t: Translator,
+): ConfigItem[] {
 	return [
 		{ label: t.t("subagents.configRole"), value: snapshot.role },
-		{ label: t.t("subagents.configModel"), value: snapshot.modelId, isIdentifier: true },
-		{ label: t.t("subagents.configThinking"), value: snapshot.thinkingLevel, isIdentifier: true },
-		{ label: t.t("subagents.configDepth"), value: t.t("subagents.depthValue", { depth: snapshot.depth }) },
+		{
+			label: t.t("subagents.configModel"),
+			value: snapshot.modelId,
+			isIdentifier: true,
+		},
+		{
+			label: t.t("subagents.configThinking"),
+			value: snapshot.thinkingLevel,
+			isIdentifier: true,
+		},
+		{
+			label: t.t("subagents.configDepth"),
+			value: t.t("subagents.depthValue", { depth: snapshot.depth }),
+		},
 	];
 }
 
@@ -122,18 +144,59 @@ export function configItems(snapshot: SubagentSnapshot, t: Translator): ConfigIt
  * it cost is a different question from what it did, and only one of them belongs
  * to a reader who has not asked for agent internals.
  */
-export function usageItems(snapshot: SubagentSnapshot, showAgentDetails: boolean, t: Translator): string[] {
+export function usageItems(
+	snapshot: SubagentSnapshot,
+	showAgentDetails: boolean,
+	t: Translator,
+): string[] {
 	const items: string[] = [];
 	if (snapshot.turns !== undefined) {
 		items.push(t.t("subagents.usageTurns", { count: snapshot.turns }));
 	}
 	if (snapshot.usage && snapshot.usage.requests > 0) {
-		items.push(t.t("subagents.usageTokens", { tokens: formatTokens(snapshot.usage.tokens) }));
+		items.push(
+			t.t("subagents.usageTokens", {
+				tokens: formatTokens(snapshot.usage.tokens),
+			}),
+		);
 		if (showAgentDetails) {
-			items.push(t.t("subagents.usageCost", { cost: formatCost(snapshot.usage.cost) }));
+			items.push(
+				t.t("subagents.usageCost", { cost: formatCost(snapshot.usage.cost) }),
+			);
 		}
 	}
 	return items;
+}
+
+/**
+ * Longest a task may run before the detail page folds it behind a toggle.
+ *
+ * Scaled from the settings rows' own budget (`DESC_FOLD_LIMIT`, two hundred
+ * characters for two lines there): three lines at the detail page's width is
+ * about three hundred characters of prose. The budget decides only whether the
+ * fold exists — a short task carries no toggle — because the clamp itself is
+ * CSS and cannot know whether it hid anything.
+ */
+export const TASK_FOLD_LIMIT = 300;
+
+/**
+ * The running child's newest step, or null when there is nothing to say.
+ *
+ * Drawn from the same flattening as the process record so the live line and the
+ * record it headlines cannot disagree, and null for a child that has produced
+ * no step yet — an empty "Now:" would read as stuck, which is a different
+ * sentence (and the headline's status word already says "working").
+ */
+export function latestStep(
+	messages: readonly AgentMessage[],
+	t: Translator,
+): string | null {
+	const steps = processSteps(messages, t);
+	const last = steps[steps.length - 1];
+	if (!last) {
+		return null;
+	}
+	return last.text ? `${last.label} — ${last.text}` : last.label;
 }
 
 /**
@@ -143,7 +206,10 @@ export function usageItems(snapshot: SubagentSnapshot, showAgentDetails: boolean
  * substitute sentence as prose: running the stand-in through the Markdown
  * pipeline would be a lie about where the words came from.
  */
-export function reportBody(snapshot: SubagentSnapshot, t: Translator): { kind: "report" | "note"; text: string } {
+export function reportBody(
+	snapshot: SubagentSnapshot,
+	t: Translator,
+): { kind: "report" | "note"; text: string } {
 	if (snapshot.report && snapshot.report.trim()) {
 		return { kind: "report", text: snapshot.report };
 	}
@@ -185,7 +251,10 @@ export interface ProcessStep {
  * surprising tool call, and the run is over: there is no live token stream to
  * flood, and nothing here can be replied to.
  */
-export function processSteps(messages: readonly AgentMessage[], t: Translator): ProcessStep[] {
+export function processSteps(
+	messages: readonly AgentMessage[],
+	t: Translator,
+): ProcessStep[] {
 	const steps: ProcessStep[] = [];
 	for (const message of messages) {
 		if (message.role === "user") {
@@ -203,7 +272,12 @@ export function processSteps(messages: readonly AgentMessage[], t: Translator): 
 					// path answers "which note?", a pattern answers "searching for what?".
 					// The call keeps its own row (the result holds the next one), so a
 					// reader gets what → what came back in two lines rather than one.
-					steps.push(step(t.t("subagents.line.toolCall", { tool: content.name }), summarizeToolPayload(content.arguments)));
+					steps.push(
+						step(
+							t.t("subagents.line.toolCall", { tool: content.name }),
+							summarizeToolPayload(content.arguments),
+						),
+					);
 				}
 			}
 			continue;
@@ -212,7 +286,10 @@ export function processSteps(messages: readonly AgentMessage[], t: Translator): 
 			const label = message.isError
 				? t.t("subagents.line.toolError", { tool: message.toolName })
 				: t.t("subagents.line.toolResult", { tool: message.toolName });
-			steps.push({ ...step(label, textOf(message.content)), isError: message.isError });
+			steps.push({
+				...step(label, textOf(message.content)),
+				isError: message.isError,
+			});
 		}
 		// Every other role is harness bookkeeping (compaction summaries, bash
 		// executions) that a child does not produce; skipped rather than shown as
@@ -224,11 +301,17 @@ export function processSteps(messages: readonly AgentMessage[], t: Translator): 
 function step(label: string, text: string): ProcessStep {
 	const trimmed = text.trim();
 	const clipped = trimmed.length > MAX_STEP_LENGTH;
-	return { label, text: clipped ? `${trimmed.slice(0, MAX_STEP_LENGTH)}` : trimmed, clipped };
+	return {
+		label,
+		text: clipped ? `${trimmed.slice(0, MAX_STEP_LENGTH)}` : trimmed,
+		clipped,
+	};
 }
 
 /** A user message's content is either a plain string or a block list. */
-function userText(content: string | readonly (TextContent | ImageContent)[]): string {
+function userText(
+	content: string | readonly (TextContent | ImageContent)[],
+): string {
 	return typeof content === "string" ? content : textOf(content);
 }
 

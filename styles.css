@@ -4819,11 +4819,12 @@ button.piem-chat__latest--asking {
 }
 
 /*
- * Back on the left, status on the right.
+ * Back on the left, stop on the right — and nothing between them.
  *
- * The status repeats what the row already said, and it earns the repeat: the
- * detail page is long enough to scroll, and the reader arriving at a report has
- * to know whether it is the whole answer before they start believing it.
+ * A status badge used to sit here, and the detail header below it now carries
+ * the status instead: forty pixels apart, the same fact twice was a repetition
+ * the old comment excused, and the distance that excused it is gone with the
+ * report's move up.
  */
 .piem-subagents__detail-bar {
 	align-items: center;
@@ -4836,12 +4837,63 @@ button.piem-chat__latest--asking {
 	font-size: var(--font-ui-small);
 }
 
-.piem-subagents__badge {
+/*
+ * The fixed head every detail page starts with.
+ *
+ * State, role and elapsed time on one line; the live step under it while the
+ * child still runs; provenance under that when the run is another chat's. The
+ * task below this block is the one element on the page with no length limit of
+ * its own — a spawn prompt can run to hundreds of lines — so everything a
+ * reader needs *before* reading it has to fit here, above whatever the prompt
+ * pushes down.
+ */
+.piem-subagents__head {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+/*
+ * The one line of answers a reader asks before reading the task.
+ *
+ * The status word is normal-coloured beside its dot — the part a scanning eye
+ * is looking for — while the role and duration sit muted, the same pairing the
+ * list row's meta line uses, so the two surfaces read as one design.
+ */
+.piem-subagents__headline {
 	align-items: center;
 	color: var(--text-muted);
+	display: flex;
+	flex-wrap: wrap;
+	font-size: var(--font-ui-small);
+	gap: var(--size-4-2);
+	margin: 0;
+}
+
+.piem-subagents__headline-status {
+	align-items: center;
+	color: var(--text-normal);
 	display: inline-flex;
+	gap: var(--size-2-2);
+}
+
+/*
+ * The running child's newest step, live.
+ *
+ * The registry files a turn the moment it lands, so this line moves when the
+ * child does — it is progress, not decoration. Clamped to two lines: the full
+ * sequence is one fold away in the process record, and the point here is that
+ * something is happening, not the whole of what it returned.
+ */
+.piem-subagents__now {
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	color: var(--text-muted);
+	display: -webkit-box;
 	font-size: var(--font-ui-smaller);
-	gap: var(--size-4-1);
+	margin: 0;
+	overflow: hidden;
+	overflow-wrap: anywhere;
 }
 
 /*
@@ -4884,9 +4936,52 @@ button.piem-chat__latest--asking {
 	white-space: pre-wrap;
 }
 
+/*
+ * A task past the fold budget, clamped to three lines.
+ *
+ * The task is the one block on this page whose length somebody else decides —
+ * a spawn prompt of several hundred lines used to push the status, the progress
+ * and the report past the first screen. Three lines is enough to see what, where
+ * and under what conditions; more than that is reading the prompt.
+ * `-webkit-line-clamp` is the house pattern — the settings descriptions and the
+ * list rows both clamp this way — and it rides a modifier so the clamp lives
+ * only while folded.
+ */
+.piem-subagents__task--folded {
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	display: -webkit-box;
+	overflow: hidden;
+}
+
+/*
+ * The task's fold toggle, chevron plus word like the settings descriptions'
+ * (see `setFoldableDescription`): the chevron states the direction for a reader
+ * who skims, the word for one who listens. `clickable-icon` supplies the hover
+ * and focus chrome; the additions here are the small type the panel's labels
+ * use, and the rotation that turns the same chevron into its own opposite.
+ */
+.piem-subagents__task-toggle {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.piem-subagents__task-toggle .piem-icon {
+	transition: transform 0.15s ease-out;
+}
+
+.piem-subagents__task-toggle[aria-expanded="true"] .piem-icon {
+	transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.piem-subagents__task-toggle .piem-icon {
+		transition: none;
+	}
+}
+
 .piem-subagents__followups-label,
 .piem-subagents__instructions,
-.piem-subagents__timing,
 .piem-subagents__usage,
 .piem-subagents__note {
 	color: var(--text-muted);
@@ -4976,16 +5071,23 @@ button.piem-chat__latest--asking {
 	overflow-wrap: anywhere;
 }
 
-/* --- the panel's two disclosures: archived runs, and the process record --- */
-
-.piem-subagents__archived,
-.piem-subagents__process {
+/*
+ * --- the panel's disclosures, one primitive ---
+ *
+ * Every closed section shares this shape: the list's archived runs, and the
+ * detail page's later errands, setup and process record. The archived and
+ * process folds were two copies of the same four rules before the setup and
+ * errand folds arrived, and a third copy was one more thing to forget to
+ * change. The specific class (`__archived`, `__process`, …) stays on the
+ * element beside this one as the semantic hook tests and readers hang on;
+ * everything visual lives here.
+ */
+.piem-subagents__fold {
 	border-top: 1px solid var(--background-modifier-border);
 	padding-top: var(--size-4-2);
 }
 
-.piem-subagents__archived-summary,
-.piem-subagents__process-summary {
+.piem-subagents__fold-summary {
 	align-items: baseline;
 	cursor: pointer;
 	display: flex;
@@ -4994,15 +5096,14 @@ button.piem-chat__latest--asking {
 	list-style: none;
 }
 
-.piem-subagents__archived-count,
-.piem-subagents__process-count {
+.piem-subagents__fold-count {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 }
 
-/* The rows inside, spaced off the summary the same way the steps below are. */
-.piem-subagents__archived .piem-subagents__list {
-	margin-top: var(--size-4-2);
+/* Whatever a fold holds, spaced off its summary the same way everywhere. */
+.piem-subagents__fold > :not(summary) {
+	margin-block-start: var(--size-4-2);
 }
 
 /*
@@ -5013,12 +5114,13 @@ button.piem-chat__latest--asking {
  * would cost an indent per row while the reader is already reading top to
  * bottom.
  */
+/* Spacing off its fold's summary is the fold primitive's job now, not this list's. */
 .piem-subagents__steps {
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-4-1);
 	list-style: none;
-	margin: var(--size-4-2) 0 0;
+	margin: 0;
 	padding: 0;
 }
 

@@ -1939,12 +1939,15 @@ export const en = {
 		},
 		ranFor: "ran for {duration}",
 		startedAt: "started {time}",
+		nowDoing: "Now: {step}",
 		incompletePartial: "Stopped before it finished, so the report below is partial.",
 		killedByParent: "It stopped because the chat turn stopped.",
 		killedByTeardown: "It stopped because the chat closed.",
 		killedByTool: "Piem stopped it: the answer was no longer needed.",
 		killedByUser: "You stopped it from this panel.",
 		sectionTask: "Task",
+		taskMore: "Show the full task",
+		taskLess: "Fold the task",
 		/**
 		 * Introduces the later errands, under the task the child was spawned on.
 		 * Names Piem rather than saying "follow-ups" because who asked is the part a

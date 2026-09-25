@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { getT } from "../i18n";
 import type { SubagentSnapshot } from "../subagent/inspectorModel";
-import { configItems, formatDuration, incompleteNote, processSteps, reportBody, statusText, timingLine, usageItems } from "./inspectorCopy";
+import { configItems, formatDuration, incompleteNote, latestStep, processSteps, reportBody, statusText, timingLine, usageItems } from "./inspectorCopy";
 
 /**
  * Wording rules for the subagent monitor.
@@ -260,6 +260,31 @@ describe("the process record is a sequence, one line per step", () => {
 		] as unknown as AgentMessage[];
 
 		expect(processSteps(images, t)[0]).toMatchObject({ text: "", clipped: false });
+	});
+});
+
+describe("the live line names the newest step, or stays silent", () => {
+	it("is null for a child that has produced nothing yet", () => {
+		// An empty "Now:" would read as stuck; the head's status word already says
+		// the run is working.
+		expect(latestStep([], t)).toBeNull();
+	});
+
+	it("names the last step, label and text joined", () => {
+		const messages = [
+			{ role: "user", content: "Sweep", timestamp: 1 },
+			{ role: "assistant", content: [{ type: "text", text: "Listing the folder." }], usage: {}, timestamp: 2 },
+		] as unknown as AgentMessage[];
+
+		expect(latestStep(messages, t)).toBe("Reply — Listing the folder.");
+	});
+
+	it("drops the dash when the last step carries no text", () => {
+		const messages = [
+			{ role: "assistant", content: [{ type: "toolCall", id: "c9", name: "think", arguments: {} }], usage: {}, timestamp: 1 },
+		] as unknown as AgentMessage[];
+
+		expect(latestStep(messages, t)).toBe("Ran think");
 	});
 });
 
