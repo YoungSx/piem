@@ -1,9 +1,24 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { App, Component } from "obsidian";
-import { anyRunning, groupByOwner, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
+import {
+	anyRunning,
+	groupByOwner,
+	snapshotsForOwner,
+	type SubagentSnapshot,
+} from "../subagent/inspectorModel";
 import { MarkdownText } from "./MarkdownText";
 import { IconButton } from "./ObsidianIcon";
-import { configItems, incompleteNote, processSteps, reportBody, statusText, timingLine, usageItems } from "./inspectorCopy";
+import {
+	configItems,
+	incompleteNote,
+	latestStep,
+	processSteps,
+	reportBody,
+	statusText,
+	timingLine,
+	usageItems,
+	TASK_FOLD_LIMIT,
+} from "./inspectorCopy";
 import { useT } from "./TranslatorContext";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 
@@ -123,7 +138,10 @@ export function SubagentInspector({
 	component,
 }: SubagentInspectorProps): React.JSX.Element {
 	const t = useT();
-	const selected = selectedId === null ? undefined : snapshots.find((snapshot) => snapshot.id === selectedId);
+	const selected =
+		selectedId === null
+			? undefined
+			: snapshots.find((snapshot) => snapshot.id === selectedId);
 	// A run selected from the popover, then settled and re-snapshotted, keeps its
 	// id — so a missing entry means the service was rebuilt underneath, and the
 	// list is the only honest place to land.
@@ -138,6 +156,12 @@ export function SubagentInspector({
 		>
 			{showDetail ? (
 				<SubagentDetail
+					/*
+					 * Keyed by the run's id, so switching runs remounts the detail — the
+					 * task's fold is view state, and an open fold on one run must not
+					 * carry over to the run the reader just pressed.
+					 */
+					key={selected.id}
 					snapshot={selected}
 					showAgentDetails={showAgentDetails}
 					/*
@@ -145,7 +169,11 @@ export function SubagentInspector({
 					 * from needs no attribution — saying it every time would train them to
 					 * stop reading the line that matters when a run is *not* theirs.
 					 */
-					ownerLabel={selected.ownerId === focusedOwnerId ? undefined : describeOwner(selected.ownerId)}
+					ownerLabel={
+						selected.ownerId === focusedOwnerId
+							? undefined
+							: describeOwner(selected.ownerId)
+					}
 					onBack={() => onSelect(null)}
 					onStop={onStop}
 					app={app}
@@ -207,7 +235,10 @@ function SubagentList({
 	onArchiveFinished,
 }: SubagentListProps): React.JSX.Element {
 	const t = useT();
-	const own = focusedOwnerId === undefined ? [] : snapshotsForOwner(snapshots, focusedOwnerId);
+	const own =
+		focusedOwnerId === undefined
+			? []
+			: snapshotsForOwner(snapshots, focusedOwnerId);
 	const elsewhere = snapshots.length - own.length;
 	// The toggle appears only when it would change something, and stays once it
 	// is on — a reader who switched to All chats has to be able to switch back
@@ -219,13 +250,19 @@ function SubagentList({
 	const archived = visible.filter((snapshot) => snapshot.archived);
 	const isEmpty = visible.length === 0;
 	const groups = showAllChats ? groupByOwner(current, focusedOwnerId) : [];
-	const runningChats = groups.filter((group) => anyRunning(group.snapshots)).length;
-	const runningTotal = current.filter((snapshot) => snapshot.status === "running").length;
+	const runningChats = groups.filter((group) =>
+		anyRunning(group.snapshots),
+	).length;
+	const runningTotal = current.filter(
+		(snapshot) => snapshot.status === "running",
+	).length;
 	// Read off the shown runs, because the archive button is what tidies the rows
 	// the reader can see: offering it when another chat holds the only finished
 	// run would press it to no visible effect, and archiving never touches a
 	// running run, so this stays in agreement with the stop totals above.
-	const anyArchivable = current.some((snapshot) => snapshot.status !== "running");
+	const anyArchivable = current.some(
+		(snapshot) => snapshot.status !== "running",
+	);
 
 	return (
 		<>
@@ -239,61 +276,66 @@ function SubagentList({
 					 * "no subagents are running" while one is.
 					 */}
 					<p className="piem-subagents__empty-hint">
-						{elsewhere > 0 ? t.t("subagents.emptyHereHint", { count: elsewhere }) : t.t("subagents.emptyHint")}
+						{elsewhere > 0
+							? t.t("subagents.emptyHereHint", { count: elsewhere })
+							: t.t("subagents.emptyHint")}
 					</p>
 				</div>
 			) : (
-			<p className="piem-subagents__notice">
-				{t.t("subagents.panelNotice")}
-				{/*
-				 * All the list-wide controls sit in the notice: "you can stop" and the
-				 * controls that stop or tidy belong in one breath, and a second row for
-				 * them would read as a command bar over the whole record — which is
-				 * exactly the framing rule 2 refuses. Each hides entirely when it could
-				 * only do nothing: a stop over a finished history and an archive over a
-				 * list that is already clean are both buttons with no available effect,
-				 * and the record has no need of either.
-				 *
-				 * One chat on screen, so "all" is unambiguous and the kill is scoped to
-				 * it — the rows under this button are exactly that chat's.
-				 */}
-				{!showAllChats && focusedOwnerId !== undefined && runningTotal > 0 ? (
-					<button
-						type="button"
-						className="piem-subagents__notice-action piem-subagents__stop-all"
-						onClick={() => onStopChat(focusedOwnerId)}
-						aria-label={t.t("subagents.stopAllAria")}
-					>
-						{t.t("subagents.stopAll")}
-					</button>
-				) : null}
-				{anyArchivable ? (
-					<button
-						type="button"
-						className="piem-subagents__notice-action piem-subagents__archive"
-						onClick={onArchiveFinished}
-						aria-label={t.t("subagents.archiveFinishedAria")}
-					>
-						{t.t("subagents.archiveFinished")}
-					</button>
-				) : null}
-				{/*
-				 * Several chats on screen, so the unscoped kill has to say how far it
-				 * reaches. A reader who came here for one chat's runaway sweep must not
-				 * be able to end three chats' work by pressing a button labelled
-				 * "Stop all".
-				 */}
-				{showAllChats && runningTotal > 0 ? (
-					<button
-						type="button"
-						className="piem-subagents__notice-action piem-subagents__stop-all"
-						onClick={onStopEverything}
-						aria-label={t.t("subagents.stopEverythingAria", { chats: runningChats })}
-					>
-						{t.t("subagents.stopEverything", { count: runningTotal, chats: runningChats })}
-					</button>
-				) : null}
-			</p>
+				<p className="piem-subagents__notice">
+					{t.t("subagents.panelNotice")}
+					{/*
+					 * All the list-wide controls sit in the notice: "you can stop" and the
+					 * controls that stop or tidy belong in one breath, and a second row for
+					 * them would read as a command bar over the whole record — which is
+					 * exactly the framing rule 2 refuses. Each hides entirely when it could
+					 * only do nothing: a stop over a finished history and an archive over a
+					 * list that is already clean are both buttons with no available effect,
+					 * and the record has no need of either.
+					 *
+					 * One chat on screen, so "all" is unambiguous and the kill is scoped to
+					 * it — the rows under this button are exactly that chat's.
+					 */}
+					{!showAllChats && focusedOwnerId !== undefined && runningTotal > 0 ? (
+						<button
+							type="button"
+							className="piem-subagents__notice-action piem-subagents__stop-all"
+							onClick={() => onStopChat(focusedOwnerId)}
+							aria-label={t.t("subagents.stopAllAria")}
+						>
+							{t.t("subagents.stopAll")}
+						</button>
+					) : null}
+					{anyArchivable ? (
+						<button
+							type="button"
+							className="piem-subagents__notice-action piem-subagents__archive"
+							onClick={onArchiveFinished}
+							aria-label={t.t("subagents.archiveFinishedAria")}
+						>
+							{t.t("subagents.archiveFinished")}
+						</button>
+					) : null}
+					{/*
+					 * Several chats on screen, so the unscoped kill has to say how far it
+					 * reaches. A reader who came here for one chat's runaway sweep must not
+					 * be able to end three chats' work by pressing a button labelled
+					 * "Stop all".
+					 */}
+					{showAllChats && runningTotal > 0 ? (
+						<button
+							type="button"
+							className="piem-subagents__notice-action piem-subagents__stop-all"
+							onClick={onStopEverything}
+							aria-label={t.t("subagents.stopEverythingAria", { chats: runningChats })}
+						>
+							{t.t("subagents.stopEverything", {
+								count: runningTotal,
+								chats: runningChats,
+							})}
+						</button>
+					) : null}
+				</p>
 			)}
 			{/*
 			 * Outside the empty/populated branch on purpose: switching scope can flip
@@ -302,13 +344,19 @@ function SubagentList({
 			 * focus with it, back to `<body>`.
 			 */}
 			{canToggle ? (
-				<ScopeToggle centered={isEmpty} showAllChats={showAllChats} onShowAllChats={onShowAllChats} />
+				<ScopeToggle
+					centered={isEmpty}
+					showAllChats={showAllChats}
+					onShowAllChats={onShowAllChats}
+				/>
 			) : null}
 			{isEmpty ? null : showAllChats ? (
 				groups.length > 0 ? (
 					groups.map((group) => {
 						const name =
-							group.ownerId === focusedOwnerId ? t.t("subagents.groupThisChat") : describeOwner(group.ownerId);
+							group.ownerId === focusedOwnerId
+								? t.t("subagents.groupThisChat")
+								: describeOwner(group.ownerId);
 						return (
 							<section key={group.ownerId} className="piem-subagents__group">
 								<h3 className="piem-subagents__group-head">
@@ -342,7 +390,9 @@ function SubagentList({
 			) : (
 				<p className="piem-subagents__note">{t.t("subagents.allArchived")}</p>
 			)}
-			{archived.length > 0 ? <ArchivedRuns snapshots={archived} onSelect={onSelect} /> : null}
+			{archived.length > 0 ? (
+				<ArchivedRuns snapshots={archived} onSelect={onSelect} />
+			) : null}
 		</>
 	);
 }
@@ -366,12 +416,20 @@ function ArchivedRuns({
 	const t = useT();
 
 	return (
-		<details className="piem-subagents__archived">
-			<summary className="piem-subagents__archived-summary">
-				<span className="piem-subagents__section-title">{t.t("subagents.sectionArchived")}</span>
-				<span className="piem-subagents__archived-count">{t.t("subagents.archivedCount", { count: snapshots.length })}</span>
+		<details className="piem-subagents__fold piem-subagents__archived">
+			<summary className="piem-subagents__fold-summary">
+				<span className="piem-subagents__section-title">
+					{t.t("subagents.sectionArchived")}
+				</span>
+				<span className="piem-subagents__fold-count">
+					{t.t("subagents.archivedCount", { count: snapshots.length })}
+				</span>
 			</summary>
-			<RunList snapshots={snapshots} onSelect={onSelect} ariaLabel={t.t("subagents.archivedListAria")} />
+			<RunList
+				snapshots={snapshots}
+				onSelect={onSelect}
+				ariaLabel={t.t("subagents.archivedListAria")}
+			/>
 		</details>
 	);
 }
@@ -434,7 +492,11 @@ function RunList({
 }): React.JSX.Element {
 	const t = useT();
 	return (
-		<ul className="piem-subagents__list" aria-label={ariaLabel ?? t.t("subagents.listAria")} onMouseOver={suppressOwnTooltip}>
+		<ul
+			className="piem-subagents__list"
+			aria-label={ariaLabel ?? t.t("subagents.listAria")}
+			onMouseOver={suppressOwnTooltip}
+		>
 			{snapshots.map((snapshot) => (
 				<li key={snapshot.id}>
 					<SubagentRow snapshot={snapshot} onSelect={onSelect} />
@@ -451,7 +513,13 @@ function RunList({
  * a particular run remembers what they asked for; "scout" describes three of
  * them and an opaque id like `subagent-k4tq2m` describes none.
  */
-function SubagentRow({ snapshot, onSelect }: { snapshot: SubagentSnapshot; onSelect: (id: string) => void }): React.JSX.Element {
+function SubagentRow({
+	snapshot,
+	onSelect,
+}: {
+	snapshot: SubagentSnapshot;
+	onSelect: (id: string) => void;
+}): React.JSX.Element {
 	const t = useT();
 
 	return (
@@ -470,7 +538,9 @@ function SubagentRow({ snapshot, onSelect }: { snapshot: SubagentSnapshot; onSel
 			<span className="piem-subagents__row-meta">
 				{/* The status word, because the dot's colour is not a channel every
 				    reader has. */}
-				<span className="piem-subagents__row-status">{statusText(snapshot.status, t)}</span>
+				<span className="piem-subagents__row-status">
+					{statusText(snapshot.status, t)}
+				</span>
 				<span aria-hidden="true">·</span>
 				<span>{snapshot.role}</span>
 				<span aria-hidden="true">·</span>
@@ -488,8 +558,17 @@ function SubagentRow({ snapshot, onSelect }: { snapshot: SubagentSnapshot; onSel
  * the reader reading, and the pulse is answered by a `prefers-reduced-motion`
  * rule in the stylesheet that leaves the colour and the word doing the work.
  */
-function StatusDot({ status }: { status: SubagentSnapshot["status"] }): React.JSX.Element {
-	return <span className={`piem-subagents__dot piem-subagents__dot--${status}`} aria-hidden="true" />;
+function StatusDot({
+	status,
+}: {
+	status: SubagentSnapshot["status"];
+}): React.JSX.Element {
+	return (
+		<span
+			className={`piem-subagents__dot piem-subagents__dot--${status}`}
+			aria-hidden="true"
+		/>
+	);
 }
 
 interface SubagentDetailProps {
@@ -510,21 +589,45 @@ interface SubagentDetailProps {
 }
 
 /**
- * One run in full, in the order a reader asks about it.
+ * One run in full, behind a fixed head.
  *
- * Task first — what was it asked to do — then the setup it ran under, then what
- * it produced, then how it got there. The process record comes last and closed:
- * it is the longest thing on the page and the least often the answer.
+ * The head answers the questions asked before the task is read — state, role,
+ * elapsed time, and the live step while the child still runs. Then the task,
+ * folded to three lines when it runs past the budget, because a spawn prompt is
+ * the one block on this page whose length somebody else decides. Then the
+ * report: the answer the page exists for, kept inside the first screen.
+ * Everything after it is reference the reader asks for by name — setup, then
+ * the process record — so both are disclosures, closed by default.
  */
-function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop, app, component }: SubagentDetailProps): React.JSX.Element {
+function SubagentDetail({
+	snapshot,
+	showAgentDetails,
+	ownerLabel,
+	onBack,
+	onStop,
+	app,
+	component,
+}: SubagentDetailProps): React.JSX.Element {
 	const t = useT();
 	const backRef = useRef<HTMLButtonElement | null>(null);
+	/*
+	 * The task's fold. The parent keys this component by the run's id, so
+	 * switching runs remounts it rather than carrying an open fold over.
+	 */
+	const [taskOpen, setTaskOpen] = useState(false);
 	const note = incompleteNote(snapshot, t);
 	const report = reportBody(snapshot, t);
 	const usage = usageItems(snapshot, showAgentDetails, t);
 	const steps = processSteps(snapshot.messages, t);
 	const followUps = snapshot.followUps ?? [];
 	const isRunning = snapshot.status === "running";
+	/*
+	 * Live, because the registry files each turn the moment it lands: this is
+	 * what the child is doing *now*, not a cached "was doing". Null — no line —
+	 * until the child has produced a step to name.
+	 */
+	const now = isRunning ? latestStep(snapshot.messages, t) : null;
+	const taskFolds = snapshot.task.length > TASK_FOLD_LIMIT;
 
 	// Arriving here replaced the list, so `<body>` is holding focus and a keyboard
 	// reader has lost their place. The back control is what took the row's role.
@@ -535,15 +638,16 @@ function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop
 	return (
 		<div className="piem-subagents__detail">
 			<div className="piem-subagents__detail-bar">
-				<IconButton icon="arrow-left" label={t.t("subagents.back")} onClick={onBack} buttonRef={backRef}>
+				<IconButton
+					icon="arrow-left"
+					label={t.t("subagents.back")}
+					onClick={onBack}
+					buttonRef={backRef}
+				>
 					<span className="piem-subagents__back-label" aria-hidden="true">
 						{t.t("subagents.back")}
 					</span>
 				</IconButton>
-				<span className="piem-subagents__badge">
-					<StatusDot status={snapshot.status} />
-					{statusText(snapshot.status, t)}
-				</span>
 				{/*
 				 * Right-aligned in the bar, present only while the run is live: the
 				 * same icon the chat composer's stop phase uses, so the gesture means
@@ -553,13 +657,75 @@ function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop
 				 */}
 				{isRunning ? (
 					<span className="piem-subagents__detail-stop">
-						<IconButton icon="square" label={t.t("subagents.stopOne")} onClick={() => onStop(snapshot.id)} />
+						<IconButton
+							icon="square"
+							label={t.t("subagents.stopOne")}
+							onClick={() => onStop(snapshot.id)}
+						/>
 					</span>
 				) : null}
 			</div>
 
+			{/*
+			 * The fixed head. Everything here has a bounded height, so it is on the
+			 * first screen no matter how long the task below runs — the reader who
+			 * came for the state or the report never scrolls past the prompt to find
+			 * them. The status badge that used to sit in the bar above was dropped:
+			 * one line down, the same fact said twice in forty pixels was a repetition
+			 * without the distance that excused it.
+			 */}
+			<div className="piem-subagents__head">
+				<p className="piem-subagents__headline">
+					<span className="piem-subagents__headline-status">
+						<StatusDot status={snapshot.status} />
+						{statusText(snapshot.status, t)}
+					</span>
+					<span aria-hidden="true">·</span>
+					<span>{snapshot.role}</span>
+					<span aria-hidden="true">·</span>
+					<span>{timingLine(snapshot, t)}</span>
+				</p>
+				{now ? (
+					<p className="piem-subagents__now">
+						{t.t("subagents.nowDoing", { step: now })}
+					</p>
+				) : null}
+				{/*
+				 * Whose run this is, when it is not this chat's. Reached from the All
+				 * chats list, a detail page is otherwise indistinguishable from one of
+				 * the reader's own — and the stop button in the bar above would then be
+				 * pressed against a chat they were not thinking about.
+				 */}
+				{ownerLabel ? (
+					<p className="piem-subagents__origin">
+						{t.t("subagents.fromChat", { chat: ownerLabel })}
+					</p>
+				) : null}
+			</div>
+
 			<Section title={t.t("subagents.sectionTask")}>
-				<p className="piem-subagents__task">{snapshot.task}</p>
+				<p
+					className={
+						taskFolds && !taskOpen
+							? "piem-subagents__task piem-subagents__task--folded"
+							: "piem-subagents__task"
+					}
+				>
+					{snapshot.task}
+				</p>
+				{taskFolds ? (
+					<IconButton
+						icon="chevron-down"
+						className="piem-subagents__task-toggle"
+						label={t.t(taskOpen ? "subagents.taskLess" : "subagents.taskMore")}
+						ariaExpanded={taskOpen}
+						onClick={() => setTaskOpen(!taskOpen)}
+					>
+						<span className="piem-subagents__task-toggle-text">
+							{t.t(taskOpen ? "subagents.taskLess" : "subagents.taskMore")}
+						</span>
+					</IconButton>
+				) : null}
 				{/*
 				 * The later errands, under the first one. The row's title and this
 				 * paragraph both stay the task the child was spawned on, because that is
@@ -568,48 +734,15 @@ function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop
 				 */}
 				{followUps.length > 0 ? (
 					<>
-						<p className="piem-subagents__followups-label">{t.t("subagents.followUpsLabel")}</p>
+						<p className="piem-subagents__followups-label">
+							{t.t("subagents.followUpsLabel")}
+						</p>
 						<ol className="piem-subagents__followups">
 							{followUps.map((followUp, index) => (
 								<li key={index}>{followUp}</li>
 							))}
 						</ol>
 					</>
-				) : null}
-				<p className="piem-subagents__timing">{timingLine(snapshot, t)}</p>
-				{/*
-				 * Whose run this is, when it is not this chat's. Reached from the All
-				 * chats list, a detail page is otherwise indistinguishable from one of
-				 * the reader's own — and the stop button in the bar above would then be
-				 * pressed against a chat they were not thinking about.
-				 */}
-				{ownerLabel ? <p className="piem-subagents__origin">{t.t("subagents.fromChat", { chat: ownerLabel })}</p> : null}
-			</Section>
-
-			{snapshot.instructions ? (
-				<Section title={t.t("subagents.sectionInstructions")}>
-					<p className="piem-subagents__instructions">{snapshot.instructions}</p>
-				</Section>
-			) : null}
-
-			<Section title={t.t("subagents.sectionConfig")}>
-				<dl className="piem-subagents__config">
-					{configItems(snapshot, t).map((item) => (
-						<React.Fragment key={item.label}>
-							<dt>{item.label}</dt>
-							<dd className={item.isIdentifier ? "piem-subagents__config-id" : undefined}>{item.value}</dd>
-						</React.Fragment>
-					))}
-				</dl>
-				{usage.length > 0 ? (
-					<p className="piem-subagents__usage">
-						{usage.map((item, index) => (
-							<React.Fragment key={item}>
-								{index > 0 ? <span aria-hidden="true"> · </span> : null}
-								{item}
-							</React.Fragment>
-						))}
-					</p>
 				) : null}
 			</Section>
 
@@ -625,7 +758,15 @@ function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop
 				</Section>
 			) : null}
 
-			<Section title={t.t("subagents.sectionReport")}>
+			{/*
+			 * The report is the answer the page exists for, so it follows the task
+			 * directly — above the setup fold, inside the first screen a long task
+			 * used to push it out of.
+			 */}
+			<Section
+				title={t.t("subagents.sectionReport")}
+				className="piem-subagents__report-section"
+			>
 				{report.kind === "report" ? (
 					// The child wrote Markdown, so it renders as Markdown — through
 					// Obsidian's own sanitizing pipeline, like every other model output
@@ -643,14 +784,68 @@ function SubagentDetail({ snapshot, showAgentDetails, ownerLabel, onBack, onStop
 				)}
 			</Section>
 
+			{/*
+			 * The setup block, folded and last: role, model, thinking level and
+			 * depth are what the run ran under — reference the reader asks for by
+			 * name, not the scroll ahead of the report it used to cost. The standing
+			 * instructions ride inside as one more row of the same table: they are
+			 * setup too, and their own section used to spend a whole block on one
+			 * paragraph.
+			 */}
+			<details className="piem-subagents__fold piem-subagents__config-fold">
+				<summary className="piem-subagents__fold-summary">
+					<span className="piem-subagents__section-title">
+						{t.t("subagents.sectionConfig")}
+					</span>
+				</summary>
+				<dl className="piem-subagents__config">
+					{configItems(snapshot, t).map((item) => (
+						<React.Fragment key={item.label}>
+							<dt>{item.label}</dt>
+							<dd
+								className={item.isIdentifier ? "piem-subagents__config-id" : undefined}
+							>
+								{item.value}
+							</dd>
+						</React.Fragment>
+					))}
+					{snapshot.instructions ? (
+						<React.Fragment>
+							<dt>{t.t("subagents.sectionInstructions")}</dt>
+							<dd className="piem-subagents__instructions">{snapshot.instructions}</dd>
+						</React.Fragment>
+					) : null}
+				</dl>
+				{usage.length > 0 ? (
+					<p className="piem-subagents__usage">
+						{usage.map((item, index) => (
+							<React.Fragment key={item}>
+								{index > 0 ? <span aria-hidden="true"> · </span> : null}
+								{item}
+							</React.Fragment>
+						))}
+					</p>
+				) : null}
+			</details>
+
 			<ProcessRecord snapshot={snapshot} steps={steps} />
 		</div>
 	);
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
+function Section({
+	title,
+	className,
+	children,
+}: {
+	title: string;
+	className?: string;
+	children: React.ReactNode;
+}): React.JSX.Element {
 	return (
-		<section className="piem-subagents__section">
+		<section
+			className={["piem-subagents__section", className].filter(Boolean).join(" ")}
+		>
 			<h3 className="piem-subagents__section-title">{title}</h3>
 			{children}
 		</section>
@@ -664,30 +859,49 @@ function Section({ title, children }: { title: string; children: React.ReactNode
  * so keyboard and assistive-tech behaviour comes for free, and the summary line
  * carries the step count so the reader can judge whether opening it is worth it.
  */
-function ProcessRecord({ snapshot, steps }: { snapshot: SubagentSnapshot; steps: readonly ReturnType<typeof processSteps>[number][] }): React.JSX.Element {
+function ProcessRecord({
+	snapshot,
+	steps,
+}: {
+	snapshot: SubagentSnapshot;
+	steps: readonly ReturnType<typeof processSteps>[number][];
+}): React.JSX.Element {
 	const t = useT();
 
 	return (
-		<details className="piem-subagents__process">
-			<summary className="piem-subagents__process-summary">
-				<span className="piem-subagents__section-title">{t.t("subagents.sectionProcess")}</span>
-				<span className="piem-subagents__process-count">
-					{steps.length > 0 ? t.t("subagents.processCount", { count: steps.length }) : null}
+		<details className="piem-subagents__fold piem-subagents__process">
+			<summary className="piem-subagents__fold-summary">
+				<span className="piem-subagents__section-title">
+					{t.t("subagents.sectionProcess")}
+				</span>
+				<span className="piem-subagents__fold-count">
+					{steps.length > 0
+						? t.t("subagents.processCount", { count: steps.length })
+						: null}
 				</span>
 			</summary>
 			{steps.length === 0 ? (
 				<p className="piem-subagents__note">
-					{snapshot.status === "running" ? t.t("subagents.processPending") : t.t("subagents.processNone")}
+					{snapshot.status === "running"
+						? t.t("subagents.processPending")
+						: t.t("subagents.processNone")}
 				</p>
 			) : (
 				<ol className="piem-subagents__steps">
 					{steps.map((step, index) => (
-						<li key={index} className={`piem-subagents__step${step.isError ? " piem-subagents__step--error" : ""}`}>
+						<li
+							key={index}
+							className={`piem-subagents__step${step.isError ? " piem-subagents__step--error" : ""}`}
+						>
 							<span className="piem-subagents__step-label">{step.label}</span>
 							{step.text ? (
 								<span className="piem-subagents__step-text">
 									{step.text}
-									{step.clipped ? <span className="piem-subagents__step-clip">{t.t("subagents.clipped")}</span> : null}
+									{step.clipped ? (
+										<span className="piem-subagents__step-clip">
+											{t.t("subagents.clipped")}
+										</span>
+									) : null}
 								</span>
 							) : null}
 						</li>
@@ -753,7 +967,9 @@ export function SubagentInspectorApp({
 	app,
 	component,
 }: SubagentInspectorAppProps): React.JSX.Element {
-	const [selectedId, setSelectedId] = useState<string | null>(selectionRequest?.id ?? null);
+	const [selectedId, setSelectedId] = useState<string | null>(
+		selectionRequest?.id ?? null,
+	);
 	/*
 	 * Scope lives here with the selection, for the same reason: the inspector
 	 * stays a function of its props, and the view re-renders it on every registry

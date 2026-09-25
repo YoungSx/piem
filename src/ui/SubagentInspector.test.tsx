@@ -370,7 +370,7 @@ describe("the detail page answers in the order a reader asks", () => {
 			selectedId: "subagent-1",
 		});
 		const caveat = host.querySelector(".piem-subagents__caveat");
-		const report = host.querySelector(".piem-subagents__section:last-of-type");
+		const report = host.querySelector(".piem-subagents__report-section");
 
 		expect(caveat).not.toBeNull();
 		expect(caveat!.compareDocumentPosition(report!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
@@ -482,6 +482,83 @@ describe("the detail page answers in the order a reader asks", () => {
 
 		expect(text(withoutTier)).not.toContain("$0.42");
 		expect(text(withTier)).toContain("$0.42");
+	});
+
+	it("carries the run's state, role and elapsed time in the head, in words", async () => {
+		// The status word is the only channel a colour-blind reader has for state,
+		// and the head repeats the list row's promise so the two surfaces read as
+		// one design rather than two.
+		const host = await renderInspector({ snapshots: [snapshot()], selectedId: "subagent-1" });
+		const headline = host.querySelector(".piem-subagents__headline");
+
+		expect(headline).not.toBeNull();
+		expect(headline!.textContent).toContain("done");
+		expect(headline!.textContent).toContain("scout");
+		expect(headline!.textContent).toContain("ran for 3s");
+	});
+
+	it("names a running child's newest step live, and nothing once it has settled", async () => {
+		// The registry files each turn as it lands, so the head says what the child
+		// is doing now; a settled run has its report for that and no live line.
+		const messages = [
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "Reading Projects/INDEX.md" }],
+				timestamp: 1,
+			},
+		] as AgentMessage[];
+		const running = await renderInspector({
+			snapshots: [
+				snapshot({ status: "running", messages, report: undefined, turns: undefined, usage: undefined }),
+			],
+			selectedId: "subagent-1",
+		});
+		const settled = await renderInspector({ snapshots: [snapshot({ messages })], selectedId: "subagent-1" });
+
+		expect(running.querySelector(".piem-subagents__now")?.textContent).toContain("Reading Projects/INDEX.md");
+		expect(settled.querySelector(".piem-subagents__now")).toBeNull();
+	});
+	it("leaves a short task unfolded, with no toggle to press", async () => {
+		const host = await renderInspector({ snapshots: [snapshot()], selectedId: "subagent-1" });
+
+		expect(host.querySelector(".piem-subagents__task-toggle")).toBeNull();
+		expect(host.querySelector(".piem-subagents__task--folded")).toBeNull();
+	});
+
+	it("folds a long task and expands it in place when the toggle is pressed", async () => {
+		// A spawn prompt is the one block here whose length someone else decides; a
+		// several-hundred-line one used to push the report off the first screen, so
+		// past the budget it clamps behind a toggle the reader can open.
+		const host = await renderInspector({
+			snapshots: [snapshot({ task: "Sweep every folder for stale notes. ".repeat(12) })],
+			selectedId: "subagent-1",
+		});
+		const toggle = host.querySelector<HTMLButtonElement>(".piem-subagents__task-toggle");
+
+		expect(toggle).not.toBeNull();
+		expect(toggle!.getAttribute("aria-expanded")).toBe("false");
+		expect(host.querySelector(".piem-subagents__task--folded")).not.toBeNull();
+
+		toggle!.click();
+		await flushRender();
+
+		expect(toggle!.getAttribute("aria-expanded")).toBe("true");
+		expect(host.querySelector(".piem-subagents__task--folded")).toBeNull();
+	});
+
+	it("floats the report above the setup fold, not below it", async () => {
+		// The report is the answer the page exists for; setup is reference the
+		// reader asks for by name. This is the reorder the whole redesign turns on,
+		// and nothing else pins it.
+		const host = await renderInspector({ snapshots: [snapshot()], selectedId: "subagent-1" });
+		const report = host.querySelector(".piem-subagents__report-section");
+		const setup = host.querySelector(".piem-subagents__config-fold");
+
+		expect(report).not.toBeNull();
+		expect(setup).not.toBeNull();
+		expect(
+			report!.compareDocumentPosition(setup!) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeGreaterThan(0);
 	});
 });
 
