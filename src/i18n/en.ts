@@ -962,6 +962,24 @@ export const en = {
 		pickerDeleteHint: "Delete chat",
 		deleteRestorable: "The chat log moves to trash, so it can still be restored from there.",
 	},
+	/**
+	 * Floating notices for background chats the reader is not looking at: one
+	 * that finished, errored, or is waiting on an `ask_user`. The panel already
+	 * escalates a question to a modal when it is not on screen at all (#237);
+	 * this covers the gap where the panel is up but showing a different chat.
+	 */
+	notifications: {
+		/** Completion toast body when the finished chat's last reply has no text. */
+		completed: "Reply ready",
+		/** Error toast body; the failure's own message stays in that chat's transcript. */
+		error: "This turn ended in an error",
+		/** Accessible name of the whole-card jump control. */
+		jump: "Open {title}",
+		/** Dismisses one toast. */
+		dismiss: "Dismiss",
+		/** Collapsed counter below the visible toasts; opens the full chat list. */
+		more: "+{count} more",
+	},
 
 	/** Trace row tool names (reader-facing, not the model's ids). */
 	traceTool: {

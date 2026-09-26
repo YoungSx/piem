@@ -34,6 +34,8 @@ import { TranslatorProvider } from "./TranslatorContext";
 import { useSessionDraft } from "./useSessionDraft";
 import { fileToPendingImage, newPendingImageId, toImageContents, type PendingImage } from "./pendingImages";
 import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
+import { BackgroundNotifications } from "./BackgroundNotifications";
+import { openSessionDeleteConfirm, openSessionPicker } from "./sessionDialogs";
 import { useExtensionUI } from "./useExtensionUI";
 import { ExtensionSurfaces } from "./ExtensionSurfaces";
 import { TodoCard, findTodoSurface, useTodoBadge } from "./extensions/todo/TodoWidget";
@@ -862,6 +864,28 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					onDismissSyncConflict={() => service.dismissSyncConflict()}
 					onDismiss={() => service.dismissMessages()}
 					onOpenSettings={canOpenSettings ? () => openPluginSettings(app) : undefined}
+				/>
+
+				<BackgroundNotifications
+					service={service}
+					askUserBroker={askUserBroker}
+					runStates={snapshot.sessionRunStates}
+					focusedPath={snapshot.session?.path}
+					sessions={sessions}
+					onOpenSession={(path) => void service.openSession(path)}
+					onShowAll={() =>
+						openSessionPicker(
+							app,
+							sessions,
+							{
+								onOpen: (path) => void service.openSession(path),
+								onDelete: (session) => openSessionDeleteConfirm(app, session, () => void service.deleteSession(session.path), getT(snapshot.language)),
+								searchSessions: (text, options) => service.searchSessions(text, options),
+							},
+							getT(snapshot.language),
+							snapshot.sessionRunStates,
+						)
+					}
 				/>
 
 				<MessageList
