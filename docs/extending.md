@@ -1,6 +1,6 @@
 # Extending Piem
 
-[← Back to README](../README.md) · [简体中文](extending.zh-CN.md)
+[← Back to README](../README.md) · [简体中文](extending.zh-CN.md) · [繁體中文](extending.zh-TW.md) · [日本語](extending.ja.md)
 
 Two ways to teach Piem something new: **skills**, which are instructions it can
 follow, and **MCP servers**, which are tools it can call.

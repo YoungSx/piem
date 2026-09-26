@@ -1,6 +1,6 @@
 # 扩展 Piem
 
-[← 回到 README](../README.zh-CN.md) · [English](extending.md)
+[← 回到 README](../README.zh-CN.md) · [English](extending.md) · [繁體中文](extending.zh-TW.md) · [日本語](extending.ja.md)
 
 给 Piem 加东西有两条路：**技能**，是它能遵循的指令；**MCP 服务器**，是它能调
 用的工具。

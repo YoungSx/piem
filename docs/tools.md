@@ -1,6 +1,6 @@
 # The agent's tools
 
-[← Back to README](../README.md) · [简体中文](tools.zh-CN.md)
+[← Back to README](../README.md) · [简体中文](tools.zh-CN.md) · [繁體中文](tools.zh-TW.md) · [日本語](tools.ja.md)
 
 Everything Piem can do to your vault, it does through one of the tools below.
 There is no hidden channel: if a change happened, a tool call made it, and that

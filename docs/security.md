@@ -1,6 +1,6 @@
 # Security and privacy
 
-[← Back to README](../README.md) · [简体中文](security.zh-CN.md)
+[← Back to README](../README.md) · [简体中文](security.zh-CN.md) · [繁體中文](security.zh-TW.md) · [日本語](security.ja.md)
 
 Piem hands your notes to a model provider and lets an agent edit them. Both of
 those are the point, and both deserve to be stated plainly rather than found in
