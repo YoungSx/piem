@@ -1,6 +1,6 @@
 # Settings
 
-[← Back to README](../README.md) · [简体中文](settings.zh-CN.md)
+[← Back to README](../README.md) · [简体中文](settings.zh-CN.md) · [繁體中文](settings.zh-TW.md) · [日本語](settings.ja.md)
 
 Four pages under **Settings → Piem**: Models, Chat, Extensions, General.
 

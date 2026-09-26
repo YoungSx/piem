@@ -1,6 +1,6 @@
 # 安全与隐私
 
-[← 回到 README](../README.zh-CN.md) · [English](security.md)
+[← 回到 README](../README.zh-CN.md) · [English](security.md) · [繁體中文](security.zh-TW.md) · [日本語](security.ja.md)
 
 Piem 把你的笔记交给一个模型服务商，并且让一个代理去改它们。这两件事都是重
 点，也都值得直说，而不是让你在某个设置页里自己发现。

@@ -1,6 +1,6 @@
 # 代理的工具
 
-[← 回到 README](../README.zh-CN.md) · [English](tools.md)
+[← 回到 README](../README.zh-CN.md) · [English](tools.md) · [繁體中文](tools.zh-TW.md) · [日本語](tools.ja.md)
 
 Piem 对你仓库做的每一件事，都经由下面某个工具。没有暗管：只要有改动发生，
 就一定有一次工具调用促成了它，而那次调用就在对话记录里。

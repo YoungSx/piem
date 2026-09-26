@@ -1,6 +1,6 @@
 # 设置
 
-[← 回到 README](../README.zh-CN.md) · [English](settings.md)
+[← 回到 README](../README.zh-CN.md) · [English](settings.md) · [繁體中文](settings.zh-TW.md) · [日本語](settings.ja.md)
 
 **设置 → Piem** 下有四页：Models、Chat、Extensions、General。
 
