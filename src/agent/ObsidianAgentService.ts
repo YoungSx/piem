@@ -3275,6 +3275,17 @@ export class ObsidianAgentService {
 	}
 
 	/**
+	 * The last thing the assistant said in `path`, for a background chat's
+	 * completion notice — the snapshot only carries the focused session's
+	 * messages, so a background preview has to be read off its live runtime.
+	 * Absent for a session with no hydrated agent or no assistant text yet.
+	 */
+	peekLastReply(path: string): string | undefined {
+		const rt = this.runtimes.get(path);
+		return rt?.agent ? (lastAssistantText(rt.agent.state.messages) ?? undefined) : undefined;
+	}
+
+	/**
 	 * One entry per session the service knows about (issue #235).
 	 */
 	getSessionRunStates(): Array<{ path: string; state: SessionRunState }> {

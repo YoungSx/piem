@@ -572,6 +572,14 @@ export const zhCN: DeepPartial<EnCopy> = {
 		deleteRestorable: "对话记录会移入回收站，之后仍可从那里恢复。",
 	},
 
+	notifications: {
+		completed: "回复完成",
+		error: "这一轮出错了",
+		jump: "打开「{title}」",
+		dismiss: "忽略",
+		more: "还有 {count} 条",
+	},
+
 	traceTool: {
 		read: "读取了一条笔记",
 		getActiveNote: "查看了当前笔记",

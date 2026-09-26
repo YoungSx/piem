@@ -694,6 +694,157 @@ button.piem-chat__context-open {
 	flex-shrink: 0;
 }
 
+/* --- background-session toasts --- */
+
+/*
+ * A zero-height flow anchor between the banner and the transcript: it pins the
+ * floating stack to the top of the message area — below header and banner —
+ * without taking any layout height, so the toasts overlay the transcript
+ * instead of pushing the first message down, and never cover the header's own
+ * controls. `.piem-chat`'s `container-type` already makes an ancestor a
+ * containing block; anchoring here is about *where* on the panel the stack sits.
+ */
+.piem-chat__toasts-anchor {
+	flex-shrink: 0;
+	height: 0;
+	position: relative;
+}
+
+.piem-chat__toasts {
+	/* The gaps pass clicks through to the transcript underneath; each card turns
+	 * pointer-events back on for itself. */
+	pointer-events: none;
+	position: absolute;
+	top: var(--size-4-2);
+	left: var(--size-4-2);
+	right: var(--size-4-2);
+	z-index: var(--layer-menu, 65);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.piem-chat__toast,
+.piem-chat__toasts-more {
+	pointer-events: auto;
+}
+
+/* The one motion: slide down a touch and fade in. No exit animation — a
+ * dismissed or jumped-to toast simply unmounts. */
+@keyframes piem-toast-in {
+	from { opacity: 0; transform: translateY(-4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+.piem-chat__toast {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+	background: var(--background-secondary-alt);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	box-shadow: var(--shadow-s);
+	padding: var(--size-4-2);
+	animation: piem-toast-in 120ms ease-out;
+}
+
+/*
+ * The whole card is the jump: this button's stretched `::after` covers the card,
+ * so a click anywhere but an accessory opens the chat. The accessories (options,
+ * dismiss) raise themselves above it to take their own clicks.
+ */
+.piem-chat__toast-open {
+	all: unset;
+	cursor: pointer;
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+	padding-right: var(--size-4-6); /* clears the corner dismiss */
+}
+
+.piem-chat__toast-open::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+}
+
+.piem-chat__toast-icon {
+	flex-shrink: 0;
+	margin-top: 1px;
+}
+
+.piem-chat__toast--completed .piem-chat__toast-icon { color: var(--text-muted); }
+.piem-chat__toast--error .piem-chat__toast-icon { color: var(--text-error); }
+.piem-chat__toast--ask .piem-chat__toast-icon { color: var(--text-accent); }
+
+.piem-chat__toast-lines {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+/* A title is a label, not a paragraph: one line, ellipsised. */
+.piem-chat__toast-title {
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* At most two lines of preview or question; the full content is one jump away. */
+.piem-chat__toast-text {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+
+/* Accessories sit above the stretched jump overlay so they take their own clicks. */
+.piem-chat__toast-options {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+}
+
+.piem-chat__toast-option {
+	font-size: var(--font-ui-smaller);
+	min-height: var(--size-4-6);
+}
+
+.piem-chat__toast-dismiss {
+	position: absolute;
+	top: var(--size-4-1);
+	right: var(--size-4-1);
+	z-index: 1;
+}
+
+.piem-chat__toasts-more {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	background: var(--background-secondary-alt);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-1) var(--size-4-2);
+	cursor: pointer;
+	text-align: center;
+}
+
+/* Touch: the whole stack and its controls stay comfortably tappable (#237). */
+@media (any-pointer: coarse) {
+	.piem-chat__toast-option,
+	.piem-chat__toasts-more {
+		min-height: var(--size-4-12);
+	}
+}
+
+
 /* --- transcript --- */
 
 .piem-chat__transcript {
