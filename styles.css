@@ -1054,8 +1054,8 @@ button.piem-chat__context-open {
  * will: rendering it as a footnote somewhere else would move the reader's eye
  * twice — once to the promise, once to the reply.
  *
- * Which is what the floor is for. The dots are 8px tall and the row has no
- * padding, so without it the promise of a reply is a third the height of the
+ * Which is what the floor is for. The dots are 6px tall and the row has no
+ * padding, so without it the promise of a reply is a quarter the height of the
  * reply — it used to clear a line only by borrowing the 8px `.piem-chat__message`
  * once spent on every row. One line, at the height a settled trace row rests at,
  * so the transcript does not jolt when the first token lands.
@@ -1068,8 +1068,11 @@ button.piem-chat__context-open {
 }
 
 /*
- * Three bouncing dots, the way a chat app signals "the other side is typing"
- * without labelling the wait. Decorative — the article's `aria-label` carries
+ * Three dots that fade in and out in sequence, the way a chat app signals "the
+ * other side is typing" without labelling the wait — and, unlike the bounce they
+ * used to do, in the panel's one motion word: opacity, the same breath the caret,
+ * the running icon, and the skeleton lines take. Decorative — the article's
+ * `aria-label` carries
  * the same heads-up for assistive tech, so the dots themselves are hidden from
  * the a11y tree.
  */
@@ -1081,16 +1084,21 @@ button.piem-chat__context-open {
 
 .piem-chat__typing-dot {
 	/*
-	 * The dots are empty spans — without a fill they are invisible, and the
-	 * bounce animation would animate nothing. `currentColor` tracks the
-	 * pending card's `--text-muted`, so theme switches retint them for free.
+	 * The dots are empty spans — without a fill they are invisible, and animating
+	 * the opacity of nothing shows nothing. `currentColor` tracks the pending
+	 * card's `--text-muted`, so theme switches retint them for free.
+	 *
+	 * 6px, not the 8px they were: at 8px three in a row weighed as much as the
+	 * session-run status dot tripled, which is what read as "too big". 6px is the
+	 * smallest that still clears the 4px gap and the faint-speck floor — 4px would
+	 * equal the gap and vanish beside CJK at a 300px sidebar.
 	 */
 	background: currentColor;
-	animation: pi-typing 1.2s ease-in-out infinite;
+	animation: pi-typing 1.4s ease-in-out infinite;
 	border-radius: 50%;
 	flex-shrink: 0;
-	height: var(--size-4-2);
-	width: var(--size-4-2);
+	height: 6px;
+	width: 6px;
 }
 
 .piem-chat__typing-dot:nth-child(2) {
@@ -1102,17 +1110,23 @@ button.piem-chat__context-open {
 }
 
 @keyframes pi-typing {
-
+	/*
+	 * Opacity only, no transform: the trio used to be the one thing in the panel
+	 * that physically moved, and that bounce is exactly what read as "doesn't
+	 * match". Now it breathes like everything else that is working — the caret,
+	 * the running icon, the skeleton lines — at the skeleton's own 1.4s, calmer
+	 * than the old 1.2s. Floor 0.4 sits a hair above `piem-breathe`'s 0.35 so the
+	 * smaller 6px mark never dims to "gone/broken"; the 0.9 ceiling stays under
+	 * full because three staggered peaks pool more lit energy than one dot would,
+	 * and capping holds the group at "one quiet dot" against `--text-muted`.
+	 */
 	0%,
-	60%,
 	100% {
-		opacity: 0.35;
-		transform: translateY(0);
+		opacity: 0.4;
 	}
 
-	30% {
-		opacity: 1;
-		transform: translateY(-2px);
+	50% {
+		opacity: 0.9;
 	}
 }
 
