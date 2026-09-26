@@ -3095,6 +3095,12 @@ export class ObsidianAgentService {
 	 */
 	async suggestQuickActions(
 		scope: SuggestionScope,
+		opts?: {
+			/** The deeper second pass of the reply row (reply scope only). */
+			deep?: boolean;
+			/** The fast pass's chips, quoted into the deeper pass so it complements them. */
+			priorActions?: readonly QuickAction[];
+		},
 	): Promise<QuickAction[] | null> {
 		if (this.pendingSessionOpen || this.disposed) return null;
 		const settings = this.getSettings();
@@ -3151,6 +3157,8 @@ export class ObsidianAgentService {
 				subject,
 				workspace: workspaceForPrompt,
 				noteFacts: noteFactsForPrompt,
+				deep: opts?.deep,
+				priorActions: opts?.priorActions,
 				language,
 				apiKey: this.getApiKey(model.provider),
 				signal: controller.signal,

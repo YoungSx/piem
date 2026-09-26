@@ -62,12 +62,14 @@ export function lastReplyFailed(messages: readonly AgentMessage[]): boolean {
 export const MAX_QUICK_ACTIONS = 3;
 
 /**
- * How many chips the post-reply row offers. That row scrolls horizontally
- * instead of wrapping, so six read as a palette to swipe through rather than a
- * menu to unpack; the ceiling travels into the model's instruction (`{count}`)
- * and the parse's slice, so the row, the prompt, and the parse agree.
+ * How many chips ONE post-reply request asks for. The row is filled in two
+ * batches — a fast first pass and a deeper second pass appended after it — so
+ * this is the ceiling of each pass, not of the row: the strip that renders them
+ * scrolls horizontally and holds their sum (up to six) as a palette to swipe.
+ * The ceiling travels into the model's instruction (`{count}`) and the parse's
+ * slice, so each pass, its prompt, and its parse agree.
  */
-export const MAX_REPLY_QUICK_ACTIONS = 6;
+export const MAX_REPLY_QUICK_ACTIONS = 3;
 
 /**
  * The one chip offered when a reply died mid-run.
@@ -297,5 +299,34 @@ export function distillSkillQuickAction(t: Translator): QuickAction {
 		label: t.t("quickActions.reply.distillSkill.label"),
 		prompt: t.t("quickActions.reply.distillSkill.prompt"),
 	};
+}
+
+/**
+ * Joins the fast first pass and the deeper second pass of the post-reply row
+ * into the single ordered list the strip renders.
+ *
+ * Two invariants the row cannot render without, and neither is the model's to
+ * keep: ids must be unique — both passes come back positionally keyed
+ * `suggested-0…`, so a raw concat collides and React reuses the wrong node —
+ * and the deeper pass must not echo a chip the fast pass already shows, even
+ * though its prompt was told what to avoid. So this re-mints ids across the
+ * whole row and drops any second-pass chip whose prompt (trimmed, case-folded)
+ * already appeared. Order is fast-then-deep: the first pass is what the reader
+ * has already been looking at, and reordering it when the second lands would
+ * pull the row out from under them.
+ */
+export function mergeSuggestionBatches(quick: readonly QuickAction[], deep: readonly QuickAction[]): QuickAction[] {
+	const seen = new Set(quick.map((action) => action.prompt.trim().toLowerCase()));
+	const merged = [...quick];
+	for (const action of deep) {
+		const fingerprint = action.prompt.trim().toLowerCase();
+		if (seen.has(fingerprint)) {
+			continue;
+		}
+		seen.add(fingerprint);
+		merged.push(action);
+	}
+	// Positional ids again, now across both passes, so the row keys stay unique.
+	return merged.map((action, index) => ({ ...action, id: `suggested-${index}` }));
 }
 

@@ -5,7 +5,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import type { MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
 import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
-import { continueAfterFailureQuickAction, lastReplyFailed, type QuickAction } from "./quickActionSuggestions";
+import { continueAfterFailureQuickAction, lastReplyFailed, mergeSuggestionBatches, type QuickAction } from "./quickActionSuggestions";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { MAX_DRAFT_LENGTH, type DraftStore } from "../session/DraftStore";
 import { snapshotSubagents, snapshotsForOwner, type SubagentSnapshot } from "../subagent/inspectorModel";
@@ -364,12 +364,19 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 
 	/*
 	 * Settled reply: clear whatever the previous reply suggested and fetch the
-	 * model's follow-ups — unless the reply died mid-run, in which case no
-	 * request goes out at all and the preset "Continue" chip stands in. A
+	 * model's follow-ups in two passes — unless the reply died mid-run, in which
+	 * case no request goes out at all and the preset "Continue" chip stands in. A
 	 * suggestion request against a provider that just failed the reply is a
 	 * request that mostly fails the same way, billed either way; and the one
 	 * thing a reader of a half-finished reply wants to do next is not something
 	 * the model needs to be asked about.
+	 *
+	 * The two passes fill one scrolling row. The fast pass asks for three obvious
+	 * follow-ups and shows them the moment they land; the instant they do, a
+	 * deeper pass fires that is told what the fast pass already offered, and its
+	 * chips are appended behind them ({@link mergeSuggestionBatches} dedupes and
+	 * re-keys). The reader gets something to tap immediately and something worth
+	 * scrolling to a beat later — at the cost of a second side-channel request.
 	 *
 	 * `error` only, not `aborted`: a stop is the user's own choice and offering
 	 * to undo it reads as second-guessing. Configuration failures (missing key,
@@ -393,11 +400,23 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			return;
 		}
 		setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: [] });
-		void service.suggestQuickActions("reply").then((actions) => {
+		void service.suggestQuickActions("reply").then((quick) => {
+			// Superseded by a newer turn or session switch: the fast pass is stale
+			// and the deeper pass it would have chained must not fire.
 			if (request !== suggestionRequestRef.current) {
 				return;
 			}
-			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: actions ?? [] });
+			const quickActions = quick ?? [];
+			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: quickActions });
+			// The deeper pass fires the instant the fast one lands — even when the
+			// fast one came back empty, since the deeper pass is the substantive
+			// half — and is told what was already shown so it complements it.
+			void service.suggestQuickActions("reply", { deep: true, priorActions: quickActions }).then((deep) => {
+				if (request !== suggestionRequestRef.current || !deep || deep.length === 0) {
+					return;
+				}
+				setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: mergeSuggestionBatches(quickActions, deep) });
+			});
 		});
 	}, [service, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, snapshot.pendingToolCalls.length, snapshot.messages, snapshot.sessionRevision, snapshot.language]);
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { getT } from "../i18n";
-import { continueAfterFailureQuickAction, distillSkillQuickAction, emptyScreenQuickActions, lastReplyFailed } from "./quickActionSuggestions";
+import { continueAfterFailureQuickAction, distillSkillQuickAction, emptyScreenQuickActions, lastReplyFailed, mergeSuggestionBatches } from "./quickActionSuggestions";
 
 const t = getT("en");
 
@@ -304,5 +304,42 @@ describe("lastReplyFailed", () => {
 
 	it("reads an empty transcript as no failure", () => {
 		expect(lastReplyFailed([])).toBe(false);
+	});
+});
+
+describe("mergeSuggestionBatches", () => {
+	const quick = [
+		{ id: "suggested-0", label: "Summarize", prompt: "Summarize the reply." },
+		{ id: "suggested-1", label: "Next", prompt: "What is next?" },
+	];
+
+	it("appends the deeper pass behind the fast pass, keeping the fast order", () => {
+		const deep = [{ id: "suggested-0", label: "Connect", prompt: "Connect this to my other notes." }];
+		const merged = mergeSuggestionBatches(quick, deep);
+		expect(merged.map((a) => a.label)).toEqual(["Summarize", "Next", "Connect"]);
+	});
+
+	it("re-keys the whole row so the two passes never collide on an id", () => {
+		const deep = [
+			{ id: "suggested-0", label: "Connect", prompt: "Connect this to my other notes." },
+			{ id: "suggested-1", label: "Challenge", prompt: "Challenge the main assumption." },
+		];
+		const merged = mergeSuggestionBatches(quick, deep);
+		// Both passes came back positionally keyed suggested-0…; a raw concat would
+		// hand React duplicate keys, so the merge re-mints them across the row.
+		expect(merged.map((a) => a.id)).toEqual(["suggested-0", "suggested-1", "suggested-2", "suggested-3"]);
+	});
+
+	it("drops a deeper chip that echoes a fast one, matching on prompt case-insensitively", () => {
+		const deep = [
+			{ id: "suggested-0", label: "Recap", prompt: "  SUMMARIZE THE REPLY.  " },
+			{ id: "suggested-1", label: "Connect", prompt: "Connect this to my other notes." },
+		];
+		const merged = mergeSuggestionBatches(quick, deep);
+		expect(merged.map((a) => a.label)).toEqual(["Summarize", "Next", "Connect"]);
+	});
+
+	it("returns just the fast pass when the deeper pass is empty", () => {
+		expect(mergeSuggestionBatches(quick, []).map((a) => a.label)).toEqual(["Summarize", "Next"]);
 	});
 });

@@ -165,11 +165,34 @@ describe("buildSuggestionPrompt", () => {
 		expect(prompt).not.toContain("piem.md");
 	});
 
-	it("asks for the scope's own cap: three on the empty screen, six after a reply", () => {
+	it("asks for the scope's own cap: three per request, both placements", () => {
 		// The model and the parse must agree — a cap the instruction never names
-		// produces a row that the parse silently cuts down.
+		// produces a row that the parse silently cuts down. The reply row reaches
+		// its palette of six across two passes of three, not one request of six.
 		expect(buildSuggestionPrompt("empty", null, "en")).toContain("at most 3 objects");
-		expect(buildSuggestionPrompt("reply", "The answer.", "en")).toContain("at most 6 objects");
+		expect(buildSuggestionPrompt("reply", "The answer.", "en")).toContain("at most 3 objects");
+	});
+
+	it("switches the reply instruction to the deeper variant and quotes the fast pass", () => {
+		const prior = [
+			{ id: "suggested-0", label: "Summarize", prompt: "Summarize the reply." },
+			{ id: "suggested-1", label: "Next step", prompt: "What is the next step?" },
+		];
+		const prompt = buildSuggestionPrompt("reply", "The answer.", "en", undefined, undefined, true, prior);
+		// The deeper instruction names its stance and the material lists what the
+		// fast pass already offered, so the second pass complements rather than echoes.
+		expect(prompt).toContain("deeper second set");
+		expect(prompt).toContain("already suggested");
+		expect(prompt).toContain("Summarize: Summarize the reply.");
+		expect(prompt).toContain("Next step: What is the next step?");
+	});
+
+	it("omits the already-suggested block when the deeper pass has no prior chips", () => {
+		const prompt = buildSuggestionPrompt("reply", "The answer.", "en", undefined, undefined, true, []);
+		expect(prompt).toContain("deeper second set");
+		// The instruction still references "already suggested"; only the quoted
+		// list block (with its own intro) is absent when there is nothing to quote.
+		expect(prompt).not.toContain("Already suggested (do not repeat");
 	});
 });
 
@@ -270,10 +293,10 @@ describe("fetchQuickActionSuggestions", () => {
 		expect("reasoning" in (captured.options as object)).toBe(false);
 	});
 
-	it("gives the reply's six chips double the output budget the empty screen's three get", async () => {
-		// Six chips of JSON against 512 tokens truncates mid-string; the
-		// stopReason "length" fails the parse and the whole row vanishes.
-		for (const [scope, maxTokens] of [["empty", 512], ["reply", 1024]] as const) {
+	it("sends the same output budget for every placement now that each asks for three", async () => {
+		// Both placements ask for three objects per request; the reply row reaches
+		// six across two passes, not one oversized request, so 512 fits them all.
+		for (const scope of ["empty", "reply"] as const) {
 			const captured: { options?: { maxTokens?: number } } = {};
 			await fetchQuickActionSuggestions({
 				streamSimple: ((model: unknown, context: unknown, options: unknown) => {
@@ -285,7 +308,7 @@ describe("fetchQuickActionSuggestions", () => {
 				subject: null,
 				language: "en",
 			});
-			expect(captured.options?.maxTokens).toBe(maxTokens);
+			expect(captured.options?.maxTokens).toBe(512);
 		}
 	});
 
