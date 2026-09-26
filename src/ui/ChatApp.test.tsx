@@ -244,6 +244,8 @@ class FakeAgentService {
 	 * with no entry reads as a miss rather than surfacing another note's answer.
 	 */
 	readonly suggestionRequests: SuggestionScope[] = [];
+	/** Every call with its deep flag, so the reply row's two passes are distinguishable. */
+	readonly suggestionCalls: { scope: SuggestionScope; deep: boolean }[] = [];
 	suggestionResults: (QuickAction[] | null)[] = [];
 	peekedSuggestions: Record<string, QuickAction[]> = {};
 	/** When set, `suggestQuickActions` holds its answer until this resolves — the gate a test lifts to interleave renders. */
@@ -257,8 +259,9 @@ class FakeAgentService {
 		return this.peekedSuggestions[activePath];
 	}
 
-	async suggestQuickActions(scope: SuggestionScope): Promise<QuickAction[] | null> {
+	async suggestQuickActions(scope: SuggestionScope, opts?: { deep?: boolean }): Promise<QuickAction[] | null> {
 		this.suggestionRequests.push(scope);
+		this.suggestionCalls.push({ scope, deep: opts?.deep ?? false });
 		const result = this.suggestionResults.shift() ?? null;
 		if (this.suggestionsGate) {
 			await this.suggestionsGate;
@@ -1135,7 +1138,25 @@ describe("ChatApp model-suggested quick actions", () => {
 		service.emit({ isStreaming: false, messages: [assistantReply("The reply the reader just read.")] as ChatSnapshot["messages"] });
 
 		await flushRender(() => quickActionChips(host).some((chip) => chip.textContent === "Agent chip"));
-		expect(service.suggestionRequests).toEqual(["reply"]);
+		// The fast pass shows immediately; the deeper pass fires the instant it lands.
+		expect(service.suggestionRequests).toEqual(["reply", "reply"]);
+		expect(service.suggestionCalls).toEqual([
+			{ scope: "reply", deep: false },
+			{ scope: "reply", deep: true },
+		]);
+	});
+
+	it("appends the deeper pass behind the fast pass in one scrolling row", async () => {
+		const fast = [{ id: "suggested-0", label: "Fast one", prompt: "Do the obvious thing." }];
+		const deep = [{ id: "suggested-0", label: "Deep one", prompt: "Connect this to the wider vault." }];
+		const { host, service } = await mountChat({ snapshot: { ...readySnapshot, isStreaming: true }, suggestionResults: [fast, deep] });
+
+		service.emit({ isStreaming: false, messages: [assistantReply("The reply the reader just read.")] as ChatSnapshot["messages"] });
+		await flushRender(() => quickActionChips(host).some((chip) => chip.textContent === "Deep one"));
+
+		// Fast pass first, deeper pass appended behind it — one row, two waves.
+		expect(quickActionChips(host).map((chip) => chip.textContent)).toEqual(["Fast one", "Deep one"]);
+		expect(service.suggestionCalls[1]).toEqual({ scope: "reply", deep: true });
 	});
 
 	it("leaves the post-reply row empty when the suggestion request fails", async () => {
@@ -1182,8 +1203,8 @@ describe("ChatApp model-suggested quick actions", () => {
 		await flushRender();
 
 		// A stop is the user's choice; offering to undo it reads as second-guessing.
-		// The ordinary nicety path takes over instead.
-		expect(service.suggestionRequests).toEqual(["reply"]);
+		// The ordinary nicety path takes over instead — both passes fire.
+		expect(service.suggestionRequests).toEqual(["reply", "reply"]);
 		expect(quickActionChips(host).some((chip) => chip.textContent === "Continue")).toBe(false);
 	});
 

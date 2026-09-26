@@ -55,13 +55,14 @@ const CAPS: Record<SuggestionScope, number> = { empty: MAX_QUICK_ACTIONS, reply:
 const REPLY_SAMPLE_LIMIT = 4_000;
 
 /**
- * A JSON array of three short objects needs nowhere near a full reply. The
- * reply placement's larger cap does — labels, prompts, and JSON syntax add
- * up, and a request that stops mid-array fails the parse and takes the whole
- * row with it, so the ceiling moves with the cap rather than pinching the row.
+ * A JSON array of three short objects needs nowhere near a full reply, and
+ * every placement now asks for three — the post-reply row reaches its palette
+ * of six across two passes of three, not one request of six — so one ceiling
+ * fits them all. Labels, prompts, and JSON syntax still add up, so the budget
+ * sits well above what three objects cost rather than pinching a row that stops
+ * mid-array and fails the parse.
  */
 const SUGGESTION_MAX_TOKENS = 512;
-const SUGGESTION_MAX_TOKENS_REPLY = 1_024;
 
 /**
  * The request shape every suggestion travels with, exported so the settings
@@ -104,6 +105,18 @@ The suggestions must each do a different thing, name concrete material from the 
  * offer to distill it into a reusable skill or memory.
  */
 const REPLY_SUGGESTION_INSTRUCTION = `${SUGGESTION_INSTRUCTION} If the assistant reply established a repeatable multi-step procedure, guideline, or workflow, one suggestion may offer to save or distill it (e.g. using /distill-skill or saving to MEMORY.md).`;
+
+/**
+ * The deeper second pass of the post-reply row. The fast pass ({@link
+ * REPLY_SUGGESTION_INSTRUCTION}) already offered the obvious next steps and its
+ * chips are quoted back here as the material's "already suggested" block; this
+ * pass is told to reach past them — synthesis across notes, a challenge to an
+ * assumption, a substantial project-sized next move — and never to restate one.
+ */
+const REPLY_DEEP_INSTRUCTION = `${SUGGESTION_INSTRUCTION} These are a deeper second set, shown after the obvious follow-ups the user has already been given (listed in the material as "already suggested"). Do not repeat or lightly reword any of them. Go further instead: connect the reply to the user's wider vault, question an assumption it rests on, propose a synthesis or a larger next project, or offer to save or distill a repeatable procedure (e.g. using /distill-skill or saving to MEMORY.md).`;
+
+/** Labels the deeper pass is told it has already offered, so it complements rather than echoes. */
+const ALREADY_SUGGESTED_INTRO = `Already suggested (do not repeat — go deeper or take a different angle):`;
 
 /**
  * The empty screen's framing lines, joined with the workspace block into the
@@ -153,6 +166,15 @@ export function buildSuggestionPrompt(
 	language: Language,
 	workspace?: WorkspaceContext,
 	noteFacts?: NoteFacts | null,
+	/**
+	 * The deeper second pass of the reply row. Switches the instruction to
+	 * {@link REPLY_DEEP_INSTRUCTION} and, with `priorActions`, quotes the fast
+	 * pass so this one complements it. Ignored for the empty scope, which has no
+	 * second pass.
+	 */
+	deep?: boolean,
+	/** The fast pass's chips, quoted into the deeper pass so it does not echo them. */
+	priorActions?: readonly QuickAction[],
 ): string {
 	const materials: string[] = [];
 	if (scope === "empty") {
@@ -177,8 +199,11 @@ export function buildSuggestionPrompt(
 	} else {
 		materials.push(REPLY_INTRO);
 		materials.push(String(subject ?? ""));
+		if (deep && priorActions && priorActions.length > 0) {
+			materials.push([ALREADY_SUGGESTED_INTRO, ...priorActions.map((action) => `- ${action.label}: ${action.prompt}`)].join("\n"));
+		}
 	}
-	const instruction = scope === "reply" ? REPLY_SUGGESTION_INSTRUCTION : SUGGESTION_INSTRUCTION;
+	const instruction = scope === "reply" ? (deep ? REPLY_DEEP_INSTRUCTION : REPLY_SUGGESTION_INSTRUCTION) : SUGGESTION_INSTRUCTION;
 	return `<subject>\n${materials.join("\n\n")}\n</subject>\n\n${instruction.replace("{count}", String(CAPS[scope])).replace("{language}", LANGUAGE_NAMES[language])}`;
 }
 
@@ -288,6 +313,10 @@ export async function fetchQuickActionSuggestions(options: {
 	workspace?: WorkspaceContext;
 	/** The probed note facts; quoted by the empty placements with active note. */
 	noteFacts?: NoteFacts | null;
+	/** The deeper second pass of the reply row (reply scope only). */
+	deep?: boolean;
+	/** The fast pass's chips, quoted into the deeper pass so it complements them. */
+	priorActions?: readonly QuickAction[];
 	signal?: AbortSignal;
 	apiKey?: string;
 }): Promise<SuggestionResult> {
@@ -295,17 +324,21 @@ export async function fetchQuickActionSuggestions(options: {
 		messages: [
 			{
 				role: "user",
-				content: buildSuggestionPrompt(options.scope, options.subject, options.language, options.workspace, options.noteFacts),
+				content: buildSuggestionPrompt(
+					options.scope,
+					options.subject,
+					options.language,
+					options.workspace,
+					options.noteFacts,
+					options.deep,
+					options.priorActions,
+				),
 				timestamp: Date.now(),
 			} satisfies UserMessage,
 		],
 	};
 	const streamOptions: SimpleStreamOptions = {
 		...SUGGESTION_STREAM_OPTIONS,
-		// The shared shape stays untouched for the settings probe (which only
-		// ever sends the empty placement); the reply placement widens its own
-		// output budget to fit its six chips.
-		maxTokens: options.scope === "reply" ? SUGGESTION_MAX_TOKENS_REPLY : SUGGESTION_MAX_TOKENS,
 		...(options.apiKey !== undefined && { apiKey: options.apiKey }),
 		...(options.signal && { signal: options.signal }),
 	};

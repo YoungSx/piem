@@ -4997,10 +4997,11 @@ describe("quick-action suggestions", () => {
 		expect(actions).toBeNull();
 	});
 
-	it("caps the reply row at six when the model offers more, through the real turn", async () => {
-		// The strip scrolls, so the model may offer seven; the parse, the
-		// instruction, and the row must agree on six. A real turn answers with
-		// the oversized array, which is then the reply the row reacts to.
+	it("caps each reply pass at three when the model offers more, through the real turn", async () => {
+		// The strip scrolls and fills across two passes, but each request asks for
+		// three; the parse, the instruction, and the row must agree on three. A
+		// real turn answers with an oversized array, which is then the reply the
+		// row reacts to.
 		const seven = JSON.stringify(Array.from({ length: 7 }, (_, index) => ({ label: `L${index}`, prompt: `P${index}` })));
 		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(seven) });
 		await service.initialize();
@@ -5008,8 +5009,8 @@ describe("quick-action suggestions", () => {
 
 		const actions = await service.suggestQuickActions("reply");
 
-		expect(actions).toHaveLength(6);
-		expect(actions?.at(-1)?.label).toBe("L5");
+		expect(actions).toHaveLength(3);
+		expect(actions?.at(-1)?.label).toBe("L2");
 	});
 
 	it("supersedes an in-flight request and resolves the loser to null, never the winner's chips", async () => {
