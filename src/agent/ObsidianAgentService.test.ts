@@ -3231,8 +3231,8 @@ describe("switching the active model", () => {
 		configureTwoModels(settings);
 
 		expect(service.getSnapshot().modelChoices).toEqual([
-			{ id: "m1", name: "Qwen Plus", provider: "My gateway" },
-			{ id: "m2", name: "Llama 4", provider: "My gateway" },
+			{ id: "m1", name: "Qwen Plus", provider: "My gateway", icon: "piem-vendor-qwen" },
+			{ id: "m2", name: "Llama 4", provider: "My gateway", icon: "piem-vendor-meta" },
 		]);
 		expect(service.getSnapshot().activeModelId).toBe("m1");
 	});

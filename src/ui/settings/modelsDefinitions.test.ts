@@ -190,6 +190,28 @@ describe("modelsDefinitions", () => {
 		expect(rendered?.[1]).toEqual(["pencil", "trash-2"]);
 	});
 
+	it("leads each model row with its vendor mark, and the neutral fallback for an unknown vendor", () => {
+		const settings = host().settings;
+		settings.providers.push({ id: "p", name: "Gateway", baseUrl: "https://bf.s8p.io/v1", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "" });
+		settings.models.push(
+			// Model-id match wins even through a custom gateway host.
+			{ id: "m1", providerId: "p", modelApiId: "claude-opus-5", displayName: "Claude", reasoning: false, supportsImages: false },
+			// Neither id nor host names a shipped vendor: the neutral fallback.
+			{ id: "m2", providerId: "p", modelApiId: "my-private-model", displayName: "Private", reasoning: false, supportsImages: false },
+		);
+		const list = modelsDefinitions(host({ settings })).find((def) => (def as { heading?: string }).heading === en.t("settings.modelsHeading")) as {
+			items?: Array<{ render?: (setting: unknown) => void }>;
+		};
+		// items[0] is the section note; the model rows follow it. The stubbed
+		// `setIcon` records the id on the holder as `data-icon`.
+		const marks = list.items?.slice(1).map((item) => {
+			const setting = new (Setting as unknown as new (el: HTMLElement) => { nameEl: HTMLElement })(document.createElement("div"));
+			item.render?.(setting);
+			return setting.nameEl.querySelector(".piem-settings-model-mark")?.getAttribute("data-icon");
+		});
+		expect(marks).toEqual(["piem-vendor-anthropic", "piem-model-generic"]);
+	});
+
 	it("keeps active-model changes local so its dropdown does not lose focus", () => {
 		const settings = host().settings;
 		settings.providers.push({ id: "p", name: "Provider", baseUrl: "https://example.test", protocol: "openai-completions", apiKey: "", secretRef: "", source: "user", oauthFlow: "" });

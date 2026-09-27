@@ -67,6 +67,7 @@ export function ModelSwitcher({ target, onSelect, onOpenSettings }: ModelSwitche
 		for (const choice of choices) {
 			menu.addItem((item) =>
 				item
+					.setIcon(choice.icon)
 					.setTitle(modelChoiceLabel(choice, t))
 					// The check is what marks the active row, so the label must not say
 					// "active" as well — the Models tab's own rows do, and repeating it
@@ -109,8 +110,8 @@ export function ModelSwitcher({ target, onSelect, onOpenSettings }: ModelSwitche
 			 * the model and its endpoint, so reading this too would repeat the
 			 * first third of it.
 			 */}
-			{target.vendorIcon !== undefined && (
-				<ObsidianIcon name={target.vendorIcon} className="piem-chat__model-switcher-mark" />
+			{target.modelIcon !== undefined && (
+				<ObsidianIcon name={target.modelIcon} className="piem-chat__model-switcher-mark" />
 			)}
 			<span className="piem-chat__model-switcher-name" aria-hidden="true">
 				{activeModelName(target)}

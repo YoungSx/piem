@@ -4043,6 +4043,25 @@ button.piem-chat__latest--asking {
 	margin-top: var(--size-4-2);
 }
 
+/*
+ * The vendor mark leading each model row in the Models list — the same mark the
+ * composer switcher and its menu show, so a model reads alike wherever it
+ * appears. Muted like the surrounding row text (it inherits, not competes), and
+ * sized to the label beside it. An unrecognised vendor gets the neutral
+ * fallback here too, so the column of marks stays even rather than gap-toothed.
+ */
+.piem-settings-model-mark {
+	display: inline-flex;
+	align-items: center;
+	margin-inline-end: var(--size-4-2);
+	color: var(--text-muted);
+}
+
+.piem-settings-model-mark .svg-icon {
+	width: var(--icon-s, 16px);
+	height: var(--icon-s, 16px);
+}
+
 .piem-settings-advanced__summary {
 	align-items: baseline;
 	cursor: pointer;

@@ -5,8 +5,8 @@ import { getT } from "../i18n";
 const en = getT("en");
 const zh = getT("zh-cn");
 
-const opus = { id: "m-opus", name: "Opus 5", provider: "OpenRouter" };
-const sonnet = { id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic" };
+const opus = { id: "m-opus", name: "Opus 5", provider: "OpenRouter", icon: "piem-vendor-anthropic" };
+const sonnet = { id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic", icon: "piem-vendor-anthropic" };
 
 /**
  * The switcher's two strings, which answer to different readers.

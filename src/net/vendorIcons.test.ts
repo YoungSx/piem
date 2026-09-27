@@ -6,7 +6,7 @@ import type { VendorId } from "./vendorMatch";
 // The registry reaches `obsidian` for `addIcon`; the module ships types only,
 // so it has to be stubbed before that import resolves.
 installObsidianStub();
-const { registerVendorIcons, vendorIconName, VENDOR_ICON_ID_PREFIX } = await import("./vendorIcons");
+const { registerVendorIcons, vendorIconName, modelIconName, VENDOR_ICON_ID_PREFIX, MODEL_FALLBACK_ICON_ID } = await import("./vendorIcons");
 
 installObsidianStub();
 
@@ -28,11 +28,13 @@ const ALL_VENDORS: VendorId[] = [
 ];
 
 describe("vendorIcons", () => {
-	it("registers one mark per vendor under the shared prefix", () => {
+	it("registers one mark per vendor under the shared prefix, plus the neutral fallback", () => {
 		addIconMock.mockClear();
 		registerVendorIcons();
 		const registered = new Map(addIconMock.mock.calls.map(([id, svg]) => [id, svg]));
-		expect(registered.size).toBe(ALL_VENDORS.length);
+		// One per vendor, and one more for the no-vendor fallback.
+		expect(registered.size).toBe(ALL_VENDORS.length + 1);
+		expect(registered.get(MODEL_FALLBACK_ICON_ID)).toBeDefined();
 		for (const vendor of ALL_VENDORS) {
 			const name = vendorIconName(vendor) ?? "";
 			expect(name).toStartWith(VENDOR_ICON_ID_PREFIX);
@@ -66,5 +68,18 @@ describe("vendorIcons", () => {
 			expect(svg).not.toMatch(/<svg[^>]*\sheight=/);
 			expect(svg).toContain("currentColor");
 		}
+	});
+});
+
+describe("modelIconName", () => {
+	it("gives a model its vendor mark, and the neutral fallback when none matches", () => {
+		// Model-id match wins even through a custom gateway host.
+		expect(modelIconName("claude-opus-5", "https://bf.s8p.io/v1")).toBe(`${VENDOR_ICON_ID_PREFIX}anthropic`);
+		expect(modelIconName("deepseek-v4-flash", "https://bf.s8p.io/v1")).toBe(`${VENDOR_ICON_ID_PREFIX}deepseek`);
+		// Official host match when the id names no family.
+		expect(modelIconName("auto", "https://openrouter.ai/api/v1")).toBe(`${VENDOR_ICON_ID_PREFIX}openrouter`);
+		// Neither known: the neutral fallback, never undefined.
+		expect(modelIconName("sensenova-6.8-flash-lite", "https://token.sensenova.cn/v1")).toBe(MODEL_FALLBACK_ICON_ID);
+		expect(modelIconName(undefined, undefined)).toBe(MODEL_FALLBACK_ICON_ID);
 	});
 });

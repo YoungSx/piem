@@ -10,8 +10,8 @@ const document = installDom();
 const { ModelSwitcher } = await import("./ModelSwitcher");
 const { createRoot } = await import("react-dom/client");
 
-const opus = { id: "m-opus", name: "Opus 5", provider: "OpenRouter" };
-const sonnet = { id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic" };
+const opus = { id: "m-opus", name: "Opus 5", provider: "OpenRouter", icon: "piem-vendor-anthropic" };
+const sonnet = { id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic", icon: "piem-vendor-anthropic" };
 
 interface RenderOptions {
 	target?: Partial<ModelTarget>;
@@ -113,6 +113,12 @@ describe("ModelSwitcher menu", () => {
 		const host = await renderSwitcher();
 
 		expect((await openMenu(host)).titles()).toEqual(["Opus 5 · OpenRouter", "Sonnet 5 · Anthropic"]);
+	});
+
+	it("carries each model's mark on its row, so the menu reads like the composer face", async () => {
+		const host = await renderSwitcher();
+
+		expect((await openMenu(host)).items.map((item) => item.icon)).toEqual([opus.icon, sonnet.icon]);
 	});
 
 	it("marks the active row with a check, since its label deliberately does not say so", async () => {

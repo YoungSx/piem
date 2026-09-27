@@ -63,8 +63,7 @@ import {
 	DEFAULT_TURN_MAX_DELAY_MS,
 	type TurnRetryPolicy,
 } from "../net/streamRetry";
-import { matchVendorForModel } from "../net/vendorMatch";
-import { vendorIconName } from "../net/vendorIcons";
+import { modelIconName } from "../net/vendorIcons";
 import {
 	compactIfNeeded,
 	needsCompaction,
@@ -361,14 +360,15 @@ export interface ChatSnapshot {
 	 */
 	runningModelId: string;
 	/**
-	 * The resolved vendor mark for the active target, or undefined when neither
-	 * its model id nor its endpoint names a vendor this plugin ships a mark for.
+	 * The resolved mark for the active target: the vendor's when its model id or
+	 * endpoint names one, else the neutral fallback (see `modelIconName`), so the
+	 * composer face always carries a mark rather than a ragged gap.
 	 *
 	 * Resolved here rather than in the switcher: the match tables live behind
 	 * `matchVendorForModel`, and the component has no business re-deriving what
 	 * the snapshot can hand it — or re-running it on every render.
 	 */
-	vendorIcon?: string;
+	modelIcon?: string;
 	/**
 	 * The level this conversation runs at, read from the live agent — which the
 	 * session file drives — rather than from settings. A global field would
@@ -5019,7 +5019,7 @@ export class ObsidianAgentService {
 			// carry the new choice while the agent keeps its model, and that gap —
 			// not a flag — is what the switcher's pending note keys off.
 			runningModelId: agent?.state.model.id ?? model.id,
-			vendorIcon: vendorIconName(matchVendorForModel(model.id, model.baseUrl)),
+			modelIcon: modelIconName(model.id, model.baseUrl),
 			// The session's own level, not a settings fallback: with no agent yet
 			// there is no conversation either, so "off" is the honest default.
 			thinkingLevel: agent?.state.thinkingLevel ?? "off",
