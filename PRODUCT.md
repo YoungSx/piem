@@ -25,7 +25,7 @@ not the opening claim.
 
 ## Product Purpose
 
-Put a coding agent that actually edits inside an Obsidian side panel, working
+Put a note-taking agent that actually edits inside an Obsidian side panel, working
 the vault through vault-scoped tools — read, search, write, edit, move, trash,
 link-walk, frontmatter — instead of handing back text for the user to paste.
 
