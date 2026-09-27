@@ -12,8 +12,9 @@
 </p>
 
 <p align="center">
-  An AI coding agent that lives in an Obsidian side panel and actually edits your notes.<br>
-  Not a chat box that hands you text to paste back.
+  An AI note-taking companion that lives in an Obsidian side panel —<br>
+  you ask, it acts, and what changes is the note itself,<br>
+  not a block of text handed back for you to paste in.
 </p>
 
 <p align="center">
@@ -79,14 +80,15 @@ dreading, coffee is a fair trade.
 
 ## 🧰 What else it has in hand
 
-|  |  |
+| | |
 | --- | --- |
 | **Two dozen vault tools** | read, search, write, edit, move, trash, walk links, rewrite frontmatter, sweep tasks, drive the editor — [see them all](docs/tools.md) |
 | **Subagents, in parallel** | hand off a self-contained task; isolated transcript, capped at three levels by construction, not by a check — [how they work](docs/tools.md#subagents) |
 | **MCP servers** | remote tools merge into the agent's own tool set, name-spaced so a transcript never lies about where a tool came from — [connect one](docs/extending.md#mcp-servers) |
 | **Skills** | reusable instructions from bundled, from your vault, or from the `~/.pi` folders you already use with pi. Type <kbd>/</kbd> — [write one](docs/extending.md#skills) |
 | **Context that follows you** | the note you have open — path and body — rides along with every turn, and the conversation compacts itself when the window fills |
-| **Actions where you need them** | an empty panel offers first moves shaped by your open note; every reply offers copy, insert at cursor, append to the note, or ask again in place |
+| **Proactive perception** | while you write, a background scout reads the note you have open and finds the missing frontmatter, the broken link, the external reference whose takeaway was never recorded — and stages each as a tap-to-run suggestion. It only suggests; it never edits on its own |
+| **Suggestions in context** | an empty panel opens with first moves the model shapes to the note you have open; after a reply, a fresh row of follow-ups arrives — the obvious next step first, a deeper one behind it — beside copy, insert at cursor, append to the note, or ask again in place |
 | **Your endpoint, your key** | any OpenAI-compatible or Anthropic-messages base URL, sixteen presets to start from, capabilities auto-filled — [configure it](docs/settings.md#models) |
 | **Images** | paste or drop them into the composer and they ride along |
 | **English & 简体中文** | follows Obsidian's own language, with an override when you want otherwise |
