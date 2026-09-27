@@ -93,6 +93,15 @@ facts, not piem facts.
     killing anything on a pre-existing port/display, check whether another
     session is flying it: compare the plugin version reported in-app, PIDs,
     and file timestamps first.
+12. **A fresh vault raises the "trust author" modal, and it holds the app in
+    restricted mode.** `enablePluginAndSave` force-loads the plugin, so
+    `agentService` appears and looks healthy — but while the modal stands the
+    vault stays untrusted, the chat view renders its "Connect a model to
+    start" empty state, and seeded settings never reach it (the model switcher
+    freezes on the builtin fallback). The manager clicks the modal's "Trust
+    author" CTA on every unlock poll, idempotently. Tell-tale if it regresses:
+    `getSnapshot()` is correct but the mounted view is stuck on the default
+    model.
 
 ## Smoke inventory
 
@@ -108,6 +117,7 @@ facts, not piem facts.
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` bridge with Node-access negatives |
 | `smoke-typography-obsidian.mjs` | Typography in real render (has `--baseline` instead of mobile) |
 | `smoke-proactive-obsidian.mjs` | Proactive intelligence (use its dedicated `run-smoke-proactive.py`) |
+| `smoke-model-icon-obsidian.mjs` | Composer model-switcher vendor mark: paints, tracks the active model, absent for unknown vendors |
 
 For DOM-level visual work without Obsidian, use the preview harness instead
 (`bun scripts/preview-visual.mjs` — bun, not node, because the stub uses

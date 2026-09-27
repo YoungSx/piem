@@ -284,18 +284,24 @@ def launch_obsidian(runtime, profile, port, display, logs):
 
 def unlock_plugin(port):
     print("Waiting for the piem plugin...")
-    # Two gates, both silent: the community-plugins master switch in
-    # localStorage, and loadPlugin no-oping while it is off. The unlock must
-    # run as an async IIFE — Runtime.evaluate rejects a bare await as a syntax
-    # error. Then verify the agentService body, not the plugin shell: the
-    # shell existing while the service does not is the classic false green.
-    # Cold start on a pristine vault can exceed 30s; the loop below allows 90.
+    # Three gates, all silent: the "trust author" modal a fresh vault raises,
+    # the community-plugins master switch in localStorage, and loadPlugin
+    # no-oping while it is off. The trust modal is the subtle one — force-
+    # enabling loads the plugin, but the modal keeps the app in restricted mode,
+    # so the chat view renders its unconfigured empty state and seeded settings
+    # never reach it. Click its CTA first, every poll (idempotent — a no-op when
+    # the modal is absent), so a modal that lands after boot still gets cleared.
+    # The unlock must run as an async IIFE — Runtime.evaluate rejects a bare
+    # await as a syntax error. Then verify the agentService body, not the plugin
+    # shell: the shell existing while the service does not is the classic false
+    # green. Cold start on a pristine vault can exceed 30s; the loop allows 90.
     deadline = time.monotonic() + 90
     rescue = []
     while time.monotonic() < deadline:
         if stopping:
             raise RuntimeError("interrupted while waiting for the plugin")
         try:
+            evaluate(port, "(() => { const b = [...document.querySelectorAll('.modal-container button, .modal button')].find(x => /trust author/i.test(x.textContent || '')); if (b) b.click(); })()")
             if evaluate(port, "!!window.app?.plugins?.plugins?.piem?.agentService"):
                 return
             evaluate(port, "(async () => { app.plugins.setEnable(true); await app.plugins.enablePluginAndSave('piem'); })()")
