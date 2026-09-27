@@ -1943,8 +1943,8 @@ function baseSnapshot(): ChatSnapshot {
 		thinkingLevel: "off",
 		thinkingLevels: ["off", "low", "high"],
 		modelChoices: [
-			{ id: "m-opus", name: "Opus 5", provider: "OpenRouter" },
-			{ id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic" },
+			{ id: "m-opus", name: "Opus 5", provider: "OpenRouter", icon: "piem-vendor-anthropic" },
+			{ id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic", icon: "piem-vendor-anthropic" },
 		],
 		activeModelId: "m-opus",
 		// A session is needed for the draft store to be keyed at all; the store-less

@@ -40,12 +40,12 @@ export interface ModelTarget {
 	provider: string;
 	modelId: string;
 	/**
-	 * Obsidian icon id of the vendor mark for the active target, already
-	 * resolved by the snapshot — undefined when the model id and endpoint name
-	 * no vendor this plugin ships a mark for, which is the switcher's cue to
-	 * render none rather than a placeholder.
+	 * Obsidian icon id of the mark for the active target, already resolved by
+	 * the snapshot — the vendor's mark when one matches, else the neutral
+	 * fallback (see `modelIconName`). Optional only so non-snapshot callers and
+	 * fixtures need not set it; the live snapshot always does.
 	 */
-	vendorIcon?: string;
+	modelIcon?: string;
 	/**
 	 * Wire id of the model the live agent is actually serving requests on, when
 	 * the snapshot knows it. Equal to the settings-resolved {@link modelId}

@@ -1,5 +1,5 @@
 import { addIcon } from "obsidian";
-import type { VendorId } from "./vendorMatch";
+import { matchVendorForModel, type VendorId } from "./vendorMatch";
 
 /**
  * The vendor marks issue #161 asks for, registered into Obsidian's icon
@@ -52,13 +52,44 @@ export function vendorIconName(vendor: VendorId | undefined): string | undefined
 }
 
 /**
- * Registers every vendor mark. Idempotent by construction — `addIcon`
- * overwrites the same id with identical markup — and safe to call once in
- * `onload`, beside {@link registerBrandIcon}, before anything that renders a
- * mark runs.
+ * The id of the neutral mark shown for a model whose vendor the plugin does not
+ * recognise — a custom gateway host, a renamed model, a proxy id that matches
+ * no family. Where {@link vendorIconName} answers `undefined` for "no vendor",
+ * this is the surface's fallback so every model row still carries a mark rather
+ * than a ragged gap. It is deliberately a neutral glyph, not a borrowed brand:
+ * a brand mark on an unknown endpoint would be the trust leak issue #161 guards
+ * against, whereas a generic box claims nothing about who serves the model.
+ *
+ * Not models.dev's own fallback (`/logos/fallback.svg`): that file is the
+ * lucide sparkles glyph, byte-identical to what models.dev serves for Qwen — so
+ * reusing it would make every unrecognised model indistinguishable from a Qwen
+ * one. A plain box collides with none of the shipped vendor marks.
+ */
+export const MODEL_FALLBACK_ICON_ID = "piem-model-generic";
+
+const MODEL_FALLBACK_SVG =
+	"<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"m3.3 7 8.7 5 8.7-5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M12 22V12\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
+
+/**
+ * The icon id to show for one configured model, vendor mark first and the
+ * neutral {@link MODEL_FALLBACK_ICON_ID} when no vendor matches — always a
+ * registered id, never `undefined`, so every switcher and settings row draws a
+ * mark. Callers that want the strict "vendor or nothing" answer use
+ * {@link vendorIconName} with {@link matchVendorForModel} directly.
+ */
+export function modelIconName(modelApiId: string | undefined, providerBaseUrl: string | undefined): string {
+	return vendorIconName(matchVendorForModel(modelApiId, providerBaseUrl)) ?? MODEL_FALLBACK_ICON_ID;
+}
+
+/**
+ * Registers every vendor mark plus the neutral fallback. Idempotent by
+ * construction — `addIcon` overwrites the same id with identical markup — and
+ * safe to call once in `onload`, beside {@link registerBrandIcon}, before
+ * anything that renders a mark runs.
  */
 export function registerVendorIcons(): void {
 	for (const [vendor, svg] of Object.entries(VENDOR_ICON_SVGS)) {
 		addIcon(VENDOR_ICON_ID_PREFIX + vendor, svg);
 	}
+	addIcon(MODEL_FALLBACK_ICON_ID, MODEL_FALLBACK_SVG);
 }

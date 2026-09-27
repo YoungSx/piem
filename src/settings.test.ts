@@ -215,8 +215,8 @@ describe("listModelChoices", () => {
 		const choices = listModelChoices(configured());
 
 		expect(choices).toEqual([
-			{ id: "m1", name: "Qwen Plus", provider: "My gateway" },
-			{ id: "m2", name: "raw-id", provider: "My gateway" },
+			{ id: "m1", name: "Qwen Plus", provider: "My gateway", icon: "piem-vendor-qwen" },
+			{ id: "m2", name: "raw-id", provider: "My gateway", icon: "piem-model-generic" },
 		]);
 	});
 

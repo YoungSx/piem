@@ -1,10 +1,11 @@
-import { Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
+import { Setting, setIcon, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import { createFetchForTransport, type NetworkTransport } from "../../net/obsidianFetch";
 import { createObsidianModels } from "../../net/streamFn";
 import { ModelListingCache } from "../../net/modelListingCache";
 import { testModelConnection, testProviderConnection, testSuggestionConnection } from "../../connectionTest";
 import type { ConnectionTestResult } from "../../connectionTest";
 import { getSuggestionConfiguration, listModelChoices } from "../../settings";
+import { modelIconName } from "../../net/vendorIcons";
 import { fetchModelsDevIndex } from "../../net/modelsDev";
 import {
 	describeModelConfig,
@@ -342,6 +343,12 @@ function modelDefinition(host: SettingsPanelHost, model: ModelConfig, live: Mode
 		name: describeModelConfig(model),
 		desc: describeModelRow(settings, model, t),
 		render: (setting) => {
+			// Lead the row with the model's vendor mark (or the neutral fallback),
+			// so the settings list reads the same as the composer switcher and its menu.
+			const provider = settings.providers.find((candidate) => candidate.id === model.providerId);
+			const mark = setting.nameEl.createSpan({ cls: "piem-settings-model-mark" });
+			setIcon(mark, modelIconName(model.modelApiId, provider?.baseUrl));
+			setting.nameEl.prepend(mark);
 			live.rows.set(model.id, setting.descEl);
 			setting.addExtraButton((button) => {
 				rowAction(button, "pencil", t.t("settings.editModel"));

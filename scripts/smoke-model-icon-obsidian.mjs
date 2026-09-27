@@ -77,7 +77,7 @@ async function runSmoke(root, endpoint) {
 			{ id: "m-claude", apiId: "claude-opus-5", display: "Claude Opus 5", expect: "piem-vendor-anthropic", keyword: "claude" },
 			{ id: "m-gpt", apiId: "gpt-4o", display: "GPT 4o", expect: "piem-vendor-openai", keyword: "gpt" },
 			{ id: "m-qwen", apiId: "qwen-max", display: "Qwen Max", expect: "piem-vendor-qwen", keyword: "qwen" },
-			{ id: "m-custom", apiId: "my-private-model", display: "My Private", expect: null, keyword: "private" },
+			{ id: "m-custom", apiId: "my-private-model", display: "My Private", expect: "piem-model-generic", keyword: "private" },
 		];
 		Object.assign(plugin.settings, {
 			language: "en",
@@ -102,12 +102,12 @@ async function runSmoke(root, endpoint) {
 			// real switch path, not a settings poke.
 			await service.setActiveModel(c.id);
 			await wait(() => snap().activeModelId === c.id, 8000, () => `snapshot activeModelId === ${c.id}`);
-			const snapshotVendorIcon = snap().vendorIcon ?? null;
+			const modelIcon = snap().modelIcon ?? null;
 			await paint();
 			// Wait for the DOM to actually re-render to this model, so a frozen view
 			// fails loudly here instead of reading a stale mark.
 			await wait(() => (readMark().name || "").toLowerCase().replace(/[\s-]/g, "").includes(c.keyword), 8000, () => `switcher DOM to show "${c.display}", saw "${readMark().name}"`);
-			report.cases.push({ case: c.id, apiId: c.apiId, expect: c.expect, snapshotVendorIcon, dom: readMark() });
+			report.cases.push({ case: c.id, apiId: c.apiId, expect: c.expect, modelIcon, dom: readMark() });
 		}
 
 		const byId = Object.fromEntries(report.cases.map((x) => [x.case, x]));
@@ -115,19 +115,34 @@ async function runSmoke(root, endpoint) {
 			if (!ok) throw new Error(`${name}: ${detail}`);
 			report.checks.push(name);
 		};
-		for (const c of CASES.filter((x) => x.expect)) {
+		// Every model now carries a mark on the composer face — the vendor's, or the
+		// neutral fallback for one whose id and endpoint name no shipped vendor.
+		for (const c of CASES) {
 			const r = byId[c.id];
-			check(`${c.id} snapshot resolves ${c.expect}`, r.snapshotVendorIcon === c.expect, JSON.stringify(r));
-			check(`${c.id} svg painted, sized, classed ${c.expect}`, r.dom.svgPainted && r.dom.box && r.dom.box.w > 0 && r.dom.box.h > 0 && (r.dom.svgClass || "").includes(c.expect), JSON.stringify(r.dom));
+			check(`face: ${c.id} snapshot resolves ${c.expect}`, r.modelIcon === c.expect, JSON.stringify(r));
+			check(`face: ${c.id} svg painted, sized, classed ${c.expect}`, r.dom.svgPainted && r.dom.box && r.dom.box.w > 0 && r.dom.box.h > 0 && (r.dom.svgClass || "").includes(c.expect), JSON.stringify(r.dom));
 		}
-		const custom = byId["m-custom"];
-		check("custom-id model shows NO mark (by design)", custom.snapshotVendorIcon === null && !custom.dom.svgPainted, JSON.stringify(custom));
 		check("no renderer errors during the switcher exercise", report.errors.length === 0, JSON.stringify(report.errors));
 
-		// Land on Claude so the screenshot shows a real vendor mark by its name.
+		// --- Menu surface: each row wears its model's mark ---
 		await service.setActiveModel("m-claude");
-		await wait(() => (readMark().name || "").toLowerCase().includes("claude"), 8000, "switcher back on Claude for the shot");
 		await paint();
+		document.querySelector(".piem-chat__model-switcher")?.click();
+		await wait(() => document.querySelector(".menu .menu-item"), 5000, "switcher menu open");
+		const menuRows = [...document.querySelectorAll(".menu .menu-item")].map((row) => ({
+			title: (row.querySelector(".menu-item-title")?.textContent || "").trim(),
+			icon: row.querySelector(".menu-item-icon svg")?.getAttribute("class") ?? null,
+		}));
+		report.diag.menuRows = menuRows;
+		const menuRow = (kw) => menuRows.find((r) => r.title.toLowerCase().replace(/[\s-]/g, "").includes(kw));
+		check("menu: Claude row shows the anthropic mark", (menuRow("claude")?.icon || "").includes("piem-vendor-anthropic"), JSON.stringify(menuRows));
+		check("menu: custom row shows the neutral fallback", (menuRow("private")?.icon || "").includes("piem-model-generic"), JSON.stringify(menuRows));
+
+		// The settings-list surface (the Models tab) renders in Obsidian's settings
+		// popout — a separate window with no `window.app`, unreachable from this
+		// page's DOM (see the piem-settings-popout-window-cdp note). Its mark
+		// injection is covered by modelsDefinitions.test.ts. The menu is left open
+		// so the screenshot shows every row wearing its mark.
 		report.passed = true;
 	} catch (cause) {
 		report.failure = String(cause.stack ?? cause);

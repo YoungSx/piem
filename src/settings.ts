@@ -6,6 +6,7 @@ import { DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "./constants";
 import type { SecretEnvironment, SecretStorageTier } from "./keychainEnv";
 import type { NetworkTransport } from "./net/obsidianFetch";
 import { DEFAULT_CACHE_RETENTION, readCacheRetention } from "./net/cacheRetention";
+import { modelIconName } from "./net/vendorIcons";
 import {
 	buildConfiguredModel,
 	describeModelConfig,
@@ -427,6 +428,12 @@ export interface ModelChoice {
 	name: string;
 	/** The serving provider's name, or its base URL. */
 	provider: string;
+	/**
+	 * Obsidian icon id of the model's vendor mark, or the neutral fallback when
+	 * no vendor matches (see {@link modelIconName}) — always set, so every menu
+	 * and settings row draws a mark rather than a ragged gap.
+	 */
+	icon: string;
 }
 
 /**
@@ -446,7 +453,7 @@ export function listModelChoices(source: ModelResolutionSource): ModelChoice[] {
 		if (!provider) {
 			continue;
 		}
-		choices.push({ id: model.id, name: describeModelConfig(model), provider: describeProviderConfig(provider) });
+		choices.push({ id: model.id, name: describeModelConfig(model), provider: describeProviderConfig(provider), icon: modelIconName(model.modelApiId, provider.baseUrl) });
 	}
 	return choices;
 }
