@@ -29,6 +29,11 @@ import { buildSettingDefinitions } from "./ui/settings/settingDefinitions";
 import { SettingsPanelState } from "./ui/settings/panelState";
 import { isControlKey, readControlValue, writeControlValue } from "./ui/settings/controlKeys";
 import { getT, isLanguageSetting, resolveLanguage, type LanguageHost, type LanguageSetting, type Translator } from "./i18n";
+import {
+	DEFAULT_CONVERSATION_LANGUAGE,
+	isConversationLanguageSetting,
+	type ConversationLanguageSetting,
+} from "./agent/conversationLanguage";
 import { DEFAULT_SEND_SHORTCUT, isSendShortcutSetting, type SendShortcut } from "./ui/keyboard";
 import { DEFAULT_TRACE_EXPAND, isTraceExpandSetting, type TraceExpandSetting } from "./ui/traceExpand";
 import {
@@ -115,6 +120,14 @@ export interface PiemSettings {
 	 * (resolved once per load); the concrete values override it.
 	 */
 	language: LanguageSetting;
+	/**
+	 * Language the assistant is told to reply in — a different thing from
+	 * {@link language}, which only picks the plugin's own UI translation. `"auto"`
+	 * appends no instruction and leaves the implicit follow-the-user behaviour
+	 * intact; a concrete value pins replies to that language regardless of what
+	 * the user writes in. See {@link ./agent/conversationLanguage}.
+	 */
+	conversationLanguage: ConversationLanguageSetting;
 	/**
 	 * Which keypress sends the draft.
 	 *
@@ -230,6 +243,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	traceExpand: DEFAULT_TRACE_EXPAND,
 	promptQueueStrategy: DEFAULT_PROMPT_QUEUE_STRATEGY,
 	language: "auto",
+	conversationLanguage: DEFAULT_CONVERSATION_LANGUAGE,
 	sendShortcut: DEFAULT_SEND_SHORTCUT,
 	sessionRetention: DEFAULT_SESSION_RETENTION,
 	sessionDir: DEFAULT_SESSION_DIR,
@@ -256,6 +270,14 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	// throwing, matching how every other enum-typed setting is repaired.
 	const rawLanguage = data?.language;
 	const language: LanguageSetting = isLanguageSetting(rawLanguage) ? rawLanguage : "auto";
+	// Same repair as every other enum-typed setting: a corrupted or unknown stored
+	// value — including one from a vault written before this setting existed —
+	// degrades to "auto", which appends no instruction and keeps the implicit
+	// follow-the-user behaviour.
+	const rawConversationLanguage = data?.conversationLanguage;
+	const conversationLanguage: ConversationLanguageSetting = isConversationLanguageSetting(rawConversationLanguage)
+		? rawConversationLanguage
+		: DEFAULT_CONVERSATION_LANGUAGE;
 
 	const compaction = normalizeCompactionConfig(data?.compaction);
 	const retry = normalizeRetryConfig(data?.retry);
@@ -301,6 +323,9 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 			? data.promptQueueStrategy
 			: DEFAULT_PROMPT_QUEUE_STRATEGY,
 		language,
+		// Absent in vaults written before the setting existed; those follow the
+		// user's own language, the implicit behaviour this setting makes explicit.
+		conversationLanguage,
 		// Absent in vaults written before the setting existed. Those users get bare
 		// Enter, which adds a way to send rather than moving one: the Ctrl+Enter
 		// chord they already know keeps working under it.
