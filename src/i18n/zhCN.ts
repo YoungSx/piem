@@ -693,6 +693,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		modelsFilterPlaceholder: "输入名称、ID 或提供方以筛选…",
 		providerMissing: "提供方缺失",
 		activeSuffix: " · 当前",
+		conversationLanguage: "对话语言",
+		conversationLanguageDesc:
+			"AI 回复你时使用的语言。“自动”会跟随你说话的语言，和之前一样；选定某种语言后，无论你用什么语言提问，AI 都用它回复。",
 		showAgentDetails: "显示代理详情",
 		showAgentDetailsDesc: "在对话面板中显示 token 数、花费和原始工具参数。",
 		// 选项按「读者看到的对话」措辞，不按机器行为：例外项由打开的 diff 行自己解释。

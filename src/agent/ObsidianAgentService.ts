@@ -5555,8 +5555,18 @@ export class ObsidianAgentService {
 	 */
 	private promptWithEnvironment(): string {
 		try {
+			// The conversation-language instruction wraps first so the order reads
+			// role, instruction, situation: an explicit reply-language pin is an
+			// order to the model, and it sits above the environment sentence that
+			// merely states the interface language. `"auto"` appends nothing, leaving
+			// the implicit follow-the-user behaviour exactly as it was. Read live from
+			// settings so a change takes effect on the next turn — the prompt is
+			// recomposed per call, not cached.
 			return withEnvironment(
-				OBSIDIAN_AGENT_SYSTEM_PROMPT,
+				withConversationLanguage(
+					OBSIDIAN_AGENT_SYSTEM_PROMPT,
+					this.getSettings().conversationLanguage,
+				),
 				probeEnvironment(this.app),
 			);
 		} catch (error) {

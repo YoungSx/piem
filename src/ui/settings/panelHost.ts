@@ -15,6 +15,7 @@ import type { TraceExpandSetting } from "../../ui/traceExpand";
 import type { FetchedSkill, FetchedSource, UpdatePlan } from "../../skills/skillImport";
 import type { SkillInventory } from "../../skills/skillManager";
 import type { LanguageSetting, Translator } from "../../i18n";
+import type { ConversationLanguageSetting } from "../../agent/conversationLanguage";
 import type { SendShortcut } from "../keyboard";
 import type { SecretStorageState } from "./secretStorageCopy";
 

@@ -1137,6 +1137,9 @@ export const en = {
 		modelsFilterPlaceholder: "Type to filter by name, ID, or provider…",
 		providerMissing: "provider missing",
 		activeSuffix: " · active",
+		conversationLanguage: "Conversation language",
+		conversationLanguageDesc:
+			"Which language the assistant replies in. “Auto” follows the language you write in; any other choice pins replies to that language whatever you type.",
 		showAgentDetails: "Show agent details",
 		showAgentDetailsDesc: "Show token counts, spend, and raw tool arguments in the chat panel.",
 		/**

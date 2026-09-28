@@ -1,5 +1,6 @@
 import { type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import type { PromptQueueStrategy } from "../../agent/queueStrategy";
+import { CONVERSATION_LANGUAGES } from "../../agent/conversationLanguage";
 import { MIN_COMPACTION_TOKENS, readTokenCount, type CompactionConfig } from "../../agent/compactionSettings";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "../../session/sessionDir";
 import { readRetentionLimit, UNLIMITED_SESSION_RETENTION } from "../../session/retention";
@@ -54,6 +55,23 @@ import {
  */
 
 /**
+ * The languages the assistant can be pinned to reply in.
+ *
+ * `"auto"` leads, labelled from the interface table because it is the plugin's
+ * own word, not a language's endonym. Every real language is labelled by its own
+ * name — a reader looking for their language recognizes its endonym, not an
+ * English or a translated label — which is why these come straight off
+ * {@link CONVERSATION_LANGUAGES} rather than through a translator.
+ */
+function conversationLanguageOptions(host: SettingsPanelHost): Record<string, string> {
+	const options: Record<string, string> = { auto: host.t.t("language.auto") };
+	for (const language of CONVERSATION_LANGUAGES) {
+		options[language.code] = language.endonym;
+	}
+	return options;
+}
+
+/**
  * The Chat tab's rows, in the order they read: behaviour, then storage.
  */
 export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[] {
@@ -64,6 +82,16 @@ export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[
 		 * beside the model switcher in the chat panel itself, so a global dropdown
 		 * would only masquerade as a default while every session overrides it.
 		 */
+		{
+			// First on the tab because it answers the first question a reader has
+			// about talking to the assistant — what language it answers in — and it
+			// is the one row here that changes the reply itself rather than the
+			// chrome around it. "Auto" keeps the implicit follow-the-user behaviour;
+			// a pinned language overrides it regardless of what the user writes in.
+			name: t.t("settings.conversationLanguage"),
+			desc: t.t("settings.conversationLanguageDesc"),
+			control: { type: "dropdown", key: "conversationLanguage", options: conversationLanguageOptions(host) },
+		},
 		{
 			name: t.t("settings.showAgentDetails"),
 			desc: t.t("settings.showAgentDetailsDesc"),

@@ -1,4 +1,5 @@
 import { isLanguageSetting } from "../../i18n";
+import { isConversationLanguageSetting } from "../../agent/conversationLanguage";
 import { isLogLevelSetting } from "../../logging/logLevel";
 import { isSendShortcutSetting } from "../keyboard";
 import { isCacheRetentionSetting } from "../../net/cacheRetention";
@@ -51,6 +52,7 @@ const CONTROL_KEYS = [
 	"traceExpand",
 	"promptQueueStrategy",
 	"language",
+	"conversationLanguage",
 	"sendShortcut",
 	"logLevel",
 	"networkTransport",
@@ -109,6 +111,10 @@ export function writeControlValue(settings: SettingsPanelSettings, key: ControlK
 		case "language":
 			if (!isLanguageSetting(value)) return false;
 			settings.language = value;
+			return true;
+		case "conversationLanguage":
+			if (!isConversationLanguageSetting(value)) return false;
+			settings.conversationLanguage = value;
 			return true;
 		case "sendShortcut":
 			if (!isSendShortcutSetting(value)) return false;
