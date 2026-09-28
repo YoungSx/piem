@@ -157,6 +157,14 @@ export const en = {
 		recoveryOffer: "The last reply was cut off before it finished. Continue from where it stopped?",
 		recoveryResume: "Continue",
 		/**
+		 * The cold-start banner and its button: the panel opened a fresh sheet, and
+		 * this offers to reopen the chat this device last had instead of resuming it
+		 * outright. A standing offer like the recovery, announced politely; the
+		 * title names which chat so the click is never a surprise.
+		 */
+		resumeSuggestion: "Pick up where you left off in “{title}”?",
+		resumeSuggestionAction: "Open",
+		/**
 		 * The sync-conflict banner: a merge with another device's copy of the log
 		 * refused, so the foreign file was quarantined and the conversation kept
 		 * as-is. A standing outcome announced politely; the backup path follows

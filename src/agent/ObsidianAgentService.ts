@@ -349,6 +349,13 @@ export interface ChatSnapshot {
 	 * "no", the same reading a fresh install has.
 	 */
 	canResumeInterrupted?: boolean;
+	/**
+	 * The chat cold start offers to reopen, present only while the fresh startup
+	 * sheet is still untouched. The banner turns it into the "pick up where you
+	 * left off" offer; absent means there is nothing to return to, or the user
+	 * has already moved on from the sheet — the same reading a fresh install has.
+	 */
+	resumeSuggestion?: { title: string };
 	provider: string;
 	modelId: string;
 	/**
@@ -901,6 +908,18 @@ export class ObsidianAgentService {
 	 */
 	private sessionInfo: ActiveSessionInfo | null = null;
 	private sessionRevision = 0;
+	/**
+	 * The cold-start "pick up where you left off" offer, and the sheet it stands
+	 * over. Set once in {@link initializeAgent}: the panel opens a blank sheet
+	 * and, when the vault held a chat worth returning to, offers it here rather
+	 * than resuming it outright. `path` is the chat to open on accept;
+	 * `startupBlankPath` is the sheet the offer belongs to, so any move off it —
+	 * switching chats, a fresh `/new`, or the first message materializing this
+	 * sheet — retires the offer with no extra bookkeeping (see
+	 * {@link currentResumeSuggestion}). Cleared on accept or dismiss.
+	 */
+	private resumeSuggestion: { path: string; title: string } | null = null;
+	private startupBlankPath: string | null = null;
 	/**
 	 * Which note the user is looking at right now. Workspace state, not
 	 * conversation state — it survives a session switch and every runtime reads
@@ -2193,6 +2212,65 @@ export class ObsidianAgentService {
 			return;
 		}
 		this.notify();
+	}
+
+	/**
+	 * The cold-start offer as the banner sees it: just the chat's title, and only
+	 * while the fresh startup sheet is still the untouched one it was pinned to.
+	 *
+	 * No separate "dismissed" flag and no clearing wired into the navigation
+	 * paths: the offer belongs to one specific sheet, so leaving that sheet is
+	 * what retires it. Switching chats or opening a new one moves `currentPath`
+	 * off `startupBlankPath`; sending the first message materializes this sheet,
+	 * which drops it from the blank set (the path stays equal, so that second
+	 * check is the one that catches the send). Either way the offer is gone
+	 * without anyone having to remember to clear it.
+	 */
+	private currentResumeSuggestion(): { title: string } | undefined {
+		const offer = this.resumeSuggestion;
+		if (!offer || this.startupBlankPath === null) {
+			return undefined;
+		}
+		if (
+			this.currentPath !== this.startupBlankPath ||
+			!this.sessionManager.isBlankSession(this.startupBlankPath)
+		) {
+			return undefined;
+		}
+		return { title: offer.title };
+	}
+
+	/** Opens the chat the cold-start banner offered, and lets the offer go. */
+	async resumeSuggestedSession(): Promise<void> {
+		const offer = this.resumeSuggestion;
+		if (!offer) {
+			return;
+		}
+		this.resumeSuggestion = null;
+		await this.openSession(offer.path);
+	}
+
+	/** Declines the cold-start offer; the fresh sheet stays put. */
+	dismissResumeSuggestion(): void {
+		if (!this.resumeSuggestion) {
+			return;
+		}
+		this.resumeSuggestion = null;
+		this.notify();
+	}
+
+	/**
+	 * One tidy line for the offer's chat: its name, else its opening words, else
+	 * the untitled fallback (`firstMessage` is "" for an image-only opener). Runs
+	 * of whitespace fold to a single space and the result is capped so a long
+	 * opener cannot crowd the banner's button off the row.
+	 */
+	private resumeTitle(session: ActiveSessionInfo): string {
+		const raw = (session.name || session.firstMessage || "").replace(/\s+/g, " ").trim();
+		if (!raw) {
+			return this.t().t("sessions.untitled");
+		}
+		return raw.length > 48 ? `${raw.slice(0, 47)}…` : raw;
 	}
 
 	/** Pi's before_agent_start result belongs to this prompt and this run only. */
@@ -5013,6 +5091,7 @@ export class ObsidianAgentService {
 			noticeMessage: rt?.noticeMessage,
 			syncConflict: rt?.syncConflict,
 			canResumeInterrupted: rt ? rt.resumableLanes.has(rt.activeLane) : false,
+			resumeSuggestion: this.currentResumeSuggestion(),
 			provider: model.provider,
 			modelId: model.id,
 			// What the run in flight actually uses. Mid-run the settings already
@@ -5361,7 +5440,84 @@ export class ObsidianAgentService {
 		await this.reloadCommandsSafely();
 		if (this.disposed) return;
 		const defaults = this.getSessionDefaults();
-		const info = await this.sessionManager.continueRecentSession(defaults);
+		// The chat this device would return to, resolved as a summary — neither
+		// hydrated nor focused, and the last-opened record untouched — so the two
+		// branches below can decide what to do with it without either one having
+		// already committed to opening it. Null when the vault holds no durable
+		// conversation.
+		const candidate = await this.sessionManager.resolveResumeCandidate();
+		if (this.disposed) return;
+		// A run the previous process never finished is the user's own words left
+		// stranded mid-reply: work they already asked for, not a chat they might be
+		// done with. That outranks the fresh-sheet default — losing the panel back
+		// to it and offering `Continue` is the recovery, and deferring it behind a
+		// banner offer would hide the one control that can retrieve the lost reply.
+		// The probe is a pure ledger read on a transient handle (no hydrate, no
+		// focus, no last-opened write), so a clean session pays only that read
+		// before taking the blank-sheet branch.
+		if (candidate && (await this.candidateHasInterruptedRun(candidate.path))) {
+			if (this.disposed) return;
+			await this.resumeCrashedSession(candidate.path);
+			return;
+		}
+		if (this.disposed) return;
+		// No crash residue: open a fresh sheet rather than the last chat, so the
+		// panel lands somewhere neutral instead of dropping the user back into a
+		// conversation they may be done with. The chat they left is offered on the
+		// banner instead — returning is one click, starting fresh is the default.
+		// The blank sheet writes no last-opened record, so the record survives for
+		// the offer to point at and for the next cold start to suggest again.
+		const info = await this.sessionManager.createBlankSession(defaults);
+		if (this.disposed) return;
+		this.startupBlankPath = info.path;
+		// Only a chat with something in it is worth returning to: a durable but
+		// empty session (an image-only opener aside, `firstMessage` carries the
+		// title) has nothing to resume, and the fresh sheet is never its own offer.
+		if (candidate.messageCount > 0 && candidate.path !== info.path) {
+			this.resumeSuggestion = { path: candidate.path, title: this.resumeTitle(candidate) };
+		}
+		const rt = this.runtimeForFocused();
+		rt.sessionInfo = info;
+		this.sessionInfo = info;
+		this.currentPath = rt.sessionPath;
+		rt.activeLane = "main";
+		// The sheet's context is empty, but adopting it still mints the agent the
+		// panel needs and clears any stale error — the same shape `newSession`
+		// commits, reached here without the first message.
+		const context = await this.sessionManager.buildSessionContext(rt.activeLane);
+		rt.lastCompaction = await this.sessionManager.getLastCompaction(
+			rt.activeLane,
+		);
+		if (this.disposed) return;
+		await this.adoptSessionContext(rt, context);
+		if (this.disposed) return;
+		this.notify();
+	}
+
+	/** Whether `path`'s ledger carries a run the previous process never closed. */
+	private async candidateHasInterruptedRun(path: string): Promise<boolean> {
+		try {
+			const open = await this.sessionManager.findAllOpenRunOperationsFor(path);
+			return open.size > 0;
+		} catch (error) {
+			// A ledger that cannot be read is treated as clean: the fresh-sheet
+			// branch is the safe default, and a genuine orphan will still be swept
+			// the next time the session is actually opened.
+			this.log.error("Failed to probe the resume candidate's run ledger", () => ({
+				path,
+				error: causeMessage(error),
+			}));
+			return false;
+		}
+	}
+
+	/**
+	 * Loads and focuses the chat a crashed run left stranded, then raises the
+	 * `Continue` offer over it — the pre-blank-sheet cold-start path, taken only
+	 * when {@link candidateHasInterruptedRun} found residue worth recovering.
+	 */
+	private async resumeCrashedSession(path: string): Promise<void> {
+		const info = await this.sessionManager.loadSession(path);
 		if (this.disposed) return;
 		const rt = this.runtimeForFocused();
 		rt.sessionInfo = info;

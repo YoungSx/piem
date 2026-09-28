@@ -162,9 +162,9 @@ describe("context menu delivery", () => {
 			expect(h.viewTypes).toEqual([]);
 			expect(h.revealCount()).toBe(1);
 			const reloaded = new ObsidianSessionManager(h.real.adapter, "Piem/sessions", "obsidian-vault:Bridge test");
-			const info = await reloaded.continueRecentSession({ provider: "bridge-provider", modelId: "test-model" });
-			expect(info.id).toBe(h.real.service.getSnapshot().session!.id);
-			expect((await store.getDraft(info.id)).references).toEqual([{ kind: "file", path: file.path }]);
+			const info = await reloaded.resolveResumeCandidate();
+			expect(info?.id).toBe(h.real.service.getSnapshot().session!.id);
+			expect((await store.getDraft(info!.id)).references).toEqual([{ kind: "file", path: file.path }]);
 			expect(h.real.requests).toHaveLength(0);
 		} finally { store.dispose(); h.dispose(); }
 	});

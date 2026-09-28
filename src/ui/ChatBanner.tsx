@@ -26,6 +26,20 @@ interface RecoveryOffer {
 	onDismiss: () => void;
 }
 
+/** The cold-start offer: the chat left behind, and what returning to it does. */
+interface ResumeSuggestion {
+	/** The chat's title, named in the offer so the reader knows what they'd reopen. */
+	title: string;
+	/** Opens that chat, leaving the fresh sheet behind. */
+	onResume: () => void;
+	/**
+	 * Declines the offer alone. Not the shared {@link ChatBannerProps.onDismiss}:
+	 * the fresh sheet stays, and dismissing a suggestion must not read as
+	 * acknowledging an outcome the service reported.
+	 */
+	onDismiss: () => void;
+}
+
 interface ChatBannerProps {
 	/** A failure; announced assertively. */
 	errorMessage?: string;
@@ -51,6 +65,14 @@ interface ChatBannerProps {
 	 * reply behind this offer is one the user already asked for.
 	 */
 	recoveryOffer?: RecoveryOffer;
+	/**
+	 * The cold-start offer, shown on the fresh startup sheet while the vault held
+	 * a chat worth returning to. A standing offer like the recovery — it names a
+	 * state, not an event — and it retires the moment the reader acts on the
+	 * sheet, so it never competes with a recovery or wall (those belong to a
+	 * loaded conversation, which this sheet is not).
+	 */
+	resumeSuggestion?: ResumeSuggestion;
 	/**
 	 * Path of the quarantined foreign copy when a chat-sync merge refused. A
 	 * standing outcome like a notice — nothing failed, the conversation is
@@ -93,6 +115,7 @@ export function ChatBanner({
 	noticeMessage,
 	contextWall,
 	recoveryOffer,
+	resumeSuggestion,
 	syncConflict,
 	onDismissSyncConflict,
 	onDismiss,
@@ -136,6 +159,16 @@ export function ChatBanner({
 			<IconButton icon="x" label={t.t("chat.dismissMessage")} onClick={recoveryOffer.onDismiss} className="piem-chat__banner-dismiss" />
 		</div>
 	) : null;
+	const resume = resumeSuggestion ? (
+		<div className="piem-chat__banner piem-chat__banner--recovery">
+			<ObsidianIcon name="history" className="piem-chat__banner-icon" />
+			<span className="piem-chat__banner-text">{t.t("chat.resumeSuggestion", { title: resumeSuggestion.title })}</span>
+			<button type="button" className="piem-chat__banner-action" onClick={resumeSuggestion.onResume}>
+				{t.t("chat.resumeSuggestionAction")}
+			</button>
+			<IconButton icon="x" label={t.t("chat.dismissMessage")} onClick={resumeSuggestion.onDismiss} className="piem-chat__banner-dismiss" />
+		</div>
+	) : null;
 	/*
 	 * An outcome outranks the standing offers: both live on the polite channel,
 	 * and an offer is still true after the outcome has been read. The sync
@@ -157,7 +190,7 @@ export function ChatBanner({
 	 * reports itself in the transcript (#239) instead of arriving here as an
 	 * unbounded provider dump.
 	 */
-	const polite = (errorMessage ? null : notice) ?? recovery ?? conflict ?? wall;
+	const polite = (errorMessage ? null : notice) ?? recovery ?? resume ?? conflict ?? wall;
 
 	return (
 		<>

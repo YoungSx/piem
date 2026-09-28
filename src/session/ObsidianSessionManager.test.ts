@@ -127,16 +127,18 @@ describe("ObsidianSessionManager", () => {
 		expect(content).toContain('"role":"user"');
 	});
 
-	it("continues the most recent session and builds context", async () => {
+	it("resolves the most recent session, then loads and builds its context", async () => {
 		const adapter = new MemoryAdapter() as unknown as DataAdapter;
 		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
 		await manager.createSession({ provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" });
 		await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Hello" }], timestamp: 1 });
 
 		const nextManager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
-		const info = await nextManager.continueRecentSession({ provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" });
+		const candidate = await nextManager.resolveResumeCandidate();
+		const info = await nextManager.loadSession(candidate?.path ?? "");
 		const context = await nextManager.buildSessionContext();
 
+		expect(candidate?.messageCount).toBe(1);
 		expect(info.messageCount).toBe(1);
 		expect(context.messages).toHaveLength(1);
 		expect(context.model).toEqual({ provider: "deepseek", modelId: "deepseek-v4-pro" });
@@ -326,9 +328,9 @@ describe("ObsidianSessionManager last-opened record", () => {
 		const store = new MemoryStore();
 		store.value = first;
 		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, store);
-		const info = await manager.continueRecentSession(DEFAULTS);
+		const info = await manager.resolveResumeCandidate();
 
-		expect(info.path).toBe(first);
+		expect(info?.path).toBe(first);
 	});
 
 	it("falls back to the newest session when the record points at a deleted one", async () => {
@@ -341,9 +343,9 @@ describe("ObsidianSessionManager last-opened record", () => {
 		const store = new MemoryStore();
 		store.value = "Piem/chats/2001-01-01T00-00-00_abcdef.jsonl";
 		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, store);
-		const info = await manager.continueRecentSession(DEFAULTS);
+		const info = await manager.resolveResumeCandidate();
 
-		expect(info.path).toBe(second);
+		expect(info?.path).toBe(second);
 	});
 
 	it("behaves as before when no record is stored", async () => {
@@ -352,9 +354,9 @@ describe("ObsidianSessionManager last-opened record", () => {
 		(adapter as unknown as MemoryAdapter).setMtime(second, Date.parse("2099-01-01T00:00:00.000Z"));
 
 		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test", undefined, new MemoryStore());
-		const info = await manager.continueRecentSession(DEFAULTS);
+		const info = await manager.resolveResumeCandidate();
 
-		expect(info.path).toBe(second);
+		expect(info?.path).toBe(second);
 	});
 
 	it("keeps working when the store throws", async () => {
@@ -371,9 +373,9 @@ describe("ObsidianSessionManager last-opened record", () => {
 			// production store's silent-on-failure shape.
 			write(): void {},
 		});
-		const info = await manager.continueRecentSession(DEFAULTS);
+		const info = await manager.resolveResumeCandidate();
 
-		expect(info.path).toBe(second);
+		expect(info?.path).toBe(second);
 	});
 
 	it("records the session each focus lands on", async () => {
@@ -511,7 +513,7 @@ describe("ObsidianSessionManager open-zero-write contract", () => {
 		const before = await adapter.read(info.path);
 		const beforeStat = await adapter.stat(info.path);
 
-		await next.continueRecentSession({ provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" });
+		await next.resolveResumeCandidate();
 
 		const afterStat = await adapter.stat(info.path);
 		expect(afterStat?.size).toBe(beforeStat?.size);
@@ -524,7 +526,7 @@ describe("ObsidianSessionManager open-zero-write contract", () => {
 		const manager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
 		const info = await manager.createSession(DEFAULTS);
 		const next = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
-		await next.continueRecentSession({ provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" });
+		await next.loadSession(info.path);
 		const baseline = (await adapter.read(info.path)).length;
 
 		// First run start after the divergence: exactly one model change configuration write.

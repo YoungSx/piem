@@ -129,6 +129,13 @@ export const zhCN: DeepPartial<EnCopy> = {
 		recoveryOffer: "上一次回复没写完就断了。从断掉的地方继续吗？",
 		recoveryResume: "继续",
 		/**
+		 * 冷启动横幅及其按钮：面板打开的是新的空白页，这里提议改为重新打开本
+		 * 设备上次的会话，而不是直接续上。和恢复横幅一样是常驻提议、走 polite
+		 * 通道播报；标题点明是哪个会话，点击不会有意外。
+		 */
+		resumeSuggestion: "回到上次的对话「{title}」？",
+		resumeSuggestionAction: "打开",
+		/**
 		 * 同步冲突横幅：与另一台设备的记录合并被拒，外来文件已隔离留证，
 		 * 本会话保持原样。常驻结果、走 polite 通道播报；备份路径跟在句子
 		 * 后面，键文案到句号为止。
