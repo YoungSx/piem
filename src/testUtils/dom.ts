@@ -43,10 +43,19 @@ export function installDom(): Document {
 		if (id !== undefined) installedIntervals.delete(id);
 		clearIntervalImpl(id as Parameters<typeof clearIntervalImpl>[0]);
 	}) as unknown as typeof window.clearInterval;
-	afterEach(() => {
-		for (const id of installedIntervals) clearIntervalImpl(id as Parameters<typeof clearIntervalImpl>[0]);
-		installedIntervals.clear();
-	});
+	// The per-test interval retirement only has meaning under a runner that has
+	// tests to sit between. Calling `afterEach` outside `bun test` throws, and a
+	// bare `bun` run (the visual preview renders one frame and exits) has no
+	// per-test lifecycle to clean up — so registering the hook is skipped there,
+	// leaving behaviour under `bun test` unchanged.
+	try {
+		afterEach(() => {
+			for (const id of installedIntervals) clearIntervalImpl(id as Parameters<typeof clearIntervalImpl>[0]);
+			installedIntervals.clear();
+		});
+	} catch {
+		// No test runner present; there are no tests to retire intervals between.
+	}
 	const globals = globalThis as unknown as Record<string, unknown>;
 	globals.window = window;
 	globals.document = window.document;
