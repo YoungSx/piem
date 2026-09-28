@@ -2268,7 +2268,7 @@ export class ObsidianAgentService {
 	private resumeTitle(session: ActiveSessionInfo): string {
 		const raw = (session.name || session.firstMessage || "").replace(/\s+/g, " ").trim();
 		if (!raw) {
-			return this.t().t("sessions.untitled");
+			return this.t().t("session.untitled");
 		}
 		return raw.length > 48 ? `${raw.slice(0, 47)}…` : raw;
 	}
@@ -5473,7 +5473,7 @@ export class ObsidianAgentService {
 		// Only a chat with something in it is worth returning to: a durable but
 		// empty session (an image-only opener aside, `firstMessage` carries the
 		// title) has nothing to resume, and the fresh sheet is never its own offer.
-		if (candidate.messageCount > 0 && candidate.path !== info.path) {
+		if (candidate && candidate.messageCount > 0 && candidate.path !== info.path) {
 			this.resumeSuggestion = { path: candidate.path, title: this.resumeTitle(candidate) };
 		}
 		const rt = this.runtimeForFocused();

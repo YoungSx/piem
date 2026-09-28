@@ -926,8 +926,14 @@ export class ObsidianSessionManager {
 	}
 
 	async findAllOpenRunOperationsFor(path: string): Promise<Map<string, OperationStartedRecord[]>> {
-		const session = this.getSessionFor(path);
 		const open = new Map<string, OperationStartedRecord[]>();
+		// Cold-start recovery probes a candidate before deciding whether to hydrate
+		// it. Reuse the live session when available; otherwise inspect a throwaway
+		// disk session without changing focus or the hydrated registry.
+		const session = this.hydrated.get(path)?.session ?? (await this.openStoredSession(path));
+		if (!session) {
+			return open;
+		}
 		for (const { lane } of await session.getLanes()) {
 			const orphans = await session.findOpenOperations(lane);
 			if (orphans.length > 0) {
@@ -1251,6 +1257,19 @@ export class ObsidianSessionManager {
 
 	private async findMetadata(path: string): Promise<JsonlSessionMetadata | undefined> {
 		return readSessionMetadata(this.fs, this.resolveSessionDir(), path);
+	}
+
+	/** Opens a stored session for a read that must not hydrate or focus it. */
+	private async openStoredSession(path: string): Promise<PiSession | null> {
+		const metadata = await this.findMetadata(path);
+		if (!metadata) {
+			return null;
+		}
+		try {
+			return await this.repo(this.resolveSessionDir()).open(metadata);
+		} catch {
+			return null;
+		}
 	}
 
 	private async countJsonlFiles(path: string): Promise<number> {
