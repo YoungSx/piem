@@ -87,6 +87,10 @@ async function fixture(language: "en" | "zh-cn" = "en") {
 	});
 	cleanups.push(() => service.dispose());
 	await service.initialize();
+	// Cold start intentionally opens a blank sheet now. These tests exercise
+	// switching away from a visible stored conversation, so make that starting
+	// state explicit instead of relying on the old startup auto-resume behavior.
+	await service.openSession(a.path);
 	const draftStore = new DraftStore(adapter, settings.sessionDir);
 	cleanups.push(async () => { await draftStore.flush(); draftStore.dispose(); });
 	const host = document.createElement("div");
