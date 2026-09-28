@@ -521,6 +521,25 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	}, [snapshot.canResumeInterrupted, snapshot.isStreaming, snapshot.isCompacting, isRewinding, service]);
 
 	/*
+	 * The cold-start offer to reopen the last chat. The service decides when it
+	 * stands — only on the fresh startup sheet, retiring the moment the reader
+	 * moves off it — so the panel just mirrors the snapshot. Keyed on the title
+	 * string rather than the object so the memo is stable across notifies that
+	 * do not change what the offer says.
+	 */
+	const resumeTitle = snapshot.resumeSuggestion?.title;
+	const resumeSuggestion = useMemo(() => {
+		if (resumeTitle === undefined) {
+			return undefined;
+		}
+		return {
+			title: resumeTitle,
+			onResume: () => void service.resumeSuggestedSession(),
+			onDismiss: () => service.dismissResumeSuggestion(),
+		};
+	}, [resumeTitle, service]);
+
+	/*
 	 * Forking a session hands the index the reply row pinned, and the confirm
 	 * modal does the gate-keeping. Armed edits let go: after the fork opens the
 	 * new chat, the index they stood for names a different transcript. Staged
@@ -860,6 +879,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					noticeMessage={snapshot.noticeMessage}
 					contextWall={contextWall}
 					recoveryOffer={recoveryOffer}
+					resumeSuggestion={resumeSuggestion}
 					syncConflict={snapshot.syncConflict}
 					onDismissSyncConflict={() => service.dismissSyncConflict()}
 					onDismiss={() => service.dismissMessages()}

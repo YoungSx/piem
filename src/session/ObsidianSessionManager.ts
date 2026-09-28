@@ -433,39 +433,42 @@ export class ObsidianSessionManager {
 		return live;
 	}
 
-	async continueRecentSession(defaults: SessionDefaults): Promise<ActiveSessionInfo> {
-		// The record outranks recency: with a vault sync plugin arbitrating whole
-		// files last-writer-wins, "newest file" is whichever device wrote last, so
-		// opening it would have this panel resuming a conversation another device
-		// ended — the cross-device bleed the record exists to prevent. The record
-		// lives off-vault (localStorage), so it stays per-device by construction.
-		// The read is inside the try for the same reason as everything below: a
-		// broken store must degrade to the record-less behavior, not kill startup.
-		try {
-			const recorded = this.lastOpened?.read();
-			if (recorded) {
-				return await this.loadSession(recorded);
-			}
-		} catch {
-			// Gone (deleted here, or never existed on this device), unreadable, or
-			// the store itself failed: fall through to the pre-record behavior. No
-			// write-back — the stale record is corrected when a session is focused.
-		}
+	/**
+	 * The session cold start would resume — this device's recorded last-opened
+	 * chat, or the newest file on disk when no usable record names one — as a
+	 * summary, never a load. The panel opens its blank sheet first and merely
+	 * *offers* this one, so resolving it must neither hydrate nor focus anything
+	 * and must not touch the last-opened record. Null when the vault holds no
+	 * durable conversation to return to.
+	 *
+	 * The record outranks recency for the reason it always has: with a vault
+	 * sync plugin arbitrating whole files last-writer-wins, "newest file" is
+	 * whichever device wrote last, so suggesting it would point this device at a
+	 * conversation another device ended — the cross-device bleed the record
+	 * exists to prevent. The record lives off-vault (localStorage), so it stays
+	 * per-device by construction. A record pointing at a session this device
+	 * never synced, an unreadable store, or a store that throws all degrade to
+	 * the newest-file behavior, never to a thrown startup.
+	 *
+	 * A pure read like {@link listSessions}: opening throwaway copies to read
+	 * headers, no `ensureConfiguration` and no append, so a sync plugin cannot
+	 * see this device mark a file newer merely for looking at what to suggest.
+	 */
+	async resolveResumeCandidate(): Promise<ActiveSessionInfo | null> {
 		const sessions = await this.listSessions();
-		if (sessions[0]) {
-			// Deliberately no `ensureConfiguration` here. Opening must stay a pure
-			// read: a vault sync plugin arbitrates whole files last-writer-wins, and
-			// an append fired at open time marks the local file newer, so the stale
-			// copy can win and bury the other device's newer chat. The model is
-			// asserted where the user actually acts — at run start, in
-			// `beginRunOperation` — not at open time.
-			await this.loadSession(sessions[0].path);
-			return this.getActiveSessionInfo();
+		let recorded: string | null = null;
+		try {
+			recorded = this.lastOpened?.read() ?? null;
+		} catch {
+			recorded = null;
 		}
-		// An empty vault opens the blank sheet, not a durable session: the first
-		// conversation this device ever has should not be forced onto the disk
-		// before its first word, same as any other new chat.
-		return this.createBlankSession(defaults);
+		if (recorded) {
+			const match = sessions.find((session) => session.path === recorded);
+			if (match) {
+				return match;
+			}
+		}
+		return sessions[0] ?? null;
 	}
 
 	/**
