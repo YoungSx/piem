@@ -5102,12 +5102,56 @@ describe("quick-action suggestions", () => {
 		expect(service.peekQuickActionSuggestions("empty")).toBeUndefined();
 	});
 
-	it("does not cache reply-scope answers, whose subject no future request reproduces", async () => {
+	it("caches a reply-scope answer and serves it back through peek", async () => {
+		// Quick actions on history sessions: reopening a settled conversation must
+		// serve its row from cache, not re-bill it. The peek and the write must key
+		// on the same tuple — the reply's own text, workspace and note facts pinned
+		// empty on both sides — or every read would miss. This is the round-trip
+		// that catches a key that drifts between the two.
 		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(SUGGESTION_JSON) });
 		await service.initialize();
+		await service.sendPrompt("Hello");
 
-		await service.suggestQuickActions("empty");
 		expect(service.peekQuickActionSuggestions("reply")).toBeUndefined();
+		const actions = await service.suggestQuickActions("reply");
+
+		expect(actions).toEqual([{ id: "suggested-0", label: "Go deeper", prompt: "Expand on the reply." }]);
+		expect(service.peekQuickActionSuggestions("reply")).toEqual(actions ?? undefined);
+	});
+
+	it("caches the merged palette on the deep pass, so a reopen serves both passes", async () => {
+		// The row is filled across two passes; the peek returns one row, so the
+		// deep pass must cache the merged fast+deep palette, not just its own slice.
+		const fast = '[{"label":"Fast","prompt":"Fast prompt."}]';
+		const deep = '[{"label":"Deep","prompt":"Deep prompt."}]';
+		let call = 0;
+		const streamFn: StreamFn = (model: Model<Api>) => {
+			call += 1;
+			const text = call <= 1 ? SUGGESTION_JSON : call === 2 ? fast : deep;
+			const stream = createAssistantMessageEventStream();
+			const message: AssistantMessage = {
+				role: "assistant",
+				content: [{ type: "text", text }],
+				api: model.api,
+				provider: model.provider,
+				model: model.id,
+				usage: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+				stopReason: "stop",
+				timestamp: Date.now(),
+			};
+			stream.push({ type: "done", reason: "stop", message });
+			stream.end(message);
+			return stream;
+		};
+		const { service } = createServiceWithSettings(new MemoryAdapter(), { streamFn });
+		await service.initialize();
+		await service.sendPrompt("Hello");
+
+		const quick = (await service.suggestQuickActions("reply")) ?? [];
+		await service.suggestQuickActions("reply", { deep: true, priorActions: quick });
+
+		const cached = service.peekQuickActionSuggestions("reply");
+		expect(cached?.map((action) => action.label)).toEqual(["Fast", "Deep"]);
 	});
 
 	/*

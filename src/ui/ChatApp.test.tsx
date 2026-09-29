@@ -4,7 +4,7 @@ import type { App, Component } from "obsidian";
 import { flushRender, installDom } from "../testUtils/dom";
 import { installObsidianStub, lastMenu, platformMock, resetMenus } from "../testUtils/obsidianStub";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
-import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
+import { lastAssistantText, type SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import type { QuickAction } from "./quickActionSuggestions";
 import type { DraftContent, DraftStore } from "../session/DraftStore";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
@@ -248,12 +248,19 @@ class FakeAgentService {
 	readonly suggestionCalls: { scope: SuggestionScope; deep: boolean }[] = [];
 	suggestionResults: (QuickAction[] | null)[] = [];
 	peekedSuggestions: Record<string, QuickAction[]> = {};
+	/**
+	 * The reply row's cache, keyed like the real one by the reply's own text.
+	 * A settled conversation whose last reply is here reads a hit and sends
+	 * nothing; anything else misses. Staged by tests to exercise the reopen path.
+	 */
+	peekedReplySuggestions: Record<string, QuickAction[]> = {};
 	/** When set, `suggestQuickActions` holds its answer until this resolves — the gate a test lifts to interleave renders. */
 	suggestionsGate: Promise<void> | null = null;
 
 	peekQuickActionSuggestions(scope: SuggestionScope): QuickAction[] | undefined {
-		if (scope !== "empty") {
-			return undefined;
+		if (scope === "reply") {
+			const subject = lastAssistantText(this.snapshot.messages) ?? "";
+			return this.peekedReplySuggestions[subject];
 		}
 		const activePath = this.snapshot.contextRefs.find((ref) => ref.kind === "active")?.path ?? "";
 		return this.peekedSuggestions[activePath];
@@ -363,6 +370,8 @@ async function mountChat(
 		suggestionResults?: (QuickAction[] | null)[];
 		/** Chips `peekQuickActionSuggestions` serves, keyed by active note path; staged before mount for the same reason. */
 		peekedSuggestions?: Record<string, QuickAction[]>;
+		/** Reply-row chips the cache already holds, keyed by the reply's own text. */
+		peekedReplySuggestions?: Record<string, QuickAction[]>;
 		/**
 		 * Held `suggestQuickActions` answers behind this gate, which must exist
 		 * before mount: the suggestion effect fires during it, and a gate added
@@ -385,6 +394,9 @@ async function mountChat(
 	}
 	if (options.peekedSuggestions) {
 		service.peekedSuggestions = options.peekedSuggestions;
+	}
+	if (options.peekedReplySuggestions) {
+		service.peekedReplySuggestions = options.peekedReplySuggestions;
 	}
 	if (options.suggestionsGate) {
 		service.suggestionsGate = options.suggestionsGate;
@@ -1208,12 +1220,51 @@ describe("ChatApp model-suggested quick actions", () => {
 		expect(quickActionChips(host).some((chip) => chip.textContent === "Continue")).toBe(false);
 	});
 
-	it("does not fire a speculative request when opening an already-settled conversation", async () => {
-		const { service } = await mountChat({ snapshot: { ...readySnapshot, messages: [assistantReply("An old reply.")] as ChatSnapshot["messages"] } });
+	it("fetches a follow-up row when opening an already-settled conversation", async () => {
+		// The whole point of the feature: a history session is settled from its
+		// first frame, with no streaming edge to witness, and still gets a row.
+		const { host, service } = await mountChat({
+			snapshot: { ...readySnapshot, messages: [assistantReply("An old reply.")] as ChatSnapshot["messages"] },
+			suggestionResults: [agentChips, null],
+		});
 
-		await flushRender();
+		await flushRender(() => quickActionChips(host).some((chip) => chip.textContent === "Agent chip"));
+
+		expect(service.suggestionRequests).toEqual(["reply", "reply"]);
+		expect(quickActionChips(host).some((chip) => chip.textContent === "Agent chip")).toBe(true);
+	});
+
+	it("serves a cached row and sends nothing when reopening a conversation already suggested for", async () => {
+		// Reopening or switching back must not re-bill: a reply's chips are keyed
+		// by its own immutable text, so the cache is an exact hit and no request
+		// goes out — the "notice caching" half of the contract.
+		const { host, service } = await mountChat({
+			snapshot: { ...readySnapshot, messages: [assistantReply("An old reply.")] as ChatSnapshot["messages"] },
+			peekedReplySuggestions: { "An old reply.": agentChips },
+		});
+
+		await flushRender(() => quickActionChips(host).some((chip) => chip.textContent === "Agent chip"));
 
 		expect(service.suggestionRequests).toEqual([]);
+		expect(quickActionChips(host).some((chip) => chip.textContent === "Agent chip")).toBe(true);
+	});
+
+	it("does not re-fetch the row when an unrelated snapshot re-renders a settled reply", async () => {
+		// The signature gate: a fresh snapshot carrying the same conversation (a
+		// new messages array, identical text) re-runs the effect, but the
+		// (session, language, reply) signature is unchanged, so the row is fetched
+		// exactly once, not on every incidental notify.
+		const { service } = await mountChat({
+			snapshot: { ...readySnapshot, messages: [assistantReply("An old reply.")] as ChatSnapshot["messages"] },
+			suggestionResults: [agentChips, null],
+		});
+		await flushRender();
+
+		service.emit({ messages: [assistantReply("An old reply.")] as ChatSnapshot["messages"] });
+		service.emit({ messages: [assistantReply("An old reply.")] as ChatSnapshot["messages"] });
+		await flushRender();
+
+		expect(service.suggestionRequests).toEqual(["reply", "reply"]);
 	});
 
 	it("does not leak a previous conversation's chips across a session switch", async () => {
