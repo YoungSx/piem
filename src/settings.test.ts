@@ -26,6 +26,7 @@ const {
 	resolveSuggestionModel,
 	suggestionModelKey,
 	DEFAULT_SETTINGS,
+	DEFAULT_DISABLED_EXTENSIONS,
 } = await import("./settings");
 
 /** Two models behind one named provider, as the switcher tests read them. */
@@ -94,22 +95,36 @@ describe("normalizeSettings with disabledSkills", () => {
 });
 
 describe("normalizeSettings with disabledExtensions", () => {
-	it("defaults to an empty list when data.json says nothing", () => {
-		expect(normalizeSettings({}).disabledExtensions).toEqual([]);
+	const SCHEDULER = "@vincentff/pi-scheduler";
+	const seen = { seededExtensionDefaults: DEFAULT_DISABLED_EXTENSIONS };
+
+	it("seeds the default-disabled extensions when data.json says nothing", () => {
+		expect(normalizeSettings({}).disabledExtensions).toEqual([...DEFAULT_DISABLED_EXTENSIONS]);
+		expect(DEFAULT_DISABLED_EXTENSIONS).toContain(SCHEDULER);
 	});
 
 	it("keeps the extension ids as stored and deduplicates them", () => {
-		const settings = normalizeSettings({ disabledExtensions: ["pi-web-search", "@juicesharp/rpiv-todo", "pi-web-search"] });
+		const settings = normalizeSettings({ ...seen, disabledExtensions: ["pi-web-search", "@juicesharp/rpiv-todo", "pi-web-search"] });
 		expect(settings.disabledExtensions).toEqual(["pi-web-search", "@juicesharp/rpiv-todo"]);
 	});
 
 	it("drops non-string entries a hand-edited data.json may carry", () => {
-		expect(normalizeSettings({ disabledExtensions: ["pi-clarify", 42, null, true] as never }).disabledExtensions).toEqual(["pi-clarify"]);
+		expect(normalizeSettings({ ...seen, disabledExtensions: ["pi-clarify", 42, null, true] as never }).disabledExtensions).toEqual(["pi-clarify"]);
 	});
 
 	it("round-trips: a normalized list survives a second pass", () => {
 		const once = normalizeSettings({ disabledExtensions: ["pi-context"] });
-		expect(normalizeSettings(once).disabledExtensions).toEqual(["pi-context"]);
+		expect(once.disabledExtensions).toEqual(["pi-context", SCHEDULER]);
+		expect(normalizeSettings(once).disabledExtensions).toEqual(["pi-context", SCHEDULER]);
+	});
+
+	it("seeds a default-disabled extension exactly once, so enabling it sticks", () => {
+		// The user turns the scheduler on: it leaves disabledExtensions but its id
+		// stays recorded, so the next load does not silently re-disable it.
+		const enabled = normalizeSettings({ disabledExtensions: [], seededExtensionDefaults: [SCHEDULER] });
+		expect(enabled.disabledExtensions).toEqual([]);
+		expect(enabled.seededExtensionDefaults).toContain(SCHEDULER);
+		expect(normalizeSettings(enabled).disabledExtensions).toEqual([]);
 	});
 });
 

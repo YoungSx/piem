@@ -59,12 +59,18 @@ async function runSmoke(root, endpoint) {
 			activeModelId: "sched-model", showAgentDetails: true, disabledExtensions: [],
 		});
 		await plugin.saveSettings();
+		// The scheduler ships disabled; enabling it (disabledExtensions: []) takes
+		// effect when the host is next built, so reload once more from the saved
+		// data.json before opening the session that must carry it.
+		stage("reload-enable");
+		await reload();
 		stage("activateChatView");
 		await plugin.activateChatView();
 		const service = plugin.agentService;
 		stage("newSession");
 		await service.newSession();
 		const path = service.getActiveSessionPath();
+		report.enabledDisabledExtensions = [...(plugin.settings?.disabledExtensions ?? [])];
 		const started = performance.now();
 		// Persistence first, with a 30s recurring task that will not fire during the
 		// run — kept clear of the one-time fire below, whose own config rewrite
@@ -72,7 +78,8 @@ async function runSmoke(root, endpoint) {
 		// unlocked read-modify-write.
 		stage("schedule-recurring");
 		const recur = await schedule("add every 30s | 循环任务保活");
-		record("recurring schedule add is accepted", recur.length > 0 && !/unknown subcommand/i.test(recur));
+		report.recurNotice = recur;
+		record("recurring schedule add is accepted", recur.length > 0 && !/unknown subcommand|unknown command|no such/i.test(recur));
 		await wait(() => configJson().includes("循环任务保活"), 200);
 		record("recurring task written to the namespace", true);
 		stage("reload-2");

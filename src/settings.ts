@@ -208,6 +208,15 @@ export interface PiemSettings {
 	 * instead, and the bookmark engine is not a community extension at all.
 	 */
 	disabledExtensions: string[];
+	/**
+	 * Community extension ids the defaults have already seeded as disabled.
+	 * Internal bookkeeping, not a capability switch: a bundled extension that
+	 * ships off (see {@link DEFAULT_DISABLED_EXTENSIONS}) is added to
+	 * {@link disabledExtensions} the first time settings are reconciled against
+	 * it and recorded here, so it seeds exactly once — a later decision to
+	 * enable it is never undone on the next load.
+	 */
+	seededExtensionDefaults: string[];
 	/** Internal installation ownership; not a capability switch. */
 	builtinSkillState?: BuiltinSkillState;
 	/**
@@ -232,8 +241,14 @@ export interface PiemSettings {
 	shareDiagnostics?: boolean;
 }
 
-export const DEFAULT_SETTINGS: PiemSettings = {
-	providers: [],
+/**
+ * Bundled community extensions that ship disabled: present in the catalog and
+ * one Extensions-tab toggle away, but not loaded until the user turns them on.
+ * Seeded into `disabledExtensions` once, tracked by `seededExtensionDefaults`.
+ */
+export const DEFAULT_DISABLED_EXTENSIONS = ["@vincentff/pi-scheduler"];
+
+export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	models: [],
 	provider: DEFAULT_PROVIDER,
 	modelId: DEFAULT_MODEL_ID,
@@ -250,10 +265,32 @@ export const DEFAULT_SETTINGS: PiemSettings = {
 	userSkillsDir: "",
 	disabledSkills: [],
 	disabledExtensions: [],
+	seededExtensionDefaults: [],
 	logLevel: DEFAULT_LOG_LEVEL,
 	shareDiagnostics: true,
 	mcpServers: [],
 };
+
+/**
+ * Reconciles the extension blocklist with the default-disabled set.
+ *
+ * A bundled extension in {@link DEFAULT_DISABLED_EXTENSIONS} ships off: it is
+ * added to `disabledExtensions` the first time settings are seen without it in
+ * `seededExtensionDefaults`, and its id is recorded there so the seed runs
+ * exactly once. A later enable (removing it from `disabledExtensions`) therefore
+ * sticks — the recorded id stops it being re-seeded on the next load. Both
+ * lists are de-duped and stripped of non-strings so the persisted file stays clean.
+ */
+function seedExtensionDefaults(data: Partial<PiemSettings> | null | undefined): Pick<PiemSettings, "disabledExtensions" | "seededExtensionDefaults"> {
+	const ids = (value: unknown): string[] => (Array.isArray(value) ? value : []).filter((id): id is string => typeof id === "string");
+	const seeded = new Set(ids(data?.seededExtensionDefaults));
+	const disabled = new Set(ids(data?.disabledExtensions));
+	for (const id of DEFAULT_DISABLED_EXTENSIONS) {
+		if (!seeded.has(id)) disabled.add(id);
+		seeded.add(id);
+	}
+	return { disabledExtensions: Array.from(disabled), seededExtensionDefaults: Array.from(seeded) };
+}
 
 /**
  * Coerces persisted data into settings.
@@ -353,11 +390,11 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		disabledSkills: Array.from(
 			new Set((Array.isArray(data?.disabledSkills) ? data.disabledSkills : []).filter((name): name is string => typeof name === "string")),
 		),
-		// Same shape and reasoning as `disabledSkills`: a blocklist of ids, de-duped
-		// and stripped of non-strings so the persisted file stays clean.
-		disabledExtensions: Array.from(
-			new Set((Array.isArray(data?.disabledExtensions) ? data.disabledExtensions : []).filter((id): id is string => typeof id === "string")),
-		),
+		// A blocklist of ids, de-duped and stripped of non-strings so the persisted
+		// file stays clean — plus a one-time seed of the default-disabled bundled
+		// extensions, tracked so an explicit enable is never undone. See
+		// {@link seedExtensionDefaults}.
+		...seedExtensionDefaults(data),
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
