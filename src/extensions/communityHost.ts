@@ -38,7 +38,7 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type BackgroundExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { createAgentTeam, createClarify, createContext, createOtel, createRpivTodo, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
+import { createAgentTeam, createClarify, createContext, createOtel, createRpivTodo, createScheduler, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMessage" | "sendUserMessage"> {
 	platform: Omit<ExtensionPlatformCallbacks, "complete">;
@@ -134,6 +134,10 @@ export class CommunityHost {
 			// during registration itself, before any chat operation opens, and its
 			// event handlers outlive the operation that emitted the event.
 			{ id: "@juicesharp/rpiv-todo", createFactory: platform => createRpivTodo(platform) },
+			// A background factory too: it arms its schedule timers in `session_start`
+			// and fires them (a `followUp` user message) long after that operation has
+			// closed, so it must outlive the chat operation like the timer above.
+			{ id: "@vincentff/pi-scheduler", createFactory: platform => createScheduler(platform) },
 			// Session-bound like the scope above: its member sessions must anchor
 			// to the conversation that started the team, so a static closure over
 			// one extension's config view would be the wrong owner.

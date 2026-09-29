@@ -13,6 +13,7 @@
         "@juicesharp/rpiv-todo": "2.9.0",
         "@modelcontextprotocol/client": "^2.0.0",
         "@noble/hashes": "2.4.0",
+        "@vincentff/pi-scheduler": "1.0.3",
         "buffer": "6.0.3",
         "events": "3.3.0",
         "get-east-asian-width": "1.6.0",
@@ -384,6 +385,8 @@
     "@typescript-eslint/utils": ["@typescript-eslint/utils@8.35.1", "", { "dependencies": { "@eslint-community/eslint-utils": "^4.7.0", "@typescript-eslint/scope-manager": "8.35.1", "@typescript-eslint/types": "8.35.1", "@typescript-eslint/typescript-estree": "8.35.1" }, "peerDependencies": { "eslint": "^8.57.0 || ^9.0.0", "typescript": ">=4.8.4 <5.9.0" } }, "sha512-lhnwatFmOFcazAsUm3ZnZFpXSxiwoa1Lj50HphnDe1Et01NF4+hrdXONSUHIcbVu2eFb1bAf+5yjXkGVkXBKAQ=="],
 
     "@typescript-eslint/visitor-keys": ["@typescript-eslint/visitor-keys@8.70.0", "", { "dependencies": { "@typescript-eslint/types": "8.70.0", "eslint-visitor-keys": "^5.0.0" } }, "sha512-BoC8PiO4Hkdo0TVJh9Ntxr5MxPDI7/oFsrygN5ADelFSeXG/qgNuucIGA+L5Z6JpPTE/uRfcTWtscjbUaufepQ=="],
+
+    "@vincentff/pi-scheduler": ["@vincentff/pi-scheduler@1.0.3", "", { "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "typebox": "*" } }, "sha512-zXsJ4S+oGfdrWo/pzvGdjubbHZuK3falvADw9cAh9KMDzNuMimAB4cOzXaD4vDMDA6cLcsvUpZxOhL3o/uUoZQ=="],
 
     "acorn": ["acorn@8.15.0", "", { "bin": "bin/acorn" }, "sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg=="],
 

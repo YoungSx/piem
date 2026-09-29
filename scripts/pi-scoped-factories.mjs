@@ -117,7 +117,7 @@ export async function buildScopedFactory(root, name, audit) {
 	]);
 	for (const scope of ["@earendil-works", "@mariozechner"]) {
 		for (const suffix of ["", "/compat"]) modules.set(`${scope}/pi-ai${suffix}`, `export { Type } from "typebox"; export { StringEnum } from ${JSON.stringify(path.join(compatibility, "piAI.ts"))}; ${platformExport(["complete", "getEnvApiKey"])}`);
-		modules.set(`${scope}/pi-coding-agent`, `export { DynamicBorder, theme, getSelectListTheme } from ${JSON.stringify(codingAgent)}; ${platformExport(["getAgentDir", "BorderedLoader"])} export { truncateHead, truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from ${JSON.stringify(truncate)};`);
+		modules.set(`${scope}/pi-coding-agent`, `export { DynamicBorder, theme, getSelectListTheme, CONFIG_DIR_NAME } from ${JSON.stringify(codingAgent)}; ${platformExport(["getAgentDir", "BorderedLoader"])} export { truncateHead, truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from ${JSON.stringify(truncate)};`);
 		modules.set(`${scope}/pi-tui`, `export { Container, Markdown, SelectList, Key, matchesKey, parseKey, getKeybindings, visibleWidth, truncateToWidth, wrapTextWithAnsi } from ${JSON.stringify(tui)}; ${platformExport(["Text"])}`);
 	}
 	const built = await esbuild.build({

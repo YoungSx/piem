@@ -15,3 +15,10 @@ import { EXTENSION_CONFIG_ROOT } from "../extensionConfigStore";
  * agree by accident, so there is now one.
  */
 export const getAgentDir = (): string => EXTENSION_CONFIG_ROOT;
+
+/**
+ * Pi's config directory name, `.pi`. Upstream extensions join it with a home or
+ * cwd to spell their storage path (`<cwd>/.pi/<file>.json`); the platform's
+ * config bridge translates that `.pi` root into the owner's namespace.
+ */
+export const CONFIG_DIR_NAME = ".pi";
