@@ -75,6 +75,8 @@ export const en = {
 			continueDesc: "Adds /continue to resume the agent's turn without sending a prompt the model can see.",
 			todoName: "Todo overlay",
 			todoDesc: "Gives the agent a live to-do list overlay that survives reloads and context compaction.",
+			schedulerName: "Scheduled prompts",
+			schedulerDesc: "Lets the agent schedule prompts to run later, once or on a repeat, and wake the conversation when each fires.",
 			provenanceName: "Model handoff notes",
 			provenanceDesc: "Notes in the transcript when the conversation's model changed, so one model's summary is not silently credited to another. Best left on.",
 		},

@@ -13,6 +13,7 @@ const ALL_COMMUNITY_IDS = [
 	"pi-clarify",
 	"pi-context",
 	"@juicesharp/rpiv-todo",
+	"@vincentff/pi-scheduler",
 	"@geminixiang/pi-agent-team",
 	"pi-otel",
 ];

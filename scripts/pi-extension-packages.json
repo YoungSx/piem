@@ -5136,5 +5136,13 @@
 			"src/team-roster-widget.ts": "a1898196d96d986292d89216a33850cbe2a3f2f01d2e4607426e9c5538acf1df",
 			"src/turn-state.ts": "c41b0bbcb0ebae8e951241921016cec122ffb20c8295a5112af6be213c9a75ae"
 		}
+	},
+	"@vincentff/pi-scheduler": {
+		"entry": "extensions/index.ts",
+		"version": "1.0.3",
+		"virtualRoot": "/extensions/@vincentff/pi-scheduler",
+		"files": {
+			"extensions/index.ts": "6868c38184a9d6188834e21edd1a32063e7e5cceb124663fe8ba3cb5044eded7"
+		}
 	}
 }

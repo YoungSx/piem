@@ -69,6 +69,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 			continueDesc: "增加 /continue，不发模型可见的 prompt 就恢复助手的这一轮。",
 			todoName: "待办覆盖层",
 			todoDesc: "给助手一个常驻待办列表覆盖层，扛得住重载与上下文压缩。",
+			schedulerName: "定时提示",
+			schedulerDesc: "让助手把提示排到以后跑，可一次性也可重复，每次触发时叫醒对话。",
 			provenanceName: "模型交接标注",
 			provenanceDesc: "当对话切换模型时在记录里标注，避免把一个模型写的摘要默认算到另一个头上。建议保持开启。",
 		},

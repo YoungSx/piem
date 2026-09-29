@@ -183,6 +183,14 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     #27). The ceiling follows to 2.35 MiB. No new dependency; both are React
  *     UI and agent-service wiring atop existing transports.
  *
+ * 29. Importing the @vincentff/pi-scheduler community extension as-is (the
+ *     audited scoped factory, its `.pi` config-directory node bridge and the
+ *     `CONFIG_DIR_NAME` compat export) measured 2,469,741 B (+~15.6 KiB over
+ *     #28). The ceiling follows to 2.36 MiB. The cost is the extension's own
+ *     ~19 KiB source compiled through the scoped platform; no new npm
+ *     dependency ships beyond it (its peers were already present) and no
+ *     terminal runtime or filesystem image was added.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -192,7 +200,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.35 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.36 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
