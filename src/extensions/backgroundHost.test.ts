@@ -69,6 +69,75 @@ describe("background factories in the community host", () => {
 		await two.run("foreground");
 	});
 
+	it("runs the background afterTimer (not the foreground one) after a background timer body", async () => {
+		const order: string[] = [];
+		const fired = deferred<void>();
+		const host = createExtensionPlatform({
+			fetch: async () => new Response(), complete: async () => { throw new Error("unused"); }, onError: () => {},
+			afterTimer: async () => { order.push("foreground"); },
+			backgroundAfterTimer: async () => { order.push("background"); fired.resolve(); },
+		});
+		const owned = host.forBackgroundExtension("timer");
+		try {
+			owned.platform.setTimeout(() => { order.push("body"); }, 1);
+			await fired.promise;
+			// A background timer's write→deliver runs through the background hook, which
+			// drains the background queue — never the foreground hook that would sweep a
+			// concurrent operation's pending follow-ups.
+			expect(order).toEqual(["body", "background"]);
+		} finally { owned.dispose(); host.dispose(); await host.drain(); }
+	});
+
+	it("skips the background afterTimer when a background timer body throws, matching the foreground scope path", async () => {
+		let after = 0;
+		const errored = deferred<unknown>();
+		const host = createExtensionPlatform({
+			fetch: async () => new Response(), complete: async () => { throw new Error("unused"); },
+			onError: error => errored.resolve(error), backgroundAfterTimer: async () => { after++; },
+		});
+		const owned = host.forBackgroundExtension("timer");
+		try {
+			owned.platform.setTimeout(() => { throw new Error("boom"); }, 1);
+			expect(await errored.promise).toMatchObject({ message: "boom" });
+			await Promise.resolve();
+			expect(after).toBe(0);
+		} finally { owned.dispose(); host.dispose(); await host.drain(); }
+	});
+
+	it("does not let a background timer's afterTimer drain a concurrent foreground operation's staged follow-up", async () => {
+		const delivered: unknown[] = [];
+		const fired = deferred<void>();
+		const host = await CommunityHost.create({
+			getEntries: () => [], getBranch: () => [], getSessionId: () => "fixture",
+			notify: () => {}, prepare: async () => {},
+			deliver: messages => { for (const message of messages) delivered.push(Reflect.get(message, "content")); },
+			platform: {
+				fetch: async () => { throw new Error("Unexpected foreground fetch"); },
+				backgroundFetch: async () => new Response("ok"), config: config(), onError: () => {},
+			},
+		}, [{
+			id: "racer",
+			createFactory(platform: BackgroundExtensionPlatform): ExtensionFactory {
+				return pi => {
+					pi.registerCommand("fg", { handler: async () => {
+						pi.sendUserMessage("fg-followup", { deliverAs: "followUp" }); // busy -> foreground pending
+						// A message-less background timer (like rpiv-todo's pre-warm) fires mid-operation.
+						platform.setTimeout(() => fired.resolve(), 1);
+						await fired.promise;
+						await new Promise(resolve => globalThis.setTimeout(resolve, 5)); // let its afterTimer settle
+					} });
+				};
+			},
+		}]);
+		hosts.push(host);
+		await host.start();
+		const messages = await host.run("fg");
+		// The follow-up staged inside the operation is returned by run(); the background
+		// timer's afterTimer delivered nothing, because it drains a separate queue.
+		expect(messages.map(message => Reflect.get(message, "content"))).toEqual(["fg-followup"]);
+		expect(delivered).toEqual([]);
+	});
+
 	it("flushes during shutdown, then revokes all retained resource closures", async () => {
 		const flushed: string[] = [];
 		let platform!: BackgroundExtensionPlatform;

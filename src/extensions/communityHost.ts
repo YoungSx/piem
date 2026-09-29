@@ -77,6 +77,15 @@ export class CommunityHost {
 	private backgrounds = new Map<string, ReturnType<ReturnType<typeof createExtensionPlatform>["forBackgroundExtension"]>>();
 	private closing: Promise<void> = Promise.resolve();
 	private pending: AgentMessage[] = [];
+	/**
+	 * Follow-ups staged by a background timer firing while the session is idle.
+	 * Kept apart from {@link pending}: a background timer has no operation scope,
+	 * so its message must not be drained (and delivered early) by a concurrent
+	 * foreground operation, nor discarded by that operation's rollback — and its
+	 * own delivery must not sweep a foreground operation's not-yet-committed
+	 * follow-ups. Drained only by {@link deliverBackground}.
+	 */
+	private backgroundPending: AgentMessage[] = [];
 	private disposed = false;
 	private otelDisabled = false;
 	private failure: { error?: Error } = {};
@@ -102,6 +111,7 @@ export class CommunityHost {
 			},
 			beforeTimer: async () => { await callbacks.waitForIdle?.(); await callbacks.prepare(); },
 			afterTimer: async () => { await owner.flushWrites(); owner.deliver(); },
+			backgroundAfterTimer: async () => { await owner.flushWrites(); owner.deliverBackground(); },
 		});
 		try { await owner.initialize(); return owner; }
 		catch (error) { owner.platform.dispose(); throw error; }
@@ -164,8 +174,7 @@ export class CommunityHost {
 			sendMessage: (message, options) => {
 				this.assertActive();
 				if (!options?.triggerTurn || options.deliverAs !== "followUp") throw new Error("Only queued follow-up turns are supported.");
-				if (this.pending.length >= 16) throw new Error("Too many extension messages in one operation.");
-				this.pending.push({ ...structuredClone(message), role: "custom", timestamp: Date.now() });
+				this.stage({ ...structuredClone(message), role: "custom", timestamp: Date.now() });
 			},
 			sendUserMessage: (content, options) => {
 				this.assertActive();
@@ -173,8 +182,8 @@ export class CommunityHost {
 					void this.host.run("acm").catch(error => callbacks.platform.onError(error));
 					return;
 				}
-				if (options?.deliverAs !== "followUp" || this.pending.length >= 16) throw new Error("Only bounded follow-up messages are supported.");
-				this.pending.push({ role: "user", content, timestamp: Date.now() });
+				if (options?.deliverAs !== "followUp") throw new Error("Only bounded follow-up messages are supported.");
+				this.stage({ role: "user", content, timestamp: Date.now() });
 			},
 		});
 		// A settings change may have retired the previous host while this one
@@ -506,5 +515,18 @@ export class CommunityHost {
 		this.needsContextReset = false;
 	}
 	private takeMessages(): AgentMessage[] { const messages = this.pending; this.pending = []; return messages; }
+	/**
+	 * Route a staged follow-up to the queue that owns it. A send while an
+	 * operation holds the platform ({@link busy}) belongs to that operation's
+	 * {@link pending}; a send while idle can only be a background timer, whose
+	 * message goes to {@link backgroundPending} so neither queue can drain,
+	 * deliver, or roll back the other's follow-ups.
+	 */
+	private stage(message: AgentMessage): void {
+		const queue = this.busy ? this.pending : this.backgroundPending;
+		if (queue.length >= 16) throw new Error("Too many extension messages in one operation.");
+		queue.push(message);
+	}
 	private deliver(): void { const messages = this.takeMessages(); if (messages.length) this.callbacks.deliver(messages); }
+	private deliverBackground(): void { const messages = this.backgroundPending; this.backgroundPending = []; if (messages.length) this.callbacks.deliver(messages); }
 }
