@@ -28,6 +28,13 @@ export interface ExtensionPlatformCallbacks {
 	activityChanged?(busy: boolean): void;
 	beforeTimer?(): Promise<void>;
 	afterTimer?(): Promise<void>;
+	/**
+	 * Runs after a background timer body instead of {@link afterTimer}: a
+	 * background timer has no operation scope, so its post-fire flush and
+	 * delivery must drain the background follow-up queue, not the foreground
+	 * one a concurrent operation is filling.
+	 */
+	backgroundAfterTimer?(): Promise<void>;
 }
 
 export interface ExtensionPlatform {
@@ -312,7 +319,7 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		/** One reviewed factory receives a private environment and background lifetime. */
 		forBackgroundExtension: (owner: string) => {
 			assertActive();
-			const resources = createExtensionResources({ fetch: backgroundFetch, onError: report });
+			const resources = createExtensionResources({ fetch: backgroundFetch, onError: report, afterTimer: () => callbacks.backgroundAfterTimer?.() ?? Promise.resolve() });
 			backgrounds.add(resources);
 			const config = configView(owner, resources.assertActive);
 			let closing = false;

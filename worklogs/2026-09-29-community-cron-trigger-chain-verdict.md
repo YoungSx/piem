@@ -47,3 +47,15 @@ scoped `platform.setTimeout` 挂载时即 `requireScope()`（成功，因为 ses
 - 未动源码、未开 PR（用户尚未拍板 A/B）。
 - bundle 门未实测：vincentff 全文 ~19KB TS 源，编译后增量对 1.89 MiB 门（余量 ~1KB）几乎必超；B 方案的定时器+解析估算 <2KB，同样要过门实测。
 - `ctx.hasUI` 的 `/schedule list` UI 分支未验（foreground command 场景，非 make-or-break）。
+
+## 追加（投递桥修落地 + 对抗审查纠偏）
+
+用户拍板 **B**。先落投递桥修（本 PR，独立于 B 的自写扩展）。实现比 verdict 的「最小修」多走一步，原因是对抗审查（三镜头并行 + 逐条对抗验证）钉出 verdict 的「零回归」论断有洞：
+
+- **verdict 的最小修（只接 `afterTimer`）会引入回归。** `afterTimer`＝`flushWrites()+deliver()`，而 `deliver()` 抽的是**共享的** `this.pending`。后台定时器（哪怕像 rpiv-todo 预热那样自己不 stage）fire 时若正撞上一个前台 operation 已 stage 了 follow-up 到同一个 `this.pending`，后台的 `deliver()` 会把它**提前送走并逃过该 operation 失败/取消时的 `this.pending=[]` 回滚**。「`deliver()` 空 pending no-op ⇒ 零回归」只在 pending 真空时成立，撞上并发前台就不成立。低-中危（当前唯一后台定时器是 rpiv-todo 单发 ~2s、且要正好撞上一个会失败的前台 stage），但是这条 B 分支要建的**公共底座**上的真回归——B 的自写扩展 fire 时必 stage 消息，会把单发变成对每个前台 operation 的持续竞争。
+- **落地改成双队列隔离。** 新增 `backgroundPending` 与前台 `pending` 分家；`stage()` 按 `busy` 路由（有 operation 归前台、idle 只可能是后台定时器）；后台走独立的 `backgroundAfterTimer`＝`flushWrites()+deliverBackground()`，只抽 `backgroundPending`。两侧互不 drain / deliver / 回滚。前台 scoped `platform.setTimeout` 仍走原 `afterTimer`（抽 `pending`），零改动。
+- **`beforeTimer` 确认不接后台**（审查第三镜头证实）：`beforeTimer`＝`waitForIdle()+prepare()`，`prepare()→contextSession.refresh()` 在有 context 导航挂起时会抛，且会把后台重新耦合回 run-idleness——正是后台要逃离的。投递本就在 `deliver()` 下游经 `promptQueue+waitForIdle` 自我节流到 idle，`beforeTimer` 于后台既冗余又有害。
+- **残留边角（已知天花板）**：后台定时器**恰在**一个前台 operation 在场时 stage，会按 `busy` 落到前台 `pending`（那一刻确实 busy）——单发丢一次、循环定时器下一拍自愈。要彻底消除需按执行上下文而非全局 busy 路由，代价不值，留注释。
+- 实测：改动 +429 B（bundle 2.35 MiB 门内，余量 4KB 是分支冷启动提交先吃掉的，非本修）；全量 4173 测试绿；两条新测试各有变异探针证明会因回归变红。
+
+fixture harness 测不到「idle 后台 stage→backgroundPending→投递」端到端：注入 extensions 时 `assertAction` 走 `lifetime.assertInvocation()`（挡 idle send），生产走 `assertActive`（idle-safe）。故回归测试从「前台已 stage 的 follow-up 不被并发后台定时器抽走」这一侧钉（Test C），后台自身 stage 侧靠平台层 hook 分流测 + 生产路径代码复核。

@@ -31,7 +31,7 @@ interface Timer {
  * The injected fetch must settle with physical IO, not an earlier abort race.
  * No global API is replaced; disposal revokes retained closures immediately.
  */
-export function createExtensionResources(options: { fetch: FetchFn; onError(error: unknown): void }) {
+export function createExtensionResources(options: { fetch: FetchFn; onError(error: unknown): void; afterTimer?(): Promise<void> }) {
 	const lifetime = new AbortController();
 	const shutdown = new AbortController();
 	const timers = new Map<number, Timer>();
@@ -63,10 +63,18 @@ export function createExtensionResources(options: { fetch: FetchFn; onError(erro
 			timer.native = undefined;
 			scheduled--;
 			if (lifetime.signal.aborted || timers.get(id) !== timer) return;
-			const task = Promise.resolve().then(() => {
+			const task = Promise.resolve().then(async () => {
 				assertActive();
 				if (timers.get(id) !== timer) return;
-				return timer.callback(...timer.args);
+				const result = await timer.callback(...timer.args);
+				// A background timer body has no operation scope of its own, so nothing
+				// downstream flushes its writes or delivers the follow-ups it staged —
+				// unlike the foreground `platform.setTimeout`, whose scope wrapper runs
+				// this same hook. Without it a timer that calls `sendUserMessage` leaves
+				// the message stranded in the host's pending queue and the alarm never
+				// wakes the session. Skipped on a thrown callback, matching foreground.
+				await options.afterTimer?.();
+				return result;
 			});
 			tasks.add(task);
 			void task.catch(report).finally(() => {
