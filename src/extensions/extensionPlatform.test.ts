@@ -286,6 +286,30 @@ describe("extension platform lifetime", () => {
 		expect(() => new host.platform.BorderedLoader()).toThrow("terminal UI");
 	});
 
+	it("bridges a pi-convention extension's .pi config directory into the namespace", () => {
+		const backing = memoryStore();
+		const { host } = setup({ config: backing.store });
+		const scheduler = host.forExtension("@vincentff/pi-scheduler");
+		const project = "/vault/.pi/scheduler-tasks.json";
+		const global = "~/.pi/agent/scheduler-tasks.json";
+		// loadConfig, first run: the project file is absent (ENOENT) and the global
+		// fallback stays unavailable. Upstream wraps both reads in try/catch, so both
+		// must be catchable rather than fatal — and existsSync must answer, not throw.
+		expect(scheduler.existsSync(project)).toBe(false);
+		expect(() => scheduler.readFileSync(project, "utf8")).toThrow("No extension config snapshot");
+		expect(() => scheduler.readFileSync(global, "utf8")).toThrow("outside");
+		// saveConfig: probe the .pi directory (false, never a throw), create it (a
+		// no-op on the namespace root), then write the flat tasks file.
+		expect(scheduler.existsSync("/vault/.pi")).toBe(false);
+		scheduler.mkdirSync("/vault/.pi", { recursive: true });
+		scheduler.writeFileSync(project, '{"tasks":[],"paused":false}', "utf8");
+		// The next loadConfig reads it back out of the owner's namespace.
+		expect(scheduler.readFileSync(project, "utf8")).toBe('{"tasks":[],"paused":false}');
+		expect(backing.data).toEqual({ "@vincentff/pi-scheduler": { "scheduler-tasks.json": '{"tasks":[],"paused":false}' } });
+		// The flat shape is the whole namespace under .pi; a nested path is still outside it.
+		expect(() => scheduler.writeFileSync("/vault/.pi/agent/scheduler-tasks.json", "{}", "utf8")).toThrow("outside");
+	});
+
 	it("fails visibly when no configuration store is attached", () => {
 		const { host } = setup();
 		const clarify = host.forExtension("pi-clarify");
