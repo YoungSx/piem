@@ -4,7 +4,7 @@ import { Notice, type Component } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
-import type { SuggestionScope } from "../agent/quickActionSuggestionRequest";
+import { lastAssistantText, type SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import { continueAfterFailureQuickAction, lastReplyFailed, mergeSuggestionBatches, type QuickAction } from "./quickActionSuggestions";
 import type { ActiveSessionInfo } from "../session/ObsidianSessionManager";
 import { MAX_DRAFT_LENGTH, type DraftStore } from "../session/DraftStore";
@@ -158,9 +158,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// Serializes suggestion requests: the newest call wins, an older one landing
 	// late is dropped rather than overwriting it.
 	const suggestionRequestRef = useRef(0);
-	// The reply row is fetched on a witnessed streaming→settled transition, so
-	// opening an old session — already settled — never fires a speculative request.
-	const prevStreamingRef = useRef(snapshot.isStreaming);
+	// The (session, language, reply-text) signature of the settled reply this
+	// panel has already fetched a row for. A settled snapshot that reproduces it
+	// — a re-render from unrelated state — is skipped; a new reply, a language
+	// flip, or a session switch moves it and re-arms the fetch. This is what lets
+	// opening an old session fetch a row while an idle one never re-bills.
+	const replyTargetRef = useRef<string | null>(null);
 	const sendPromptRef = useRef<() => void>(() => undefined);
 	// Read inside the prefill handler, which is rebound per conversation rather
 	// than on every keystroke just to see the current draft.
@@ -365,20 +368,34 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	}, [service, snapshot.isConfigured, snapshot.isStreaming, isExtensionBusy, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, noteFacts, isInitializing]);
 
 	/*
-	 * Settled reply: clear whatever the previous reply suggested and fetch the
-	 * model's follow-ups in two passes — unless the reply died mid-run, in which
-	 * case no request goes out at all and the preset "Continue" chip stands in. A
-	 * suggestion request against a provider that just failed the reply is a
-	 * request that mostly fails the same way, billed either way; and the one
-	 * thing a reader of a half-finished reply wants to do next is not something
-	 * the model needs to be asked about.
+	 * Settled reply: fetch the model's follow-ups for whatever settled reply is on
+	 * screen — the one that just landed, and equally the last reply of a history
+	 * session the reader just opened or switched back to. The trigger is no longer
+	 * a witnessed streaming→settled edge (which only the live case has); it is the
+	 * reply's own identity, so an old conversation gets a row too. Unless the reply
+	 * died mid-run, in which case no request goes out and the preset "Continue"
+	 * chip stands in.
 	 *
-	 * The two passes fill one scrolling row. The fast pass asks for three obvious
-	 * follow-ups and shows them the moment they land; the instant they do, a
-	 * deeper pass fires that is told what the fast pass already offered, and its
+	 * `replyTargetRef` is what keeps a settled row from re-billing: it holds the
+	 * (session, language, reply-text) signature of the row already fetched, so an
+	 * unrelated snapshot — a subagent tick, a busy flip — that re-runs this effect
+	 * finds the signature unchanged and stops before touching state or the network.
+	 * A new reply, a language flip, or a session switch all move the signature and
+	 * re-arm it.
+	 *
+	 * On a fresh signature the cache is peeked first: the reply row now caches
+	 * (keyed by the reply's own immutable text), so reopening or switching back to
+	 * a conversation already seen serves its chips instantly and sends nothing.
+	 * A hit ends here — unlike the empty screen there is nothing to revalidate,
+	 * because the subject cannot have changed.
+	 *
+	 * On a miss the two passes fill one scrolling row. The fast pass asks for three
+	 * obvious follow-ups and shows them the moment they land; the instant they do,
+	 * a deeper pass fires that is told what the fast pass already offered, and its
 	 * chips are appended behind them ({@link mergeSuggestionBatches} dedupes and
 	 * re-keys). The reader gets something to tap immediately and something worth
-	 * scrolling to a beat later — at the cost of a second side-channel request.
+	 * scrolling to a beat later — at the cost of a second side-channel request,
+	 * paid once per reply and never again for it thanks to the cache.
 	 *
 	 * `error` only, not `aborted`: a stop is the user's own choice and offering
 	 * to undo it reads as second-guessing. Configuration failures (missing key,
@@ -391,14 +408,33 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 * a reply is a nicety, and an empty row states that honestly.
 	 */
 	useEffect(() => {
-		const wasStreaming = prevStreamingRef.current;
-		prevStreamingRef.current = snapshot.isStreaming;
-		if (!wasStreaming || snapshot.isStreaming || snapshot.isCompacting || isExtensionBusy || snapshot.pendingToolCalls.length > 0 || snapshot.messages.length === 0) {
+		if (snapshot.isStreaming || snapshot.isCompacting || isExtensionBusy || snapshot.pendingToolCalls.length > 0 || snapshot.messages.length === 0) {
 			return;
 		}
+		const failed = lastReplyFailed(snapshot.messages);
+		// The reply's own text names the row; the failed row is named by a sentinel
+		// so a fix-then-retry that lands a real reply re-arms even at the same
+		// length. A settled tail that is not an assistant reply (a lone user turn)
+		// is nothing to suggest for.
+		const subject = failed ? null : lastAssistantText(snapshot.messages);
+		if (!failed && subject === null) {
+			return;
+		}
+		const signature = `${snapshot.sessionRevision} ${snapshot.language} ${failed ? "" : subject}`;
+		if (signature === replyTargetRef.current) {
+			return;
+		}
+		replyTargetRef.current = signature;
 		const request = ++suggestionRequestRef.current;
-		if (lastReplyFailed(snapshot.messages)) {
+		if (failed) {
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: continueAfterFailureQuickAction(getT(snapshot.language)) });
+			return;
+		}
+		// Cache hit: the exact chips this reply already produced. Serve and stop —
+		// the subject is immutable, so there is nothing a fresh request would learn.
+		const cached = service.peekQuickActionSuggestions("reply");
+		if (cached && cached.length > 0) {
+			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: cached });
 			return;
 		}
 		setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: [] });

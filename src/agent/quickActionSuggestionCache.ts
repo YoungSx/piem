@@ -28,9 +28,19 @@ import type { WorkspaceContext } from "./workspaceContext";
 
 /** The inputs a suggestion answer depends on; all of them key the entry. */
 export interface SuggestionCacheKey {
+	/**
+	 * Which placement the answer is for. The two placements name their subject
+	 * in the same {@link notePath} slot — a note path for "empty", a reply's own
+	 * text for "reply" — so without this discriminator a note whose path happened
+	 * to equal a reply's text (both with empty workspace facts) would collide.
+	 * Kept a local literal rather than importing `SuggestionScope` so the cache's
+	 * key rules stay free of the request module. Defaults to "empty" when absent
+	 * so callers written before the reply scope existed key exactly as they did.
+	 */
+	scope?: "empty" | "reply";
 	/** The panel's render language — chips come back worded in it. */
 	language: string;
-	/** The active note's vault path, or null for the vault-wide row. */
+	/** The subject the answer is about: a note's vault path for "empty" (null for the vault-wide row), or the reply's own text for "reply". */
 	notePath: string | null;
 	/** Identity of the model that produced the answer — see `suggestionModelKey`. */
 	modelKey: string;
@@ -59,7 +69,7 @@ const MAX_ENTRIES = 32;
 
 /** Builds the map key from a cache key's parts. */
 function cacheKeyString(key: SuggestionCacheKey): string {
-	return [key.modelKey, key.language, key.notePath ?? "", key.workspace, key.noteFacts ?? ""].join("\0");
+	return [key.scope ?? "empty", key.modelKey, key.language, key.notePath ?? "", key.workspace, key.noteFacts ?? ""].join("\0");
 }
 
 /**

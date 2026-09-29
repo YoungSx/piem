@@ -123,7 +123,7 @@ import {
 	type SuggestionCacheKey,
 	workspaceKeyPart,
 } from "./quickActionSuggestionCache";
-import type { QuickAction } from "../ui/quickActionSuggestions";
+import { mergeSuggestionBatches, type QuickAction } from "../ui/quickActionSuggestions";
 import type { TraceExpandSetting } from "../ui/traceExpand";
 import { DEFAULT_THINKING_LEVEL } from "../constants";
 import {
@@ -3047,18 +3047,20 @@ export class ObsidianAgentService {
 	}
 
 	/**
-	 * The empty screen's previous answer, without sending anything.
+	 * A placement's previous answer, without sending anything.
 	 *
-	 * The stale half of the cache's stale-while-revalidate contract: the panel
-	 * reads this synchronously to fill the row while a fresh request revalidates
-	 * it. Undefined means no prior answer — the panel falls back to its built-in
-	 * chips exactly as before. Reply-scope results are not cached, so a reply
-	 * scope reads nothing here by construction.
+	 * The read half of the cache: the panel calls this synchronously to fill the
+	 * row from a prior answer. Undefined means no prior answer — the empty screen
+	 * falls back to its built-in chips, the reply row stays hidden until a fresh
+	 * request lands.
+	 *
+	 * Both placements cache now (issue: quick actions on history sessions). The
+	 * empty screen revalidates on every read — its workspace facts drift — while
+	 * the reply row's subject is the reply's own immutable text, so a hit there
+	 * is exact and the caller may stop without revalidating. Reopening or
+	 * switching back to a settled conversation therefore costs nothing.
 	 */
 	peekQuickActionSuggestions(scope: SuggestionScope): QuickAction[] | undefined {
-		if (scope !== "empty") {
-			return undefined;
-		}
 		const settings = this.getSettings();
 		// The focused runtime if there is one, and "no prior answer" when there is
 		// not. This is read synchronously from a render effect, and the window
@@ -3076,15 +3078,23 @@ export class ObsidianAgentService {
 		if (!model) {
 			return undefined;
 		}
+		const language = resolveLanguage(this.app.vault as LanguageHost, settings.language);
+		if (scope === "reply") {
+			// The reply's own text is the subject, taken from the same place the
+			// request takes it, so the key the last request wrote is the one this
+			// read reproduces. No agent yet (a session mid-hydration) means nothing
+			// to suggest for.
+			const subject = rt?.agent ? lastAssistantText(rt.agent.state.messages) : null;
+			if (!subject) {
+				return undefined;
+			}
+			return this.suggestionCache.get(
+				this.suggestionCacheKey("reply", language, subject, EMPTY_WORKSPACE_CONTEXT, model, null),
+			);
+		}
 		const { notePath, workspace, noteFacts } = this.suggestionSubject(rt);
 		return this.suggestionCache.get(
-			this.suggestionCacheKey(
-				resolveLanguage(this.app.vault as LanguageHost, settings.language),
-				notePath,
-				workspace,
-				model,
-				noteFacts,
-			),
+			this.suggestionCacheKey("empty", language, notePath, workspace, model, noteFacts),
 		);
 	}
 
@@ -3141,15 +3151,17 @@ export class ObsidianAgentService {
 
 	/** The full cache key — every input the prompt quotes keys the entry. */
 	private suggestionCacheKey(
+		scope: SuggestionScope,
 		language: string,
-		notePath: string | null,
+		subject: string | null,
 		workspace: WorkspaceContext,
 		model: Model<string>,
 		noteFacts?: NoteFacts | null,
 	): SuggestionCacheKey {
 		return {
+			scope,
 			language,
-			notePath,
+			notePath: subject,
 			modelKey: suggestionModelKey(model),
 			workspace: workspaceKeyPart(workspace),
 			noteFacts: noteFactsKeyPart(noteFacts ?? null),
@@ -3248,15 +3260,28 @@ export class ObsidianAgentService {
 				return null;
 			}
 			this.recordOverheadUsage(rt, result.usage);
-			// Only the empty screen caches: its key is the (language, note path,
-			// workspace, noteFacts) tuple the next blank visit will reproduce, so the answer
-			// stays worth showing again. A reply's subject is that conversation's
-			// newest text — no future request will ask for it, so caching it would
-			// be dead weight.
-			if (scope === "empty" && result.actions) {
+			// Both placements cache now (issue: quick actions on history sessions):
+			// reopening or switching back to a settled conversation must not re-bill
+			// the row. The empty screen keys on the (language, note path, workspace,
+			// noteFacts) tuple the next blank visit reproduces; the reply row keys on
+			// the reply's own immutable text alone — workspace and note facts are not
+			// part of a reply's answer, so its key pins them to the same empty values
+			// the peek uses, or the two sides would key differently and every read
+			// would miss. The scope discriminator keeps the two key spaces apart. The
+			// deep pass stores the *merged* row, not its own slice — a peek is one
+			// read and must return the whole palette, and merging here is the same
+			// dedupe-and-rekey the UI applies so the cached row is byte-identical to
+			// the live one.
+			if (result.actions) {
+				const cached =
+					scope === "reply" && opts?.deep
+						? mergeSuggestionBatches(opts.priorActions ?? [], result.actions)
+						: result.actions;
+				const keyWorkspace = scope === "empty" ? workspace : EMPTY_WORKSPACE_CONTEXT;
+				const keyNoteFacts = scope === "empty" ? noteFacts : null;
 				this.suggestionCache.set(
-					this.suggestionCacheKey(language, subject, workspace, model, noteFacts),
-					result.actions,
+					this.suggestionCacheKey(scope, language, subject, keyWorkspace, model, keyNoteFacts),
+					cached,
 				);
 			}
 			return result.actions;

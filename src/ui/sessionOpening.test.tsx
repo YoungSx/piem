@@ -54,6 +54,13 @@ async function fixture(language: "en" | "zh-cn" = "en") {
 		providers: [{ id: "test", name: "Test", baseUrl: "https://example.invalid", protocol: "openai-completions" as const, apiKey: "fixture", secretRef: "", source: "user" as const, oauthFlow: "" }],
 		models: [{ id: "test", providerId: "test", modelApiId: "test", displayName: "Test", reasoning: false, supportsImages: false }],
 		activeModelId: "test", sessionDir: "Sessions", userSkillsDir: "", language,
+		// These tests are about navigation, drafts, and refused sends — the reply
+		// quick-action row is an unrelated side channel that now fires for the
+		// settled conversation on screen (a history session gets a row too). Point
+		// its model at an id no `models` entry provides so `resolveSuggestionModel`
+		// returns undefined and the side channel stays silent, leaving the
+		// `stream` mock free to assert that no *turn* reaches the provider.
+		suggestionModelId: "no-such-suggestion-model",
 	};
 	const seed = new ObsidianSessionManager(adapter, settings.sessionDir, "fixture");
 	const sessions = [];
