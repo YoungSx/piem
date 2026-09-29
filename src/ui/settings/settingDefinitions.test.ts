@@ -50,6 +50,7 @@ function stubHost(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost
 			promptQueueStrategy: "afterRun",
 			sendShortcut: "enter",
 			language: "en",
+			conversationLanguage: "auto",
 			sessionRetention: 0,
 			sessionDir: "piem/chats",
 			userSkillsDir: "",

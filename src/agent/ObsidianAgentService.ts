@@ -185,6 +185,7 @@ import {
 } from "./exportNote";
 import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
+import { withConversationLanguage } from "./conversationLanguage";
 import { createSubagentExtension } from "../subagent/extension";
 import { SUBAGENT_ROLES } from "../subagent/roles";
 import { createWorkflowHost } from "../workflow/host";
