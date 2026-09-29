@@ -35,5 +35,6 @@ export const COMMUNITY_EXTENSION_CATALOG: readonly CommunityExtensionRow[] = [
 	{ id: "pi-clarify", nameKey: "extensions.catalog.clarifyName", descKey: "extensions.catalog.clarifyDesc" },
 	{ id: "pi-invisible-continue", nameKey: "extensions.catalog.continueName", descKey: "extensions.catalog.continueDesc" },
 	{ id: "@juicesharp/rpiv-todo", nameKey: "extensions.catalog.todoName", descKey: "extensions.catalog.todoDesc" },
+	{ id: "@vincentff/pi-scheduler", nameKey: "extensions.catalog.schedulerName", descKey: "extensions.catalog.schedulerDesc" },
 	{ id: "pi-assistant-provenance", nameKey: "extensions.catalog.provenanceName", descKey: "extensions.catalog.provenanceDesc" },
 ];
