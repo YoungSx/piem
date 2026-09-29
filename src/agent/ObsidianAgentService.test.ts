@@ -4516,6 +4516,7 @@ function createServiceWithMultimodalModel(
 		userSkillsDir: "",
 		disabledSkills: [],
 		disabledExtensions: [],
+		seededExtensionDefaults: [],
 		mcpServers: [],
 		logLevel: DEFAULT_LOG_LEVEL,
 	};
