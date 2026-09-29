@@ -181,12 +181,19 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 	 * Upstream config helpers (rpiv-config) join `homedir()` with `.config`
 	 * and the package name, so the fake home root `/vault/.config` is translated
 	 * here instead of rejected: `<package>/<file>.json` lands in the owner's own
-	 * namespace, still one directory segment at most.
+	 * namespace, still one directory segment at most. A pi-convention extension
+	 * instead joins its cwd with `.pi`, so `/vault/.pi/<file>.json` is translated
+	 * the same way (flat, no nested segment — its global `~/.pi/agent/...` sibling
+	 * is a read-only fallback that stays unavailable and is swallowed upstream).
 	 */
 	const configFile = (path: string): string => {
 		const name = normalize(path);
 		const home = "/vault/.config";
-		const root = name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) ? EXTENSION_CONFIG_ROOT : name.startsWith(`${home}/`) ? home : undefined;
+		const piDir = "/vault/.pi";
+		const root = name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) ? EXTENSION_CONFIG_ROOT
+			: name.startsWith(`${home}/`) ? home
+			: name.startsWith(`${piDir}/`) ? piDir
+			: undefined;
 		if (root === undefined || !name.endsWith(".json")) return unavailable("reads outside extension JSON snapshots");
 		const file = name.slice(root.length + 1);
 		// A nested directory is outside the namespace, not a missing file: reporting
@@ -195,7 +202,7 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		// path `<home>/.config/<package>/<file>.json`, so one directory segment is the
 		// namespace's own shape there, and only there.
 		const slashes = file.match(/\//g)?.length ?? 0;
-		const nestedAllowed = root === "/vault/.config" ? 1 : 0;
+		const nestedAllowed = root === home ? 1 : 0;
 		if (slashes > nestedAllowed || file.endsWith("/")) return unavailable("reads outside extension JSON snapshots");
 		return file;
 	};
@@ -228,7 +235,18 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 				if (value === undefined) throw Object.assign(new Error(`No extension config snapshot: ${path}`), { code: "ENOENT", path });
 				return value;
 			},
-			existsSync: path => read(path) !== undefined,
+			// Real `fs.existsSync` never throws — it answers false for a path it
+			// cannot stat. A path outside every namespace root simply does not exist
+			// here, so it is false, not a thrown "outside". This is what lets a
+			// pi-convention extension probe its `.pi` directory before creating it
+			// (`if (!existsSync(dir)) mkdirSync(dir)`) instead of crashing on the probe.
+			// Disposal and a missing store still surface, since those are not "absent".
+			existsSync: path => {
+				check();
+				let file: string;
+				try { file = configFile(path); } catch { return false; }
+				return owner === undefined ? unavailable("extension configuration") : requireStore().read(owner, file) !== undefined;
+			},
 			// Upstream creates the agent directory before writing into it. The root
 			// already exists as a namespace; any other path is a real directory
 			// request this host cannot honour.
@@ -241,14 +259,16 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 				// is a real directory request this host cannot honour.
 				const name = normalize(path);
 				const home = "/vault/.config";
+				const piDir = "/vault/.pi";
 				const root = name === home || name.startsWith(`${home}/`) ? home
 					: name === EXTENSION_CONFIG_ROOT || name.startsWith(`${EXTENSION_CONFIG_ROOT}/`) ? EXTENSION_CONFIG_ROOT
+					: name === piDir || name.startsWith(`${piDir}/`) ? piDir
 					: undefined;
 				if (root === undefined) return unavailable("fs.mkdirSync");
 				const segments = name.slice(root.length).split("/").filter(Boolean);
 				// One segment is the namespace's own shape under the fake home root
 				// (`/vault/.config/<package>`); deeper than that, or under the real
-				// root, is a directory request this host cannot honour.
+				// or `.pi` root, is a directory request this host cannot honour.
 				const maxSegments = root === home ? 1 : 0;
 				if (segments.length > maxSegments || segments.some(segment => !/^[a-z0-9][a-z0-9._-]*$/i.test(segment))) unavailable("fs.mkdirSync");
 			},
