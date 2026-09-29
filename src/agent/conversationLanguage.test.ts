@@ -48,7 +48,10 @@ describe("the offered list", () => {
 	});
 
 	test("has no auto row: auto is the absence of an instruction, not a language", () => {
-		expect(CONVERSATION_LANGUAGES.some((lang) => lang.code === "auto")).toBe(false);
+		// The `as string` sidesteps the literal narrowing: the codes are a closed
+		// union that provably excludes "auto", so TS calls the comparison dead —
+		// which is exactly the property being asserted here.
+		expect(CONVERSATION_LANGUAGES.some((lang) => (lang.code as string) === "auto")).toBe(false);
 	});
 
 	test("lists no code twice", () => {

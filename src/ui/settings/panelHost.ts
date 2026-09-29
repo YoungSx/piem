@@ -240,6 +240,7 @@ export interface SettingsPanelSettings {
 	promptQueueStrategy: PromptQueueStrategy;
 	sendShortcut: SendShortcut;
 	language: LanguageSetting;
+	conversationLanguage: ConversationLanguageSetting;
 	compaction?: CompactionConfig;
 	retry?: RetryConfig;
 	sessionRetention: number;

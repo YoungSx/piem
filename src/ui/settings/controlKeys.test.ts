@@ -28,6 +28,7 @@ function settings(overrides: Partial<SettingsPanelSettings> = {}): SettingsPanel
 		promptQueueStrategy: "afterRun",
 		sendShortcut: "enter",
 		language: "en",
+		conversationLanguage: "auto",
 		sessionRetention: 0,
 		sessionDir: "piem/chats",
 		userSkillsDir: "",
