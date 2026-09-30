@@ -162,8 +162,7 @@ export const en = {
 		 * outright. A standing offer like the recovery, announced politely; the
 		 * title names which chat so the click is never a surprise.
 		 */
-		resumeSuggestion: "Pick up where you left off in “{title}”?",
-		resumeSuggestionAction: "Open",
+		resumeSuggestionAction: "Back to chat",
 		/**
 		 * The sync-conflict banner: a merge with another device's copy of the log
 		 * refused, so the foreign file was quarantined and the conversation kept

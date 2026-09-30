@@ -133,8 +133,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		 * 设备上次的会话，而不是直接续上。和恢复横幅一样是常驻提议、走 polite
 		 * 通道播报；标题点明是哪个会话，点击不会有意外。
 		 */
-		resumeSuggestion: "回到上次的对话「{title}」？",
-		resumeSuggestionAction: "打开",
+		resumeSuggestionAction: "回到对话",
 		/**
 		 * 同步冲突横幅：与另一台设备的记录合并被拒，外来文件已隔离留证，
 		 * 本会话保持原样。常驻结果、走 polite 通道播报；备份路径跟在句子
