@@ -1,5 +1,23 @@
-import { describe, expect, it } from "bun:test";
-import { DIAGNOSTICS_ENDPOINT, otelEnvironment } from "./otelConfig";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { otelEnvironment } from "./otelConfig";
+
+/** Stands in for the string esbuild's `define` bakes in from the release secret. */
+const ENDPOINT = "https://otlp.example.test";
+
+const INJECTED = "__PIEM_DIAGNOSTICS_ENDPOINT__";
+let hadInjected: boolean;
+let previousInjected: unknown;
+
+beforeAll(() => {
+	hadInjected = INJECTED in globalThis;
+	previousInjected = (globalThis as Record<string, unknown>)[INJECTED];
+	(globalThis as Record<string, unknown>)[INJECTED] = ENDPOINT;
+});
+
+afterAll(() => {
+	if (hadInjected) (globalThis as Record<string, unknown>)[INJECTED] = previousInjected;
+	else delete (globalThis as Record<string, unknown>)[INJECTED];
+});
 
 function memoryStorage(): Storage {
 	const map = new Map<string, string>();
@@ -14,12 +32,24 @@ function memoryStorage(): Storage {
 }
 
 describe("project diagnostics configuration", () => {
-	it("uses the fixed HTTPS gateway without client credentials or content flags", () => {
+	it("reports to the endpoint the bundle was built with", () => {
 		const env = otelEnvironment(true, "manifest-version", memoryStorage());
-		expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe(DIAGNOSTICS_ENDPOINT);
+		expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe(ENDPOINT);
 		expect(env.OTEL_SERVICE_NAME).toBe("piem");
 		expect(env.PI_OTEL_SERVICE_VERSION).toBe("manifest-version");
 		expect(env.OTEL_METRIC_EXPORT_INTERVAL).toBe("60000");
+	});
+
+	it("reports nothing when the bundle carries no endpoint", () => {
+		// Dev builds, `bun test`, and a release whose secret was empty all
+		// define this to the empty string. Sending is the wrong answer either
+		// way: there is no gateway to send to.
+		delete (globalThis as Record<string, unknown>)[INJECTED];
+		try {
+			expect(otelEnvironment(true, "manifest-version", memoryStorage())).toEqual({});
+		} finally {
+			(globalThis as Record<string, unknown>)[INJECTED] = ENDPOINT;
+		}
 	});
 
 	it("attaches a stable anonymous user id in resource attributes", () => {
@@ -37,44 +67,6 @@ describe("project diagnostics configuration", () => {
 	it("omits the identifier when storage is unavailable", () => {
 		const env = otelEnvironment(true, undefined, undefined);
 		expect(env.OTEL_RESOURCE_ATTRIBUTES).toBeUndefined();
-	});
-
-	it("ignores a leaked window global instead of reading another test's storage", () => {
-		// bun test files share one process; a sibling file can define `window`.
-		// The id comes only from the injected argument, so a leaked window must
-		// not resurrect one.
-		const previous = (globalThis as { window?: unknown }).window;
-		Object.defineProperty(globalThis, "window", {
-			value: { localStorage: memoryStorage() },
-			configurable: true,
-			writable: true,
-		});
-		try {
-			const env = otelEnvironment(true, undefined, undefined);
-			expect(env.OTEL_RESOURCE_ATTRIBUTES).toBeUndefined();
-		} finally {
-			if (previous === undefined) delete (globalThis as { window?: unknown }).window;
-			else Object.defineProperty(globalThis, "window", { value: previous, configurable: true, writable: true });
-		}
-	});
-
-	it("ignores a leaked window global instead of reading another test's storage", () => {
-		// bun test files share one process; a sibling file can define `window`.
-		// The id comes only from the injected argument, so a leaked window must
-		// not resurrect one.
-		const previous = (globalThis as { window?: unknown }).window;
-		Object.defineProperty(globalThis, "window", {
-			value: { localStorage: memoryStorage() },
-			configurable: true,
-			writable: true,
-		});
-		try {
-			const env = otelEnvironment(true, undefined, undefined);
-			expect(env.OTEL_RESOURCE_ATTRIBUTES).toBeUndefined();
-		} finally {
-			if (previous === undefined) delete (globalThis as { window?: unknown }).window;
-			else Object.defineProperty(globalThis, "window", { value: previous, configurable: true, writable: true });
-		}
 	});
 
 	it("keeps the upstream factory inactive when sharing is disabled", () => {

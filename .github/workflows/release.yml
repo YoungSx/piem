@@ -52,7 +52,25 @@ jobs:
             # loaded at all because nothing in this workflow ever inspected the
             # built output, only the sources it came from.
             - name: Build
+              env:
+                  # Baked into the bundle by esbuild's `define`. Not optional:
+                  # see the gate below.
+                  PIEM_DIAGNOSTICS_ENDPOINT: ${{ secrets.PIEM_DIAGNOSTICS_ENDPOINT }}
               run: npm run build
+
+            # An unset secret bakes in an empty endpoint, which reads as
+            # "diagnostics off" — a silent regression that ships happily
+            # because nothing else fails. Assert against the artifact rather
+            # than the env var, so this also catches a broken define wiring.
+            - name: Verify the diagnostics endpoint was injected
+              env:
+                  PIEM_DIAGNOSTICS_ENDPOINT: ${{ secrets.PIEM_DIAGNOSTICS_ENDPOINT }}
+              run: |
+                  if [ -z "$PIEM_DIAGNOSTICS_ENDPOINT" ]; then
+                      echo "secret PIEM_DIAGNOSTICS_ENDPOINT is empty; the bundle would ship with diagnostics disabled"
+                      exit 1
+                  fi
+                  grep -qF "$PIEM_DIAGNOSTICS_ENDPOINT" main.js
 
             - name: Check bundle for loader-incompatible constructs
               run: npm run check:bundle

@@ -1,5 +1,19 @@
-/** Project reporting gateway; authentication is supplied by the gateway. */
-export const DIAGNOSTICS_ENDPOINT = "https://otlppiem.shangxin.me";
+/** Replaced by esbuild's `define` at build time; the repo does not own the URL. */
+declare const __PIEM_DIAGNOSTICS_ENDPOINT__: string | undefined;
+
+/**
+ * The reporting gateway, baked in by the release build from
+ * `PIEM_DIAGNOSTICS_ENDPOINT`. Empty in dev builds, in `bun test`, and in a
+ * release whose secret was missing — diagnostics are off there rather than
+ * pointed somewhere guessed. `release.yml` fails the build rather than letting
+ * that ship.
+ *
+ * Read per call, not once at module load, only so tests can install the global;
+ * the value is a build-time constant and never changes at runtime.
+ */
+function diagnosticsEndpoint(): string {
+	return typeof __PIEM_DIAGNOSTICS_ENDPOINT__ === "string" ? __PIEM_DIAGNOSTICS_ENDPOINT__ : "";
+}
 
 /** Resource attribute the gateway aggregates on to count distinct users. */
 const USER_ID_ATTRIBUTE = "piem.user.id";
@@ -39,10 +53,11 @@ export function hostStorage(): Storage | undefined {
 
 /** Configure the original factory through its own environment contract. */
 export function otelEnvironment(enabled: boolean, pluginVersion?: string, storage?: Storage): Readonly<Record<string, string>> {
-	if (!enabled) return {};
+	const endpoint = diagnosticsEndpoint();
+	if (!enabled || !endpoint) return {};
 	const userId = anonymousUserId(storage);
 	return {
-		OTEL_EXPORTER_OTLP_ENDPOINT: DIAGNOSTICS_ENDPOINT,
+		OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
 		OTEL_SERVICE_NAME: "piem",
 		...(pluginVersion ? { PI_OTEL_SERVICE_VERSION: pluginVersion } : {}),
 		OTEL_METRIC_EXPORT_INTERVAL: "60000",
