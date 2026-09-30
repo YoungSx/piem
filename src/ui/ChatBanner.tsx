@@ -159,10 +159,11 @@ export function ChatBanner({
 			<IconButton icon="x" label={t.t("chat.dismissMessage")} onClick={recoveryOffer.onDismiss} className="piem-chat__banner-dismiss" />
 		</div>
 	) : null;
+	const resumeText = resumeSuggestion ? t.t("chat.resumeSuggestion", { title: resumeSuggestion.title }) : "";
 	const resume = resumeSuggestion ? (
-		<div className="piem-chat__banner piem-chat__banner--recovery">
+		<div className="piem-chat__banner piem-chat__banner--recovery piem-chat__banner--resume">
 			<ObsidianIcon name="history" className="piem-chat__banner-icon" />
-			<span className="piem-chat__banner-text">{t.t("chat.resumeSuggestion", { title: resumeSuggestion.title })}</span>
+			<span className="piem-chat__banner-text" title={resumeText}>{resumeText}</span>
 			<button type="button" className="piem-chat__banner-action" onClick={resumeSuggestion.onResume}>
 				{t.t("chat.resumeSuggestionAction")}
 			</button>
