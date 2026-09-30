@@ -90,7 +90,7 @@ describe("shutdown after the real service retires its sessions", () => {
 			expect(flushes[0]?.url).toBe("https://collector.test/flush");
 			expect(flushes[0]?.body).toBe(JSON.stringify(observed));
 			// Cleanup finishes asynchronously but still revokes the fresh read view.
-			for (let i = 0; i < 12; i++) await Promise.resolve();
+			await new Promise(resolve => setTimeout(resolve, 0));
 			expect(() => shutdown.sessionManager.getSessionId()).toThrow();
 		} finally { service.dispose(); }
 	});

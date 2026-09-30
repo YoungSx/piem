@@ -30,7 +30,15 @@ describe("Pi public-import native bridge contract", () => {
 		});
 		const output = Object.values(built.metafile!.outputs)[0]!;
 		expect(output.imports).toEqual([]);
-		expect(Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).some(([file]) => /node_modules\/.+(?:pi-tui|pi-ai)|jiti|highlight\.js/.test(file))).toBe(false);
+		const activeInputs = Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).map(([file]) => file);
+		// Pi's runner projects system messages through these pure helpers (920 B
+		// in this fixture). Every other pi-ai module still needs an explicit review.
+		const pureAiModules = new Set([
+			"node_modules/@earendil-works/pi-ai/dist/utils/text.js",
+			"node_modules/@earendil-works/pi-ai/dist/utils/transcript.js",
+		]);
+		expect(activeInputs.filter(file => /node_modules\/.+pi-ai\//.test(file) && !pureAiModules.has(file))).toEqual([]);
+		expect(activeInputs.filter(file => /pi-tui|pi-mcp|pi-codemode|jiti|virtual-modules|highlight\.js|\/providers\/|\/api\//.test(file))).toEqual([]);
 		const timers = new Set<ReturnType<typeof setTimeout>>();
 		const sandbox = { module: { exports: {} }, URL, AbortController, AbortSignal, DOMException, TextEncoder, TextDecoder,
 			structuredClone, crypto, queueMicrotask, console, window: {

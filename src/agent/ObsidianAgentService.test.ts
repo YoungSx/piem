@@ -1,3 +1,7 @@
+import type { TranscriptContext } from "@earendil-works/pi-ai";
+import type { JsonObject } from "@earendil-works/pi-ai";
+import { captureContext } from "../testUtils/captureContext";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { officialSkillFiles } from "../testUtils/skillFiles";
 import { emptySkillLoadReport } from "./skillLoader";
 import { afterAll, describe, expect, it } from "bun:test";
@@ -194,9 +198,9 @@ describe("ObsidianAgentService", () => {
 		// prompt only the subagent prompt contains.
 		const childToolNames: string[][] = [];
 		const scripted: StreamFn = (model, context, options) => {
-			const isChild = context.systemPrompt?.includes("delegated task") ?? false;
+			const isChild = getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false;
 			if (isChild) {
-				childToolNames.push((context.tools ?? []).map((tool) => tool.name));
+				childToolNames.push((getCurrentTools(context.messages) ?? []).map((tool) => tool.name));
 				return scriptedTextStream(model, "Scout report: nothing to organize.");
 			}
 			if (!thisParentCalled) {
@@ -248,7 +252,7 @@ describe("ObsidianAgentService", () => {
 		let childRequests = 0;
 		let parentCalls = 0;
 		const scripted: StreamFn = (model, context, options) => {
-			const isSubagent = context.systemPrompt?.includes("delegated task") ?? false;
+			const isSubagent = getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false;
 			if (!isSubagent) {
 				parentCalls += 1;
 				if (parentCalls === 1) {
@@ -262,7 +266,7 @@ describe("ObsidianAgentService", () => {
 				}
 				return scriptedTextStream(model, "Folded in.");
 			}
-			const names = (context.tools ?? []).map((tool) => tool.name);
+			const names = (getCurrentTools(context.messages) ?? []).map((tool) => tool.name);
 			if (names.includes("spawn_subagent")) {
 				childToolNames.push(names);
 				childRequests += 1;
@@ -1102,7 +1106,7 @@ describe("ObsidianAgentService", () => {
 		const scriptedStream = createToolCallingStreamFn("ls", "toolu_failed", { path: "Missing" });
 		const contexts: Context[] = [];
 		const streamFn: StreamFn = (model, context, options) => {
-			contexts.push({ ...context, messages: [...context.messages] });
+			contexts.push(captureContext(context));
 			return scriptedStream(model, context, options);
 		};
 		const service = createService(new MemoryAdapter(), { streamFn });
@@ -3897,7 +3901,7 @@ describe("vault skills", () => {
 	/** Captures the system prompt the fake provider actually received. */
 	function createPromptCapturingStreamFn(prompts: string[]): StreamFn {
 		return (_model, context) => {
-			prompts.push(context.systemPrompt ?? "");
+			prompts.push(getCurrentSystemPrompt(context.messages) ?? "");
 			return createFakeStreamFn()(_model, context);
 		};
 	}
@@ -4176,10 +4180,10 @@ describe("vault skills", () => {
 describe("memory through ordinary skills and file tools", () => {
 	// Scripted provider responses exercise the real service and tools. They prove
 	// the workflow is executable, not how reliably a model chooses to follow it.
-	function workflow(calls: Array<[string, Record<string, unknown>] | null>, contexts: Context[]): StreamFn {
+	function workflow(calls: Array<[string, JsonObject] | null>, contexts: Context[]): StreamFn {
 		let index = 0;
 		return (model, context) => {
-			contexts.push({ ...context, messages: [...context.messages] });
+			contexts.push(captureContext(context));
 			const call = calls[index++];
 			return call
 				? scriptedToolCallStream(model, `skill_step_${index}`, call[0], call[1])
@@ -4219,7 +4223,7 @@ describe("memory through ordinary skills and file tools", () => {
 		const original = "# Memory\n\n- Project Atlas: release notes in English. Source: user.\n- Vault-wide: link source notes in summaries. Source: user.\n";
 		const corrected = original.replace("release notes in English", "release notes in Chinese");
 		const contexts: Context[] = [];
-		const calls: Array<[string, Record<string, unknown>] | null> = [
+		const calls: Array<[string, JsonObject] | null> = [
 			["read_skill", { name: "vault-memory" }],
 			["find", { pattern: "Piem/memory/*" }],
 			["write", { path, content: original }],
@@ -4566,7 +4570,7 @@ function scriptedToolCallStream(
 	model: Model<Api>,
 	callId: string,
 	toolName: string,
-	toolArguments: Record<string, unknown>,
+	toolArguments: JsonObject,
 ) {
 	const stream = createAssistantMessageEventStream();
 	const message: AssistantMessage = {
@@ -4591,7 +4595,7 @@ function scriptedToolCallStream(
 	return stream;
 }
 
-function createFakeStreamFn(): StreamFn {	return (model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => {
+function createFakeStreamFn(): StreamFn {	return (model: Model<Api>, _context: TranscriptContext, _options?: SimpleStreamOptions) => {
 		const stream = createAssistantMessageEventStream();
 		const message: AssistantMessage = {
 			role: "assistant",
@@ -4625,10 +4629,10 @@ function createFakeStreamFn(): StreamFn {	return (model: Model<Api>, _context: C
 function createToolCallingStreamFn(
 	toolName: string,
 	toolCallId: string,
-	toolArguments: Record<string, unknown> = { path: "/" },
+	toolArguments: JsonObject = { path: "/" },
 ): StreamFn {
 	let requests = 0;
-	return (model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => {
+	return (model: Model<Api>, _context: TranscriptContext, _options?: SimpleStreamOptions) => {
 		requests += 1;
 		const stream = createAssistantMessageEventStream();
 		const base = {
@@ -4697,8 +4701,8 @@ function lastUserContent(context: Context | undefined): string {
 
 function createCapturingStreamFn(contexts: Context[]): StreamFn {
 	const inner = createFakeStreamFn();
-	return (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
-		contexts.push(context);
+	return (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
+		contexts.push(captureContext(context));
 		return inner(model, context, options);
 	};
 }
@@ -4720,8 +4724,8 @@ function createRecordingToolCallingStreamFn(
 ): { streamFn: StreamFn; requests: Context[] } {
 	const requests: Context[] = [];
 	let call = 0;
-	const streamFn: StreamFn = (model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => {
-		requests.push({ ...context, messages: [...context.messages] });
+	const streamFn: StreamFn = (model: Model<Api>, context: TranscriptContext, _options?: SimpleStreamOptions) => {
+		requests.push(captureContext(context));
 		const total = totals[call] ?? totals[totals.length - 1] ?? 1_010;
 		const isFirst = call === 0;
 		call += 1;
@@ -5184,7 +5188,7 @@ describe("quick-action suggestions", () => {
 	 */
 	it("quotes the workspace facts when the empty screen has no active note", async () => {
 		const prompts: string[] = [];
-		const capturingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+		const capturingStreamFn: StreamFn = (model: Model<Api>, context: TranscriptContext) => {
 			prompts.push(context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n"));
 			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
 		};
@@ -5212,7 +5216,7 @@ describe("quick-action suggestions", () => {
 
 	it("quotes note facts in suggestion prompt when an active note is open", async () => {
 		const prompts: string[] = [];
-		const capturingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+		const capturingStreamFn: StreamFn = (model: Model<Api>, context: TranscriptContext) => {
 			prompts.push(context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n"));
 			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
 		};
@@ -5233,7 +5237,7 @@ describe("quick-action suggestions", () => {
 
 	it("inspects active note with silent scout and quotes staged insights", async () => {
 		const prompts: string[] = [];
-		const capturingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+		const capturingStreamFn: StreamFn = (model: Model<Api>, context: TranscriptContext) => {
 			prompts.push(context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n"));
 			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
 		};
@@ -5269,7 +5273,7 @@ describe("quick-action suggestions", () => {
 
 	it("refreshes suggestions when new chat is asked for on a sheet that is already blank", async () => {
 		let requests = 0;
-		const countingStreamFn: StreamFn = (model: Model<Api>, context: Context) => {
+		const countingStreamFn: StreamFn = (model: Model<Api>, context: TranscriptContext) => {
 			requests += 1;
 			return suggestionReplyStreamFn(SUGGESTION_JSON)(model, context, {} as SimpleStreamOptions);
 		};
@@ -5293,7 +5297,7 @@ describe("quick-action suggestions", () => {
 			release = resolve;
 		});
 		let suggestionCalls = 0;
-		const streamFn: StreamFn = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
+		const streamFn: StreamFn = (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
 			const text = context.messages.map((message) => (typeof message.content === "string" ? message.content : "")).join("\n");
 			if (text.includes("one-tap follow-up")) {
 				suggestionCalls += 1;

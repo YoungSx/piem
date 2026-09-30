@@ -382,6 +382,10 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		},
 		/** Retain physical IO without delaying the caller's timeout or abort. */
 		trackRequest: (settled: Promise<void>): void => {
+			// Work has already started. Stop can refuse registration below, but
+			// its later rejection still needs an observer; callers receive the
+			// registration error and their original work promise remains rejected.
+			void settled.catch(() => undefined);
 			const scope = requireScope();
 			scope.pending++;
 			void settled.then(() => release(scope), () => release(scope));

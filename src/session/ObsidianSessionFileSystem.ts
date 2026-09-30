@@ -4,11 +4,12 @@ import type { Context } from "@earendil-works/pi-agent-core";
 import { normalizeVaultPath } from "../vault/path";
 import { parseMutationLine, SessionLogRepairNet, type SessionDriftEvent } from "./sessionMutationLine";
 import "./sessionCompat";
+import { textLineReader } from "../vault/textLineReader";
 
 function signalFrom(contextOrSignal?: Context | AbortSignal): AbortSignal | undefined {
 	if (!contextOrSignal) return undefined;
 	if (contextOrSignal instanceof AbortSignal) return contextOrSignal;
-	if ("signal" in contextOrSignal && contextOrSignal.signal instanceof AbortSignal) return contextOrSignal.signal;
+	if ("abortSignal" in contextOrSignal) return contextOrSignal.abortSignal;
 	return undefined;
 }
 
@@ -255,28 +256,13 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 		});
 	}
 
-	async openTextLineReader(path: string, context?: Context | AbortSignal) {
+	async openTextLineReader(path: string, context?: Context | AbortSignal): ReturnType<FileSystem["openTextLineReader"]> {
 		return this.run(path, context, async () => {
 			const target = this.normalize(path);
 			const content = await this.adapter.read(target);
 			const normalized = target.endsWith(".jsonl") ? normalizeLegacyJsonlContent(content) : content;
-			// Pull-based reader over eagerly-loaded content: the vault adapter has no
-			// streaming read, so whether the final record is torn is knowable up
-			// front from the trailing newline. Mirrors readTextLines' split.
-			const endsWithNewline = normalized.endsWith("\n");
-			const parts = normalized.split("\n");
-			if (endsWithNewline) parts.pop();
-			let index = 0;
-			return ok({
-				readLine: async (): Promise<Result<{ text: string; terminated: boolean } | undefined, FileError>> => {
-					if (index >= parts.length) return ok(undefined);
-					const text = parts[index] ?? "";
-					const terminated = index < parts.length - 1 || endsWithNewline;
-					index++;
-					return ok({ text, terminated });
-				},
-				close: async (): Promise<void> => undefined,
-			});
+			if (signalFrom(context)?.aborted) return err(new FileError("aborted", "Operation aborted", path));
+			return ok(textLineReader(normalized, path));
 		});
 	}
 

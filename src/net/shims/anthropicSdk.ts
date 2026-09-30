@@ -4,7 +4,7 @@
  *
  * Satisfies exactly what pi-ai's anthropic-messages.js touches, as audited:
  *   - new Anthropic({ apiKey, authToken, baseURL, dangerouslyAllowBrowser, fetch, defaultHeaders })
- *   - client.messages.create(params, { signal, timeout, maxRetries }).asResponse()
+ *   - client.beta.messages.create(params, { signal, timeout, maxRetries }).asResponse()
  *     — the only call site, and the only member of the client that pi-ai reads.
  *
  * Load-bearing SDK behaviour reproduced:
@@ -60,6 +60,27 @@ export class Anthropic {
 	readonly messages = {
 		create: (body: Record<string, unknown>, options: AnthropicRequestOptions = {}) =>
 			this.post("/v1/messages", body, options),
+	};
+
+	readonly beta = {
+		messages: {
+			create: (params: Record<string, unknown>, options: AnthropicRequestOptions = {}) => {
+				// The SDK's beta resource moves these fields out of the JSON body.
+				// Request headers override generated headers, including mixed casing.
+				const { betas, user_profile_id, workspace_id, ...body } = params;
+				if (betas != null && (!Array.isArray(betas) || !betas.every((value: unknown) => typeof value === "string"))) throw new TypeError("betas must be an array of strings");
+				if (user_profile_id != null && typeof user_profile_id !== "string") throw new TypeError("user_profile_id must be a string");
+				if (workspace_id != null && typeof workspace_id !== "string") throw new TypeError("workspace_id must be a string");
+				const headers = mergeHeaders({
+					...(betas != null ? { "anthropic-beta": betas.join(",") } : {}),
+					...(user_profile_id != null ? { "anthropic-user-profile-id": user_profile_id } : {}),
+					...(workspace_id != null ? { "anthropic-workspace-id": workspace_id } : {}),
+				}, options.headers);
+				const requestHeaders: Record<string, string> = {};
+				headers.forEach((value, name) => { requestHeaders[name] = value; });
+				return this.post("/v1/messages?beta=true", body, { ...options, headers: requestHeaders });
+			},
+		},
 	};
 
 	constructor(options: AnthropicClientOptions) {

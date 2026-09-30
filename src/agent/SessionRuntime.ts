@@ -309,7 +309,7 @@ export class SessionRuntime {
 	 */
 	queueInterrupt = false;
 	/**
-	 * Set by {@link shouldStopAfterTurn} when the context crossed the compaction
+	 * Set by {@link finishTurn} when the context crossed the compaction
 	 * line at a tool-result boundary — pi's README pattern: end the run rather
 	 * than swap the context underneath it, compact outside the run, `continue()`
 	 * back in. Cleared the moment the post-idle resume acts on it, so a run that
@@ -317,7 +317,7 @@ export class SessionRuntime {
 	 */
 	compactionPending = false;
 	/**
-	 * The futility latch guarding {@link shouldStopAfterTurn}, in three states:
+	 * The futility latch guarding {@link finishTurn}, in three states:
 	 *
 	 * - `null` — healthy. The hook judges every boundary on `needsCompaction`
 	 *   as usual.

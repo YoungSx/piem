@@ -26,6 +26,9 @@
  */
 
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, UserMessage } from "@earendil-works/pi-ai";
+// pi 0.86 narrowed StreamFn's context to a branded TranscriptContext; normalizeContext
+// folds a plain Context (prompt/tools shorthand) into it before the request goes out.
+import { normalizeContext } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { MAX_QUICK_ACTIONS, MAX_REPLY_QUICK_ACTIONS, type QuickAction } from "../ui/quickActionSuggestions";
 import type { Language } from "../i18n";
@@ -374,7 +377,7 @@ export async function fetchQuickActionSuggestions(options: {
 	let message: AssistantMessage;
 	try {
 		// StreamFn is allowed to hand back the stream or a promise for it.
-		const stream = await options.streamSimple(options.model, context, streamOptions);
+		const stream = await options.streamSimple(options.model, normalizeContext(context), streamOptions);
 		message = await stream.result();
 	} catch (error) {
 		return { actions: null, usage: undefined, failure: { kind: "transport", detail: describeError(error) } };

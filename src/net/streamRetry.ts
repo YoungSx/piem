@@ -6,7 +6,7 @@ import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	type AssistantMessageEventStream,
-	type Context,
+	type TranscriptContext,
 	type Model,
 	type RetryCallbacks,
 	type SimpleStreamOptions,
@@ -133,7 +133,7 @@ export function withTurnRetry(inner: StreamFn, options: TurnRetryOptions = {}): 
 async function driveTurn(
 	inner: StreamFn,
 	model: Model<Api>,
-	context: Context,
+	context: TranscriptContext,
 	streamOptions: SimpleStreamOptions | undefined,
 	policy: TurnRetryPolicy,
 	callbacks: RetryCallbacks,

@@ -1147,9 +1147,11 @@ describe("ObsidianSessionManager stored search", () => {
 
 		expect(hits).toHaveLength(1);
 		// Listing reads a header from both logs; only the matching one is then
-		// opened. Three reads rather than four is the proof the scan stopped.
-		expect(reads).toHaveLength(3);
-		expect(reads.filter((path) => path === hits[0]?.path)).toHaveLength(2);
+		// opened. Pi now opens a header reader before reading the full log;
+		// the non-matching log must still have only its listing read.
+		expect(reads).toHaveLength(4);
+		expect(reads.filter((path) => path === hits[0]?.path)).toHaveLength(3);
+		expect(reads.filter((path) => path !== hits[0]?.path)).toHaveLength(1);
 	});
 
 	it("stops at a session boundary when the caller aborts", async () => {

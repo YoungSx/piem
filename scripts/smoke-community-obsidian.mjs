@@ -134,6 +134,7 @@ try {
  report.artifactSha256=createHash('sha256').update(artifact).digest('hex');report.bytes=artifact.length;
  report.requests=requests.map(body=>({model:body.model,messages:body.messages,tools:body.tools?.map(tool=>tool.function.name)}));
  const wireChecks=[
+  ['system instructions survive model switch and every reload', requests.length > 0 && requests.every(body=>body.messages.some(message=>(message.role==='system'||message.role==='developer') && typeof message.content==='string' && message.content.includes('Obsidian')))],
   ['next protocol request switches model',requests[0]?.model==='alpha'&&requests[1]?.model==='beta'],
   ['provenance appears only in later request',JSON.stringify(requests[2]?.messages??[]).includes('bridge-smoke/beta')],
   ['hidden continuation never reaches provider',requests.every(body=>!JSON.stringify(body.messages).includes('pi-invisible-continue'))],

@@ -1,3 +1,6 @@
+import type { JsonObject } from "@earendil-works/pi-ai";
+import { captureContext } from "../testUtils/captureContext";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat } from "obsidian";
@@ -397,7 +400,7 @@ function deferredStreamFn(): {
 }
 
 /** One assistant turn that is a single tool call. */
-function scriptedToolCallStream(model: Model<Api>, callId: string, toolName: string, toolArguments: Record<string, unknown>) {
+function scriptedToolCallStream(model: Model<Api>, callId: string, toolName: string, toolArguments: JsonObject) {
 	const stream = createAssistantMessageEventStream();
 	const message: AssistantMessage = {
 		role: "assistant",
@@ -440,7 +443,7 @@ function delegatingStreamFn(): {
 	const streamFn: StreamFn = withRunawayGuard((model, context) => {
 		// The subagent system prompt is the only thing that names a delegated task —
 		// same discriminator the service's own delegation test uses.
-		if (context.systemPrompt?.includes("delegated task") ?? false) {
+		if (getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false) {
 			const stream = createAssistantMessageEventStream();
 			child = { stream, model };
 			return stream;
@@ -488,7 +491,7 @@ function multiSessionDelegatingStreamFn(): {
 	let spawnedA = false;
 	let spawnedB = false;
 	const streamFn: StreamFn = withRunawayGuard((model, context, options) => {
-		if (context.systemPrompt?.includes("delegated task") ?? false) {
+		if (getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false) {
 			const stream = createAssistantMessageEventStream();
 			const msgStr = JSON.stringify(context.messages);
 			const name = msgStr.includes("scout-a") ? "scout-a" : msgStr.includes("scout-b") ? "scout-b" : "unknown";
@@ -1019,8 +1022,8 @@ describe("agent-team member sessions through the service", () => {
 			let memberCalls = 0;
 			const streamFn: StreamFn = withRunawayGuard(
 				(model, context) => {
-					contexts.push({ ...context, messages: [...context.messages] });
-					if (String(context.systemPrompt ?? "").includes("one symmetric worker")) {
+					contexts.push(captureContext(context));
+					if (String(getCurrentSystemPrompt(context.messages) ?? "").includes("one symmetric worker")) {
 						memberCalls += 1;
 						return scriptedToolCallStream(model, `member-${memberCalls}`, "team_finish", { summary: "scripted member is done" });
 					}

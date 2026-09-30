@@ -13,6 +13,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { getParentPath, normalizeVaultPath } from "./path";
 import { trashOrDelete } from "./trash";
+import { textLineReader } from "./textLineReader";
 
 /**
  * Exposes an Obsidian vault as pi's {@link ExecutionEnv} so the native
@@ -98,30 +99,13 @@ export class VaultExecutionEnv implements ExecutionEnv {
 		});
 	}
 
-	async openTextLineReader(path: string, contextOrSignal?: Context | AbortSignal) {
+	async openTextLineReader(path: string, contextOrSignal?: Context | AbortSignal): ReturnType<ExecutionEnv["openTextLineReader"]> {
 		return this.run(path, async () => {
 			const read = await this.readTextFile(path, contextOrSignal);
 			if (!read.ok) {
 				return read;
 			}
-			// Pull-based reader over eagerly-loaded content: the vault has no
-			// streaming read, so whether the final record is torn is knowable from
-			// the trailing newline. Mirrors readTextLines' split.
-			const content = read.value;
-			const endsWithNewline = /\r?\n$/.test(content);
-			const parts = content.split(/\r?\n/);
-			if (endsWithNewline) parts.pop();
-			let index = 0;
-			return ok({
-				readLine: async (): Promise<Result<{ text: string; terminated: boolean } | undefined, FileError>> => {
-					if (index >= parts.length) return ok(undefined);
-					const text = parts[index] ?? "";
-					const terminated = index < parts.length - 1 || endsWithNewline;
-					index++;
-					return ok({ text, terminated });
-				},
-				close: async (): Promise<void> => undefined,
-			});
+			return abortedFailure(contextOrSignal, path) ?? ok(textLineReader(read.value, path));
 		});
 	}
 

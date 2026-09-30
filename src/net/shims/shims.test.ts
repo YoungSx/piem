@@ -10,6 +10,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import OpenAI from "./openaiSdk.js";
 import Anthropic from "./anthropicSdk.js";
+import { stream as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
+import { normalizeContext, type AnthropicOptions, type Model } from "@earendil-works/pi-ai";
 import { buildRequestUrl, mergeHeaders, sseData } from "./apiHttp.js";
 import { stubWindowTimers } from "../../testUtils/windowStub";
 
@@ -103,6 +105,43 @@ describe("apiHttp primitives", () => {
 });
 
 describe("anthropic shim", () => {
+	it("moves beta parameters into headers and uses the SDK beta route", async () => {
+		const base = await start();
+		responder = sse([]);
+		const client = new Anthropic({ apiKey: "k", baseURL: base, fetch: authFetch });
+		await client.beta.messages.create({ model: "claude-x", stream: true, betas: ["first", "second"], user_profile_id: "profile", workspace_id: "workspace" }).asResponse();
+		expect(requests[0]!.url).toBe("/v1/messages?beta=true");
+		expect(requests[0]!.headers["anthropic-beta"]).toBe("first,second");
+		expect(requests[0]!.headers["anthropic-user-profile-id"]).toBe("profile");
+		expect(requests[0]!.headers["anthropic-workspace-id"]).toBe("workspace");
+		expect(JSON.parse(requests[0]!.body)).toEqual({ model: "claude-x", stream: true });
+		await client.beta.messages.create({ betas: ["generated"] }, { headers: { "Anthropic-Beta": "explicit" } }).asResponse();
+		expect(requests[1]!.headers["anthropic-beta"]).toBe("explicit");
+	});
+
+	it("streams through real Pi Anthropic serialization using the bundled shim client", async () => {
+		const base = await start();
+		const model: Model<"anthropic-messages"> = { id: "claude-test", name: "test", api: "anthropic-messages", provider: "anthropic", baseUrl: base, reasoning: false, input: ["text"], contextWindow: 8192, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+		responder = sse([
+			`event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "m1", model: model.id, role: "assistant", content: [], usage: { input_tokens: 3, output_tokens: 0 } } })}\n\n`,
+			'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+			'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}\n\n',
+			'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+			'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\n',
+			'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+		]);
+		// The SDK type includes many APIs Pi never calls. Inject our actual shim
+		// into Pi's supported client seam, exercising the same runtime contract.
+		const client = new Anthropic({ apiKey: "k", baseURL: base, fetch: authFetch }) as unknown as AnthropicOptions["client"];
+		const result = await streamAnthropic(model, normalizeContext({ systemPrompt: "System", messages: [{ role: "user", content: "Hi", timestamp: 1 }] }), { client, maxRetries: 0 }).result();
+		expect(result.stopReason).toBe("stop");
+		expect(result.content).toEqual([{ type: "text", text: "Hello" }]);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]!.url).toBe("/v1/messages?beta=true");
+		expect(JSON.parse(requests[0]!.body)).not.toHaveProperty("betas");
+		expect(requests[0]!.headers["anthropic-version"]).toBe("2023-06-01");
+	});
+
 	it("sends the load-bearing headers and body pi-ai relies on", async () => {
 		const base = await start();
 		responder = sse([]);

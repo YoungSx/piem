@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { Model, Api } from "@earendil-works/pi-ai";
-import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type Context, type SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type TranscriptContext, normalizeContext, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { DEFAULT_TURN_MAX_DELAY_MS, withTurnRetry } from "./streamRetry";
 import { stubWindowTimers } from "../testUtils/windowStub";
@@ -32,7 +32,7 @@ const MODEL: Model<Api> = {
 	maxTokens: 4_096,
 } as unknown as Model<Api>;
 
-const CONTEXT: Context = { messages: [] };
+const CONTEXT = normalizeContext({ messages: [] });
 
 /** The zero-usage shell the wrapper and fixtures alike build failed messages from. */
 function baseMessage(overrides: Partial<AssistantMessage>): AssistantMessage {
@@ -299,10 +299,10 @@ describe("withTurnRetry", () => {
 
 	it("passes the model, context and options through to the inner stream function", async () => {
 		const good = scriptedStream([], baseMessage({ content: [] }));
-		let seen: { model?: Model<Api>; context?: Context; options?: SimpleStreamOptions } = {};
+		let seen: { model?: Model<Api>; context?: TranscriptContext; options?: SimpleStreamOptions } = {};
 		let calls = 0;
 		const inner = Object.defineProperty(
-			((model: Model<Api>, context: Context, streamOptions?: SimpleStreamOptions) => {
+			((model: Model<Api>, context: TranscriptContext, streamOptions?: SimpleStreamOptions) => {
 				seen = { model, context, options: streamOptions };
 				calls += 1;
 				return good;

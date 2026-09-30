@@ -1,4 +1,5 @@
-import type { AgentEvent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool, AgentTurnContext } from "@earendil-works/pi-agent-core";
+import type { AgentActivityOutcome } from "@earendil-works/pi-coding-agent";
 import type { ExtensionHostCallbacks, StaticExtension } from "./extensionHost";
 import type { ImageContent, ProviderResponse } from "@earendil-works/pi-ai";
 import type {
@@ -337,6 +338,14 @@ export class CommunityHost {
 	}
 	beforeAgentStart(prompt: string, images: ImageContent[] | undefined, systemPrompt: string) {
 		return this.operate(() => this.host.beforeAgentStart(prompt, images, systemPrompt));
+	}
+	finishTurn(turn: AgentTurnContext): Promise<boolean> {
+		if (!this.host.hasHandlers("turn_end")) return Promise.resolve(false);
+		return this.operate(() => this.host.finishTurn(turn));
+	}
+	beforeSettle(outcome: AgentActivityOutcome): Promise<boolean> {
+		if (!this.host.hasHandlers("agent_before_settle")) return Promise.resolve(false);
+		return this.operate(() => this.host.beforeSettle(outcome));
 	}
 	/** Provider hooks refresh once per request, not per streamed token. */
 	beforeProviderRequest(payload: unknown): Promise<unknown> {

@@ -1,3 +1,4 @@
+import { conversationMessages, replaceConversation } from "../agent/transcript";
 import {
 	Agent,
 	calculateContextTokens,
@@ -297,7 +298,7 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 	// Repaired here rather than at the call site: a caller that forgot would hand
 	// the provider a transcript with unanswered tool calls in it, which fails as a
 	// 400 nobody would read as "the seed was malformed".
-	const seeded = resumableTranscript(options.initialMessages ?? []);
+	const seeded = resumableTranscript(conversationMessages(options.initialMessages ?? []));
 	const linked = linkSignals(options.signal);
 	// Compaction bookkeeping, run-local because the run is one function call: the
 	// parent needs fields on a service for the same state because its run outlives
@@ -426,7 +427,7 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		const onProgress = options.onProgress;
 		agent.subscribe((event) => {
 			if (event.type === "turn_end") {
-				onProgress([...agent.state.messages]);
+				onProgress(conversationMessages(agent.state.messages));
 			}
 		});
 	}
@@ -458,7 +459,7 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 			// loop body must not lean on a hook that may never have run.
 			if (models) {
 				const outcome = await compactIfNeeded({
-					messages: agent.state.messages,
+					messages: conversationMessages(agent.state.messages),
 					model,
 					models,
 					thinkingLevel,
@@ -484,7 +485,7 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 					if (outcome.result.usage) {
 						compactionUsage.push(outcome.result.usage);
 					}
-					agent.state.messages = outcome.messages;
+					replaceConversation(agent, outcome.messages);
 				}
 			}
 			// Whatever the tidy's outcome, the reply that follows is the first
@@ -503,7 +504,7 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		// tidy-continue loop shares this path: a `continue()` that throws comes
 		// here under the same words.
 		if (!linked.signal.aborted) {
-			throw new SubagentRunError(error instanceof Error ? error.message : String(error), agent.state.messages);
+			throw new SubagentRunError(error instanceof Error ? error.message : String(error), conversationMessages(agent.state.messages));
 		}
 	} finally {
 		// On the happy path the signal never fires, so the listener must come
@@ -512,7 +513,7 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		linked.dispose();
 	}
 
-	const messages = agent.state.messages;
+	const messages = conversationMessages(agent.state.messages);
 	// Accounting and the report come from what *this* errand produced; the
 	// transcript handed back is the child's whole context. Membership rather than
 	// an index, because a mid-run compaction rewrites the prefix: `slice` would

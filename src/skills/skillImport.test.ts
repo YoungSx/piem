@@ -1,3 +1,4 @@
+import { textLineReader } from "../vault/textLineReader";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -259,6 +260,10 @@ class MemoryEnv implements ExecutionEnv {
 		return this.files.get(path);
 	}
 
+	async openTextLineReader(path: string): ReturnType<ExecutionEnv["openTextLineReader"]> {
+		const text = await this.readTextFile(path);
+		return text.ok ? ok(textLineReader(text.value, path)) : text;
+	}
 	async readTextLines(path: string): Promise<Result<string[], FileError>> {
 		const text = await this.readTextFile(path);
 		return text.ok ? ok(text.value.split("\n")) : text;

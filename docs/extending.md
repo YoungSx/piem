@@ -270,6 +270,9 @@ Content capture is off, though model error messages can contain note text; see
 Its events cover the main conversation, not every internal subagent model call.
 
 These extensions ship in `main.js` and change only with a normal plugin release.
+The host supports boundary drafts for custom state, custom messages, and
+compaction. The upstream `context_edit` draft is unavailable in Piem's Vault
+session format; attempts fail with an explicit error before any drafts are saved.
 Piem does not download or execute JS/TS extensions from the vault or a URL. Upstream
 configuration files such as `aliases.json` and provenance `config.json` are not
 mounted; these extensions use their default behavior.

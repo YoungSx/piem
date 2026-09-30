@@ -191,6 +191,13 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     dependency ships beyond it (its peers were already present) and no
  *     terminal runtime or filesystem image was added.
  *
+ * 30. Pi 0.99.1 atop the scheduler baseline (#29): its transcript/boundary
+ *     adapters and Anthropic beta transport measure 2,527,890 B (+58,149 B
+ *     over #29). The ceiling follows to 2.42 MiB. The production metafile contains no Jiti,
+ *     terminal runtime, built-in MCP/codemode extension or full SDK; the new
+ *     prompt/skills/MCP registry helpers contribute 8,107 B and the two
+ *     boundary adapters 5,061 B.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -200,7 +207,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.36 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.42 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

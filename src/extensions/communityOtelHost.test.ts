@@ -92,6 +92,14 @@ function fixture(shortShutdown = false) {
 			// No custom extension list: exercise the production registration and reset path.
 			const host = await CommunityHost.create({
 				getEntries: () => [], getBranch: () => [], getSessionId: () => id, getSessionFile: () => `Piem/${id}.jsonl`,
+				boundary: {
+					getMessageEntryId: () => "reply",
+					buildContext: drafts => {
+						expect(drafts).toEqual([]);
+						return { contextEntries: [], contextMessages: [message], llmMessages: [message], pendingMessages: [], canContinue: false };
+					},
+					commit: async drafts => { expect(drafts).toEqual([]); },
+				},
 				getModel: () => model, getModels: () => [model], getThinkingLevel: () => "off", isIdle: () => true,
 				notify: (text, type) => { if (type === "error") errors.push(text); else notices.push(text); },
 				prepare: async () => {}, deliver: () => {},
@@ -132,6 +140,7 @@ async function round(host: CommunityHost) {
 	await host.afterProviderResponse({ status: 200, headers: { "x-private": "provider response" } });
 	await host.emitAgentEvent({ type: "tool_execution_start", toolName: "read", toolCallId: "read-1", args: { path: "private-note.md" } });
 	await host.emitAgentEvent({ type: "tool_execution_end", toolName: "read", toolCallId: "read-1", isError: false, result: { content: [{ type: "text", text: "private note contents" }], details: {} } });
+	await host.finishTurn({ message, toolResults: [], context: { messages: [message], tools: [] }, newMessages: [message] });
 	await host.emitAgentEvent({ type: "turn_end", message, toolResults: [] });
 	await host.emitAgentEvent({ type: "agent_end", messages: [message] });
 }

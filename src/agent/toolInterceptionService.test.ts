@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import type { App, DataAdapter } from "obsidian";
-import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, TranscriptContext, JsonObject, Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
@@ -18,7 +18,7 @@ const { ObsidianSessionManager } = await import("../session/ObsidianSessionManag
 const { DEFAULT_SETTINGS } = await import("../settings");
 
 /** One tool call in the first reply, then a plain answer. */
-interface ToolScript { name: string; arguments: Record<string, unknown> }
+interface ToolScript { name: string; arguments: JsonObject }
 
 /**
  * The service, wired to a stream that asks for `script` on its first request.
@@ -43,9 +43,9 @@ function harness(factory: ExtensionFactory, script: ToolScript) {
 			getAbstractFileByPath: () => null, read: async () => "", cachedRead: async () => "" },
 		workspace: { getActiveViewOfType: () => null, getActiveFile: () => null },
 	} as unknown as App;
-	const requests: Context[] = [];
-	const streamFn: StreamFn = (model: Model<string>, context: Context) => {
-		requests.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+	const requests: TranscriptContext[] = [];
+	const streamFn: StreamFn = (model: Model<string>, context: TranscriptContext) => {
+		requests.push({ ...context, messages: structuredClone(context.messages) });
 		const base = {
 			role: "assistant" as const, api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(),
 			usage: { input: 2, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 4,
