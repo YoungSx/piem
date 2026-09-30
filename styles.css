@@ -674,6 +674,18 @@ button.piem-chat__context-open {
 	 */
 }
 
+/* The cold-start suggestion stays on one row; its text yields to the controls. */
+.piem-chat__banner--resume {
+	flex-wrap: nowrap;
+}
+
+.piem-chat__banner--resume .piem-chat__banner-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* Action where the old copy printed a settings path in prose. */
 .piem-chat__banner-action {
 	flex-shrink: 0;
