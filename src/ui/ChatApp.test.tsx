@@ -256,6 +256,16 @@ class FakeAgentService {
 	peekedReplySuggestions: Record<string, QuickAction[]> = {};
 	/** When set, `suggestQuickActions` holds its answer until this resolves — the gate a test lifts to interleave renders. */
 	suggestionsGate: Promise<void> | null = null;
+	/**
+	 * Panel-side debug records, in order. The gates that stop a suggestion
+	 * request before it is sent leave no other trace, so a test that wants to
+	 * know a request was gated rather than failed reads them here.
+	 */
+	readonly debugRecords: { message: string; detail?: Record<string, unknown> }[] = [];
+
+	logDebug(message: string, detail?: () => Record<string, unknown>): void {
+		this.debugRecords.push(detail ? { message, detail: detail() } : { message });
+	}
 
 	peekQuickActionSuggestions(scope: SuggestionScope): QuickAction[] | undefined {
 		if (scope === "reply") {
@@ -1179,6 +1189,35 @@ describe("ChatApp model-suggested quick actions", () => {
 
 		// No fallback here, by the placement's contract: a nicety that failed shows nothing.
 		expect(quickActionChips(host)).toHaveLength(0);
+	});
+
+	it("names the gate that stopped a request, once per distinct stall", async () => {
+		const { service } = await mountChat({
+			snapshot: { ...readySnapshot, isStreaming: true, messages: [assistantReply("Still writing.")] as ChatSnapshot["messages"] },
+			suggestionResults: [agentChips],
+		});
+		const streamingStalls = (): number =>
+			service.debugRecords.filter(
+				(record) => record.detail?.placement === "reply" && record.detail?.reason === "a turn is streaming",
+			).length;
+
+		// A turn streaming is why the row waits; the same reason across snapshots
+		// is one record, not one per render.
+		expect(streamingStalls()).toBe(1);
+		service.emit({ isStreaming: true, messages: [assistantReply("Still writing."), assistantReply("Still writing.")] as ChatSnapshot["messages"] });
+		await flushRender();
+		expect(streamingStalls()).toBe(1);
+
+		// The request goes out once the run settles, which clears the remembered
+		// reason — so a later stall of the same kind is reported again rather than
+		// swallowed as a duplicate of the first.
+		service.emit({ isStreaming: false, messages: [assistantReply("Settled at last.")] as ChatSnapshot["messages"] });
+		await flushRender(() => service.suggestionRequests.length > 0);
+		expect(service.suggestionRequests).toContain("reply");
+
+		service.emit({ isStreaming: true });
+		await flushRender();
+		expect(streamingStalls()).toBe(2);
 	});
 
 	it("offers the preset Continue chip instead of a request when the reply died mid-run", async () => {

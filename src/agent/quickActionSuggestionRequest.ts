@@ -132,12 +132,39 @@ const WORKSPACE_INTRO = `The user's workspace:`;
 /** The reply placement's framing line; the quoted reply is its material. */
 const REPLY_INTRO = `Base the suggestions on this assistant reply:`;
 
+/**
+ * Why a request produced no chips.
+ *
+ * The module never throws, so this is the only channel a reason can travel out
+ * on: without it every miss — a dead endpoint, a refused key, an answer the
+ * parse could not read — arrives at the caller as the same `actions: null`, and
+ * the panel's log cannot tell "no suggestions worth having" from "the request
+ * never landed". `detail` is the human-readable half: the provider's error
+ * text, the thrown error, or a bounded sample of the unparsable answer.
+ */
+export type SuggestionFailureKind =
+	/** The stream call itself threw — DNS, TLS, a refused connection, a bad key. */
+	| "transport"
+	/** The provider answered and stopped with `stopReason: "error"`. */
+	| "stopped"
+	/** The request was aborted — a stop, a session switch, or a superseded row. */
+	| "aborted"
+	/** An answer arrived but carried no chip the parse could keep. */
+	| "unparsable";
+
+export interface SuggestionFailure {
+	kind: SuggestionFailureKind;
+	detail: string;
+}
+
 /** What a suggestion request returns: parsed chips, plus the usage the parse must not swallow. */
 export interface SuggestionResult {
 	/** Null when nothing usable came back; the caller decides what absence shows. */
 	actions: QuickAction[] | null;
 	/** The billed usage, recorded even when the parse failed — the request still cost money. */
 	usage: AssistantMessage["usage"] | undefined;
+	/** Why there is nothing to show. Absent on an answer that yielded chips. */
+	failure?: SuggestionFailure;
 }
 
 /**
@@ -300,8 +327,10 @@ export function assistantMessageText(message: AssistantMessage): string {
  * nothing else, and paying for deliberation on a nicety inverts the feature.
  *
  * Never throws. Every failure — transport error, aborted stop, unparseable
- * answer, empty parse — resolves to the same shape with `actions: null`, so the
- * callers' contract ("nothing to show") is one branch, not a try/catch each.
+ * answer, empty parse — resolves to the same shape with `actions: null` plus a
+ * {@link SuggestionFailure} naming which of them it was, so the callers'
+ * contract ("nothing to show") is one branch, not a try/catch each, and a miss
+ * in the panel's log can be read rather than guessed at.
  */
 export async function fetchQuickActionSuggestions(options: {
 	streamSimple: StreamFn;
@@ -347,12 +376,41 @@ export async function fetchQuickActionSuggestions(options: {
 		// StreamFn is allowed to hand back the stream or a promise for it.
 		const stream = await options.streamSimple(options.model, context, streamOptions);
 		message = await stream.result();
-	} catch {
-		return { actions: null, usage: undefined };
+	} catch (error) {
+		return { actions: null, usage: undefined, failure: { kind: "transport", detail: describeError(error) } };
 	}
-	if (options.signal?.aborted || message.stopReason === "error" || message.stopReason === "aborted") {
-		return { actions: null, usage: message.usage };
+	// `signal.aborted` is read before the stop reasons on purpose: a superseded
+	// row and a user stop both surface as `stopReason: "aborted"`, and only the
+	// first is this module's business to explain.
+	if (options.signal?.aborted) {
+		return { actions: null, usage: message.usage, failure: { kind: "aborted", detail: message.errorMessage ?? "" } };
 	}
-	const actions = parseSuggestedActions(assistantMessageText(message), CAPS[options.scope]);
-	return { actions: actions.length > 0 ? actions : null, usage: message.usage };
+	if (message.stopReason === "error" || message.stopReason === "aborted") {
+		return {
+			actions: null,
+			usage: message.usage,
+			failure: {
+				kind: "stopped",
+				detail: message.errorMessage || `stopReason: ${message.stopReason}`,
+			},
+		};
+	}
+	const text = assistantMessageText(message);
+	const actions = parseSuggestedActions(text, CAPS[options.scope]);
+	if (actions.length === 0) {
+		// The sample, not the whole answer: a model that ignored the JSON
+		// contract often writes a paragraph, and that paragraph is the only clue
+		// to what it thought it was doing.
+		return {
+			actions: null,
+			usage: message.usage,
+			failure: { kind: "unparsable", detail: `${message.stopReason}, ${text.length} chars: ${text.slice(0, 200)}` },
+		};
+	}
+	return { actions, usage: message.usage };
+}
+
+/** A thrown value as one line of text — `Error`s keep their message, the rest their shape. */
+function describeError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }

@@ -4435,6 +4435,8 @@ function createServiceWithSettings(
 		getExternalTools?: ObsidianAgentServiceOptions["getExternalTools"];
 		/** Link graph, metadata cache and active editor for the context probe. */
 		probeData?: ProbeData;
+		/** Passed through so a test can read back what the service recorded. */
+		logger?: LoggerLike;
 	} = {},
 ): { service: ObsidianAgentServiceType; settings: PiemSettings } {
 	const adapter = asDataAdapter(memoryAdapter);
@@ -4452,6 +4454,7 @@ function createServiceWithSettings(
 			loadUserSkills: overrides.loadUserSkills ?? NO_USER_SKILLS,
 			...(overrides.persistSettings ? { persistSettings: overrides.persistSettings } : {}),
 			getExternalTools: overrides.getExternalTools,
+			logger: overrides.logger,
 		},
 	);
 	return { service, settings };
@@ -4944,6 +4947,25 @@ function getParent(path: string): string {
 describe("quick-action suggestions", () => {
 	const SUGGESTION_JSON = '[{"label":"Go deeper","prompt":"Expand on the reply."}]';
 
+	/**
+	 * A logger that keeps every record, so a test can read what the service said
+	 * rather than only what it returned. `child` hands back the same collector:
+	 * the service immediately narrows to an `agent` child, and a second list
+	 * would read as an empty one.
+	 */
+	function recordingLogger(): { logger: LoggerLike; records: { message: string; detail?: Record<string, unknown> }[] } {
+		const records: { message: string; detail?: Record<string, unknown> }[] = [];
+		const logger: LoggerLike = {
+			error: (message, detail) => records.push(detail ? { message, detail: detail() } : { message }),
+			warn: (message, detail) => records.push(detail ? { message, detail: detail() } : { message }),
+			info: (message, detail) => records.push(detail ? { message, detail: detail() } : { message }),
+			debug: (message, detail) => records.push(detail ? { message, detail: detail() } : { message }),
+			isEnabled: () => true,
+			child: () => logger,
+		};
+		return { logger, records };
+	}
+
 	/** A streamFn that answers every request with `text`, optionally holding the first call until `gate` resolves. */
 	function suggestionReplyStreamFn(text: string, gate?: Promise<void>): StreamFn {
 		let requests = 0;
@@ -5309,6 +5331,44 @@ describe("quick-action suggestions", () => {
 
 		probeData.openLeaves = ["Journal/today.md"];
 		expect(service.peekQuickActionSuggestions("empty")).toBeUndefined();
+	});
+
+	/*
+	 * The row not appearing is this feature's only failure mode, and every way of
+	 * not appearing used to look the same: a null. These assertions pin the log
+	 * that tells them apart — one for a request that went out and came back
+	 * empty, one for a request refused before any transport.
+	 */
+	it("records why a suggestion row came back empty, and why a request never left", async () => {
+		const { logger, records } = recordingLogger();
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), {
+			streamFn: suggestionReplyStreamFn("Sorry, I cannot help with that."),
+			logger,
+		});
+		await service.initialize();
+
+		expect(await service.suggestQuickActions("empty")).toBeNull();
+		expect(
+			records.find((record) => record.message === "Quick action suggestion result")?.detail,
+		).toMatchObject({ scope: "empty", actions: 0, failure: "unparsable" });
+
+		// The model pair is gone: the request is refused before any transport, so
+		// only the skip record can explain the empty row.
+		settings.providers = [];
+		settings.models = [];
+		settings.activeModelId = undefined;
+		expect(await service.suggestQuickActions("empty")).toBeNull();
+		const skipped = records.filter((record) => record.message === "Quick action suggestions skipped");
+		expect(skipped[skipped.length - 1]?.detail).toMatchObject({ scope: "empty", reason: "no API key" });
+
+		// The cache read declines for its own reason — it never asks about keys,
+		// only about which model would answer — so the two misses stay apart.
+		service.peekQuickActionSuggestions("empty");
+		expect(
+			records.some(
+				(record) => record.detail?.scope === "empty" && record.detail?.reason === "no suggestion model is configured",
+			),
+		).toBe(true);
 	});
 });
 
