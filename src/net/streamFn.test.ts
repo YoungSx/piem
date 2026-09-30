@@ -1,3 +1,4 @@
+import { normalizeContext } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
 import type { Credential, CredentialStore, Model } from "@earendil-works/pi-ai";
 import type { ProviderConfig, WireProtocol } from "../modelConfig";
@@ -72,7 +73,7 @@ async function streamViaRequestUrl(
 	const bundle = createObsidianModels({ transport: "requestUrl", providers: [row] });
 	const stream = bundle.models.streamSimple(
 		model,
-		{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+		normalizeContext({ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] }),
 		// The plugin always injects its transport fetch (via `withRequestDefaults`
 		// or `createObsidianStreamFn`); without it pi's SDK would hit the network.
 		{ ...options, fetch: toFetchFunction(createFetchForTransport("requestUrl")) },
@@ -153,7 +154,7 @@ describe("createObsidianStreamFn", () => {
 		await (
 			await streamFn(
 				keyRowModel(row),
-				{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+				normalizeContext({ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] }),
 				// The agent loop forwards pi's `getApiKey(provider)` result here.
 				{ apiKey: row.apiKey },
 			)
@@ -170,7 +171,7 @@ describe("createObsidianStreamFn", () => {
 		await (
 			await streamFn(
 				keyRowModel(row),
-				{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+				normalizeContext({ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] }),
 				{ apiKey: row.apiKey },
 			)
 		).result();
@@ -322,7 +323,7 @@ describe("createObsidianModels for a subscription row", () => {
 		);
 		const stream = bundle.models.streamSimple(
 			model,
-			{ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] },
+			normalizeContext({ messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }] }),
 			{ fetch: toFetchFunction(createFetchForTransport("requestUrl")) },
 		);
 		await stream.result();

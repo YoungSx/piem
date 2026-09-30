@@ -20,7 +20,7 @@ describe("static official extension bundle", () => {
 		const output = Object.values(built.metafile!.outputs)[0]!;
 		expect(output.imports).toEqual([]);
 		expect(Object.keys(output.inputs).some(file => file.includes("/core/extensions/runner.js"))).toBe(true);
-		expect(Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).some(([file]) => /jiti|highlight\.js|pi-tui|providers\//.test(file))).toBe(false);
+		expect(Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0).some(([file]) => /jiti|virtual-modules|highlight\.js|pi-tui|pi-mcp|pi-codemode|providers\//.test(file))).toBe(false);
 		const sandbox = { module: { exports: {} }, URL, TextEncoder, TextDecoder, AbortController, console, structuredClone };
 		vm.runInNewContext(built.outputFiles[0]!.text, sandbox, { timeout: 1000 });
 		const api = sandbox.module.exports as { createOfficialBookmark(callbacks: unknown): Promise<{ run(name: string, args: string): Promise<void>; dispose(): void }> };
@@ -34,7 +34,18 @@ describe("static official extension bundle", () => {
 		await expect(commands.run("bookmark", "Stale")).rejects.toThrow();
 	});
 	it("fails the build if a dynamic loader edge becomes reachable", async () => {
-		await expect(build({ stdin: { contents: `export { loadExtensions } from ${JSON.stringify(path.join(pkg, "dist/core/extensions/loader.js"))};`, resolveDir: root, loader: "ts" }, bundle: true, write: false, metafile: true, format: "cjs", target: "es2018", plugins: [piExtensionsPlugin(root)], logLevel: "silent" })).rejects.toThrow();
+		await expect(build({ stdin: { contents: `export { loadExtensions } from ${JSON.stringify(path.join(pkg, "dist/core/extensions/loader.js"))};`, resolveDir: root, loader: "ts" }, bundle: true, write: false, metafile: true, format: "cjs", target: "es2018", plugins: [piExtensionsPlugin(root)], logLevel: "silent" })).rejects.toThrow("Unsupported Pi dependency became reachable");
+	});
+	it("keeps terminal rendering and skill discovery rejected after auditing prompt formatting", async () => {
+		for (const [relative, symbol] of [
+			["dist/modes/interactive/theme/theme.js", "loadThemeFromPath"],
+			["dist/core/skills.js", "loadSkills"],
+		] as const) {
+			await expect(build({
+				stdin: { contents: `export { ${symbol} } from ${JSON.stringify(path.join(pkg, relative))};`, resolveDir: root, loader: "ts" },
+				bundle: true, write: false, metafile: true, format: "cjs", plugins: [piExtensionsPlugin(root)], logLevel: "silent",
+			})).rejects.toThrow("Unsupported Pi dependency became reachable");
+		}
 	});
 	it("reads the pinned package as a virtual UTF-8 resource without a host filesystem", async () => {
 		const built = await build({
@@ -54,7 +65,7 @@ describe("static official extension bundle", () => {
 	});
 	it("the integration pin remains explicit and carries the official factory unchanged", () => {
 		const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies: Record<string, string> };
-		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("0.85.1");
+		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("0.99.1");
 		expect(readFileSync("src/extensions/bookmarkFactory.mjs", "utf8")).toContain("examples/extensions/bookmark.ts");
 	});
 });

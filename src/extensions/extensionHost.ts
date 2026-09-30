@@ -1,4 +1,6 @@
-import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool, AgentTurnContext, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentActivityOutcome } from "@earendil-works/pi-coding-agent";
+import { buildSystemPrompt } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import type { ImageContent, Model, ProviderResponse } from "@earendil-works/pi-ai";
 import type { BranchSummaryEntry, CompactOptions, CompactionResult, ContextUsage, EntryRenderer, Extension, ExtensionActions, ExtensionCommandContextActions, ExtensionContextActions, ExtensionFactory, ExtensionUIContext, MarkdownTransformContext, MessageRenderer, SessionShutdownEvent, SessionStartEvent, ToolCallEvent, ToolCallEventResult, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import type { ContextSession } from "./contextSession";
@@ -10,7 +12,7 @@ import { unavailable } from "./node/unavailable";
 
 import { ExtensionLifetime, abortable, type ExtensionScope } from "./extensionLifetime";
 import { bindScopedContexts } from "./extensionContext";
-import { ExtensionAgentEvents, SUPPORTED_EXTENSION_EVENTS } from "./extensionEvents";
+import { ExtensionAgentEvents, SUPPORTED_EXTENSION_EVENTS, type ExtensionBoundaryCallbacks } from "./extensionEvents";
 import { createExtensionModels, extensionModelSnapshot, type ExtensionComplete } from "./extensionModels";
 import { createExtensionSession } from "./extensionSession";
 import { commandInfoList, toolInfoList, type CommandEntry } from "./extensionRegistry";
@@ -33,6 +35,7 @@ export interface StaticExtension {
 	onLoadFailure?: () => void;
 }
 export interface ExtensionHostCallbacks {
+	boundary?: ExtensionBoundaryCallbacks;
 	getEntries(): ExtensionEntry[];
 	getBranch?(): ExtensionEntry[];
 	getSessionId?(): string;
@@ -430,6 +433,10 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			callbacks.trackRequest?.(observed);
 		};
 		const actions: ExtensionActions = {
+			// piem exposes no pi-CLI settings surface, so extensions that read
+			// settings via pi.getSettings() see pi's defaults — every Settings field
+			// is optional. Map a specific field here if a bundled extension needs it.
+			getSettings: () => ({}),
 			sendMessage: (message, options) => { assertAction(); requireCallback("sendMessage")(message, options); },
 			sendUserMessage: (message, options) => { assertAction(); requireCallback("sendUserMessage")(message, options); },
 			appendEntry: (customType, data) => { assertAction(); requireCallback("session").appendEntry(customType, data); },
@@ -587,11 +594,18 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			hasUI: () => uiAdapter !== undefined,
 			getThinkingLevel: () => readCallback("getThinkingLevel")(),
 		}, extensions);
+		// Pi snapshots handler arrays before dispatch. Clearing the registration
+		// cannot revoke a copied handler, so check retirement at invocation too.
+		for (const [id, { extension }] of loaded) {
+			for (const [event, handlers] of extension.handlers) {
+				extension.handlers.set(event, handlers.map(handler => async (...args: Parameters<typeof handler>) => loaded.has(id) ? await handler(...args) : undefined));
+			}
+		}
 		const unsubscribe = runner.onError(error => {
 			// A failed context filter must stop the request, not leak hidden markers.
 			throw new Error(`${error.extensionPath} (${error.event}): ${error.error}`);
 		});
-		const agentEvents = new ExtensionAgentEvents(runner);
+		const agentEvents = new ExtensionAgentEvents(runner, callbacks.boundary);
 		const invoke = <T>(work: (scope: ExtensionScope) => Promise<T>, refresh = true): Promise<T> => lifetime.run(async scope => {
 			assertActive();
 			if (refresh) await callbacks.refreshSession?.();
@@ -676,8 +690,8 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 					|| extension.messageRenderers.size || extension.entryRenderers?.size || extension.markdownTransformer) {
 					throw new Error(`Only event-only extensions may be retired: ${id}`);
 				}
-				// Runner may be awaiting a handler while iterating these arrays. Keep
-				// extension positions stable, and empty captured arrays before the map.
+				// Keep positions stable for other extensions; the invocation guard
+				// above also revokes handlers already captured by an active dispatch.
 				for (const handlers of extension.handlers.values()) handlers.length = 0;
 				extension.handlers.clear();
 				entry.releaseEvents();
@@ -808,7 +822,20 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 			beforeAgentStart: async (prompt: string, images: ImageContent[] | undefined, systemPrompt: string) => {
 				await start();
 				if (!runner.hasHandlers("before_agent_start")) return undefined;
-				return invoke(() => runner.emitBeforeAgentStart(prompt, images, systemPrompt, { cwd: "/vault" }));
+				return invoke(async () => {
+					const result = await runner.emitBeforeAgentStart(prompt, images, { cwd: "/vault", forceSystemPrompt: systemPrompt });
+					return { messages: result.messages, systemPrompt: buildSystemPrompt(result.systemPromptOptions) };
+				});
+			},
+			finishTurn: async (turn: AgentTurnContext): Promise<boolean> => {
+				await start();
+				if (!runner.hasHandlers("turn_end")) return false;
+				return invoke(scope => agentEvents.finishTurn(turn.message, turn.toolResults, () => scope.assertActive()));
+			},
+			beforeSettle: async (outcome: AgentActivityOutcome): Promise<boolean> => {
+				await start();
+				if (!runner.hasHandlers("agent_before_settle")) return false;
+				return invoke(scope => agentEvents.beforeSettle(outcome, () => scope.assertActive()));
 			},
 			emitAgentEvent: async (event: AgentEvent, refresh = true): Promise<void> => {
 				await start();

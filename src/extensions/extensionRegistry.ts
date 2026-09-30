@@ -68,6 +68,10 @@ export function toolInfoList(tools: readonly AgentTool[]): ToolInfo[] {
 		// "declared, empty" to a caller testing `"promptGuidelines" in info`.
 		// `AgentTool` carries no such member, which is the reason to spell the
 		// absence out instead of copying a field that does not exist.
+		// piem's tools are all declared straight to the model — no codemode-only or
+		// deferred loadout — so they report the plain "direct" exposure that pi 0.99
+		// made a required ToolInfo field.
+		exposure: "direct",
 		sourceInfo: sourceInfo(`<piem:tool:${tool.name}>`, "piem"),
 	}));
 }

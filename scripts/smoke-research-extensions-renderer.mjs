@@ -25,7 +25,7 @@ export async function runResearchSmoke(root, endpoint, token, expectMobile, obse
 		if (!response.ok) throw new Error(`Fixture control ${name}: HTTP ${response.status}`);
 		return response.json();
 	};
-	const error = event => report.errors.push(String(event.error ?? event.reason ?? event.message));
+	const error = event => { const cause = event.error ?? event.reason ?? event.message; report.errors.push(String(cause?.stack ?? cause)); };
 	const cleanup = () => cleanupTask ??= (async () => {
 		cleaned = true;
 		audit?.restore();

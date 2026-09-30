@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { AssistantMessage, Context, Model, Api, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, TranscriptContext, JsonObject, Model, Api, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Agent, convertToLlm } from "@earendil-works/pi-agent-core";
@@ -127,9 +127,9 @@ class GateVault {
  * every entry's tool calls together in one assistant message — the batch shape
  * the tool-execution strategy branches on.
  */
-function batchedStreamFn(script: Array<{ toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>; text?: string }>): StreamFn {
+function batchedStreamFn(script: Array<{ toolCalls: Array<{ id: string; name: string; arguments: JsonObject }>; text?: string }>): StreamFn {
 	let requests = 0;
-	return (model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => {
+	return (model: Model<Api>, _context: TranscriptContext, _options?: SimpleStreamOptions) => {
 		const step = script[Math.min(requests, script.length - 1)]!;
 		requests += 1;
 		const stream = createAssistantMessageEventStream();

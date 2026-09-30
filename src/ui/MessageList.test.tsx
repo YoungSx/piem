@@ -1,3 +1,4 @@
+import type { JsonObject } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { App, Component } from "obsidian";
@@ -1759,11 +1760,11 @@ describe("MessageList ask_user", () => {
 });
 
 /** An `ask_user` result carrying `details` as the transcript will read them back. */
-function askResult(details: Record<string, unknown>): ToolResultMessage {
+function askResult(details: JsonObject): ToolResultMessage {
 	return { ...toolResult(details), toolName: "ask_user", content: [{ type: "text", text: "The user answered:\nWhere to file: Inbox" }] };
 }
 
-function toolResult(details: Record<string, unknown>): ToolResultMessage {
+function toolResult(details: JsonObject): ToolResultMessage {
 	return {
 		role: "toolResult",
 		toolCallId: "call-1",
@@ -1988,7 +1989,7 @@ function assistantThinking(thinking: string): AssistantMessage {
 	return { ...assistantBase(), content: [{ type: "thinking", thinking }] };
 }
 
-function assistantToolCall(name: string, args: Record<string, unknown>): AssistantMessage {
+function assistantToolCall(name: string, args: JsonObject): AssistantMessage {
 	return { ...assistantBase(), content: [{ type: "toolCall", id: nextToolCallId(callIds, name), name, arguments: args }] };
 }
 

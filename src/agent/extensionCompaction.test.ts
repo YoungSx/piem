@@ -1,3 +1,4 @@
+import { captureContext } from "../testUtils/captureContext";
 import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import type { App, DataAdapter } from "obsidian";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
@@ -34,7 +35,7 @@ function harness(factory: ExtensionFactory = () => {}, tokens = 4) {
 	} as unknown as App;
 	const requests: Context[] = [];
 	const streamFn: StreamFn = (model, context) => {
-		requests.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+		requests.push(captureContext(context));
 		const message: AssistantMessage = {
 			role: "assistant", content: [{ type: "text", text: "Reply" }], api: model.api, provider: model.provider,
 			model: model.id, timestamp: Date.now(), stopReason: "stop",

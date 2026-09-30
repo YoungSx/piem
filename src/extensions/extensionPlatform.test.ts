@@ -52,6 +52,21 @@ function setup(options: Partial<ExtensionPlatformCallbacks> = {}) {
 }
 
 describe("extension platform lifetime", () => {
+	it("observes already-started work even when Stop refuses its registration", async () => {
+		const { host } = setup();
+		const entered = deferred<void>(), gate = deferred<void>(), late = deferred<void>();
+		const run = host.withOperation(async () => { entered.resolve(); await gate.promise; });
+		try {
+			await entered.promise;
+			host.cancel();
+			await expect(run).rejects.toMatchObject({ name: "AbortError" });
+			expect(() => host.trackRequest(late.promise)).toThrow("cancelled");
+			late.reject(new Error("Late context refresh failed"));
+			// Bun fails this test on an unhandled rejection in the next task.
+			await new Promise(resolve => setTimeout(resolve, 0));
+		} finally { gate.resolve(); await host.drain(); }
+	});
+
 	it("keeps parallel platforms separate and rejects overlapping or nested operations", async () => {
 		const one = setup({ config: memoryStore({ "pi-clarify": { "clarify.json": '{"owner":"one"}' } }).store });
 		const two = setup({ config: memoryStore({ "pi-clarify": { "clarify.json": '{"owner":"two"}' } }).store });

@@ -1,3 +1,5 @@
+import { extensionBoundaryStorage } from "./extensionBoundaryStorage";
+import { conversationMessages, replaceConversation, setSystemPrompt, transcriptIndex } from "./transcript";
 import { type App, Notice, parseLinktext, TFile } from "obsidian";
 import {
 	clampThinkingLevel,
@@ -1963,6 +1965,14 @@ export class ObsidianAgentService {
 			return;
 		rt.extensionSettledRevision = revision;
 		try {
+			const last = [...messages].reverse().find(message => message.role === "assistant");
+			const outcome = last?.role === "assistant" && last.stopReason === "error" ? "error"
+				: last?.role === "assistant" && last.stopReason === "aborted" ? "aborted" : "completed";
+			const continued = await rt.communityHost?.beforeSettle(outcome);
+			if (continued && agent && rt.agent === agent && rt.stopEpoch === epoch && !this.isBusy(rt) && outcome === "completed") {
+				await this.resumeRuntime(rt);
+				return;
+			}
 			await rt.communityHost?.settled();
 		} catch (error) {
 			if (
@@ -2165,7 +2175,10 @@ export class ObsidianAgentService {
 	 * {@link abort}.
 	 */
 	async resumeInterruptedRun(): Promise<void> {
-		const rt = this.runtimeForFocused();
+		await this.resumeRuntime(this.runtimeForFocused());
+	}
+
+	private async resumeRuntime(rt: SessionRuntime): Promise<void> {
 		const agent = rt.agent;
 		if (
 			!agent ||
@@ -2314,7 +2327,7 @@ export class ObsidianAgentService {
 			) {
 				throw new DOMException("Extension prompt was cancelled.", "AbortError");
 			}
-			agent.state.systemPrompt = result?.systemPrompt ?? base;
+			setSystemPrompt(agent, result?.systemPrompt ?? base);
 			const extra: AgentMessage[] = (result?.messages ?? []).map((message) => ({
 				...message,
 				role: "custom",
@@ -2341,11 +2354,11 @@ export class ObsidianAgentService {
 		} finally {
 			rt.extensionPreparing = false;
 			if (rt.agent === agent)
-				agent.state.systemPrompt = composeSystemPrompt(
+				setSystemPrompt(agent, composeSystemPrompt(
 					this.promptWithEnvironment(),
 					rt.skills,
 					rt.communityHost?.toolPromptGuidelines(),
-				);
+				));
 		}
 	}
 
@@ -2694,7 +2707,7 @@ export class ObsidianAgentService {
 		if (!agent) {
 			return false;
 		}
-		const promptIndex = findPromptIndex(agent.state.messages, index);
+		const promptIndex = findPromptIndex(agent.state.messages, transcriptIndex(agent.state.messages, index));
 		if (promptIndex === null) {
 			return false;
 		}
@@ -2750,6 +2763,7 @@ export class ObsidianAgentService {
 		if (!agent) {
 			return false;
 		}
+		index = transcriptIndex(agent.state.messages, index);
 		if (agent.state.messages[index]?.role !== "user") {
 			return false;
 		}
@@ -3459,7 +3473,7 @@ export class ObsidianAgentService {
 			previous?.agent &&
 			!previous.agent.state.isStreaming &&
 			this.sessionManager.isBlankSession(previous.sessionPath) &&
-			previous.agent.state.messages.length === 0
+			conversationMessages(previous.agent.state.messages).length === 0
 		) {
 			// The sheet is kept, but the click still asked for something: a fresh
 			// suggestion row. Bumping the revision re-runs the panel's empty-screen
@@ -3634,7 +3648,7 @@ export class ObsidianAgentService {
 		) {
 			return false;
 		}
-		const replyMessage = agent.state.messages[index];
+		const replyMessage = conversationMessages(agent.state.messages)[index];
 		const replyEntryId = replyMessage
 			? rt.messageEntryIds.get(replyMessage)
 			: undefined;
@@ -5072,7 +5086,7 @@ export class ObsidianAgentService {
 		const settings = this.getSettings();
 		const rt = this.current();
 		const agent = rt?.agent ?? null;
-		const messages = agent?.state.messages ?? [];
+		const messages = conversationMessages(agent?.state.messages ?? []);
 		const model = getSelectedModel(settings);
 		// Falls back to the selected model so the indicator exists before the agent
 		// is built; the window is a static field of the model spec.
@@ -5912,7 +5926,7 @@ export class ObsidianAgentService {
 		this.forgetPendingToolCalls(rt);
 		const settings = this.getSettings();
 		const model = getSelectedModel(settings);
-		// Annotated because the `shouldStopAfterTurn` closure below refers to
+		// Annotated because the `finishTurn` closure below refers to
 		// `agent`, and an inferred type would be circular.
 		const generation = rt.stopEpoch;
 		const assertOwner = () => {
@@ -5983,7 +5997,7 @@ export class ObsidianAgentService {
 										const id = saved.messageOrigins[index];
 										if (id) rt.messageEntryIds.set(message, id);
 									});
-									rt.agent.state.messages = saved.messages;
+									replaceConversation(rt.agent, saved.messages);
 									rt.sessionRevision += 1;
 								}
 							}
@@ -6065,6 +6079,7 @@ export class ObsidianAgentService {
 						}
 					},
 				},
+				boundary: extensionBoundaryStorage(rt, this.sessionManager, assertOwner),
 				getEntries: () => {
 					assertOwner();
 					return view.getEntries();
@@ -6498,12 +6513,13 @@ export class ObsidianAgentService {
 				// seed a new session was created with. Global settings have no say.
 				thinkingLevel,
 				tools,
-				messages,
+				messages: conversationMessages(messages),
 			},
 			getApiKey: (provider) => this.getApiKey(provider),
 			// Pi snapshots its model for each request. A tool switch takes effect at
 			// the supported turn seam, after the previous model's tools have settled.
 			prepareNextTurn: () => ({
+				context: { messages: agent.state.messages.slice(), tools: agent.state.tools.slice() },
 				model: agent.state.model,
 				thinkingLevel: agent.state.thinkingLevel,
 			}),
@@ -6561,28 +6577,30 @@ export class ObsidianAgentService {
 				});
 			},
 			// Fires after a turn's tool calls finish and before the next provider
-			// request (`runLoop`, at its `shouldStopAfterTurn` call) — pi's README
+			// request (`runLoop`, at its `finishTurn` call) — pi's README
 			// pattern when the context has crossed the compaction line: end the
 			// run instead of swapping its context underneath it, compact outside
-			// the run, and `continue()` back in. Returning `true` emits
+			// the run, and `continue()` back in. Returning `{ action: "end" }` emits
 			// `agent_end` before any steering poll, so the offer below has to run
 			// first either way. Closing over this run's `agent` rather than
 			// `this.agent` is what lets `performCompaction` tell a stale result
 			// from a current one.
-			finishTurn: (context, signal) => {
+			finishTurn: async (context, signal) => {
+				const extensionContinue = isCurrentExtensionHost() ? await community.finishTurn(context) : false;
 				if (rt.extensionStopAfterTurn) {
 					rt.extensionStopAfterTurn = false;
 					return { action: "end" };
 				}
 				// Before the stop check, and unconditionally: pi polls its steering
-				// queue immediately after this hook returns, so a `false` return
+				// queue immediately after this hook returns, so an `undefined` return
 				// still lets an offered message be injected before the model speaks
-				// again (issue #289), and a `true` return hands the queue to the
+				// again (issue #289), and an `end` decision hands the queue to the
 				// post-idle resume, whose `continue()` drains it the same way. A
 				// compaction that declines changes nothing about whose turn it is
 				// to talk.
 				this.offerQueuedPromptsToTurn(rt, agent, signal);
-				return this.shouldStopForCompaction(rt, agent, context, signal);
+				const decision = this.shouldStopForCompaction(rt, agent, context, signal);
+				return decision ?? (extensionContinue ? { action: "continue" } : undefined);
 			},
 			sessionId: rt.sessionInfo?.id,
 			// pi's default is "one-at-a-time": of several messages steered in a row,
@@ -6723,6 +6741,7 @@ export class ObsidianAgentService {
 			},
 			getApiKey: (provider) => this.getApiKey(provider),
 			prepareNextTurn: () => ({
+				context: { messages: agent.state.messages.slice(), tools: agent.state.tools.slice() },
 				model: agent.state.model,
 				thinkingLevel: agent.state.thinkingLevel,
 			}),
@@ -6923,11 +6942,11 @@ export class ObsidianAgentService {
 		for (const rt of this.runtimes.values()) {
 			if (rt.agent && !this.isBusy(rt)) {
 				rt.skills = skills;
-				rt.agent.state.systemPrompt = composeSystemPrompt(
+				setSystemPrompt(rt.agent, composeSystemPrompt(
 					this.promptWithEnvironment(),
 					skills,
 					rt.communityHost?.toolPromptGuidelines(),
-				);
+				));
 			}
 		}
 	}
@@ -7643,7 +7662,7 @@ export class ObsidianAgentService {
 		// pre-flight tidy runs before the user's own message joins the transcript.
 		rt.compactionEvent = {
 			state: "running",
-			anchor: agent.state.messages.length,
+			anchor: conversationMessages(agent.state.messages).length,
 		};
 		try {
 			let outcome: SavedCompactionOutcome;
@@ -7666,7 +7685,7 @@ export class ObsidianAgentService {
 			) {
 				rt.compactionEvent = {
 					state: "failed",
-					anchor: rt.compactionEvent?.anchor ?? agent.state.messages.length,
+					anchor: rt.compactionEvent?.anchor ?? conversationMessages(agent.state.messages).length,
 					error: outcome.message,
 				};
 			}
@@ -7699,7 +7718,8 @@ export class ObsidianAgentService {
 		);
 
 		// Prepare messageOrigins from agent.state.messages
-		const messageOrigins = agent.state.messages.map(
+		const messages = conversationMessages(agent.state.messages);
+		const messageOrigins = messages.map(
 			(msg) => rt.messageEntryIds.get(msg) ?? null,
 		);
 
@@ -7718,7 +7738,7 @@ export class ObsidianAgentService {
 		}
 
 		const outcome = await compactIfNeeded({
-			messages: agent.state.messages,
+			messages,
 			messageOrigins,
 			model,
 			models: this.modelsWithRequestDefaults(),
@@ -7796,7 +7816,7 @@ export class ObsidianAgentService {
 		);
 		if (rt.agent !== agent) return { status: "skipped" };
 
-		agent.state.messages = outcome.messages;
+		replaceConversation(agent, outcome.messages);
 		rt.lastCompaction = outcome.result;
 
 		// Re-populate messageEntryIds for retainedTail messages

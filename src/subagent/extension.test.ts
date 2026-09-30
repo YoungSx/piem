@@ -1,3 +1,6 @@
+import type { JsonObject } from "@earendil-works/pi-ai";
+import { captureContext } from "../testUtils/captureContext";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { afterAll, describe, expect, it } from "bun:test";
 import type { Api, AssistantMessage, Context, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -66,7 +69,7 @@ const TEST_PACING: WaitPacing = { defaultMs: 200, minMs: 10 };
  * multi-turn agent run without a provider.
  */
 function scriptedStreamFn(
-	script: Array<{ toolCall?: { id: string; name: string; arguments?: Record<string, unknown> }; text?: string }>,
+	script: Array<{ toolCall?: { id: string; name: string; arguments?: JsonObject }; text?: string }>,
 ): StreamFn {
 	let requests = 0;
 	return (model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => {
@@ -344,7 +347,7 @@ describe("runSubagent", () => {
 	it("reports the system prompt that frames the child run", async () => {
 		let seenSystemPrompt: string | undefined;
 		const streamFn: StreamFn = (model, context, _options) => {
-			seenSystemPrompt = context.systemPrompt;
+			seenSystemPrompt = getCurrentSystemPrompt(context.messages);
 			return scriptedStreamFn([{ text: "ok" }])(model, context, _options);
 		};
 		await runSubagent({
@@ -475,7 +478,7 @@ describe("runSubagent", () => {
 		const failing = failingTool();
 		// The script clamps to its last entry, so the model retries the failing
 		// call forever. Nothing ends that on a clock — the abort has to reach it
-		// between turns, which is what `shouldStopAfterTurn` is there for.
+		// between turns, which is what `finishTurn` is there for.
 		const controller = new AbortController();
 		const run = runSubagent({
 			task: "t",
@@ -491,10 +494,26 @@ describe("runSubagent", () => {
 		expect(run).rejects.toThrow("Subagent aborted");
 	});
 
+	it("replaces stale system instructions in a resumed child with its current doctrine", async () => {
+		let prompt = "";
+		const result = await runSubagent({
+			task: "Continue", role, tools: [], skills: [SKILL], model: MODEL, thinkingLevel: "off",
+			initialMessages: [{ role: "system", content: "STALE_CHILD_PROMPT", timestamp: 0 }],
+			streamFn: (model, context, options) => {
+				prompt = getCurrentSystemPrompt(context.messages);
+				return scriptedStreamFn([{ text: "done" }])(model, context, options);
+			},
+		});
+		expect(prompt).toContain("delegated task");
+		expect(prompt).toContain("grooming");
+		expect(prompt).not.toContain("STALE_CHILD_PROMPT");
+		expect(result.messages.some(message => message.role === "system")).toBe(false);
+	});
+
 	it("lists the given skills in the child system prompt", async () => {
 		let seenSystemPrompt: string | undefined;
 		const streamFn: StreamFn = (model, context, _options) => {
-			seenSystemPrompt = context.systemPrompt;
+			seenSystemPrompt = getCurrentSystemPrompt(context.messages);
 			return scriptedStreamFn([{ text: "ok" }])(model, context, _options);
 		};
 		await runSubagent({
@@ -513,7 +532,7 @@ describe("runSubagent", () => {
 	it("appends caller instructions after the role appendix", async () => {
 		let seen: string | undefined;
 		const streamFn: StreamFn = (model, context, options) => {
-			seen = context.systemPrompt;
+			seen = getCurrentSystemPrompt(context.messages);
 			return scriptedStreamFn([{ text: "ok" }])(model, context, options);
 		};
 		await runSubagent({
@@ -789,8 +808,8 @@ describe("spawn/wait extension", () => {
 	function observing(streamFn: StreamFn, observations: ChildObservation[]): StreamFn {
 		return (model, context, options) => {
 			observations.push({
-				systemPrompt: context.systemPrompt,
-				toolNames: (context.tools ?? []).map((tool) => tool.name),
+				systemPrompt: getCurrentSystemPrompt(context.messages),
+				toolNames: (getCurrentTools(context.messages) ?? []).map((tool) => tool.name),
 			});
 			return streamFn(model, context, options);
 		};
@@ -964,12 +983,12 @@ describe("spawn/wait extension", () => {
 		const observations: ChildObservation[] = [];
 		// The parent spawns and waits; the child does the same one level down;
 		// the grandchild — whose set has no spawn — just reports.
-		const parentScript = [
+		const parentScript: Parameters<typeof scriptedStreamFn>[0] = [
 			{ toolCall: { id: "p1", name: "spawn_subagent", arguments: { task: "Sweep the vault" } } },
 			{ toolCall: { id: "p2", name: "wait_subagent", arguments: {} } },
 			{ text: "Folded in." },
 		];
-		const childScript = [
+		const childScript: Parameters<typeof scriptedStreamFn>[0] = [
 			{ toolCall: { id: "s1", name: "spawn_subagent", arguments: { task: "Narrow sweep" } } },
 			{ toolCall: { id: "s2", name: "wait_subagent", arguments: {} } },
 			{ text: "Child report: all clear." },
@@ -980,11 +999,11 @@ describe("spawn/wait extension", () => {
 		const childStream = scriptedStreamFn(childScript);
 		const grandchildStream = scriptedStreamFn([{ text: "Floor report: all clear." }]);
 		const dispatching: StreamFn = (model, context, options) => {
-			const isDelegated = context.systemPrompt?.includes("delegated task") ?? false;
+			const isDelegated = getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false;
 			if (!isDelegated) {
 				return parentStream(model, context, options);
 			}
-			const hasSpawn = (context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			const hasSpawn = (getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent");
 			return (hasSpawn ? childStream : grandchildStream)(model, context, options);
 		};
 		const extension = createSubagentExtension(makeHost(observing(dispatching, observations)), { waitPacing: TEST_PACING });
@@ -1041,10 +1060,10 @@ describe("spawn/wait extension", () => {
 		]);
 		const grandchildStream = scriptedStreamFn([{ text: "Floor report." }]);
 		const dispatching: StreamFn = (model, context, options) => {
-			if (!(context.systemPrompt?.includes("delegated task") ?? false)) {
+			if (!(getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false)) {
 				return parentStream(model, context, options);
 			}
-			const hasSpawn = (context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			const hasSpawn = (getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent");
 			return (hasSpawn ? childStream : grandchildStream)(model, context, options);
 		};
 		const extension = createSubagentExtension(makeHost(observing(dispatching, observations)), { waitPacing: TEST_PACING });
@@ -1089,10 +1108,10 @@ describe("spawn/wait extension", () => {
 		]);
 		const grandchildStream = scriptedStreamFn([{ text: "Floor report." }]);
 		const dispatching: StreamFn = (model, context, options) => {
-			if (!(context.systemPrompt?.includes("delegated task") ?? false)) {
+			if (!(getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false)) {
 				return parentStream(model, context, options);
 			}
-			const hasSpawn = (context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			const hasSpawn = (getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent");
 			return (hasSpawn ? childStream : grandchildStream)(model, context, options);
 		};
 		const extension = createSubagentExtension(
@@ -1636,7 +1655,7 @@ describe("follow-up errands", () => {
 	/** Records the transcript each child request was made against. */
 	function recordingContexts(streamFn: StreamFn, contexts: Context[]): StreamFn {
 		return (model, context, options) => {
-			contexts.push(context);
+			contexts.push(captureContext(context));
 			return streamFn(model, context, options);
 		};
 	}
@@ -2233,7 +2252,7 @@ describe("subagent ownership across conversations", () => {
 			{ text: "Grandchild done." },
 		]);
 		const streamFn: StreamFn = (model, context, options) =>
-			(context.tools ?? []).some((tool) => tool.name === "spawn_subagent")
+			(getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent")
 				? childStream(model, context, options)
 				: grandchildStream(model, context, options);
 		const extension = createSubagentExtension({
@@ -2282,13 +2301,13 @@ describe("subagent ownership across conversations", () => {
 		]);
 		const grandchildStream = scriptedStreamFn([{ text: "Floor done." }]);
 		const streamFn: StreamFn = (model, context, options) => {
-			const isDelegated = context.systemPrompt?.includes("delegated task") ?? false;
+			const isDelegated = getCurrentSystemPrompt(context.messages)?.includes("delegated task") ?? false;
 			if (!isDelegated) {
 				return parentStream(model, context, options);
 			}
 			// A level that still has spawn is the child; the one that lost it to the
 			// depth cap is the grandchild.
-			if ((context.tools ?? []).some((tool) => tool.name === "spawn_subagent")) {
+			if ((getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent")) {
 				// The switch lands inside the child's own request, so by the time its
 				// spawn executes the host would answer "chat-b" — and nobody may ask it.
 				owner = "chat-b";
@@ -2318,7 +2337,7 @@ describe("subagent ownership across conversations", () => {
 		const hang = hangingStreamFn();
 		let childRequests = 0;
 		const streamFn: StreamFn = (model, context, options) => {
-			const canSpawn = (context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			const canSpawn = (getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent");
 			if (canSpawn) {
 				childRequests += 1;
 				if (childRequests === 1) {
@@ -2458,7 +2477,7 @@ describe("subagent ownership across conversations", () => {
 		let childARequests = 0;
 
 		const streamFn: StreamFn = (model, context, options) => {
-			const isGrandchild = !(context.tools ?? []).some((tool) => tool.name === "spawn_subagent");
+			const isGrandchild = !(getCurrentTools(context.messages) ?? []).some((tool) => tool.name === "spawn_subagent");
 			if (isGrandchild) {
 				return hang(model, context, options);
 			}

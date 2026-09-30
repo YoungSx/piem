@@ -53,8 +53,10 @@ function selectNode(surface: NativeExtensionSurface): Extract<NativeComponentNod
 	return node;
 }
 
-async function host(factory: ExtensionFactory, callbacks: Partial<ExtensionHostCallbacks> = {}) {
-	return createExtensionHost([{ id: "native-components", factory }], {
+async function host(factory: (pi: Parameters<ExtensionFactory>[0]) => unknown, callbacks: Partial<ExtensionHostCallbacks> = {}) {
+	// A registration expression now returns its unsubscribe function. The
+	// loader expects initialization only; subscription disposal stays with Pi.
+	return createExtensionHost([{ id: "native-components", factory: async pi => { await factory(pi); } }], {
 		getEntries: () => [], getSessionId: () => "native-session", getSystemPrompt: () => "system", isIdle: () => true,
 		notify: () => {}, ...callbacks,
 	});

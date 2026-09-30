@@ -6,7 +6,7 @@ export interface SkillPageOptions {
 	snapshot?: string;
 }
 
-export interface SkillContentDetails {
+export type SkillContentDetails = {
 	name: string;
 	filePath: string;
 	/** Absent for the skill instructions; present for a supporting resource. */
@@ -16,7 +16,7 @@ export interface SkillContentDetails {
 	endOffset: number;
 	totalBytes: number;
 	nextOffset?: number;
-}
+};
 
 /** Byte paging also handles a single long line without splitting UTF-8 characters. */
 export async function skillContentPage(

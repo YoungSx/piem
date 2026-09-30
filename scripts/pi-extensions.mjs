@@ -32,6 +32,9 @@ export function piExtensionsPlugin(root = process.cwd()) {
 	const ownerOf = file => packages.find(item => file.startsWith(`${item.directory}${path.sep}`));
 	const loader = path.join(pkg, "dist/core/extensions/loader.js");
 	const theme = path.join(pkg, "dist/modes/interactive/theme/theme.js");
+	const runner = path.join(pkg, "dist/core/extensions/runner.js");
+	const systemPrompt = path.join(pkg, "dist/core/system-prompt.js");
+	const skills = path.join(pkg, "dist/core/skills.js");
 	const children = path.join(pkg, "dist/utils/child-process.js");
 	const truncate = path.join(pkg, "dist/core/tools/truncate.js");
 	const pruned = new Set();
@@ -72,11 +75,15 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				const compatibility = community && extensionCompatEntry(args.path, root);
 				if (compatibility) return { path: compatibility };
 				const dynamicOnly = args.importer === loader && (
-					args.path === "../../index.js" || args.path.startsWith("@earendil-works/") || args.path === "jiti/static"
+					args.path === "../../index.js" || args.path.startsWith("@earendil-works/") || args.path === "jiti/static" ||
+					["./jiti-loader.js", "./jiti-static-loader.js", "./virtual-modules.js"].includes(args.path)
 				);
-				const terminalOnly = args.importer === theme && (args.path === "@earendil-works/pi-tui" || args.path === "../../../utils/syntax-highlight.js");
+				const terminalOnly = args.importer === theme && (args.path === "@earendil-works/pi-tui" || args.path === "../../../utils/syntax-highlight.js" || args.path === "./system-theme.js");
+				// system-prompt uses only formatSkillsForPrompt; directory discovery and
+				// frontmatter parsing remain unavailable, even if a future import uses them.
+				const discoveryOnly = args.importer === skills && (args.path === "ignore" || args.path === "../utils/frontmatter.js");
 				const windowsOnly = args.importer === children && args.path === "cross-spawn";
-				if (dynamicOnly || terminalOnly || windowsOnly) {
+				if (dynamicOnly || terminalOnly || discoveryOnly || windowsOnly) {
 					// These values occur only in uncalled dynamic/terminal functions. If a future
 					// consumer makes them live, the output check below fails instead of shipping a require.
 					pruned.add(args.path);
@@ -89,6 +96,9 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				const mapped = platformModules.get(name);
 				if (mapped) return { path: path.join(bridge, `${mapped}.ts`) };
 				if (BUILTINS.has(name) || args.path.startsWith("node:")) throw new Error(`Unsupported extension builtin: ${args.path}`);
+				// These hashed files import only transcript projection helpers. Do not
+				// open the pi-ai root to community graphs (which use our compatibility API).
+				if ((args.importer === runner || args.importer === systemPrompt) && args.path === "@earendil-works/pi-ai") return;
 				if (PURE_DEPENDENCIES.has(args.path)) return;
 				if (args.path.startsWith(".")) {
 					const resolved = path.resolve(path.dirname(args.importer), args.path);
@@ -107,10 +117,12 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				if (!Object.hasOwn(owner.audit.files, relative)) throw new Error(`Unaudited extension source: ${owner.name}/${relative}`);
 				const original = await readFile(args.path, "utf8");
 				const virtualPath = `${owner.audit.virtualRoot}/${relative}`;
-				const result = await esbuild.transform(original, {
+				// The four literal fallback-color constructors are pure (pi-tui/colors.js:
+				// parseColor -> rgbColor). Annotating them lets the unused terminal graph
+				// disappear; esbuild's `pure` option cannot annotate an imported binding.
+				const source = args.path === theme ? original.replaceAll('parseColor("#', '/* @__PURE__ */ parseColor("#') : original;
+				const result = await esbuild.transform(source, {
 					format: "esm", target: "es2022", sourcemap: false, loader: args.path.endsWith(".ts") ? "ts" : "js",
-					// Theme schema construction only feeds theme loaders, which this host does not use.
-					pure: args.path === theme ? ["Compile", "Type.Object", "Type.Optional", "Type.Union", "Type.String", "Type.Number", "Type.Intersect", "Type.Record"] : [],
 					define: { "import.meta.url": JSON.stringify(`file://${virtualPath}`) },
 				});
 				return {

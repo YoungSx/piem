@@ -1,3 +1,4 @@
+import { captureContext } from "./captureContext";
 import type { App, DataAdapter } from "obsidian";
 import type { Context, AssistantMessage } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -33,7 +34,7 @@ export function harness(factory: ExtensionFactory, options: { reasoning?: boolea
 	const requests: Context[] = [];
 	const streamFn: StreamFn = withRunawayGuard((model, context) => {
 		if (requests.length < 50) {
-			requests.push({ systemPrompt: context.systemPrompt, messages: structuredClone(context.messages) });
+			requests.push(captureContext(context));
 		}
 		const message: AssistantMessage = {
 			role: "assistant", content: [{ type: "text", text: `Reply ${requests.length}` }],

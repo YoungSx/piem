@@ -1,3 +1,4 @@
+import { textLineReader } from "../vault/textLineReader";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -48,6 +49,10 @@ class MemoryFsEnv implements ExecutionEnv {
 		return content === undefined ? err(new FileError("not_found", `missing: ${path}`, path)) : ok(content);
 	}
 
+	async openTextLineReader(path: string): ReturnType<ExecutionEnv["openTextLineReader"]> {
+		const text = await this.readTextFile(path);
+		return text.ok ? ok(textLineReader(text.value, path)) : text;
+	}
 	async readTextLines(path: string): Promise<Result<string[], FileError>> {
 		const text = await this.readTextFile(path);
 		return text.ok ? ok(text.value.split("\n")) : text;

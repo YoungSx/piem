@@ -1,25 +1,28 @@
 {
 	"@earendil-works/pi-coding-agent": {
-		"version": "0.85.1",
+		"version": "0.99.1",
 		"virtualRoot": "/pi",
 		"files": {
-			"dist/config.js": "53098afc9f4bfa2a3720e6971561291b3850e78e9a22e482ffb4584bd4f123f8",
+			"dist/config.js": "c1142ae8703f8d6e913d5b7b0f32edcf6de28cebb14fe2949d920ce5c860e6e1",
 			"dist/core/event-bus.js": "f96a9a13071b2832955608387bf2482bcaf5310ce667f32f85a0d5bca44f08e3",
 			"dist/core/exec.js": "6aed92abe5273445a9bddcd92d4178264d0a23890b54b175a0efc73b20cdf53f",
-			"dist/core/extensions/loader.js": "a1393de916487a2c47107ac7239f3139dcdb938705f88ba1ea5a954b3c8bb483",
-			"dist/core/extensions/runner.js": "0de12ed1275e02595f92476eec3f61ae1f2e54fd2225ced721ddc90af58a5e61",
-			"dist/core/extensions/wrapper.js": "0eedc30f82c57ba06a01c9ec192608867b09a37488e1fc1a09877988b8d08683",
+			"dist/core/extensions/loader.js": "83f5bd84e867be32258f01f2f6f0efc4cff1c8f05e46651a414a91f3ca4998b7",
+			"dist/core/extensions/runner.js": "7583772d6d29a23c06496b6e0b4764ace220fb4289d5523916323642efa50306",
+			"dist/core/extensions/wrapper.js": "ea82999a05ca0af25ed31e76aaaba6e5ce6b99b5fcde3681f0d74766e4935247",
 			"dist/core/pi-manifest.js": "2ae94bb81155fc66766a5643f21ec38e808177ec5f2271e77c82013971ae5c03",
-			"dist/core/source-info.js": "420727b2dc8e2f57c13cabaa7718fbc6e82dff4d8c90c647d40db6a71763e0b4",
+			"dist/core/source-info.js": "67562eea112e99f4a7880913143730bd90e3655381c0f353e3dd18c5e9f1ef07",
 			"dist/core/timings.js": "9bec37f6fcacd80ca07ad7bafdc6aec91821f691698aa9d81dcdd2d7d5b08531",
-			"dist/core/tools/tool-definition-wrapper.js": "b08ccb77cf3664c3b42e5cee858e150925c0eedbaca397474c3af3de22030abd",
-			"dist/modes/interactive/theme/theme.js": "5ced0adb09ca8ce0f9b4eefcf89825755e9873cd53388825694025a4b046d1d5",
+			"dist/core/tools/tool-definition-wrapper.js": "02fe785c52294d14216605d40d5592ac2accd1a3125891523e2a6c87feb5810c",
+			"dist/modes/interactive/theme/theme.js": "a7b93b9cc50d9f44c2a728c8df5de67dc41efead57d1554e0ff32b73bb358cf4",
 			"dist/utils/child-process.js": "cfc7b3361e42b61ee75aecc2b436ff7462f7e4431b4b646da7166f3c5706c9b8",
 			"dist/utils/fs-watch.js": "63dd709b28ea300f7200d236154f21ccc31a174a6052ca46a9be8064e2bd44e3",
-			"dist/utils/paths.js": "09046a2443dfb6434e4c5c62656fb73edc33e776dc6cc35b785ef1dbf8483c93",
+			"dist/utils/paths.js": "d5d48c2b2b2442c7e72aee6e98a79d828a52dce9526b152288186834c1dcf4a5",
 			"dist/utils/text.js": "e5520be5740ddb7d67ebd09ef33ea2aee2e360925593ad3a7842b6534304a0f3",
 			"examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79",
-			"dist/core/tools/truncate.js": "3a627a6407f3726aa56a9580548db230c20e4fee59b212ea3d12e2c45073f75d"
+			"dist/core/tools/truncate.js": "24c5350761b487c154f950acf56a995dc1acdeac0c5d0f096efdaac71c8c231e",
+			"dist/core/mcp-servers.js": "98599a627f0c80a82588a4e3c8bd48eff1bcb6a4a20d145b27af448642788cbf",
+			"dist/core/system-prompt.js": "0f22e4dfe8c90b70b12c1cfd50bcdd4b49d59bd97adac90c2e9345cf711839fa",
+			"dist/core/skills.js": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c"
 		}
 	},
 	"pi-assistant-provenance": {
