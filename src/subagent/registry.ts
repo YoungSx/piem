@@ -226,7 +226,7 @@ export class SubagentRegistry {
 	}
 
 	private emitChange(): void {
-		for (const listener of this.listeners) {
+		for (const listener of [...this.listeners]) {
 			listener();
 		}
 	}
