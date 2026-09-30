@@ -1938,6 +1938,30 @@ export class ObsidianAgentService {
 	 * arrived on — not `this.current()` — is what lets a backgrounded session's
 	 * tail work land on its own runtime.
 	 */
+	/**
+	 * Whether this runtime is still the same quiet one that started the run.
+	 *
+	 * {@link afterRunIdle} checks this before handing control to an extension
+	 * handler and again once that handler's await returns. The second check is
+	 * not a shorter restatement of the first: the queue, the compaction state
+	 * and the run revision can all move while an extension runs, and a
+	 * continuation that ignored them would answer words the user had since
+	 * sent. One predicate, so a condition added for one check can never be
+	 * missing from the other.
+	 */
+	private canSettle(rt: SessionRuntime, agent: Agent | null, revision: number): boolean {
+		return (
+			this.runtimes.get(rt.sessionPath) === rt &&
+			rt.agent === agent &&
+			!agent?.state.isStreaming &&
+			rt.extensionRunRevision === revision &&
+			!rt.isCompacting &&
+			!rt.compactionPending &&
+			!rt.promptQueue.size &&
+			!rt.steeredPrompts.length
+		);
+	}
+
 	private async afterRunIdle(
 		rt: SessionRuntime,
 		messages: readonly AgentMessage[],
@@ -1951,25 +1975,18 @@ export class ObsidianAgentService {
 		// The run-end checkpoint: arrivals the other device landed mid-run are
 		// only unioned here, once nothing streams and the queue has drained.
 		await this.reconcileActiveSessionDrift();
-		if (
-			this.runtimes.get(rt.sessionPath) !== rt ||
-			rt.agent !== agent ||
-			agent?.state.isStreaming ||
-			rt.extensionRunRevision !== revision ||
-			rt.extensionSettledRevision === revision ||
-			rt.isCompacting ||
-			rt.compactionPending ||
-			rt.promptQueue.size ||
-			rt.steeredPrompts.length
-		)
-			return;
+		// Each stage keeps the condition that is its own — the settled revision
+		// is claimed once, and the stop epoch only survives until a run resumes
+		// in one of the awaits above. What must hold on both sides of an
+		// extension's handler lives in one predicate.
+		if (rt.extensionSettledRevision === revision || !this.canSettle(rt, agent, revision)) return;
 		rt.extensionSettledRevision = revision;
 		try {
 			const last = [...messages].reverse().find(message => message.role === "assistant");
 			const outcome = last?.role === "assistant" && last.stopReason === "error" ? "error"
 				: last?.role === "assistant" && last.stopReason === "aborted" ? "aborted" : "completed";
 			const continued = await rt.communityHost?.beforeSettle(outcome);
-			if (continued && agent && rt.agent === agent && rt.stopEpoch === epoch && !this.isBusy(rt) && outcome === "completed") {
+			if (continued && agent && outcome === "completed" && rt.stopEpoch === epoch && !this.isBusy(rt) && this.canSettle(rt, agent, revision)) {
 				await this.resumeRuntime(rt);
 				return;
 			}
