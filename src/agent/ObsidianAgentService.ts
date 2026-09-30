@@ -19,7 +19,8 @@ import {
 	type AgentMessage,
 	type AgentTool,
 	type Entry,
-	type ShouldStopAfterTurnContext,
+	type AgentTurnContext,
+	type AgentTurnDecision,
 	type PromptTemplate,
 	type StreamFn,
 	type ThinkingLevel,
@@ -6670,10 +6671,10 @@ export class ObsidianAgentService {
 			// first either way. Closing over this run's `agent` rather than
 			// `this.agent` is what lets `performCompaction` tell a stale result
 			// from a current one.
-			shouldStopAfterTurn: (context, signal) => {
+			finishTurn: (context, signal) => {
 				if (rt.extensionStopAfterTurn) {
 					rt.extensionStopAfterTurn = false;
-					return true;
+					return { action: "end" };
 				}
 				// Before the stop check, and unconditionally: pi polls its steering
 				// queue immediately after this hook returns, so a `false` return
@@ -7430,16 +7431,22 @@ export class ObsidianAgentService {
 	private shouldStopForCompaction(
 		rt: SessionRuntime,
 		agent: Agent,
-		context: ShouldStopAfterTurnContext,
+		context: AgentTurnContext,
 		signal?: AbortSignal,
-	): boolean {
+	): AgentTurnDecision | undefined {
+		// `undefined` preserves pi's normal turn scheduling — the faithful
+		// mapping of the old `shouldStopAfterTurn` returning `false` (do not
+		// force a stop; the loop still stops on its own when there is nothing
+		// to do). `{ action: "end" }` is the old `true`. We never return
+		// `{ action: "continue" }`, which would force an extra provider request
+		// even on an otherwise-terminal boundary.
 		if (signal?.aborted) {
-			return false;
+			return undefined;
 		}
 		// See the jsdoc: `continue()` requires a user or tool-result tail to
 		// resume from, which only a tool-result boundary provides.
 		if (context.toolResults.length === 0) {
-			return false;
+			return undefined;
 		}
 		const model = getSelectedModel(this.getSettings());
 		const settings = this.resolveCompaction(model.contextWindow);
@@ -7447,7 +7454,7 @@ export class ObsidianAgentService {
 			// The compacted context's floor is over the line: summaries cannot
 			// shrink it, so the run never stops for compaction again — until a
 			// new tidy attempt sets `"awaiting"` and re-asks the question.
-			return false;
+			return undefined;
 		}
 		if (rt.compactionGate === "awaiting") {
 			// This turn's reply is the first post-tidy request whose `usage`
@@ -7464,15 +7471,15 @@ export class ObsidianAgentService {
 				shouldCompact(floor, model.contextWindow, settings)
 			) {
 				rt.compactionGate = "futile";
-				return false;
+				return undefined;
 			}
 			rt.compactionGate = null;
 		}
 		if (!needsCompaction(agent.state.messages, model, settings)) {
-			return false;
+			return undefined;
 		}
 		rt.compactionPending = true;
-		return true;
+		return { action: "end" };
 	}
 
 	/**
