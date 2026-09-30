@@ -1,4 +1,10 @@
-import type { AgentHarnessTool, AgentHarnessToolInvocation, AgentHarnessToolUpdateCallback, ExecutionToolContext, ToolExecutionMode } from "@earendil-works/pi-agent-core";
+import type { AgentHarnessTool, AgentHarnessToolInvocation, AgentHarnessToolUpdateCallback, ExecutionEnv, ToolExecutionMode } from "@earendil-works/pi-agent-core";
+
+// pi 0.99 dropped ExecutionToolContext from the public barrel; it is structurally
+// `{ env: ExecutionEnv }` and ExecutionEnv is still exported, so mirror it locally
+// rather than reaching into pi's internal dist layout. A drift in pi's shape
+// surfaces at the tool-factory call sites, which is where it should.
+type ExecutionToolContext = { env: ExecutionEnv };
 import type { AgentTool, AgentToolUpdateCallback, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "typebox";

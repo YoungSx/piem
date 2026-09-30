@@ -255,6 +255,31 @@ export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 		});
 	}
 
+	async openTextLineReader(path: string, context?: Context | AbortSignal) {
+		return this.run(path, context, async () => {
+			const target = this.normalize(path);
+			const content = await this.adapter.read(target);
+			const normalized = target.endsWith(".jsonl") ? normalizeLegacyJsonlContent(content) : content;
+			// Pull-based reader over eagerly-loaded content: the vault adapter has no
+			// streaming read, so whether the final record is torn is knowable up
+			// front from the trailing newline. Mirrors readTextLines' split.
+			const endsWithNewline = normalized.endsWith("\n");
+			const parts = normalized.split("\n");
+			if (endsWithNewline) parts.pop();
+			let index = 0;
+			return ok({
+				readLine: async (): Promise<Result<{ text: string; terminated: boolean } | undefined, FileError>> => {
+					if (index >= parts.length) return ok(undefined);
+					const text = parts[index] ?? "";
+					const terminated = index < parts.length - 1 || endsWithNewline;
+					index++;
+					return ok({ text, terminated });
+				},
+				close: async (): Promise<void> => undefined,
+			});
+		});
+	}
+
 	async readBinaryFile(path: string, context?: Context | AbortSignal): Promise<Result<Uint8Array, FileError>> {
 		return this.run(path, context, async () => {
 			const target = this.normalize(path);
