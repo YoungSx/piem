@@ -6,7 +6,8 @@ import {
 	type AgentEvent,
 	type AgentMessage,
 	type AgentTool,
-	type ShouldStopAfterTurnContext,
+	type AgentTurnContext,
+	type AgentTurnDecision,
 	type Skill,
 	type StreamFn,
 	type ThinkingLevel,
@@ -327,25 +328,27 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 	 * decision with the same reasoning; this one keeps the state local.
 	 */
 	const shouldStopForCompaction = (
-		turn: ShouldStopAfterTurnContext,
+		turn: AgentTurnContext,
 		signal?: AbortSignal,
-	): boolean => {
+	): AgentTurnDecision | undefined => {
+		// `undefined` preserves pi's normal scheduling (the old `false`);
+		// `{ action: "end" }` is the old `true`.
 		// A run already dead must not be ended for a summary it will never use.
 		if (signal?.aborted || linked.signal.aborted) {
-			return false;
+			return undefined;
 		}
 		// No tool results means nothing to continue from: `continue()` requires a
 		// user or tool-result tail, and pi's inner loop only runs on further tool
 		// calls anyway, so there is nothing to tidy for.
 		if (!options.models || turn.toolResults.length === 0) {
-			return false;
+			return undefined;
 		}
 		const settings = options.compactionSettings ?? DEFAULT_COMPACTION_SETTINGS;
 		if (compactionGate === "futile") {
 			// The compacted context's floor is over the line: summaries cannot
 			// shrink it, so the run never stops for compaction again — until a
 			// new tidy attempt sets `"awaiting"` and re-asks the question.
-			return false;
+			return undefined;
 		}
 		if (compactionGate === "awaiting") {
 			// Consumed here: this turn's reply is the first post-tidy request whose
@@ -360,15 +363,15 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 			const floor = usage === undefined ? undefined : calculateContextTokens(usage);
 			if (floor !== undefined && shouldCompact(floor, model.contextWindow, settings)) {
 				compactionGate = "futile";
-				return false;
+				return undefined;
 			}
 			compactionGate = null;
 		}
 		if (!needsCompaction(agent.state.messages, model, settings)) {
-			return false;
+			return undefined;
 		}
 		compactionPending = true;
-		return true;
+		return { action: "end" };
 	};
 
 	const agent = new Agent({
@@ -401,11 +404,11 @@ export async function runSubagent(options: SubagentRunOptions): Promise<Subagent
 		// end the run at a tool-result boundary instead of swapping its context
 		// underneath it; the loop after `prompt` tidies outside the run and
 		// `continue()`s back in.
-		shouldStopAfterTurn: (context, signal) => {
+		finishTurn: (turn, signal) => {
 			if (linked.signal.aborted) {
-				return true;
+				return { action: "end" };
 			}
-			return shouldStopForCompaction(context, signal);
+			return shouldStopForCompaction(turn, signal);
 		},
 	});
 	if (options.onEvent) {
