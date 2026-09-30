@@ -686,6 +686,21 @@ button.piem-chat__context-open {
 	white-space: nowrap;
 }
 
+/* Keep the labelled action reachable even in a very narrow leaf. */
+@container piem-chat (max-width: 15rem) {
+	.piem-chat__banner--resume {
+		gap: var(--size-4-1);
+	}
+
+	.piem-chat__banner--resume .piem-chat__banner-icon {
+		display: none;
+	}
+
+	.piem-chat__banner--resume .piem-chat__banner-action {
+		padding-inline: var(--size-4-2);
+	}
+}
+
 /* Action where the old copy printed a settings path in prose. */
 .piem-chat__banner-action {
 	flex-shrink: 0;
