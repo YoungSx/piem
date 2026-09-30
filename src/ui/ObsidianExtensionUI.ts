@@ -202,6 +202,6 @@ export class ObsidianExtensionUI implements ExtensionUIAdapter {
 
 	private publish(snapshot: ExtensionUISnapshot): void {
 		this.snapshot = snapshot;
-		for (const listener of this.listeners) listener();
+		for (const listener of [...this.listeners]) listener();
 	}
 }
