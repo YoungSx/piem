@@ -256,6 +256,11 @@ class FakeAgentService {
 	peekedReplySuggestions: Record<string, QuickAction[]> = {};
 	/** When set, `suggestQuickActions` holds its answer until this resolves — the gate a test lifts to interleave renders. */
 	suggestionsGate: Promise<void> | null = null;
+	/** What `suggestionBlocker` reports — the prepare window a rewind opens, staged by tests. */
+	blocker: string | undefined = undefined;
+	suggestionBlocker(): string | undefined {
+		return this.blocker;
+	}
 	/**
 	 * Panel-side debug records, in order. The gates that stop a suggestion
 	 * request before it is sent leave no other trace, so a test that wants to
@@ -388,6 +393,8 @@ async function mountChat(
 		 * after would miss the request entirely.
 		 */
 		suggestionsGate?: Promise<void>;
+		/** Staged before mount: what `suggestionBlocker` reports, a rewind's prepare window by default. */
+		suggestionBlocker?: string;
 		/**
 		 * Supplies the "open the monitor" callback, without which the entry icon is
 		 * never rendered at all — the panel treats its absence as "this host has no
@@ -411,6 +418,8 @@ async function mountChat(
 	if (options.suggestionsGate) {
 		service.suggestionsGate = options.suggestionsGate;
 	}
+	service.blocker = options.suggestionBlocker;
+	service.blocker = options.suggestionBlocker;
 	const inputController = new ChatInputController();
 	const draftStore = new RecordingDraftStore();
 	const root = createRoot(host);
@@ -1189,6 +1198,34 @@ describe("ChatApp model-suggested quick actions", () => {
 
 		// No fallback here, by the placement's contract: a nicety that failed shows nothing.
 		expect(quickActionChips(host)).toHaveLength(0);
+	});
+
+	it("keeps a reply's one shot unspent when the service refuses the request", async () => {
+		// The rewind's prepare window: a rewind summarizes the abandoned branch
+		// with a real LLM call, and nothing in the snapshot reports it. A request
+		// refused there never left, so it must not count as this reply's one shot —
+		// otherwise the reply keeps no row for the rest of the conversation.
+		const { host, service } = await mountChat({
+			// Staged before mount so the panel's own first effect is gated too: the
+			// request this test is about must be the only one on the record.
+			snapshot: readySnapshot,
+			suggestionBlocker: "a retry is in flight",
+			suggestionResults: [agentChips],
+		});
+		// The reply settles inside the window — the rewind that opened it is what
+		// produced that reply, and the snapshot reports nothing about it.
+		service.emit({ messages: [assistantReply("The reply that settled mid-rewind.")] as ChatSnapshot["messages"] });
+		await flushRender();
+		expect(service.suggestionRequests).toHaveLength(0);
+		expect(quickActionChips(host)).toHaveLength(0);
+
+		// The window closes with that same reply still on screen — the rewind's own
+		// notify. The row must arrive now, not never.
+		service.blocker = undefined;
+		service.emit({ messages: [assistantReply("The reply that settled mid-rewind.")] as ChatSnapshot["messages"] });
+		await flushRender(() => quickActionChips(host).some((chip) => chip.textContent === "Agent chip"));
+		expect(service.suggestionRequests).toEqual(["reply", "reply"]);
+		expect(quickActionChips(host).some((chip) => chip.textContent === "Agent chip")).toBe(true);
 	});
 
 	it("names the gate that stopped a request, once per distinct stall", async () => {

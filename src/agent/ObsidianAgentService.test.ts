@@ -5338,11 +5338,28 @@ describe("quick-action suggestions", () => {
 	});
 
 	/*
-	 * The row not appearing is this feature's only failure mode, and every way of
-	 * not appearing used to look the same: a null. These assertions pin the log
-	 * that tells them apart — one for a request that went out and came back
-	 * empty, one for a request refused before any transport.
+	 * The gate the panel asks before spending a settled reply's one shot. Two
+	 * things must hold for it to be worth having: it names the same reason the
+	 * request path would refuse with, and it does not fire on a settled, idle
+	 * panel — a gate that blocks when it should not costs the row just as
+	 * surely as one that never lifts.
 	 */
+	it("reports no blocker for a settled, idle runtime and the refusal reason when a request would bounce", async () => {
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: suggestionReplyStreamFn(SUGGESTION_JSON) });
+		await service.initialize();
+		await service.sendPrompt("Hello");
+
+		expect(service.suggestionBlocker()).toBeUndefined();
+
+		settings.providers = [];
+		settings.models = [];
+		settings.activeModelId = undefined;
+		expect(service.suggestionBlocker()).toBe("no API key");
+		// The same question the request path asks, so the panel's gate and the
+		// refusal cannot drift apart.
+		expect(await service.suggestQuickActions("reply")).toBeNull();
+	});
+
 	it("records why a suggestion row came back empty, and why a request never left", async () => {
 		const { logger, records } = recordingLogger();
 		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), {

@@ -186,6 +186,11 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// flip, or a session switch moves it and re-arms the fetch. This is what lets
 	// opening an old session fetch a row while an idle one never re-bills.
 	const replyTargetRef = useRef<string | null>(null);
+	// The signature whose request is in flight. Separate from the completed one so
+	// "asked, waiting" and "asked, answered" cannot be confused for each other —
+	// conflating them is what let a request that never left look like a settled
+	// answer and cost the reply its row.
+	const replyPendingRef = useRef<string | null>(null);
 	const sendPromptRef = useRef<() => void>(() => undefined);
 	// Read inside the prefill handler, which is rebound per conversation rather
 	// than on every keystroke just to see the current draft.
@@ -370,7 +375,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 						? "an extension surface is busy"
 						: snapshot.messages.length > 0
 							? "the conversation is no longer empty"
-							: null;
+							: service.suggestionBlocker() ?? null;
 		if (blockedBy) {
 			logSkip("empty", blockedBy);
 			return;
@@ -453,7 +458,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 						? "tool calls still out"
 						: snapshot.messages.length === 0
 							? "no messages yet"
-							: null;
+							: service.suggestionBlocker() ?? null;
 		if (blockedBy) {
 			logSkip("reply", blockedBy);
 			return;
@@ -469,18 +474,18 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 			return;
 		}
 		const signature = `${snapshot.sessionRevision} ${snapshot.language} ${failed ? "" : subject}`;
-		if (signature === replyTargetRef.current) {
-			// The ordinary case — the same settled reply re-rendering. Named anyway,
-			// because the failure this guard hides is a row that never re-arms: one
-			// skipped re-run and the reply keeps no row for the rest of the
-			// conversation, with nothing else in the log to say so.
+		if (signature === replyTargetRef.current || signature === replyPendingRef.current) {
+			// The ordinary case — the same settled reply re-rendering, or its request
+			// still in flight. Named anyway, because the failure this guard hides is a
+			// row that never re-arms: one skipped re-run and the reply keeps no row
+			// for the rest of the conversation, with nothing else to say so.
 			logSkip("reply", "this reply already has its row");
 			return;
 		}
-		replyTargetRef.current = signature;
 		skipReasonRef.current.reply = "";
 		const request = ++suggestionRequestRef.current;
 		if (failed) {
+			replyTargetRef.current = signature;
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: continueAfterFailureQuickAction(getT(snapshot.language)) });
 			return;
 		}
@@ -488,16 +493,34 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// the subject is immutable, so there is nothing a fresh request would learn.
 		const cached = service.peekQuickActionSuggestions("reply");
 		if (cached && cached.length > 0) {
+			replyTargetRef.current = signature;
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: cached });
 			return;
 		}
 		setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: [] });
+		/*
+		 * Held apart from the completed signature until an answer lands. A request
+		 * that never left — the service refusing one because a rewind is still
+		 * summarizing the abandoned branch — must not count as this reply's one
+		 * shot, or the row is gone for the rest of the conversation. The signature
+		 * is written when the answer comes back, empty or not: a request that did
+		 * go out and failed has spent its money, and asking on every later render
+		 * would spend it again.
+		 */
+		replyPendingRef.current = signature;
 		void service.suggestQuickActions("reply").then((quick) => {
 			// Superseded by a newer turn or session switch: the fast pass is stale
-			// and the deeper pass it would have chained must not fire.
+			// and the deeper pass it would have chained must not fire. The pending
+			// signature is released here too, or it would sit on a reply that is
+			// still on screen and keep that reply from ever asking.
 			if (request !== suggestionRequestRef.current) {
+				if (replyPendingRef.current === signature) {
+					replyPendingRef.current = null;
+				}
 				return;
 			}
+			replyPendingRef.current = null;
+			replyTargetRef.current = signature;
 			const quickActions = quick ?? [];
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: quickActions });
 			// The deeper pass fires the instant the fast one lands — even when the
