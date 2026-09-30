@@ -3271,8 +3271,11 @@ export class ObsidianAgentService {
 		},
 	): Promise<QuickAction[] | null> {
 		const pass = opts?.deep ? "deep" : "fast";
-		if (this.pendingSessionOpen || this.disposed) {
-			this.logSkip(scope, pass, "session opening or service disposed");
+		// The panel asks the same question first (see {@link suggestionBlocker}), so
+		// a refusal here is one the panel could have seen coming and waited out.
+		const blockedBy = this.suggestionBlocker();
+		if (blockedBy) {
+			this.logSkip(scope, pass, blockedBy);
 			return null;
 		}
 		const settings = this.getSettings();
@@ -3281,32 +3284,9 @@ export class ObsidianAgentService {
 		// from above the `try` escaped that promise — as an unhandled rejection
 		// here, and as a torn-down panel through the synchronous peek beside it.
 		const rt = this.current();
-		if (
-			!rt ||
-			!this.hasApiKey() ||
-			!rt.agent ||
-			rt.agent.state.isStreaming ||
-			rt.isCompacting ||
-			rt.retryInFlight
-		) {
-			// Named one at a time because the panel cannot tell them apart: every
-			// one of them is a settled reply with no row, and only the reason says
-			// whether the fix is a key, a stop, or patience.
-			this.logSkip(
-				scope,
-				pass,
-				!rt
-					? "no focused runtime"
-					: !this.hasApiKey()
-						? "no API key"
-						: !rt.agent
-							? "no agent on this runtime"
-							: rt.agent.state.isStreaming
-								? "agent still streaming"
-								: rt.isCompacting
-									? "compaction in flight"
-									: "a retry is in flight",
-			);
+		// {@link suggestionBlocker} has just answered for both of these; the branch
+		// narrows the type and covers the instant between the two calls.
+		if (!rt || !rt.agent) {
 			return null;
 		}
 		const subject =
@@ -3421,6 +3401,48 @@ export class ObsidianAgentService {
 				rt.suggestionController = null;
 			}
 		}
+	}
+
+	/**
+	 * Why a suggestion request would be refused right now, or undefined when one
+	 * can go out.
+	 *
+	 * The panel asks this before it spends its one shot at a settled reply: a
+	 * request refused here is not an answer, it is a queue, and the reply that
+	 * lost its row to a queued one never gets another — the reply row is keyed
+	 * on the reply's own text, so once a panel has asked and been told nothing,
+	 * that reply stays bare. Two of these conditions the panel cannot see on its
+	 * own: the prepare window a rewind opens (it summarizes the abandoned branch
+	 * with a real LLM call, seconds long, and nothing in the snapshot reports it)
+	 * and the seam where a session is being swapped and no runtime is focused.
+	 *
+	 * The request path answers the same question through this method rather than
+	 * repeating the conditions, so a gate and a refusal cannot drift apart.
+	 */
+	suggestionBlocker(): string | undefined {
+		if (this.pendingSessionOpen || this.disposed) {
+			return "session opening or service disposed";
+		}
+		const rt = this.current();
+		if (!rt) {
+			return "no focused runtime";
+		}
+		if (!this.hasApiKey()) {
+			return "no API key";
+		}
+		if (!rt.agent) {
+			return "no agent on this runtime";
+		}
+		if (rt.agent.state.isStreaming) {
+			return "agent still streaming";
+		}
+		if (rt.isCompacting) {
+			return "compaction in flight";
+		}
+		if (rt.retryInFlight) {
+			return "a retry is in flight";
+		}
+		return undefined;
 	}
 
 	/**
