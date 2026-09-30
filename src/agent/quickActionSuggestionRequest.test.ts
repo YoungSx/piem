@@ -288,6 +288,12 @@ describe("fetchQuickActionSuggestions", () => {
 		});
 		expect(result.actions).toEqual([{ id: "suggested-0", label: "A", prompt: "p" }]);
 		expect(result.usage?.totalTokens).toBe(30);
+		// No failure on an answer that yielded chips: the log reads "how many",
+		// not "how many, and what went wrong that it did not".
+		expect(result.failure).toBeUndefined();
+		// No failure on an answer that yielded chips: the log reads "how many",
+		// not "how many, and what went wrong that it did not".
+		expect(result.failure).toBeUndefined();
 		expect((captured.options as { toolChoice?: string }).toolChoice).toBe("none");
 		// No reasoning key: the option type has no "off" level, absence is off.
 		expect("reasoning" in (captured.options as object)).toBe(false);
@@ -322,18 +328,22 @@ describe("fetchQuickActionSuggestions", () => {
 		});
 		expect(result.actions).toBeNull();
 		expect(result.usage).toBeUndefined();
+		// The reason travels out with the null: the caller's log can say the
+		// endpoint never answered, not merely that nothing came back.
+		expect(result.failure).toEqual({ kind: "transport", detail: "offline" });
 	});
 
 	it("resolves to null actions when the model errored or was aborted", async () => {
 		for (const stopReason of ["error", "aborted"] as const) {
 			const result = await fetchQuickActionSuggestions({
-				streamSimple: fakeStream(assistantMessage("[]", { stopReason })) as never,
+				streamSimple: fakeStream(assistantMessage("[]", { stopReason, errorMessage: "quota exceeded" })) as never,
 				model: {} as never,
 				scope: "empty",
 				subject: null,
 				language: "en",
 			});
 			expect(result.actions).toBeNull();
+			expect(result.failure).toEqual({ kind: "stopped", detail: "quota exceeded" });
 		}
 	});
 
@@ -349,6 +359,9 @@ describe("fetchQuickActionSuggestions", () => {
 			signal: controller.signal,
 		});
 		expect(result.actions).toBeNull();
+		// Our own abort, not the provider's: the two are the same stopReason and
+		// only this one is a superseded row rather than a refusal.
+		expect(result.failure?.kind).toBe("aborted");
 	});
 
 	it("resolves to null actions when the answer parses to nothing", async () => {
@@ -362,5 +375,9 @@ describe("fetchQuickActionSuggestions", () => {
 		expect(result.actions).toBeNull();
 		// The request was still billed; the usage must survive the failed parse.
 		expect(result.usage?.totalTokens).toBe(30);
+		// A model that ignored the JSON contract is the miss worth reading back:
+		// the sample is the only clue to what it answered instead.
+		expect(result.failure?.kind).toBe("unparsable");
+		expect(result.failure?.detail).toContain("Sorry, I cannot help with that.");
 	});
 });

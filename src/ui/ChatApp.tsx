@@ -158,6 +158,28 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	// Serializes suggestion requests: the newest call wins, an older one landing
 	// late is dropped rather than overwriting it.
 	const suggestionRequestRef = useRef(0);
+	/*
+	 * Why the last suggestion request was not sent, so the panel's log can name
+	 * the gate instead of the reader wondering. The effects below re-run on every
+	 * snapshot — while a turn streams, that is per message — so an ungated reason
+	 * would write the same line continuously; repeating a reason is suppressed and
+	 * a request going out clears it, which is what keeps a real later stall from
+	 * being swallowed by an earlier identical one. Remembered per placement: both
+	 * effects run on the same snapshots and their gates overlap, so one shared
+	 * slot would let each reason evict the other's and both would repeat on every
+	 * render.
+	 */
+	const skipReasonRef = useRef<Record<string, string>>({});
+	const logSkip = useCallback(
+		(placement: string, reason: string): void => {
+			if (skipReasonRef.current[placement] === reason) {
+				return;
+			}
+			skipReasonRef.current[placement] = reason;
+			service.logDebug("Quick action suggestions not requested", () => ({ placement, reason }));
+		},
+		[service],
+	);
 	// The (session, language, reply-text) signature of the settled reply this
 	// panel has already fetched a row for. A settled snapshot that reproduces it
 	// — a re-render from unrelated state — is skipped; a new reply, a language
@@ -338,9 +360,22 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 * circuiting: the chips shown are always at most one request old.
 	 */
 	useEffect(() => {
-		if (!(snapshot.isConfigured ?? false) || isInitializing || snapshot.isStreaming || isExtensionBusy || snapshot.messages.length > 0) {
+		const blockedBy = !(snapshot.isConfigured ?? false)
+			? "no model configured"
+			: isInitializing
+				? "panel still initializing"
+				: snapshot.isStreaming
+					? "a turn is streaming"
+					: isExtensionBusy
+						? "an extension surface is busy"
+						: snapshot.messages.length > 0
+							? "the conversation is no longer empty"
+							: null;
+		if (blockedBy) {
+			logSkip("empty", blockedBy);
 			return;
 		}
+		skipReasonRef.current.empty = "";
 		const request = ++suggestionRequestRef.current;
 		const cached = service.peekQuickActionSuggestions("empty");
 		// The row is reset on every run, cached or not: "stale" means *this* note's
@@ -365,7 +400,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// request, and without re-asking when the insight lands the row would stand
 		// on an answer that never saw the note's own facts — cached under a key no
 		// later visit reproduces, so not even the cache could rescue it.
-	}, [service, snapshot.isConfigured, snapshot.isStreaming, isExtensionBusy, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, noteFacts, isInitializing]);
+	}, [service, logSkip, snapshot.isConfigured, snapshot.isStreaming, isExtensionBusy, snapshot.messages.length, snapshot.sessionRevision, activeNotePath, noteFacts, isInitializing]);
 
 	/*
 	 * Settled reply: fetch the model's follow-ups for whatever settled reply is on
@@ -408,7 +443,19 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	 * a reply is a nicety, and an empty row states that honestly.
 	 */
 	useEffect(() => {
-		if (snapshot.isStreaming || snapshot.isCompacting || isExtensionBusy || snapshot.pendingToolCalls.length > 0 || snapshot.messages.length === 0) {
+		const blockedBy = snapshot.isStreaming
+			? "a turn is streaming"
+			: snapshot.isCompacting
+				? "compaction in flight"
+				: isExtensionBusy
+					? "an extension surface is busy"
+					: snapshot.pendingToolCalls.length > 0
+						? "tool calls still out"
+						: snapshot.messages.length === 0
+							? "no messages yet"
+							: null;
+		if (blockedBy) {
+			logSkip("reply", blockedBy);
 			return;
 		}
 		const failed = lastReplyFailed(snapshot.messages);
@@ -418,13 +465,20 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 		// is nothing to suggest for.
 		const subject = failed ? null : lastAssistantText(snapshot.messages);
 		if (!failed && subject === null) {
+			logSkip("reply", "the settled tail carries no reply to suggest from");
 			return;
 		}
 		const signature = `${snapshot.sessionRevision} ${snapshot.language} ${failed ? "" : subject}`;
 		if (signature === replyTargetRef.current) {
+			// The ordinary case — the same settled reply re-rendering. Named anyway,
+			// because the failure this guard hides is a row that never re-arms: one
+			// skipped re-run and the reply keeps no row for the rest of the
+			// conversation, with nothing else in the log to say so.
+			logSkip("reply", "this reply already has its row");
 			return;
 		}
 		replyTargetRef.current = signature;
+		skipReasonRef.current.reply = "";
 		const request = ++suggestionRequestRef.current;
 		if (failed) {
 			setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: continueAfterFailureQuickAction(getT(snapshot.language)) });
@@ -456,7 +510,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 				setSuggestions({ revision: snapshot.sessionRevision, scope: "reply", actions: mergeSuggestionBatches(quickActions, deep) });
 			});
 		});
-	}, [service, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, snapshot.pendingToolCalls.length, snapshot.messages, snapshot.sessionRevision, snapshot.language]);
+	}, [service, logSkip, snapshot.isStreaming, snapshot.isCompacting, isExtensionBusy, snapshot.pendingToolCalls.length, snapshot.messages, snapshot.sessionRevision, snapshot.language]);
 
 	/*
 	 * The live placement's chips only: the same `actions` would leak a previous

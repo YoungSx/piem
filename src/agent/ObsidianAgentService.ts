@@ -222,6 +222,7 @@ import { markReplySteered } from "../ui/replyCutoff";
 import { stampReplyEnd } from "../ui/replyDuration";
 import { summarizeToolContent } from "../ui/traceSummary";
 import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
+import type { LogDetail } from "../logging/logRecord";
 import {
 	getT,
 	resolveLanguage,
@@ -1059,8 +1060,14 @@ export class ObsidianAgentService {
 				// nicety and must never inherit the conversation model's cost. No model
 				// configured means no perception, never a builtin-catalog one.
 				const model = resolveSuggestionModel(this.getSettings());
-				if (!model) return null;
-				return requestScoutFindings({
+				if (!model) {
+					this.log.debug("Scout perception skipped", () => ({
+						notePath: request.notePath,
+						reason: "no suggestion model is configured",
+					}));
+					return null;
+				}
+				const findings = await requestScoutFindings({
 					streamSimple: this.resolveStreamFn(),
 					model,
 					request,
@@ -1071,6 +1078,16 @@ export class ObsidianAgentService {
 					signal,
 					apiKey: this.getApiKey(model.provider),
 				});
+				// Null is the request's own failure shape and carries no reason of its
+				// own, so all this can say is that the note went unperceived — which
+				// is what a reader chasing a thinner empty-screen row needs to know.
+				if (findings === null) {
+					this.log.debug("Scout perception produced nothing", () => ({
+						notePath: request.notePath,
+						model: suggestionModelKey(model),
+					}));
+				}
+				return findings;
 			});
 		this.loadUserSkillsFn = options.loadUserSkills ?? loadUserSkills;
 		this.builtinSkills = options.builtinSkills;
@@ -3076,6 +3093,7 @@ export class ObsidianAgentService {
 		// miss it.
 		const model = resolveSuggestionModel(settings);
 		if (!model) {
+			this.logSkip(scope, undefined, "no suggestion model is configured");
 			return undefined;
 		}
 		const language = resolveLanguage(this.app.vault as LanguageHost, settings.language);
@@ -3086,16 +3104,43 @@ export class ObsidianAgentService {
 			// to suggest for.
 			const subject = rt?.agent ? lastAssistantText(rt.agent.state.messages) : null;
 			if (!subject) {
+				this.logSkip(scope, undefined, "no settled reply text to key the cache on");
 				return undefined;
 			}
-			return this.suggestionCache.get(
+			const cached = this.suggestionCache.get(
 				this.suggestionCacheKey("reply", language, subject, EMPTY_WORKSPACE_CONTEXT, model, null),
 			);
+			this.log.debug("Quick action suggestion cache", () => ({
+				scope,
+				hit: cached !== undefined,
+				actions: cached?.length ?? 0,
+			}));
+			return cached;
 		}
 		const { notePath, workspace, noteFacts } = this.suggestionSubject(rt);
-		return this.suggestionCache.get(
+		const cached = this.suggestionCache.get(
 			this.suggestionCacheKey("empty", language, notePath, workspace, model, noteFacts),
 		);
+		this.log.debug("Quick action suggestion cache", () => ({
+			scope,
+			hit: cached !== undefined,
+			actions: cached?.length ?? 0,
+		}));
+		return cached;
+	}
+
+	/**
+	 * A panel-side record, for the places only the React tree can see.
+	 *
+	 * The suggestions' own gates — an extension busy, a tool call still out —
+	 * live in effects, where the service is not called at all and therefore
+	 * cannot log the fact that nothing was. This is that one seam: the panel
+	 * holds the service, the service holds the logger, and a component that
+	 * only wants to say why it did nothing needs neither a new prop nor a
+	 * logger of its own.
+	 */
+	logDebug(message: string, detail?: () => LogDetail): void {
+		this.log.debug(message, detail);
 	}
 
 	/**
@@ -3193,7 +3238,11 @@ export class ObsidianAgentService {
 			priorActions?: readonly QuickAction[];
 		},
 	): Promise<QuickAction[] | null> {
-		if (this.pendingSessionOpen || this.disposed) return null;
+		const pass = opts?.deep ? "deep" : "fast";
+		if (this.pendingSessionOpen || this.disposed) {
+			this.logSkip(scope, pass, "session opening or service disposed");
+			return null;
+		}
 		const settings = this.getSettings();
 		// No focused runtime is one more "nothing to show", not an error: the
 		// catch below promises the UI that this method never throws, and a throw
@@ -3208,6 +3257,24 @@ export class ObsidianAgentService {
 			rt.isCompacting ||
 			rt.retryInFlight
 		) {
+			// Named one at a time because the panel cannot tell them apart: every
+			// one of them is a settled reply with no row, and only the reason says
+			// whether the fix is a key, a stop, or patience.
+			this.logSkip(
+				scope,
+				pass,
+				!rt
+					? "no focused runtime"
+					: !this.hasApiKey()
+						? "no API key"
+						: !rt.agent
+							? "no agent on this runtime"
+							: rt.agent.state.isStreaming
+								? "agent still streaming"
+								: rt.isCompacting
+									? "compaction in flight"
+									: "a retry is in flight",
+			);
 			return null;
 		}
 		const subject =
@@ -3216,6 +3283,7 @@ export class ObsidianAgentService {
 				: (this.contextRefList(rt).find((ref) => ref.kind === "active")?.path ??
 					null);
 		if (scope === "reply" && !subject) {
+			this.logSkip(scope, pass, "the settled reply carries no text");
 			return null;
 		}
 		// The empty placements quote the workspace and note facts; the reply placement's subject
@@ -3229,18 +3297,27 @@ export class ObsidianAgentService {
 		rt.suggestionController?.abort();
 		const controller = new AbortController();
 		rt.suggestionController = controller;
+		const startedAt = Date.now();
 		try {
 			// The suggestion's own model, not the active one: undefined means no
 			// configured model anywhere — the same "nothing to show" as below, and
 			// never a builtin-catalog model, which cannot send here.
 			const model = resolveSuggestionModel(settings);
 			if (!model) {
+				this.logSkip(scope, pass, "no suggestion model is configured");
 				return null;
 			}
 			const language = resolveLanguage(
 				this.app.vault as LanguageHost,
 				settings.language,
 			);
+			this.log.debug("Quick action suggestion request", () => ({
+				scope,
+				pass,
+				model: suggestionModelKey(model),
+				language,
+				subjectChars: subject?.length ?? 0,
+			}));
 			const result = await fetchQuickActionSuggestions({
 				streamSimple: this.resolveStreamFn(),
 				model,
@@ -3257,9 +3334,19 @@ export class ObsidianAgentService {
 			if (rt.suggestionController !== controller) {
 				// Superseded mid-flight: the caller that replaced this request owns
 				// the row now, and a late answer must not resurrect stale chips.
+				this.logSkip(scope, pass, "superseded by a newer request");
 				return null;
 			}
 			this.recordOverheadUsage(rt, result.usage);
+			// The one record that answers "did the chips arrive": the outcome, the
+			// provider's own words when it refused, and what the row was left with.
+			this.log.debug("Quick action suggestion result", () => ({
+				scope,
+				pass,
+				ms: Date.now() - startedAt,
+				actions: result.actions?.length ?? 0,
+				...(result.failure ? { failure: result.failure.kind, detail: result.failure.detail } : {}),
+			}));
 			// Both placements cache now (issue: quick actions on history sessions):
 			// reopening or switching back to a settled conversation must not re-bill
 			// the row. The empty screen keys on the (language, note path, workspace,
@@ -3291,7 +3378,9 @@ export class ObsidianAgentService {
 			// holds that line, but `getSelectedModel` above it can reject for a
 			// legacy endpoint no catalog entry covers — letting that escape would
 			// turn a decorative miss into an unhandled rejection in the panel.
-			this.log.debug("quick action suggestions failed", () => ({
+			this.log.warn("Quick action suggestions threw", () => ({
+				scope,
+				pass,
 				error: String(error),
 			}));
 			return null;
@@ -3300,6 +3389,19 @@ export class ObsidianAgentService {
 				rt.suggestionController = null;
 			}
 		}
+	}
+
+	/**
+	 * One record for every request that went nowhere.
+	 *
+	 * A suggestion row that never appears is the feature's only failure mode, and
+	 * each way of not appearing looks identical from the panel: an unsettled
+	 * runtime, a missing key, no configured model. They are cheap to state and
+	 * impossible to reconstruct from the result record that follows, because the
+	 * result record is only written when a request was actually sent.
+	 */
+	private logSkip(scope: SuggestionScope, pass: "fast" | "deep" | undefined, reason: string): void {
+		this.log.debug("Quick action suggestions skipped", () => ({ scope, ...(pass ? { pass } : {}), reason }));
 	}
 
 	abort(): void {
