@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { webcrypto } from "node:crypto";
 import { clearTimeout as nativeClearTimeout, setTimeout as nativeSetTimeout } from "node:timers";
 import { Event, EventTarget } from "happy-dom";
@@ -127,7 +127,26 @@ function fixture(beforeReply?: (sequence: number) => Promise<void>) {
 }
 
 describe("diagnostics sharing in the real agent service", () => {
-	it("defaults to the project gateway and exports three signals without prompt content or provider secrets", async () => {
+	// Stands in for the string esbuild's `define` bakes in from the release
+	// secret, so this asserts the service reads the injected value rather than
+	// a URL that used to be hardcoded here.
+	const GATEWAY = "https://otlp.example.test";
+	const INJECTED = "__PIEM_DIAGNOSTICS_ENDPOINT__";
+	let hadInjected: boolean;
+	let previousInjected: unknown;
+
+	beforeAll(() => {
+		hadInjected = INJECTED in globalThis;
+		previousInjected = (globalThis as Record<string, unknown>)[INJECTED];
+		(globalThis as Record<string, unknown>)[INJECTED] = GATEWAY;
+	});
+
+	afterAll(() => {
+		if (hadInjected) (globalThis as Record<string, unknown>)[INJECTED] = previousInjected;
+		else delete (globalThis as Record<string, unknown>)[INJECTED];
+	});
+
+	it("reports to the injected gateway and exports three signals without prompt content or provider secrets", async () => {
 		const f = fixture();
 		const { service } = f.create();
 		expect(f.settings.shareDiagnostics).toBe(true);
@@ -136,7 +155,7 @@ describe("diagnostics sharing in the real agent service", () => {
 		service.dispose();
 		await until(() => f.timerCount === 0 && f.listenerCount === 0);
 		expect([...new Set(f.receipts.map(receipt => receipt.url))].sort()).toEqual([
-			"https://otlppiem.shangxin.me/v1/logs", "https://otlppiem.shangxin.me/v1/metrics", "https://otlppiem.shangxin.me/v1/traces",
+			`${GATEWAY}/v1/logs`, `${GATEWAY}/v1/metrics`, `${GATEWAY}/v1/traces`,
 		]);
 		const bodies = f.receipts.map(receipt => receipt.body).join("\n");
 		for (const value of ["pi.session.start", "pi.session.shutdown", "gen_ai.client.token.usage", "fixture-model", "fixture-version"]) expect(bodies).toContain(value);

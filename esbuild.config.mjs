@@ -55,6 +55,24 @@ const context = await esbuild.context({
 		".png": "dataurl",
 	},
 	bundle: true,
+	// The project reporting gateway is a deployment fact, not a source fact:
+	// `release.yml` passes it in as PIEM_DIAGNOSTICS_ENDPOINT so the URL lives
+	// in one place (a repo secret) and can be rotated without a code change.
+	// Unset — dev builds, the test workflow, `bun test` — bakes in an empty
+	// string, which `otelEnvironment` reads as "diagnostics off" rather than
+	// guessing a default. The release gate fails if that reaches a tag.
+	define: {
+		__PIEM_DIAGNOSTICS_ENDPOINT__: JSON.stringify(process.env.PIEM_DIAGNOSTICS_ENDPOINT ?? ""),
+	},
+	// The project reporting gateway is a deployment fact, not a source fact:
+	// `release.yml` passes it in as PIEM_DIAGNOSTICS_ENDPOINT so the URL lives
+	// in one place (a repo secret) and can be rotated without a code change.
+	// Unset — dev builds, the test workflow, `bun test` — bakes in an empty
+	// string, which `otelEnvironment` reads as "diagnostics off" rather than
+	// guessing a default. The release gate fails if that reaches a tag.
+	define: {
+		__PIEM_DIAGNOSTICS_ENDPOINT__: JSON.stringify(process.env.PIEM_DIAGNOSTICS_ENDPOINT ?? ""),
+	},
 	external: [
 		// Pi's NodeExecutionEnv uses the prefixed spelling. Keep builtins in
 		// the desktop host while bundling Pi itself into the lazy bridge.
