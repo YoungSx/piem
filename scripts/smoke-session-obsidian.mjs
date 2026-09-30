@@ -134,7 +134,20 @@ async function runSmoke(root) {
 			});
 			services.push(service);
 			await bounded(service.initialize());
-			check("fresh service initialized on control", service.getActiveSessionPath() === control && !!service.agent);
+			// Cold start lands on a blank sheet and offers the last chat on a banner
+			// rather than opening it, so the path is NOT the last-opened record.
+			// What must hold is that initialization minted an agent focused on a
+			// sheet that has no file behind it yet, and that the chat the
+			// last-opened record named was offered instead of silently dropped.
+			const opened = service.getActiveSessionPath();
+			const offer = service.getSnapshot().resumeSuggestion;
+			check("fresh service initialized on a blank sheet", !!service.agent && !!opened && manager.isBlankSession(opened) && opened !== target);
+			check("cold start offers the last chat", !!offer && typeof offer.title === "string" && offer.title.length > 0);
+			// Every later phase treats `control` as the chat already on screen, so
+			// the fresh sheet is swapped for it here rather than assumed. Outside
+			// the timed windows, so it cannot colour a measurement.
+			await bounded(service.openSession(control));
+			check("fixture chat is on screen", service.getActiveSessionPath() === control && service.getSnapshot().messages.length === 1);
 			return { manager, service };
 		};
 		const measure = async (label, operation, expected, scope) => {
