@@ -120,6 +120,36 @@ describe("extensionsDefinitions", () => {
 		await settle();
 	});
 
+	it.each(["en", "zh-cn"] as const)("offers the workflow engine switch, off by default, in %s", async language => {
+		const t = getT(language);
+		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
+		const row = definitions.find(item => "control" in item && item.control?.key === "workflowEnabled");
+		expect(row).toBeDefined();
+		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Workflow toggle missing");
+		expect(row.name).toBe(t.t("extensions.workflowName"));
+		expect(row.desc).toBe(t.t("extensions.workflowDesc"));
+		// Off, not on: codemode took the orchestration seat. The row is a plain
+		// toggle rather than a `disabledExtensions` entry because workflow is a
+		// built-in tool, and a blocklist of extension ids would misname it.
+		expect(row.control.defaultValue).toBe(false);
+		await settle();
+	});
+
+	it.each(["en", "zh-cn"] as const)("offers the workflow engine switch, off by default, in %s", async language => {
+		const t = getT(language);
+		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
+		const row = definitions.find(item => "control" in item && item.control?.key === "workflowEnabled");
+		expect(row).toBeDefined();
+		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Workflow toggle missing");
+		expect(row.name).toBe(t.t("extensions.workflowName"));
+		expect(row.desc).toBe(t.t("extensions.workflowDesc"));
+		// Off, not on: codemode took the orchestration seat. The row is a plain
+		// toggle rather than a `disabledExtensions` entry because workflow is a
+		// built-in tool, and a blocklist of extension ids would misname it.
+		expect(row.control.defaultValue).toBe(false);
+		await settle();
+	});
+
 	it("declares both sections as lists, so their rows are indexed and mutable", async () => {
 		const definitions = extensionsDefinitions(stubHost(), new SettingsPanelState());
 		await settle();

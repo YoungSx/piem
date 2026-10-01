@@ -5936,7 +5936,10 @@ export class ObsidianAgentService {
 			// One orchestration tool per set, top level only conceptually — a
 			// workflow's own children are leaves and never receive it, because they
 			// run at the subagent depth limit where the delegation tools are absent.
-			this.workflowTool,
+			// Off unless the user asked for it: `codemode` took over the seat this
+			// tool held, and the engine stays in the bundle (43 KiB) so the switch is
+			// reversible rather than a deletion. See {@link ../settings}.
+			...(this.getSettings().workflowEnabled === true ? [this.workflowTool] : []),
 			...(rt.communityHost?.tools ?? []),
 		].map((tool) => {
 			if (!tool.execute) {

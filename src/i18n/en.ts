@@ -60,6 +60,8 @@ export const en = {
 		included: "Built-in Pi extensions",
 		description: "These integrations ship with Piem and load into every chat by default. Web search and draft rewriting send data to the current provider and may cost extra.",
 		applyNote: "Turning one off or on takes effect in your next chat, or after the next Stop.",
+		workflowName: "Workflow engine",
+		workflowDesc: "Adds run_workflow, for running a scripted sequence of agent steps in one go. Off by default since codemode covers the same ground; turn it on to get the fixed, repeatable version back.",
 		catalog: {
 			webSearchName: "Web search",
 			webSearchDesc: "Lets the agent search the web through the current provider. Queries and any supplied URLs go to that provider and may cost extra.",
