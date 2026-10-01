@@ -1,4 +1,5 @@
 import type { JsonObject } from "@earendil-works/pi-ai";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { captureContext } from "../testUtils/captureContext";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
@@ -6,7 +7,7 @@ import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat } from "obsidian";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { AgentToolResult, StreamFn } from "@earendil-works/pi-agent-core";
+import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { stubWindowMembers } from "../testUtils/windowStub";
 import { webcrypto } from "node:crypto";

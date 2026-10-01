@@ -36,6 +36,56 @@ import type {
 export const DEFAULT_INLINE_BUDGET = 3000;
 
 /**
+ * How much of a script's printed output reaches the model, in tokens.
+ *
+ * Every `text()` and `console.*` line counts, and they all go into the tool result
+ * the *next* request carries — so an uncapped script printing in a loop does not
+ * exhaust the VM, it exhausts the context, or draws a provider 400. Upstream
+ * parses `max_output_tokens` and never applies it; 10 000 is its documented default
+ * and is what this ships.
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
+
+/** The most a script may ask for, whatever it asks for. */
+const MAX_ALLOWED_OUTPUT_TOKENS = 50_000;
+
+/**
+ * The longest a script may run, whatever it asks for.
+ *
+ * Ten minutes. Long enough that a legitimately slow vault-wide sweep finishes
+ * rather than being cut off at a number that looks arbitrary, and short enough
+ * that a runaway ends while the user still has the app open. The default with no
+ * options line is two minutes (`sandbox.ts`).
+ *
+ * The clamp exists because upstream's parser accepts any positive integer: a model
+ * asking for 86 400 000 would otherwise get a worker pinned until they closed
+ * Obsidian.
+ */
+const MAX_ALLOWED_TIMEOUT_MS = 600_000;
+
+/**
+ * How much of a script's printed output reaches the model, in tokens.
+ *
+ * Every `text()` and `console.*` line counts, and they all go into the tool result
+ * the *next* request carries — so an uncapped script printing in a loop does not
+ * exhaust the VM, it exhausts the context, or draws a provider 400. Upstream
+ * parses `max_output_tokens` and never applies it; 10 000 is its documented default
+ * and is what this ships.
+ */
+/** The most a script may ask for, whatever it asks for. */
+/**
+ * The longest a script may run, whatever it asks for.
+ *
+ * Ten minutes. Long enough that a legitimately slow vault-wide sweep finishes
+ * rather than being cut off at a number that looks arbitrary, and short enough
+ * that a runaway ends while the user still has the app open. The default with no
+ * options line is two minutes (`sandbox.ts`).
+ *
+ * The clamp exists because upstream's parser accepts any positive integer: a model
+ * asking for 86 400 000 would otherwise get a worker pinned until they closed
+ * Obsidian.
+ */
+/**
  * Four characters per token. Rough, but it only has to decide whether a block
  * fits a budget; being wrong by a few tokens changes nothing, and an exact
  * tokenizer would be a dependency for that.
@@ -85,11 +135,35 @@ function toScriptValue(result: AgentToolResult): unknown {
  * the direct call skips validation and the hooks, which is exactly the layer an
  * extension installed to vet tool calls exists to run.
  */
+const SELF = "codemode";
+
+/**
+ * The tools a script may call.
+ *
+ * One exclusion, and it is load-bearing: **`codemode` itself.** A script that
+ * could call `codemode` could nest — each level is a fresh Web Worker with its own
+ * 64 MiB QuickJS VM, and nothing in the loop counts depth, so
+ * `await Promise.all(Array.from({ length: 200 }, () => tools.codemode({ code:
+ * "while (true) {}" })))` is two hundred workers on a phone. A `Promise.all` over
+ * a loop is ordinary model output, so this is reachable by accident rather than
+ * only by intent, and iOS answers that with a jetsam kill that no JavaScript error
+ * describes. It also kept the tool's own ~3000-token description inside the
+ * declaration budget it was being counted against.
+ *
+ * Nothing else is excluded. `run_workflow` and the subagent pair orchestrate just
+ * as `codemode` does, and a script fanning out through one of them is not nesting
+ * a sandbox.
+ */
 function scriptTools(tools: readonly AgentTool[], host: CodemodeToolHost): ScriptTool[] {
-	return tools.map(agentTool => ({
+	return tools
+		.filter(agentTool => agentTool.name !== SELF)
+		.map((agentTool) => ({
 		name: agentTool.name,
 		description: agentTool.description,
 		inputSchema: agentTool.parameters as CodemodeJsonSchema,
+		// pi's `executionMode` is the *primary* serialization for several vault
+		// tools (`src/tools/obsidianTools.ts`); the sandbox keeps it as a lane.
+		sequential: agentTool.executionMode === "sequential",
 		agentTool,
 		execute: async (args, { signal }) => {
 			const result = await host.executeTool(agentTool.name, (args ?? {}) as JsonObject, signal);
@@ -100,7 +174,7 @@ function scriptTools(tools: readonly AgentTool[], host: CodemodeToolHost): Scrip
 			}
 			return toScriptValue(result);
 		},
-	}));
+		}));
 }
 
 /**
@@ -132,16 +206,18 @@ reads stay inside it — only what it prints with \`text()\` or returns reaches 
 conversation — so one script can read many notes and answer with a single summary.
 
 Inside a script: \`tools\` and \`ALL_TOOLS\`; \`text(value)\` and \`console.*\` to output;
-\`exit()\` to stop early; \`store(key, value)\` and \`load(key)\` to keep a JSON value
-across calls. A tool that fails rejects, so wrap a call in \`try\` when a miss is
-survivable. The script is the body of an async function, so \`await\` at the top
-level works.
+\`exit()\` to stop early. A tool that fails rejects, so wrap a call in \`try\` when a
+miss is survivable. The script is the body of an async function, so \`await\` at
+the top level works.
+
+Each call is its own VM and nothing carries over between two calls, so a script
+that needs to remember something has to finish and be called again.
 
 A first line of \`// @options: {"timeout_ms": 180000}\` asks for more time than
-the default two minutes, for a script that genuinely needs it.
+the default two minutes, for a script that genuinely needs it; \`max_output_tokens\`
+(10000 by default) caps what the script may print — anything past it is dropped and
+the run says so, so a script that wants more should print less.
 
-A first line of \`// @options: {"timeout_ms": 180000}\` asks for more time than
-the default two minutes, for a script that genuinely needs it.
 \`\`\`js
 const hits = await tools.grep({ query: "TODO" });
 const lines = hits.split("\\n");
@@ -152,7 +228,7 @@ return lines.length + " matches";
 /** Builds the tool. */
 export function createCodemodeTool(
 	host: CodemodeToolHost,
-	options: { inlineBudget?: number; memoryLimitBytes?: number; timeoutMs?: number } = {},
+	options: { inlineBudget?: number; memoryLimitBytes?: number; timeoutMs?: number; maxOutputTokens?: number } = {},
 ): AgentTool<typeof codemodeSchema> {
 	return {
 		name: "codemode",
@@ -181,10 +257,17 @@ export function createCodemodeTool(
 				tools: scriptTools(host.tools(), host),
 				memoryLimitBytes: options.memoryLimitBytes,
 				timeoutMs: options.timeoutMs,
+				maxOutputTokens: Math.min(
+					source.options.maxOutputTokens ?? options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+					MAX_ALLOWED_OUTPUT_TOKENS,
+				),
 			});
 			let result: CodemodeResult;
 			try {
-				result = await sandbox.execute(source.code, { signal, timeoutMs: source.options.timeoutMs });
+				result = await sandbox.execute(source.code, {
+					signal,
+					timeoutMs: Math.min(source.options.timeoutMs ?? Number.POSITIVE_INFINITY, MAX_ALLOWED_TIMEOUT_MS),
+				});
 			} finally {
 				await sandbox.close();
 			}

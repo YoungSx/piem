@@ -6126,6 +6126,18 @@ export class ObsidianAgentService {
 		return this.workflowTool;
 	}
 
+	/**
+	 * The `codemode` tool, for the same reason {@link getWorkflowTool} is.
+	 *
+	 * Present whether or not the setting is on — the switch decides whether the
+	 * tool is *mounted* in a conversation, not whether the service built it. An
+	 * observer or a smoke reaching for this gets the tool and can tell the two
+	 * apart; the mounted set is read off the agent, which is what a model sees.
+	 */
+	getCodemodeTool(): AgentTool {
+		return this.codemodeTool;
+	}
+
 	/** External tools for the current settings; empty when no provider is wired. */
 	private fetchExternalTools(): Promise<AgentTool[]> {
 		return this.getExternalToolsFn();

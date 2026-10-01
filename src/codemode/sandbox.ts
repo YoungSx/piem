@@ -21,12 +21,14 @@
  *   is `terminate()`: Node's returns a Promise, a Web Worker's returns `void`.
  *   pi's host calls `.catch().then()` on it, which throws on a real phone. Every
  *   exit path here goes through {@link terminate} instead.
- * - **`SharedArrayBuffer` becomes a plain `ArrayBuffer`.** pi shares one so Bun
- *   can interrupt a thread spinning inside wasm, where `terminate()` cannot
- *   reach it. Obsidian is Electron or a WebView, neither of which is Bun, and
- *   `terminate()` is what actually ends a runaway script — measured at 301 ms in
- *   Playwright WebKit. `Atomics.store`/`load` work on a plain buffer, so the flag
- *   stays for the polite path and costs nothing.
+ * - **The `SharedArrayBuffer` interrupt flag is gone rather than downgraded.** pi
+ *   shares one so Bun can interrupt a thread spinning inside wasm, where
+ *   `terminate()` cannot reach it. A plain `ArrayBuffer` cannot stand in:
+ *   `postMessage` structured-clones its payload, so the worker would read a
+ *   different buffer from the one the host writes, and the flag would never fire.
+ *   Keeping it would be dead code under a comment calling it the graceful path.
+ *   `terminate()` is what ends a runaway script here — measured at 301 ms in
+ *   WebKit — so there is nothing here to lose.
  */
 import { toCodemodeIdentifier } from "@earendil-works/pi-codemode/identifier";
 import type {
@@ -35,11 +37,11 @@ import type {
 	CodemodeOutputItem,
 	CodemodeResult,
 	CodemodeStoreWrites,
-	CodemodeTool,
+	SandboxTool,
 	WorkerInit,
 	WorkerMessage,
 } from "./types";
-import { QUICKJS_WASM_URL } from "./runtimeAsset";
+import { quickJsWasmUrl } from "./runtimeAsset";
 import { CODEMODE_WORKER_SOURCE } from "./workerSource";
 
 /**
@@ -128,16 +130,24 @@ function parseStoreWrites(json: string): CodemodeStoreWrites {
  * a dependency on a global the plugin otherwise does not use.
  *
  * Measured in a real Obsidian: 21.5 ms to decode, 3.8 ms to compile, once.
+ *
+ * A rejected attempt is *not* cached. The realistic failure is a phone under
+ * memory pressure failing to compile 637 KB, and keeping that rejection would
+ * cost the user the feature until they reloaded Obsidian — one bad moment, no
+ * way back.
  */
 let wasmModule: Promise<WebAssembly.Module> | undefined;
 function loadWasm(): Promise<WebAssembly.Module> {
 	wasmModule ??= Promise.resolve().then(() => {
-		const [, base64] = QUICKJS_WASM_URL.split(",", 2);
+		const [, base64] = quickJsWasmUrl().split(",", 2);
 		if (base64 === undefined) throw new Error("QuickJS wasm URL carries no payload");
 		const binary = atob(base64);
 		const bytes = new Uint8Array(binary.length);
 		for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
 		return WebAssembly.compile(bytes);
+	}).catch((error: unknown) => {
+		wasmModule = undefined;
+		throw error;
 	});
 	return wasmModule;
 }
@@ -155,21 +165,29 @@ class Execution {
 	private settle!: (result: CodemodeResult) => void;
 	private worker: Worker | undefined;
 	private workerUrl: string | undefined;
+	/** Resolves when the current sequential call finishes; see {@link handleCall}. */
+	private sequentialLane: Promise<void> = Promise.resolve();
+	/** Resolves when the current sequential call finishes; see {@link handleCall}. */
 	private readonly pending = new Map<number, {
 		record: CodemodeCall | undefined;
 		controller: AbortController;
+		/** When the call went out, so a cancelled one reports its real duration. */
+		startedAt: number;
 	}>();
 	private readonly output: CodemodeOutputItem[] = [];
+	/** Output tokens spent so far, and items the ceiling refused. */
+	private spentOutput = 0;
+	private droppedOutput = 0;
+	/** Output tokens spent so far, and items the ceiling refused. */
 	private readonly calls: CodemodeCall[] = [];
-	private readonly interrupt = new ArrayBuffer(4);
 	// `window.setTimeout` returns a number in a DOM lib, matching how
 	// SessionRuntime types its own timer (`retryNoticeTimer`).
 	private timer: number | undefined;
 	private finished = false;
 
 	constructor(
-		private readonly tools: Map<string, CodemodeTool>,
-		private readonly globals: Map<string, CodemodeTool>,
+		private readonly tools: Map<string, SandboxTool>,
+		private readonly globals: Map<string, SandboxTool>,
 		private readonly code: string,
 		private readonly timeoutMs: number,
 		private readonly signal: AbortSignal | undefined,
@@ -177,6 +195,7 @@ class Execution {
 		private readonly store: Record<string, string>,
 		private readonly wasm: Promise<WebAssembly.Module>,
 		private readonly workerSource: string | undefined,
+		private readonly maxOutputTokens: number | undefined,
 	) {
 		this.promise = new Promise<CodemodeResult>(resolve => { this.settle = resolve; });
 		if (Number.isFinite(timeoutMs)) {
@@ -184,7 +203,11 @@ class Execution {
 				this.finish({ kind: "timeout", message: `Execution timed out after ${timeoutMs} ms` });
 			}, timeoutMs);
 		}
-		signal?.addEventListener("abort", this.onAbort, { once: true });
+		// Checked before the listener, not after: a listener added to an
+		// already-aborted signal never fires, so a run started that way would ignore
+		// the abort entirely and take its whole deadline.
+		if (signal?.aborted) queueMicrotask(this.onAbort);
+		else signal?.addEventListener("abort", this.onAbort, { once: true });
 		this.wasm.then(wasm => this.start(wasm), error => {
 			this.finish({ kind: "sandbox", message: `Failed to load QuickJS: ${errorMessage(error)}` });
 		});
@@ -210,7 +233,6 @@ class Execution {
 			store: this.store,
 			wasm,
 			memoryLimitBytes: this.memoryLimitBytes,
-			interrupt: this.interrupt,
 		};
 		let worker: Worker;
 		try {
@@ -227,6 +249,7 @@ class Execution {
 			const url = URL.createObjectURL(new Blob([this.workerSource ?? CODEMODE_WORKER_SOURCE], { type: "text/javascript" }));
 			this.workerUrl = url;
 			worker = new Worker(url);
+			worker.postMessage({ type: "init", ...init });
 		} catch (error) {
 			this.finish({ kind: "sandbox", message: `Failed to start worker: ${errorMessage(error)}` });
 			return;
@@ -241,7 +264,6 @@ class Execution {
 		worker.onmessageerror = () => {
 			this.finish({ kind: "sandbox", message: "Worker message could not be deserialized" });
 		};
-		worker.postMessage({ type: "init", ...init });
 	}
 
 	private handleMessage(message: WorkerMessage): void {
@@ -254,21 +276,29 @@ class Execution {
 				this.worker?.postMessage({ type: "run", code: this.code });
 				return;
 			case "output":
-				this.output.push(message.item);
+				this.pushOutput(message.item);
 				return;
 			case "call":
 				void this.handleCall(message);
 				return;
 			case "done":
-				if (message.ok) {
-					this.finish(undefined, message.value === undefined ? undefined : JSON.parse(message.value), message.writes);
-				} else {
-					// `kind` is ours, not the prelude's: it reports the name, message and
-					// stack, and nothing about which of the four failure modes this is.
-					// A script that threw is `script`; a deadline or an abort is
-					// reported from here instead, and a VM fault arrives as `crash`.
-					const { name, message: text, stack } = JSON.parse(message.error) as { name?: string; message?: string; stack?: string };
-					this.finish({ kind: "script", name, message: text ?? "Script failed", stack });
+				// Guarded because a throw here would escape `finish`, leaving the run
+				// to end at its deadline as a `timeout` — the one mislabel this split
+				// of error kinds exists to prevent. The prelude only ever sends its own
+				// `JSON.stringify` output, so this is hardening, not a live path.
+				try {
+					if (message.ok) {
+						this.finish(undefined, message.value === undefined ? undefined : JSON.parse(message.value) as unknown, message.writes);
+					} else {
+						// `kind` is ours, not the prelude's: it reports the name, message
+						// and stack, and nothing about which of the four failure modes
+						// this is. A script that threw is `script`; a deadline or an abort
+						// is reported from here instead, and a VM fault arrives as `crash`.
+						const { name, message: text, stack } = JSON.parse(message.error) as { name?: string; message?: string; stack?: string };
+						this.finish({ kind: "script", name, message: text ?? "Script failed", stack });
+					}
+				} catch (error) {
+					this.finish({ kind: "sandbox", message: `Malformed result from the sandbox: ${errorMessage(error)}` });
 				}
 				return;
 			case "crash":
@@ -276,18 +306,59 @@ class Execution {
 		}
 	}
 
+	/**
+	 * One output item, inside the ceiling.
+	 *
+	 * Whole items are dropped rather than one truncated: an image cut in half is
+	 * worse than an absent one, and a text item cut mid-word misleads a model that
+	 * quotes it back.
+	 */
+	private pushOutput(item: CodemodeOutputItem): void {
+		const budget = this.maxOutputTokens;
+		if (budget === undefined) {
+			this.output.push(item);
+			return;
+		}
+		const cost = Math.ceil((item.type === "text" ? item.text.length : item.data.length) / 4);
+		if (this.spentOutput + cost <= budget) {
+			this.spentOutput += cost;
+			this.output.push(item);
+			return;
+		}
+		this.droppedOutput++;
+	}
+
+
 	private async handleCall(message: Extract<WorkerMessage, { type: "call" }>): Promise<void> {
 		const isTool = message.target === "tool";
 		const record: CodemodeCall | undefined = isTool
 			? { name: message.name, status: "cancelled", durationMs: 0 }
 			: undefined;
 		if (record) this.calls.push(record);
+		const entry = (isTool ? this.tools : this.globals).get(message.name);
+		// A tool that pins `executionMode: "sequential"` runs one at a time against
+		// the other sequential calls in this script.
+		//
+		// Dropping the pin is not a technicality: for the frontmatter, navigation,
+		// interaction and sequential MCP tools it *is* the serialization
+		// (`src/tools/obsidianTools.ts`), none of which has an internal lock. A
+		// script doing `await Promise.all(notes.map(n =>
+		// tools.update_frontmatter(...)))` would re-introduce the interleaving
+		// issue #475 fixed, and every call would look ordinary to `tool_call`.
+		const sequential = entry?.sequential === true;
+		let release: (() => void) | undefined;
+		if (sequential) {
+			const previous = this.sequentialLane;
+			this.sequentialLane = new Promise<void>(resolve => { release = resolve; });
+			await previous;
+		}
+
 		const controller = new AbortController();
 		const startedAt = performance.now();
-		this.pending.set(message.id, { record, controller });
+		this.pending.set(message.id, { record, controller, startedAt });
+		let succeeded = false;
 		let reply: { type: "settle"; id: number; ok: boolean; payload?: string };
 		try {
-			const entry = (isTool ? this.tools : this.globals).get(message.name);
 			if (!entry) throw new Error(`Unknown ${isTool ? "tool" : "global"} "${message.name}"`);
 			// `JSON.parse` returns `any`; the tool receives it as `unknown`, which is
 			// what every executor in the loop does with a model-supplied argument.
@@ -297,18 +368,27 @@ class Execution {
 				type: "settle", id: message.id, ok: true,
 				payload: value === undefined ? undefined : JSON.stringify(value),
 			};
-			if (record) record.status = "ok";
+			succeeded = true;
 		} catch (error) {
 			// Not encoded, unlike the success branch: the prelude rejects with
 			// `new Error(payload)` verbatim, and only parses on the success path. A
 			// JSON string here would arrive at the script with quotes around it.
 			reply = { type: "settle", id: message.id, ok: false, payload: errorMessage(error) };
-			if (record) record.status = "error";
+		} finally {
+			// Released even when the tool threw, or one failure would wedge every
+			// later sequential call in this script.
+			release?.();
 		}
 		// Already finished (a timeout or an abort landed while the tool ran): the
-		// worker is gone, so the record stays `cancelled` and there is no reply.
+		// worker is gone, so the record stays `cancelled` and there is no reply. The
+		// check precedes every write to the record, because `finish` has already
+		// snapshotted this array into the result the caller holds — a late write
+		// would relabel a call the run killed.
 		if (!this.pending.delete(message.id)) return;
-		if (record) record.durationMs = performance.now() - startedAt;
+		if (record) {
+			record.status = succeeded ? "ok" : "error";
+			record.durationMs = performance.now() - startedAt;
+		}
 		this.worker?.postMessage(reply);
 	}
 
@@ -328,23 +408,45 @@ class Execution {
 		// A tool still running when the script ends is cancelled through its own
 		// signal, and its record says so rather than claiming a result.
 		for (const entry of this.pending.values()) {
-			if (entry.record) entry.record.durationMs = now - (entry.record.durationMs || now);
+			// `startedAt`, not `record.durationMs`: that field still holds its `0`
+			// initialiser here, so `|| now` collapsed to zero and a call that ran for
+			// forty seconds before a deadline recorded as 0 ms.
+			if (entry.record) entry.record.durationMs = now - entry.startedAt;
 			entry.controller.abort();
 		}
 		this.pending.clear();
 		const calls = this.calls;
-		const result: CodemodeResult = error
-			? { ok: false, error, output: this.output, calls }
-			: {
-				ok: true, value, output: this.output, calls,
-				// A failed run reports no writes: the script may have got half way
-				// through mutating the store, and pretending otherwise would hand
-				// the caller a state it never reached.
-				storeWrites: writes === undefined ? { set: {}, delete: [] } : parseStoreWrites(writes),
+		if (this.droppedOutput > 0) {
+			// The ceiling's own notice, last, so a model reading a truncated
+			// transcript is told it is truncated instead of treating what it can see
+			// as everything the script said.
+			this.output.push({
+				type: "text",
+				text: `[${this.droppedOutput} output item(s) dropped: the script printed more than the ${this.maxOutputTokens}-token limit.]`,
+			});
+		}
+		let result: CodemodeResult;
+		try {
+			result = error
+				? { ok: false, error, output: this.output, calls }
+				: {
+					ok: true, value, output: this.output, calls,
+					// A failed run reports no writes: the script may have got half way
+					// through mutating the store, and pretending otherwise would hand
+					// the caller a state it never reached.
+					storeWrites: writes === undefined ? { set: {}, delete: [] } : parseStoreWrites(writes),
+				};
+		} catch (cause) {
+			// Everything past `finished = true` is unreachable from any other exit, so
+			// a throw here would leave the worker alive and the promise unsettled for
+			// good — the caller would wait out a deadline that can no longer fire.
+			result = {
+				ok: false,
+				error: { kind: "sandbox", message: `Could not read the sandbox result: ${errorMessage(cause)}` },
+				output: this.output,
+				calls,
 			};
-		// The polite flag, then the hard stop. Set first so a script that is
-		// inside wasm gets a chance to unwind rather than dying mid-allocation.
-		Atomics.store(new Int32Array(this.interrupt), 0, 1);
+		}
 		terminate(this.worker);
 		this.worker = undefined;
 		if (this.workerUrl) URL.revokeObjectURL(this.workerUrl);
@@ -386,15 +488,15 @@ function errorMessage(error: unknown): string {
  * forty.
  */
 export class CodemodeSandbox {
-	private readonly toolsByName = new Map<string, CodemodeTool>();
-	private readonly globalsByName = new Map<string, CodemodeTool>();
+	private readonly toolsByName = new Map<string, SandboxTool>();
+	private readonly globalsByName = new Map<string, SandboxTool>();
 	private readonly running = new Set<Execution>();
 	private closed = false;
 
 	constructor(
 		private readonly options: {
-			tools?: CodemodeTool[];
-			globals?: CodemodeTool[];
+			tools?: SandboxTool[];
+			globals?: SandboxTool[];
 			timeoutMs?: number;
 			memoryLimitBytes?: number;
 			/** Already-compiled `quickjs.wasm`; defaults to the inlined data URL. */
@@ -409,6 +511,14 @@ export class CodemodeSandbox {
 			 * missing `run` post was caught.
 			 */
 			workerSource?: string;
+			/**
+			 * A ceiling on the script's printed output, in tokens.
+			 *
+			 * Applied as items arrive, not at the end: a script printing in a loop
+			 * does not run out of VM memory, it runs out of *context*, one output
+			 * item at a time, and the VM's ceiling says nothing about that.
+			 */
+			maxOutputTokens?: number;
 			/**
 			 * The worker's script, overriding the inlined build.
 			 *
@@ -442,13 +552,13 @@ export class CodemodeSandbox {
 	}
 
 	/** Throws if a tool with the same name is already registered. */
-	registerTool(tool: CodemodeTool): void {
+	registerTool(tool: SandboxTool): void {
 		if (this.toolsByName.has(tool.name)) throw new Error(`Tool "${tool.name}" is already registered`);
 		this.toolsByName.set(tool.name, tool);
 	}
 
-	get tools(): CodemodeTool[] { return [...this.toolsByName.values()]; }
-	get globals(): CodemodeTool[] { return [...this.globalsByName.values()]; }
+	get tools(): SandboxTool[] { return [...this.toolsByName.values()]; }
+	get globals(): SandboxTool[] { return [...this.globalsByName.values()]; }
 
 	/**
 	 * Runs `code`, the body of an async function: `return` and top-level `await`
@@ -473,6 +583,7 @@ export class CodemodeSandbox {
 			// for one, which is upstream's signature.
 			Promise.resolve(this.options.wasm ?? loadWasm()),
 			this.options.workerSource,
+			this.options.maxOutputTokens,
 		);
 		this.running.add(execution);
 		try {

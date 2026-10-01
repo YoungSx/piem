@@ -1,4 +1,8 @@
-import type { CodemodeOutputItem } from "@earendil-works/pi-codemode/types";
+import type {
+	CodemodeJsonSchema,
+	CodemodeOutputItem,
+	CodemodeToolContext,
+} from "@earendil-works/pi-codemode/types";
 
 /**
  * The codemode types this feature uses, in one import.
@@ -11,6 +15,44 @@ import type { CodemodeOutputItem } from "@earendil-works/pi-codemode/types";
  * the whole plugin down instead of one tool. Every re-export below is type-only,
  * so none of it survives into the bundle at all.
  */
+/**
+ * One tool or global the sandbox offers a script.
+ *
+ * `sequential` mirrors pi's `AgentTool.executionMode`, and it is not a hint: for
+ * the frontmatter, navigation, interaction and sequential MCP tools the pin *is*
+ * the serialization, so a host that drops it on the way in hands a script a way to
+ * interleave writes the agent loop would have ordered.
+ */
+export interface SandboxTool {
+	name: string;
+	description?: string;
+	inputSchema?: CodemodeJsonSchema;
+	execute(args: unknown, context: CodemodeToolContext): unknown;
+	/** Run one at a time against every other sequential call in the same script. */
+	sequential?: boolean;
+	/** Globals only: receive every argument as an array instead of the first one. */
+	spread?: boolean;
+}
+
+/**
+ * One tool or global the sandbox offers a script.
+ *
+ * `sequential` mirrors pi's `AgentTool.executionMode`, and it is not a hint: for
+ * the frontmatter, navigation, interaction and sequential MCP tools the pin *is*
+ * the serialization, so a host that drops it on the way in hands a script a way to
+ * interleave writes the agent loop would have ordered.
+ */
+export interface SandboxTool {
+	name: string;
+	description?: string;
+	inputSchema?: CodemodeJsonSchema;
+	execute(args: unknown, context: CodemodeToolContext): unknown;
+	/** Run one at a time against every other sequential call in the same script. */
+	sequential?: boolean;
+	/** Globals only: receive every argument as an array instead of the first one. */
+	spread?: boolean;
+}
+
 export type {
 	CodemodeCall,
 	CodemodeError,
@@ -30,8 +72,6 @@ export interface WorkerInit {
 	store: Record<string, string>;
 	wasm: WebAssembly.Module;
 	memoryLimitBytes?: number;
-	/** Plain `ArrayBuffer`, not `SharedArrayBuffer`: see {@link ../workerSource}. */
-	interrupt: ArrayBuffer;
 }
 
 /**

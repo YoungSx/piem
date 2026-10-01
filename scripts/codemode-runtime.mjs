@@ -169,11 +169,6 @@ export function codemodeRuntimePlugin() {
 			// rather than a second specifier keeps `sandbox.ts` and the test
 			// preload pointing at one file: an alias for a specifier nothing imports
 			// builds green and ships an empty sandbox.
-			build.onResolve({ filter: /(^|\/)runtimeAsset$/ }, args => {
-				if (args.kind !== "import-statement") return undefined;
-				return { path: args.path, namespace: "piem-codemode-asset" };
-			});
-
 			// Each specifier resolves to itself in its own namespace; `onLoad` then
 			// replaces the module with the literal it stands for.
 			build.onResolve({ filter: new RegExp(`^(${PRELUDE}|${QUICKJS}|${WASM})$`) }, args => ({
@@ -181,15 +176,14 @@ export function codemodeRuntimePlugin() {
 				namespace: "piem-codemode",
 			}));
 
+			// The wasm URL sits inside a function body on purpose. As a top-level
+			// initializer it would be evaluated when main.js loads and would allocate
+			// ~850 KB of string on every Obsidian launch, whether or not the tool was
+			// ever switched on. Parse time is zero either way, so only the allocation
+			// distinguishes the two cases, and the tool ships off.
 			build.onLoad({ filter: /.*/, namespace: "piem-codemode-asset" }, () => ({
 				contents: `export const QUICKJS_IIFE_SOURCE = ${JSON.stringify(quickjsSource)};`
-					+ `export const QUICKJS_WASM_URL = ${JSON.stringify(wasmUrl)};`,
-				loader: "js",
-			}));
-
-			build.onLoad({ filter: /.*/, namespace: "piem-codemode-asset" }, () => ({
-				contents: `export const QUICKJS_IIFE_SOURCE = ${JSON.stringify(quickjsSource)};`
-					+ `export const QUICKJS_WASM_URL = ${JSON.stringify(wasmUrl)};`,
+					+ `export function quickJsWasmUrl() { return ${JSON.stringify(wasmUrl)}; }`,
 				loader: "js",
 			}));
 

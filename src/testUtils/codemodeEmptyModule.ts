@@ -8,4 +8,10 @@
  * asserting — without pretending the sandbox can run here.
  */
 export const QUICKJS_IIFE_SOURCE = "";
-export const QUICKJS_WASM_URL = "";
+/**
+ * A function to match the shape the build emits: the point of the function is
+ * that the string is materialized on first call rather than at load.
+ */
+export function quickJsWasmUrl(): string {
+	return "";
+}

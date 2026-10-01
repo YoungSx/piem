@@ -48,12 +48,19 @@ describe("CODEMODE_WORKER_SOURCE", () => {
 		expect(CODEMODE_WORKER_SOURCE).toContain("self.onmessage");
 	});
 
-	it("uses a plain interrupt buffer, not a SharedArrayBuffer", () => {
-		// pi shares one to interrupt a thread spinning inside wasm on Bun. A
-		// WebView has no SAB unless it is cross-origin isolated, which Obsidian is
-		// not — and `Atomics.load`/`store` work on a plain ArrayBuffer, measured.
-		expect(CODEMODE_WORKER_SOURCE).toContain("new Int32Array(interrupt)");
+	it("installs no interrupt handler, and says why", () => {
+		// pi's flag exists to stop a thread spinning inside wasm *on Bun*, which
+		// `terminate()` cannot reach. A plain ArrayBuffer cannot replace it —
+		// `postMessage` structured-clones it, so the worker would read a different
+		// buffer than the host writes and the flag would never fire. Carrying it as
+		// dead code under a comment calling it the graceful path is worse than not
+		// having it.
+		//
+		// Asserted on the call, not the bare word: the comment explaining the absence
+		// names it, and an assertion on the word would fail on its own prose.
+		expect(CODEMODE_WORKER_SOURCE).not.toContain("interruptHandler:");
 		expect(CODEMODE_WORKER_SOURCE).not.toContain("SharedArrayBuffer");
+		expect(CODEMODE_WORKER_SOURCE).not.toContain("new Int32Array(interrupt)");
 	});
 
 	it("reports the bytes fd_write claims to have written", () => {
