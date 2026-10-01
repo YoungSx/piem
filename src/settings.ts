@@ -254,6 +254,16 @@ export interface PiemSettings {
 	extensionConfig?: ExtensionConfigData;
 	/** Project diagnostics are on by default; only an explicit false disables sharing. */
 	shareDiagnostics?: boolean;
+	/**
+	 * The `run_workflow` orchestration tool. Off by default, on by choice.
+	 *
+	 * Off because `codemode` took over the orchestration seat: a model that can
+	 * write a script gets the same "several calls, one result" economy without a
+	 * second engine to learn, keep warm, and pay bundle bytes for. The code stays
+	 * because {@link ../workflow} measures 43 KiB — 0.26% of what codemode added —
+	 * so deleting it would trade a working escape hatch for nothing.
+	 */
+	workflowEnabled?: boolean;
 }
 
 /**
@@ -283,6 +293,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	seededExtensionDefaults: [],
 	logLevel: DEFAULT_LOG_LEVEL,
 	shareDiagnostics: true,
+	workflowEnabled: false,
 	mcpServers: [],
 };
 
@@ -418,6 +429,7 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// intact if the user had set either.
 		mcpServers: ensureBuiltinMcpServer(normalizeMcpServers(data?.mcpServers)),
 		shareDiagnostics: data?.shareDiagnostics !== false,
+		workflowEnabled: data?.workflowEnabled === true,
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
 	// and a vault written before the field existed stays byte-identical on load.

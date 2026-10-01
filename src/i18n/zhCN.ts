@@ -54,6 +54,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		included: "内置 Pi 扩展",
 		description: "这些集成随 Piem 一起预装，默认在每段对话中加载。联网搜索和草稿改写会把数据发给当前服务商，可能额外计费。",
 		applyNote: "开关某个扩展会在下一段对话（或下次 Stop 后）生效。",
+		workflowName: "Workflow 引擎",
+		workflowDesc: "提供 run_workflow，用脚本按顺序跑一串固定的 agent 步骤。默认关闭，因为 codemode 已覆盖同样的场景；打开它能拿回那种固定、可重复的版本。",
 		catalog: {
 			webSearchName: "联网搜索",
 			webSearchDesc: "让助手通过当前服务商联网搜索。查询和指定网址会发给该服务商，可能额外计费。",

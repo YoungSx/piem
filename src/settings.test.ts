@@ -94,6 +94,60 @@ describe("normalizeSettings with disabledSkills", () => {
 	});
 });
 
+describe("normalizeSettings with workflowEnabled", () => {
+	it("ships off: an absent field means the workflow tool is not offered", () => {
+		expect(DEFAULT_SETTINGS.workflowEnabled).toBe(false);
+		expect(normalizeSettings({}).workflowEnabled).toBe(false);
+		expect(normalizeSettings(undefined).workflowEnabled).toBe(false);
+	});
+
+	it("stays on once the user turned it on", () => {
+		expect(normalizeSettings({ workflowEnabled: true }).workflowEnabled).toBe(true);
+	});
+
+	// A hand-edited data.json can hold anything; only an explicit true counts, so
+	// a corrupt value cannot silently hand the agent a second orchestration tool.
+	it("treats anything but a literal true as off", () => {
+		for (const value of ["true", 1, 0, {}, [], null] as never[]) {
+			expect(normalizeSettings({ workflowEnabled: value }).workflowEnabled).toBe(false);
+		}
+	});
+
+	it("round-trips: a normalized value survives a second pass", () => {
+		const once = normalizeSettings({ workflowEnabled: true });
+		expect(normalizeSettings(once).workflowEnabled).toBe(true);
+		const off = normalizeSettings({ workflowEnabled: false });
+		expect(normalizeSettings(off).workflowEnabled).toBe(false);
+	});
+});
+
+describe("normalizeSettings with workflowEnabled", () => {
+	it("ships off: an absent field means the workflow tool is not offered", () => {
+		expect(DEFAULT_SETTINGS.workflowEnabled).toBe(false);
+		expect(normalizeSettings({}).workflowEnabled).toBe(false);
+		expect(normalizeSettings(undefined).workflowEnabled).toBe(false);
+	});
+
+	it("stays on once the user turned it on", () => {
+		expect(normalizeSettings({ workflowEnabled: true }).workflowEnabled).toBe(true);
+	});
+
+	// A hand-edited data.json can hold anything; only an explicit true counts, so
+	// a corrupt value cannot silently hand the agent a second orchestration tool.
+	it("treats anything but a literal true as off", () => {
+		for (const value of ["true", 1, 0, {}, [], null] as never[]) {
+			expect(normalizeSettings({ workflowEnabled: value }).workflowEnabled).toBe(false);
+		}
+	});
+
+	it("round-trips: a normalized value survives a second pass", () => {
+		const once = normalizeSettings({ workflowEnabled: true });
+		expect(normalizeSettings(once).workflowEnabled).toBe(true);
+		const off = normalizeSettings({ workflowEnabled: false });
+		expect(normalizeSettings(off).workflowEnabled).toBe(false);
+	});
+});
+
 describe("normalizeSettings with disabledExtensions", () => {
 	const SCHEDULER = "@vincentff/pi-scheduler";
 	const seen = { seededExtensionDefaults: DEFAULT_DISABLED_EXTENSIONS };
