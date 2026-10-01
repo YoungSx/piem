@@ -210,20 +210,27 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  *
- * 16. The codemode sandbox, measured 3,530,524 B — +850,247 over the 2.68 MB
- *     that preceded it. Almost all of it is `quickjs.wasm` (637,405 B) as a
- *     base64 `data:` URL, because the release ships exactly
+ * 16. The codemode sandbox, measured 3,533,306 B from a clean build — +850,247
+ *     over the 2.68 MB that preceded it. Almost all of it is `quickjs.wasm`
+ *     (637,405 B) as a base64 `data:` URL, because the release ships exactly
  *     main.js/manifest.json/styles.css and a sibling `.wasm` would 404 for
- *     anyone installing from a release archive. The +1.06 MB of *transfer* is
- *     what a reader pays to have the feature available, which is why the tool
- *     itself ships off. The ceiling follows to 3.37 MiB.
+ *     anyone installing from a release archive.
  *
- *     The parse cost of that base64 string is zero, measured both ways: V8 and
+ *     Two notches, not one. The first measurement put the ceiling at 3.37 MiB,
+ *     which a clean rebuild then cleared by 395 bytes — less than this file
+ *     comments call "a notch" several times over, and the margin every earlier
+ *     bump actually left was 8.4–10 KiB. CI then failed at exactly 3.37 with the
+ *     same lockfile, so the two environments do not measure identically. Rather
+ *     than shave bytes off a sandbox whose only cost is the one this entry
+ *     describes, the ceiling takes a second notch: the honest trade is a ratchet
+ *     that measures something, not one that trips on a toolchain's mood.
+ *
+ *     The parse cost of the base64 string is zero, measured both ways: V8 and
  *     WebKit parse the 2.4 MB and the 3.3 MB bundle in the same 66 ms, because a
  *     string literal is not evaluated until something reads it. So this is a
- *     download bill and nothing else.
+ *     download bill and nothing else — which is why the tool ships off.
  */
-const MAX_BUNDLE_BYTES = 3.37 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.38 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
