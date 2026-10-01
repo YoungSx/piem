@@ -15,8 +15,18 @@ export const QUICKJS_IIFE_SOURCE: string = "";
  *
  * A URL rather than the bytes, because the whole binary is 637 KB and the bundle
  * already has to hold it: inlining it as base64 text costs 850 KB of `main.js`
- * either way, and a URL costs no more while letting `fetch` own the decode.
- * Measured in a real Obsidian: 3.8 ms to compile the result, 21.5 ms to decode the
- * URL's base64 — once, since {@link ./sandbox} caches the compiled module.
+ * either way. Measured in a real Obsidian: 21.5 ms to decode, 3.8 ms to compile,
+ * once.
+ *
+ * A **function**, not a constant, and that is the point. The build emits the
+ * string literal inside this body rather than as a top-level initializer: a
+ * top-level initializer runs while `main.js` is evaluated, so the ~850 KB string
+ * would be allocated on every Obsidian launch whether or not the tool was ever
+ * switched on. Parse time is zero either way — which is all the bundle gate
+ * measures — but resident memory is not, and the tool ships off. Inside the
+ * function the literal is materialized on first call, which is the first
+ * `codemode` invocation.
  */
-export const QUICKJS_WASM_URL: string = "";
+export function quickJsWasmUrl(): string {
+	return "";
+}

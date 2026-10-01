@@ -52,15 +52,19 @@ function crash(error) {
   post({ type: "crash", message: error && error.message ? String(error.message) : String(error) });
 }
 
-function createVM(wasm, memoryLimitBytes, interrupt) {
-  var flags = new Int32Array(interrupt);
+// No interrupt handler. pi installs one so Bun can stop a thread spinning inside
+// wasm, which Bun's terminate() cannot reach; a plain ArrayBuffer cannot stand in
+// for it, because postMessage structured-clones the buffer and the worker would
+// read a different one from the one the host writes — the flag would look wired
+// and never fire. The host ends a runaway script with terminate(), measured at
+// 301 ms in WebKit, so nothing is lost by leaving it out.
+function createVM(wasm, memoryLimitBytes) {
   return __QUICKJS_WASI__.QuickJS.create({
     wasm: wasm,
     memoryLimit: memoryLimitBytes,
     // Without this guard a deep recursion overflows the wasm stack and traps,
     // which the host cannot tell apart from a crash.
     maxStackSize: __QUICKJS_WASI__.MAX_STACK_SIZE,
-    interruptHandler: function () { return Atomics.load(flags, 0) !== 0; },
     wasi: wasiDiscard
   });
 }
@@ -157,7 +161,7 @@ self.onmessage = function (event) {
     TOOLS = message.tools || [];
     GLOBALS = message.globals || [];
     STORE = message.store || {};
-    createVM(message.wasm, message.memoryLimitBytes, message.interrupt).then(function (vm) {
+    createVM(message.wasm, message.memoryLimitBytes).then(function (vm) {
       VM = vm;
       post({ type: "ready" });
     }, crash);
@@ -259,11 +263,8 @@ ${BRIDGE_SOURCE}
  *
  * - `parentPort` becomes `onmessage`/`postMessage`.
  * - `workerData` becomes the init message the host posts first.
- * - The `SharedArrayBuffer` interrupt flag becomes a plain `ArrayBuffer`. pi
- *   shares one to stop a spinning script on Bun, where `terminate()` cannot kill
- *   a thread inside wasm. `terminate()` alone covers that case here, and
- *   `Atomics.store`/`load` work on a plain buffer (measured), so the flag is kept
- *   for the polite path and costs nothing.
+ * - The `SharedArrayBuffer` interrupt flag is gone rather than downgraded; see
+ *   `createVM` for why a plain buffer cannot stand in for it.
  * - `wasi.fd_write` is a discard that *reports* the byte count. Returning 0
  *   makes libc believe nothing was written and retry forever.
  */

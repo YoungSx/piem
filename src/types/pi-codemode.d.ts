@@ -32,8 +32,14 @@ declare module "@earendil-works/pi-codemode/quickjs-wasm" {
 }
 
 declare module "@earendil-works/pi-codemode/quickjs-wasm-url" {
-	/** `quickjs.wasm` as a `data:` URL. */
-	export const QUICKJS_WASM_URL: string;
+	/**
+	 * `quickjs.wasm` as a `data:` URL, returned rather than exported as a constant.
+	 *
+	 * A top-level constant would be evaluated when `main.js` loads and would
+	 * allocate the ~850 KB string on every Obsidian launch, whether or not the
+	 * sandbox was ever used. A function body defers that to the first call.
+	 */
+	export function quickJsWasmUrl(): string;
 }
 
 declare module "@earendil-works/pi-codemode/source" {

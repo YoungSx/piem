@@ -142,7 +142,6 @@ async function runInWorker(
 				memoryLimitBytes: options.memoryLimitBytes,
 				// A plain ArrayBuffer on purpose: no WebView is cross-origin isolated,
 				// so `SharedArrayBuffer` is `undefined` in the mobile case.
-				interrupt: new ArrayBuffer(4),
 			} satisfies Record<string, unknown>);
 		});
 	} finally {
@@ -259,13 +258,14 @@ describe("the QuickJS sandbox, running", () => {
 		expect(JSON.parse(result.payload.writes as string)).toEqual([["gone"]]);
 	}, 30_000);
 
-	it("runs against a plain-ArrayBuffer interrupt flag, which is all a WebView has", async () => {
-		// Every test above already runs this way — a WebView is not cross-origin
-		// isolated, so `SharedArrayBuffer` is `undefined` there (measured in
-		// WebKit 26.4). What is asserted here is that `Atomics.load` over the plain
-		// buffer the host really sends does not disturb a normal run.
+	it("runs with no interrupt flag at all, which is all a WebView leaves us", async () => {
+		// A WebView is not cross-origin isolated, so `SharedArrayBuffer` is
+		// `undefined` there (measured in WebKit 26.4) and no flag can cross the worker
+		// boundary. `terminate()` is the mechanism; a normal run must be undisturbed
+		// by its absence.
 		const result = await runInWorker("let s = 0; for (let i = 0; i < 1e5; i++) s += i; return s;", []);
 		expect(result.payload.ok).toBe(true);
+		expect(JSON.parse(result.payload.value as string)).toBe(4999950000);
 	}, 30_000);
 
 	it("runs the prelude's own exit() to an early success", async () => {
@@ -416,8 +416,7 @@ describe("CodemodeSandbox.execute", () => {
 	it("runs a script and returns its value", async () => {
 		const { sandbox } = sandboxWith();
 		const result = await sandbox.execute("return 2 + 3;");
-		expect(result.ok).toBe(true);
-		if (result.ok) expect(result.value).toBe(5);
+		expect(result.ok ? result.value : JSON.stringify(result)).toBe(5);
 		await sandbox.close();
 	}, 30_000);
 
@@ -600,8 +599,7 @@ describe("CodemodeSandbox.execute", () => {
 	it("runs a script and returns its value", async () => {
 		const { sandbox } = sandboxWith();
 		const result = await sandbox.execute("return 2 + 3;");
-		expect(result.ok).toBe(true);
-		if (result.ok) expect(result.value).toBe(5);
+		expect(result.ok ? result.value : JSON.stringify(result)).toBe(5);
 		await sandbox.close();
 	}, 30_000);
 
@@ -739,6 +737,230 @@ describe("CodemodeSandbox.execute", () => {
 			expect(result.error.kind).toBe("script");
 			expect(result.error.message).toMatch(/never settle|stalled/i);
 		}
+		await sandbox.close();
+	}, 30_000);
+});
+
+describe("the output ceiling", () => {
+	it("drops output past the budget and says so", async () => {
+		// The ceiling is applied as items arrive, because a script printing in a loop
+		// does not exhaust the VM — it exhausts the *context*, one item at a time,
+		// and the VM's memory ceiling says nothing about that.
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000, maxOutputTokens: 40 });
+		const result = await sandbox.execute("for (let i = 0; i < 200; i++) text('x'.repeat(400));");
+		const texts = result.output.filter((item) => item.type === "text");
+		expect(texts.length).toBeLessThan(200);
+		expect(texts.at(-1)?.text).toMatch(/output item\(s\) dropped/);
+		await sandbox.close();
+	}, 30_000);
+
+	it("keeps everything under the budget untouched", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000, maxOutputTokens: 10_000 });
+		const result = await sandbox.execute("text('one'); text('two');");
+		expect(result.output.filter((item) => item.type === "text").map((item) => item.type === "text" ? item.text : "")).toEqual(["one", "two"]);
+		await sandbox.close();
+	}, 30_000);
+
+	it("is off by default, so nothing is silently truncated", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000 });
+		const result = await sandbox.execute("for (let i = 0; i < 50; i++) text('line');");
+		expect(result.output).toHaveLength(50);
+		await sandbox.close();
+	}, 30_000);
+});
+
+describe("sequential tools", () => {
+	it("runs a sequential tool one at a time, however the script fans out", async () => {
+		// `executionMode: "sequential"` is the *primary* serialization for the
+		// frontmatter, navigation, interaction and sequential MCP tools, none of
+		// which has an internal lock. A sandbox that dispatched every call at once
+		// would drop the pin, and `Promise.all` over a loop is ordinary output.
+		let inFlight = 0;
+		let peak = 0;
+		const order: number[] = [];
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "write",
+				sequential: true,
+				execute: async (args) => {
+					inFlight++;
+					peak = Math.max(peak, inFlight);
+					await Bun.sleep(5);
+					order.push((args as { n: number }).n);
+					inFlight--;
+					return (args as { n: number }).n;
+				},
+			}],
+		});
+		const result = await sandbox.execute(
+			"await Promise.all([0,1,2,3,4].map(n => tools.write({ n }))); return 'done';",
+		);
+		expect(result.ok).toBe(true);
+		expect(peak).toBe(1);
+		// Order is preserved, so a second caller cannot interleave either.
+		expect(order).toEqual([0, 1, 2, 3, 4]);
+		await sandbox.close();
+	}, 30_000);
+
+	it("leaves a non-sequential tool free to run in parallel", async () => {
+		// The lane is only for tools that asked for it; serializing everything would
+		// throw away the concurrency the sandbox exists to provide.
+		let inFlight = 0;
+		let peak = 0;
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "read",
+				execute: async () => {
+					inFlight++;
+					peak = Math.max(peak, inFlight);
+					await Bun.sleep(5);
+					inFlight--;
+					return "ok";
+				},
+			}],
+		});
+		await sandbox.execute("await Promise.all([0,1,2,3,4].map(() => tools.read({}))); return 'done';");
+		expect(peak).toBeGreaterThan(1);
+		await sandbox.close();
+	}, 30_000);
+
+	it("releases the lane when a sequential tool throws", async () => {
+		// Otherwise one failure wedges every later sequential call in the script.
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "write",
+				sequential: true,
+				execute: async (args) => {
+					if ((args as { n: number }).n === 0) throw new Error("first failed");
+					return (args as { n: number }).n;
+				},
+			}],
+		});
+		const result = await sandbox.execute(
+			"let caught = null; try { await tools.write({ n: 0 }); } catch (e) { caught = e.message; } const after = await tools.write({ n: 1 }); return caught + '|' + after;",
+		);
+		expect(result.ok ? result.value : JSON.stringify(result)).toBe("first failed|1");
+		await sandbox.close();
+	}, 30_000);
+});
+
+describe("the output ceiling", () => {
+	it("drops output past the budget and says so", async () => {
+		// The ceiling is applied as items arrive, because a script printing in a loop
+		// does not exhaust the VM — it exhausts the *context*, one item at a time,
+		// and the VM's memory ceiling says nothing about that.
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000, maxOutputTokens: 40 });
+		const result = await sandbox.execute("for (let i = 0; i < 200; i++) text('x'.repeat(400));");
+		const texts = result.output.filter((item) => item.type === "text");
+		expect(texts.length).toBeLessThan(200);
+		expect(texts.at(-1)?.text).toMatch(/output item\(s\) dropped/);
+		await sandbox.close();
+	}, 30_000);
+
+	it("keeps everything under the budget untouched", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000, maxOutputTokens: 10_000 });
+		const result = await sandbox.execute("text('one'); text('two');");
+		expect(result.output.filter((item) => item.type === "text").map((item) => item.type === "text" ? item.text : "")).toEqual(["one", "two"]);
+		await sandbox.close();
+	}, 30_000);
+
+	it("is off by default, so nothing is silently truncated", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000 });
+		const result = await sandbox.execute("for (let i = 0; i < 50; i++) text('line');");
+		expect(result.output).toHaveLength(50);
+		await sandbox.close();
+	}, 30_000);
+});
+
+describe("sequential tools", () => {
+	it("runs a sequential tool one at a time, however the script fans out", async () => {
+		// `executionMode: "sequential"` is the *primary* serialization for the
+		// frontmatter, navigation, interaction and sequential MCP tools, none of
+		// which has an internal lock. A sandbox that dispatched every call at once
+		// would drop the pin, and `Promise.all` over a loop is ordinary output.
+		let inFlight = 0;
+		let peak = 0;
+		const order: number[] = [];
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "write",
+				sequential: true,
+				execute: async (args) => {
+					inFlight++;
+					peak = Math.max(peak, inFlight);
+					await Bun.sleep(5);
+					order.push((args as { n: number }).n);
+					inFlight--;
+					return (args as { n: number }).n;
+				},
+			}],
+		});
+		const result = await sandbox.execute(
+			"await Promise.all([0,1,2,3,4].map(n => tools.write({ n }))); return 'done';",
+		);
+		expect(result.ok).toBe(true);
+		expect(peak).toBe(1);
+		// Order is preserved, so a second caller cannot interleave either.
+		expect(order).toEqual([0, 1, 2, 3, 4]);
+		await sandbox.close();
+	}, 30_000);
+
+	it("leaves a non-sequential tool free to run in parallel", async () => {
+		// The lane is only for tools that asked for it; serializing everything would
+		// throw away the concurrency the sandbox exists to provide.
+		let inFlight = 0;
+		let peak = 0;
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "read",
+				execute: async () => {
+					inFlight++;
+					peak = Math.max(peak, inFlight);
+					await Bun.sleep(5);
+					inFlight--;
+					return "ok";
+				},
+			}],
+		});
+		await sandbox.execute("await Promise.all([0,1,2,3,4].map(() => tools.read({}))); return 'done';");
+		expect(peak).toBeGreaterThan(1);
+		await sandbox.close();
+	}, 30_000);
+
+	it("releases the lane when a sequential tool throws", async () => {
+		// Otherwise one failure wedges every later sequential call in the script.
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "write",
+				sequential: true,
+				execute: async (args) => {
+					if ((args as { n: number }).n === 0) throw new Error("first failed");
+					return (args as { n: number }).n;
+				},
+			}],
+		});
+		const result = await sandbox.execute(
+			"let caught = null; try { await tools.write({ n: 0 }); } catch (e) { caught = e.message; } const after = await tools.write({ n: 1 }); return caught + '|' + after;",
+		);
+		expect(result.ok ? result.value : JSON.stringify(result)).toBe("first failed|1");
 		await sandbox.close();
 	}, 30_000);
 });

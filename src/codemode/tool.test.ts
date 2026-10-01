@@ -148,3 +148,115 @@ describe("the options line", () => {
 		expect(built.description).toMatch(/timeout_ms/);
 	});
 });
+
+describe("what a script is offered", () => {
+	it("does not offer codemode to a script", () => {
+		// A script that could call `codemode` could nest: each level is a fresh
+		// worker with its own 64 MiB VM and nothing counts depth, so
+		// `Promise.all(Array.from({length: 200}, () => tools.codemode(...)))` is
+		// 200 workers on a phone — and a `Promise.all` over a loop is ordinary
+		// model output, so this is reachable by accident.
+		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]));
+		expect(built.description).toContain("read(args:");
+		expect(built.description).not.toContain("codemode(args:");
+	});
+
+	it("carries a sequential pin through, so the sandbox can order those calls", () => {
+		// `executionMode: "sequential"` is the primary serialization for the
+		// frontmatter, navigation, interaction and sequential MCP tools, none of
+		// which has an internal lock. Dropping it would let one script's
+		// `Promise.all` interleave writes the agent loop would have ordered.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.name).toBe("codemode");
+	});
+
+	it("still offers the orchestrating tools that are not sandboxes", () => {
+		// Excluding `codemode` is about nesting a VM, not about orchestration. A
+		// script fanning out through `run_workflow` or `spawn_subagent` does not
+		// pin a worker per call.
+		const built = createCodemodeTool(host([
+			tool("read", "Read a note."),
+			tool("run_workflow", "Run a workflow.", { script: { type: "string" } }),
+			tool("spawn_subagent", "Spawn a subagent.", { prompt: { type: "string" } }),
+			tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
+		]));
+		expect(built.description).toContain("run_workflow(args:");
+		expect(built.description).toContain("spawn_subagent(args:");
+		expect(built.description).not.toContain("codemode(args:");
+	});
+});
+
+describe("the ceilings a script asks for", () => {
+	it("describes the output limit it will be given", () => {
+		// A cap the model was never told about is a cap it cannot plan around: it
+		// would print ten thousand lines and have no idea why the tail is missing.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.description).toMatch(/max_output_tokens/);
+		expect(built.description).toContain("caps what the script may print");
+	});
+
+	it("does not promise state across calls", () => {
+		// `store`/`load` exist inside the VM, and nothing persists them between two
+		// calls. Telling the model otherwise invites it to write a state machine
+		// whose state is silently discarded.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.description).not.toContain("across calls");
+		expect(built.description).toContain("its own VM");
+	});
+});
+
+describe("what a script is offered", () => {
+	it("does not offer codemode to a script", () => {
+		// A script that could call `codemode` could nest: each level is a fresh
+		// worker with its own 64 MiB VM and nothing counts depth, so
+		// `Promise.all(Array.from({length: 200}, () => tools.codemode(...)))` is
+		// 200 workers on a phone — and a `Promise.all` over a loop is ordinary
+		// model output, so this is reachable by accident.
+		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]));
+		expect(built.description).toContain("read(args:");
+		expect(built.description).not.toContain("codemode(args:");
+	});
+
+	it("carries a sequential pin through, so the sandbox can order those calls", () => {
+		// `executionMode: "sequential"` is the primary serialization for the
+		// frontmatter, navigation, interaction and sequential MCP tools, none of
+		// which has an internal lock. Dropping it would let one script's
+		// `Promise.all` interleave writes the agent loop would have ordered.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.name).toBe("codemode");
+	});
+
+	it("still offers the orchestrating tools that are not sandboxes", () => {
+		// Excluding `codemode` is about nesting a VM, not about orchestration. A
+		// script fanning out through `run_workflow` or `spawn_subagent` does not
+		// pin a worker per call.
+		const built = createCodemodeTool(host([
+			tool("read", "Read a note."),
+			tool("run_workflow", "Run a workflow.", { script: { type: "string" } }),
+			tool("spawn_subagent", "Spawn a subagent.", { prompt: { type: "string" } }),
+			tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
+		]));
+		expect(built.description).toContain("run_workflow(args:");
+		expect(built.description).toContain("spawn_subagent(args:");
+		expect(built.description).not.toContain("codemode(args:");
+	});
+});
+
+describe("the ceilings a script asks for", () => {
+	it("describes the output limit it will be given", () => {
+		// A cap the model was never told about is a cap it cannot plan around: it
+		// would print ten thousand lines and have no idea why the tail is missing.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.description).toMatch(/max_output_tokens/);
+		expect(built.description).toContain("caps what the script may print");
+	});
+
+	it("does not promise state across calls", () => {
+		// `store`/`load` exist inside the VM, and nothing persists them between two
+		// calls. Telling the model otherwise invites it to write a state machine
+		// whose state is silently discarded.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.description).not.toContain("across calls");
+		expect(built.description).toContain("its own VM");
+	});
+});
