@@ -580,6 +580,13 @@ export const zhCN: DeepPartial<EnCopy> = {
 		deleteRestorable: "对话记录会移入回收站，之后仍可从那里恢复。",
 	},
 
+	welcome: {
+		title: "Piem",
+		version: "你正在使用 {version} 版。",
+		noNotes: "这个版本暂时还没有可报告的更新内容。",
+		dismiss: "知道了",
+	},
+
 	notifications: {
 		completed: "回复完成",
 		error: "这一轮出错了",

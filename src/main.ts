@@ -44,6 +44,7 @@ import { BuiltinSkillInstaller } from "./skills/builtinSkillInstaller";
 import { builtinSkillVault } from "./skills/builtinSkillVault";
 import { emptyBuiltinSkillReport } from "./skills/builtinSkillState";
 import { BookmarkDialogs } from "./ui/bookmarkDialogs";
+import { pendingEntries, WELCOME_ENTRIES, WelcomeModal } from "./ui/welcomeModal";
 import { PiemChatView } from "./ui/PiemChatView";
 import { PiemSubagentView } from "./ui/PiemSubagentView";
 import {
@@ -78,6 +79,8 @@ export default class PiemPlugin extends Plugin {
 	private agentService: ObsidianAgentService | null = null;
 	private bookmarkDialogs?: BookmarkDialogs;
 	private builtinSkillInstaller?: BuiltinSkillInstaller;
+	/** Open post-update dialog, if any; closed by `onunload`. */
+	private welcomeModal?: WelcomeModal;
 	private settingsTab?: PiemSettingTab;
 	private settingsWrite?: Promise<void>;
 	/**
@@ -649,9 +652,59 @@ export default class PiemPlugin extends Plugin {
 					);
 			});
 		}
+
+		// Behind the layout hook, not inline: `onload` returns before the vault
+		// has painted, so a modal opened from it appears over a half-built
+		// window. The built-in skill installer above waits for the same reason.
+		this.app.workspace.onLayoutReady(() => {
+			this.greetOnNewVersion(t);
+		});
+	}
+
+	/**
+	 * Opens the post-install / post-update dialog when the running version is
+	 * one this reader has not been greeted for.
+	 *
+	 * Obsidian has no changelog API — `obsidian.d.ts` declares no changelog
+	 * entry at all — so the comparison against the manifest is the whole
+	 * mechanism.
+	 *
+	 * A first install greets as well as an upgrade, because an absent
+	 * `lastShownVersion` is not equal to anything. That is also what the
+	 * recorded version buys: the greeting happens once per version, not once
+	 * per launch.
+	 */
+	private greetOnNewVersion(t: Translator): void {
+		const version = this.manifest.version;
+		if (this.settings.lastShownVersion === version) return;
+		const entries = pendingEntries(WELCOME_ENTRIES, this.settings.lastShownVersion, version);
+		const modal = new WelcomeModal(this.app, entries, version, t, this.log, () => {
+			if (this.settings.lastShownVersion === version) return;
+			this.settings.lastShownVersion = version;
+			// `reconfigure: false` — recording a version cannot change how the
+			// agent is wired, and a full refresh here would reconfigure a live
+			// conversation over a cosmetic dialog. The write still goes to
+			// `data.json`, so a reload cannot resurrect the greeting.
+			void this.saveSettings({ reconfigure: false }).catch((error: unknown) =>
+				this.log.warn("Could not record the greeted version", () => ({ error: String(error) })),
+			);
+		});
+		// Held so `onunload` can take it down. Obsidian does not close a plugin's
+		// modals when the plugin goes away, and a reader who disables Piem with
+		// the dialog open would otherwise be left clicking "Got it" against an
+		// unloaded plugin — `saveData` after teardown, on a logger already
+		// flushed. Same reason `BookmarkDialogs.dispose()` closes its own.
+		this.welcomeModal = modal;
+		modal.open();
 	}
 
 	onunload(): void {
+		// Closed rather than dropped: a reader who disables the plugin with the
+		// dialog open would otherwise be left clicking "Got it" against an
+		// unloaded plugin, whose `onDismiss` writes `data.json` through a logger
+		// that has already been flushed. Obsidian does not do this for us.
+		this.welcomeModal?.close();
+		this.welcomeModal = undefined;
 		this.bookmarkDialogs?.dispose();
 		this.bookmarkDialogs = undefined;
 		this.builtinSkillInstaller?.dispose();

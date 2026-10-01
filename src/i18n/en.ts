@@ -972,6 +972,18 @@ export const en = {
 		deleteRestorable: "The chat log moves to trash, so it can still be restored from there.",
 	},
 	/**
+	 * The dialog shown on a fresh install and after an update. Obsidian has no
+	 * changelog API, so the plugin draws this itself — see `ui/welcomeModal.ts`.
+	 */
+	welcome: {
+		title: "Piem",
+		version: "You're on version {version}.",
+		/** Shown when a version has no notes written for it yet. */
+		noNotes: "There's nothing new to report for this release yet.",
+		dismiss: "Got it",
+	},
+
+	/**
 	 * Floating notices for background chats the reader is not looking at: one
 	 * that finished, errored, or is waiting on an `ask_user`. The panel already
 	 * escalates a question to a modal when it is not on screen at all (#237);
