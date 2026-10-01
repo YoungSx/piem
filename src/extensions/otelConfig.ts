@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+
 /** Replaced by esbuild's `define` at build time; the repo does not own the URL. */
 declare const __PIEM_DIAGNOSTICS_ENDPOINT__: string | undefined;
 
@@ -41,6 +43,31 @@ function anonymousUserId(storage: Storage | undefined): string | undefined {
 }
 
 /**
+ * `os.type` and `os.name` as the OpenTelemetry resource conventions define them
+ * (semconv 1.41, `signal_type: entity`): `os.type` is a closed enum, and its
+ * members contain no iOS or Android — both are Darwin and Linux underneath, so
+ * they report `darwin`/`linux` there and keep the distinction a human reads in
+ * `os.name`, whose own examples are exactly "iOS", "Android", "Ubuntu".
+ *
+ * `os.version` and `os.description` are deliberately absent. The renderer is a
+ * web view, so the only source is `navigator.userAgent`, and a version scraped
+ * out of a UA string is a guess wearing a semconv key. An absent recommended
+ * field is honest; a wrong one is not.
+ *
+ * Nothing is reported for a platform Obsidian does not name: `Platform` exposes
+ * flags, not a platform identity, and guessing one would put a fabricated
+ * `os.type` into every span from that device.
+ */
+function operatingSystemAttributes(): Record<string, string> {
+	if (Platform.isIosApp) return { "os.type": "darwin", "os.name": "iOS" };
+	if (Platform.isAndroidApp) return { "os.type": "linux", "os.name": "Android" };
+	if (Platform.isMacOS) return { "os.type": "darwin", "os.name": "macOS" };
+	if (Platform.isWin) return { "os.type": "windows", "os.name": "Windows" };
+	if (Platform.isLinux) return { "os.type": "linux", "os.name": "Linux" };
+	return {};
+}
+
+/**
  * The renderer's persistent storage, probed through `window` the way every
  * other localStorage consumer here does. A required argument at the call site
  * rather than a default inside {@link otelEnvironment}: bun test shares one
@@ -55,12 +82,19 @@ export function hostStorage(): Storage | undefined {
 export function otelEnvironment(enabled: boolean, pluginVersion?: string, storage?: Storage): Readonly<Record<string, string>> {
 	const endpoint = diagnosticsEndpoint();
 	if (!enabled || !endpoint) return {};
+	const attributes: Record<string, string> = operatingSystemAttributes();
 	const userId = anonymousUserId(storage);
+	if (userId) attributes[USER_ID_ATTRIBUTE] = userId;
+	// `pi-otel` percent-decodes both halves of every pair (config.ts `keyValues`),
+	// so encode here rather than assuming a value can never need it.
+	const encoded = Object.entries(attributes)
+		.map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+		.join(",");
 	return {
 		OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
 		OTEL_SERVICE_NAME: "piem",
 		...(pluginVersion ? { PI_OTEL_SERVICE_VERSION: pluginVersion } : {}),
 		OTEL_METRIC_EXPORT_INTERVAL: "60000",
-		...(userId ? { OTEL_RESOURCE_ATTRIBUTES: `${USER_ID_ATTRIBUTE}=${userId}` } : {}),
+		...(encoded ? { OTEL_RESOURCE_ATTRIBUTES: encoded } : {}),
 	};
 }
