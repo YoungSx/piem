@@ -94,6 +94,38 @@ describe("normalizeSettings with disabledSkills", () => {
 	});
 });
 
+describe("normalizeSettings with codemodeEnabled", () => {
+	it("ships off: an absent field means the sandbox is not offered", () => {
+		expect(DEFAULT_SETTINGS.codemodeEnabled).toBe(false);
+		expect(normalizeSettings({}).codemodeEnabled).toBe(false);
+		expect(normalizeSettings(undefined).codemodeEnabled).toBe(false);
+	});
+
+	it("stays on once the user turned it on", () => {
+		expect(normalizeSettings({ codemodeEnabled: true }).codemodeEnabled).toBe(true);
+	});
+
+	// Only an explicit `true` counts, so a hand-edited data.json cannot quietly
+	// hand the agent a tool that runs model-written code.
+	it("treats anything but a literal true as off", () => {
+		for (const value of ["true", 1, 0, {}, [], null] as never[]) {
+			expect(normalizeSettings({ codemodeEnabled: value }).codemodeEnabled).toBe(false);
+		}
+	});
+
+	it("round-trips: a normalized value survives a second pass", () => {
+		expect(normalizeSettings(normalizeSettings({ codemodeEnabled: true })).codemodeEnabled).toBe(true);
+		expect(normalizeSettings(normalizeSettings({ codemodeEnabled: false })).codemodeEnabled).toBe(false);
+	});
+
+	// The two orchestration switches are independent: turning codemode on does not
+	// imply wanting the fixed workflow engine, and vice versa.
+	it("does not follow the workflow switch", () => {
+		expect(normalizeSettings({ codemodeEnabled: true }).workflowEnabled).toBe(false);
+		expect(normalizeSettings({ workflowEnabled: true }).codemodeEnabled).toBe(false);
+	});
+});
+
 describe("normalizeSettings with workflowEnabled", () => {
 	it("ships off: an absent field means the workflow tool is not offered", () => {
 		expect(DEFAULT_SETTINGS.workflowEnabled).toBe(false);

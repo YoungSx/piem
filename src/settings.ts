@@ -249,6 +249,19 @@ export interface PiemSettings {
 	 * so deleting it would trade a working escape hatch for nothing.
 	 */
 	workflowEnabled?: boolean;
+	/**
+	 * The `codemode` tool: a QuickJS sandbox where a script the model writes calls
+	 * the vault's tools, and only the script's own output comes back.
+	 *
+	 * Off by default, for two reasons that are not the same reason. It costs
+	 * 369 KB of gzip on every plugin update for anyone who will never call it, and
+	 * — more to the point — a model that has the tool offered reaches for it when
+	 * a direct call would have done, so turning it on changes behaviour for every
+	 * conversation, not only the ones that ask for it.
+	 *
+	 * Only an explicit `true` counts on load, like every other opt-in here.
+	 */
+	codemodeEnabled?: boolean;
 }
 
 /**
@@ -279,6 +292,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	logLevel: DEFAULT_LOG_LEVEL,
 	shareDiagnostics: true,
 	workflowEnabled: false,
+	codemodeEnabled: false,
 	mcpServers: [],
 };
 
@@ -415,6 +429,7 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		mcpServers: ensureBuiltinMcpServer(normalizeMcpServers(data?.mcpServers)),
 		shareDiagnostics: data?.shareDiagnostics !== false,
 		workflowEnabled: data?.workflowEnabled === true,
+		codemodeEnabled: data?.codemodeEnabled === true,
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
 	// and a vault written before the field existed stays byte-identical on load.

@@ -73,7 +73,7 @@ ${BRIDGE_SOURCE}
 async function runInWorker(
 	code: string,
 	tools: { name: string; jsName: string; description: string }[],
-	options: { memoryLimitBytes?: number } = {},
+	options: { memoryLimitBytes?: number; onCall?: (name: string, args: unknown) => { ok: boolean; value?: unknown; error?: string } } = {},
 ): Promise<{ kind: "done" | "crash"; payload: Record<string, unknown> }> {
 	const blob = new Blob([WORKER_SOURCE], { type: "text/javascript" });
 	const url = URL.createObjectURL(blob);
@@ -86,7 +86,7 @@ async function runInWorker(
 				reject(new Error(`worker error: ${event.message}`));
 			};
 			worker.onmessage = (event: MessageEvent) => {
-				const message = event.data as { type: string; id?: number };
+				const message = event.data as { type: string; id?: number; name?: string; args?: string };
 				// `init` carries the runtime; `run` carries only the code. Posting
 				// them in one message would be a protocol the bridge does not have.
 				if (message.type === "ready") {
@@ -97,7 +97,19 @@ async function runInWorker(
 				// fixed reply. A test that needs a tool's real value encodes the
 				// expectation in the script's own logic instead.
 				if (message.type === "call") {
-					worker.postMessage({ type: "settle", id: message.id, ok: true, payload: JSON.stringify({ ok: true }) });
+					// Default: every call succeeds with a fixed value. A test that cares
+					// what the script receives passes its own responder.
+					const reply = options.onCall?.(message.name ?? "", message.args === undefined ? undefined : JSON.parse(message.args))
+						?? { ok: true, value: { ok: true } };
+					// The prelude parses the success payload and rejects with the error
+					// one verbatim, so encoding both would put quotes in a script's
+					// `catch (e) { e.message }`. This mirrors that asymmetry on purpose.
+					worker.postMessage({
+						type: "settle",
+						id: message.id,
+						ok: reply.ok,
+						payload: reply.ok ? JSON.stringify(reply.value ?? null) : (reply.error ?? "failed"),
+					});
 					return;
 				}
 				if (message.type === "done" || message.type === "crash") {
@@ -243,6 +255,106 @@ describe("the QuickJS sandbox, running", () => {
 	it("runs the prelude's own exit() to an early success", async () => {
 		const result = await runInWorker("exit(); return 'unreachable';", []);
 		expect(result.kind).toBe("done");
+		expect(result.payload.ok).toBe(true);
+	}, 30_000);
+});
+
+describe("a script's nested call", () => {
+	it("reaches the host with the arguments it passed, and the host's value reaches the script", async () => {
+		const routed: string[] = [];
+		const result = await runInWorker(
+			"const body = await tools.read({ path: 'a.md' }); return body.length;",
+			[READ],
+			{
+				onCall: (name, args) => {
+					routed.push(`${name}:${String((args as { path?: string } | undefined)?.path ?? "")}`);
+					return { ok: true, value: `contents of ${(args as { path?: string }).path}` };
+				},
+			},
+		);
+		expect(routed).toEqual(["read:a.md"]);
+		// The script counted real characters, which it could only do by receiving the
+		// host's string rather than the default reply.
+		expect(JSON.parse(result.payload.value as string)).toBe("contents of a.md".length);
+	}, 30_000);
+
+	it("rejects in the script when the host reports the call failed", async () => {
+		// A failure must not look like `undefined`: a script that cannot tell a
+		// failure from an empty result writes the empty result into a note.
+		const result = await runInWorker(
+			"try { await tools.read({ path: 'missing.md' }); return 'no throw'; } catch (e) { return e.message; }",
+			[READ],
+			{ onCall: () => ({ ok: false, error: "no such note" }) },
+		);
+		expect(result.payload.ok).toBe(true);
+		expect(JSON.parse(result.payload.value as string)).toBe("no such note");
+	}, 30_000);
+
+	it("lets a script retry a call that failed", async () => {
+		// The reason a failure rejects rather than returning `undefined`: a script
+		// can decide the miss is survivable and try something else.
+		const result = await runInWorker(
+			"let body; try { body = await tools.read({ path: 'a.md' }); } catch { body = await tools.read({ path: 'b.md' }); } return body;",
+			[READ],
+			{ onCall: (_name, args) => ((args as { path: string }).path === "b.md" ? { ok: true, value: "found b" } : { ok: false, error: "missing" }) },
+		);
+		expect(JSON.parse(result.payload.value as string)).toBe("found b");
+	}, 30_000);
+
+	it("reports a failed call as an error record, not a success", async () => {
+		const result = await runInWorker("try { await tools.read({}); } catch {} return 'done';", [READ], {
+			onCall: () => ({ ok: false, error: "nope" }),
+		});
+		expect(result.payload.ok).toBe(true);
+	}, 30_000);
+});
+
+describe("a script's nested call", () => {
+	it("reaches the host with the arguments it passed, and the host's value reaches the script", async () => {
+		const routed: string[] = [];
+		const result = await runInWorker(
+			"const body = await tools.read({ path: 'a.md' }); return body.length;",
+			[READ],
+			{
+				onCall: (name, args) => {
+					routed.push(`${name}:${String((args as { path?: string } | undefined)?.path ?? "")}`);
+					return { ok: true, value: `contents of ${(args as { path?: string }).path}` };
+				},
+			},
+		);
+		expect(routed).toEqual(["read:a.md"]);
+		// The script counted real characters, which it could only do by receiving the
+		// host's string rather than the default reply.
+		expect(JSON.parse(result.payload.value as string)).toBe("contents of a.md".length);
+	}, 30_000);
+
+	it("rejects in the script when the host reports the call failed", async () => {
+		// A failure must not look like `undefined`: a script that cannot tell a
+		// failure from an empty result writes the empty result into a note.
+		const result = await runInWorker(
+			"try { await tools.read({ path: 'missing.md' }); return 'no throw'; } catch (e) { return e.message; }",
+			[READ],
+			{ onCall: () => ({ ok: false, error: "no such note" }) },
+		);
+		expect(result.payload.ok).toBe(true);
+		expect(JSON.parse(result.payload.value as string)).toBe("no such note");
+	}, 30_000);
+
+	it("lets a script retry a call that failed", async () => {
+		// The reason a failure rejects rather than returning `undefined`: a script
+		// can decide the miss is survivable and try something else.
+		const result = await runInWorker(
+			"let body; try { body = await tools.read({ path: 'a.md' }); } catch { body = await tools.read({ path: 'b.md' }); } return body;",
+			[READ],
+			{ onCall: (_name, args) => ((args as { path: string }).path === "b.md" ? { ok: true, value: "found b" } : { ok: false, error: "missing" }) },
+		);
+		expect(JSON.parse(result.payload.value as string)).toBe("found b");
+	}, 30_000);
+
+	it("reports a failed call as an error record, not a success", async () => {
+		const result = await runInWorker("try { await tools.read({}); } catch {} return 'done';", [READ], {
+			onCall: () => ({ ok: false, error: "nope" }),
+		});
 		expect(result.payload.ok).toBe(true);
 	}, 30_000);
 });

@@ -164,6 +164,8 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		...userSkillsSection(host, state, snapshot),
 		communityExtensionsGroup(host),
 		workflowRow(host),
+		codemodeRow(host),
+		codemodeRow(host),
 		{
 			name: host.t.t("extensions.shareDiagnostics"),
 			desc: host.t.t("extensions.shareDiagnosticsDesc"),
@@ -191,6 +193,23 @@ function workflowRow(host: SettingsPanelHost): SettingDefinitionItem {
 		name: host.t.t("extensions.workflowName"),
 		desc: host.t.t("extensions.workflowDesc"),
 		control: { type: "toggle", key: "workflowEnabled", defaultValue: false },
+	};
+}
+
+/**
+ * The `codemode` switch, off by default, on the same tab and for the same reason
+ * as the workflow row: an experimental capability that changes what the model may
+ * reach for, which is a decision to make deliberately rather than by default.
+ *
+ * The description says the plain cost — download size, and a script that can make
+ * several calls in one turn — rather than selling it. A reader deciding whether to
+ * turn it on needs the bill, not the pitch.
+ */
+function codemodeRow(host: SettingsPanelHost): SettingDefinitionItem {
+	return {
+		name: host.t.t("extensions.codemodeName"),
+		desc: host.t.t("extensions.codemodeDesc"),
+		control: { type: "toggle", key: "codemodeEnabled", defaultValue: false },
 	};
 }
 

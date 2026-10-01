@@ -60,6 +60,8 @@ export const en = {
 		included: "Built-in Pi extensions",
 		description: "These integrations ship with Piem and load into every chat by default. Web search and draft rewriting send data to the current provider and may cost extra.",
 		applyNote: "Turning one off or on takes effect in your next chat, or after the next Stop.",
+		codemodeName: "Codemode sandbox",
+		codemodeDesc: "Adds codemode: the agent can write a JavaScript script that calls your tools, with only the script's own output coming back to the conversation. Off by default because it adds about 370 KB to every plugin update and changes how the agent approaches multi-step work. Takes effect in your next chat.",
 		workflowName: "Workflow engine",
 		workflowDesc: "Adds run_workflow, for running a scripted sequence of agent steps in one go. Off by default since codemode covers the same ground; turn it on to get the fixed, repeatable version back.",
 		catalog: {
