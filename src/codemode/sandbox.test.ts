@@ -55,6 +55,23 @@ const WASM_MODULE = await WebAssembly.compile(WASM_BYTES);
 // The bridge is the source module's own constant, not a restatement: a test
 // that kept its own copy would pass against a bridge the plugin stopped using.
 const { BRIDGE_SOURCE, DISPOSAL_POLYFILL } = await import("./workerSource");
+const { CodemodeSandbox: CodemodeSandboxClass } = await import("./sandbox");
+// Imported as a value (the worker harness needs the constructor) and as a type
+// (the return annotations below). A dynamic `await import` binding satisfies
+// only the first, so the type is spelled out here rather than left to inference.
+type CodemodeSandbox = InstanceType<typeof CodemodeSandboxClass>;
+const CodemodeSandbox = CodemodeSandboxClass;
+const { stubWindowMembers } = await import("../testUtils/windowStub");
+
+// `window` for the sandbox's deadline. Obsidian always has one, and the sandbox
+// reads it so a popout window's timer throttle cannot fire
+// (`obsidianmd/prefer-window-timers`). Bun has none, so the stub is what makes
+// `execute` reachable here; the timers are the real ones, so a deadline still
+// expires.
+stubWindowMembers({
+	setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args),
+	clearTimeout: (...args: Parameters<typeof clearTimeout>) => clearTimeout(...args),
+});
 
 const WORKER_SOURCE = `"use strict";
 ${DISPOSAL_POLYFILL}
@@ -66,9 +83,8 @@ ${BRIDGE_SOURCE}
 /**
  * Runs one script with the given tools and returns the result message.
  *
- * Talks to the worker the way `sandbox.ts` does, so a protocol change breaks
- * here too — which is the point. The sandbox's own object is not reused: its
- * `loadWasm` resolves an inlined data URL that a test run does not have.
+ * Talks to the worker directly, so a protocol change breaks here too. The
+ * sandbox's own class is exercised separately below, with the wasm handed in.
  */
 async function runInWorker(
 	code: string,
@@ -356,6 +372,374 @@ describe("a script's nested call", () => {
 			onCall: () => ({ ok: false, error: "nope" }),
 		});
 		expect(result.payload.ok).toBe(true);
+	}, 30_000);
+});
+
+/**
+ * The sandbox's own class, driven end to end.
+ *
+ * Every other block here talks to the worker directly, which means none of them
+ * covers `CodemodeSandbox.execute` — the init/run handshake, the call relay, the
+ * finish path. A build that omitted the `run` post passed all sixty of them and
+ * hung in a real Obsidian for the full five-minute deadline. So these go through
+ * the class, with the wasm handed in through upstream's `wasm` option, because a
+ * test run has no inlined data URL to decode.
+ */
+describe("CodemodeSandbox.execute", () => {
+	const tools = [{
+		name: "read",
+		description: "Read a note.",
+		execute: async (args: unknown) => `contents of ${(args as { path: string }).path}`,
+	}];
+
+	function sandboxWith(onCall?: (name: string, args: unknown) => unknown): { sandbox: CodemodeSandbox; routed: string[] } {
+		const routed: string[] = [];
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			// The same script the build inlines, built here because a test run has no
+			// build. That is the whole point of the option: without it, `execute` is
+			// only reachable in a real Obsidian.
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "read",
+				description: "Read a note.",
+				execute: async (args) => {
+					routed.push(`read:${(args as { path: string }).path}`);
+					return onCall ? onCall("read", args) : `contents of ${(args as { path: string }).path}`;
+				},
+			}],
+		});
+		return { sandbox, routed };
+	}
+
+	it("runs a script and returns its value", async () => {
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("return 2 + 3;");
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value).toBe(5);
+		await sandbox.close();
+	}, 30_000);
+
+	// The regression: `ready` arrives and the host must post `run` on it. Without
+	// that post the worker idles and the call waits out the whole deadline, which is
+	// indistinguishable from a hang in a real vault.
+	it("posts the script once the worker reports its VM is ready", async () => {
+		const { sandbox, routed } = sandboxWith();
+		const result = await sandbox.execute("const body = await tools.read({ path: 'a.md' }); return body;");
+		expect(routed).toEqual(["read:a.md"]);
+		expect(result.ok).toBe(true);
+		await sandbox.close();
+	}, 30_000);
+
+	it("reports a thrown script as a script error, not a sandbox fault", async () => {
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("throw new Error('boom');");
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error.kind).toBe("script");
+			expect(result.error.message).toContain("boom");
+		}
+		await sandbox.close();
+	}, 30_000);
+
+	// A spinning script is the one the deadline exists for: the prelude's own guard
+	// only catches a promise that can never settle, not a loop that never yields.
+	it("times out a script that spins, and terminates its worker", async () => {
+		const { sandbox } = sandboxWith();
+		const started = Date.now();
+		const result = await sandbox.execute("while (true) {}", { timeoutMs: 1_000 });
+		expect(Date.now() - started).toBeLessThan(15_000);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.kind).toBe("timeout");
+		await sandbox.close();
+	}, 30_000);
+
+	it("aborts when the caller's signal fires", async () => {
+		const { sandbox } = sandboxWith();
+		const controller = new AbortController();
+		const pending = sandbox.execute("await new Promise(() => {});", { signal: controller.signal });
+		controller.abort(new Error("user stopped"));
+		const result = await pending;
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.kind).toBe("aborted");
+		await sandbox.close();
+	}, 30_000);
+
+	it("reports a call's outcome and its duration", async () => {
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("await tools.read({ path: 'x.md' }); return 1;");
+		expect(result.calls).toHaveLength(1);
+		expect(result.calls[0]).toMatchObject({ name: "read", status: "ok" });
+		expect(result.calls[0]?.durationMs).toBeGreaterThanOrEqual(0);
+		await sandbox.close();
+	}, 30_000);
+
+	it("records a failed call as an error, so the panel can say so", async () => {
+		const { sandbox } = sandboxWith(() => { throw new Error("no such note"); });
+		const result = await sandbox.execute("try { await tools.read({ path: 'y.md' }); } catch {} return 1;");
+		expect(result.calls[0]).toMatchObject({ name: "read", status: "error" });
+		await sandbox.close();
+	}, 30_000);
+
+	it("collects the script's printed output in order, and keeps the return value apart", async () => {
+		// The distinction is load-bearing: `text()` is what the model reads as the
+		// script's narration, `return` is its answer. The tool layer appends the
+		// value after the output rather than merging them, so a script that both
+		// prints and returns does not have its answer land mid-narration.
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("text('one'); text('two'); return 'three';");
+		expect(result.output.filter(item => item.type === "text").map(item => (item.type === "text" ? item.text : ""))).toEqual(["one", "two"]);
+		expect(result.ok && result.value).toBe("three");
+		await sandbox.close();
+	}, 30_000);
+
+	it("round-trips a store write back as writes, and leaves the caller's store alone", async () => {
+		const { sandbox } = sandboxWith();
+		const store: Record<string, unknown> = { kept: 1 };
+		const result = await sandbox.execute("store('k', 41); return load('kept');", { store });
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value).toBe(1);
+			expect(result.storeWrites.set).toEqual({ k: 41 });
+		}
+		// The store belongs to the caller: the sandbox reports writes, it does not
+		// apply them.
+		expect(store).toEqual({ kept: 1 });
+		await sandbox.close();
+	}, 30_000);
+
+	it("enforces the memory limit inside the script", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000, memoryLimitBytes: 8 * 1024 * 1024 });
+		const result = await sandbox.execute("const a = []; while (true) a.push(new Array(1e5).fill(0));");
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.message).toMatch(/out of memory/i);
+		await sandbox.close();
+	}, 30_000);
+
+	it("survives one run not poisoning the next", async () => {
+		// One worker and one VM per execution is what buys this: a runaway script is
+		// terminated, and the next call gets a clean runtime.
+		const first = sandboxWith();
+		await first.sandbox.execute("while (true) {}");
+		await first.sandbox.close();
+		const second = sandboxWith();
+		const result = await second.sandbox.execute("return 'clean';");
+		expect(result.ok).toBe(true);
+		await second.sandbox.close();
+	}, 30_000);
+
+	it("surfaces a throwing tool as a rejection the script can catch", async () => {
+		const { sandbox } = sandboxWith(() => { throw new Error("no such note"); });
+		const result = await sandbox.execute(
+			"let caught = null; try { await tools.read({ path: 'z.md' }); } catch (e) { caught = e.message; } return caught;",
+		);
+		expect(result.ok).toBe(true);
+		// Verbatim, not JSON-encoded: the prelude rejects with the payload as the
+		// message, so quoting it here would put quotes in a script's own error text.
+		if (result.ok) expect(result.value).toBe("no such note");
+		await sandbox.close();
+	}, 30_000);
+
+	it("fails at once on a script that waits on nothing that can settle", async () => {
+		// The prelude's own guard: no pending tool call and no timers means the wait
+		// is unresolvable. It reports a script error immediately rather than burning
+		// the deadline, which is the difference between a model that can retry and
+		// one that waits out the clock.
+		const { sandbox } = sandboxWith();
+		const started = Date.now();
+		const result = await sandbox.execute("await new Promise(() => {});");
+		expect(Date.now() - started).toBeLessThan(10_000);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error.kind).toBe("script");
+			expect(result.error.message).toMatch(/never settle|stalled/i);
+		}
+		await sandbox.close();
+	}, 30_000);
+});
+
+/**
+ * The sandbox's own class, driven end to end.
+ *
+ * Every other block here talks to the worker directly, which means none of them
+ * covers `CodemodeSandbox.execute` — the init/run handshake, the call relay, the
+ * finish path. A build that omitted the `run` post passed all sixty of them and
+ * hung in a real Obsidian for the full five-minute deadline. So these go through
+ * the class, with the wasm handed in through upstream's `wasm` option, because a
+ * test run has no inlined data URL to decode.
+ */
+describe("CodemodeSandbox.execute", () => {
+	const tools = [{
+		name: "read",
+		description: "Read a note.",
+		execute: async (args: unknown) => `contents of ${(args as { path: string }).path}`,
+	}];
+
+	function sandboxWith(onCall?: (name: string, args: unknown) => unknown): { sandbox: CodemodeSandbox; routed: string[] } {
+		const routed: string[] = [];
+		const sandbox = new CodemodeSandbox({
+			wasm: WASM_MODULE,
+			// The same script the build inlines, built here because a test run has no
+			// build. That is the whole point of the option: without it, `execute` is
+			// only reachable in a real Obsidian.
+			workerSource: WORKER_SOURCE,
+			timeoutMs: 15_000,
+			tools: [{
+				name: "read",
+				description: "Read a note.",
+				execute: async (args) => {
+					routed.push(`read:${(args as { path: string }).path}`);
+					return onCall ? onCall("read", args) : `contents of ${(args as { path: string }).path}`;
+				},
+			}],
+		});
+		return { sandbox, routed };
+	}
+
+	it("runs a script and returns its value", async () => {
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("return 2 + 3;");
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.value).toBe(5);
+		await sandbox.close();
+	}, 30_000);
+
+	// The regression: `ready` arrives and the host must post `run` on it. Without
+	// that post the worker idles and the call waits out the whole deadline, which is
+	// indistinguishable from a hang in a real vault.
+	it("posts the script once the worker reports its VM is ready", async () => {
+		const { sandbox, routed } = sandboxWith();
+		const result = await sandbox.execute("const body = await tools.read({ path: 'a.md' }); return body;");
+		expect(routed).toEqual(["read:a.md"]);
+		expect(result.ok).toBe(true);
+		await sandbox.close();
+	}, 30_000);
+
+	it("reports a thrown script as a script error, not a sandbox fault", async () => {
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("throw new Error('boom');");
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error.kind).toBe("script");
+			expect(result.error.message).toContain("boom");
+		}
+		await sandbox.close();
+	}, 30_000);
+
+	// A spinning script is the one the deadline exists for: the prelude's own guard
+	// only catches a promise that can never settle, not a loop that never yields.
+	it("times out a script that spins, and terminates its worker", async () => {
+		const { sandbox } = sandboxWith();
+		const started = Date.now();
+		const result = await sandbox.execute("while (true) {}", { timeoutMs: 1_000 });
+		expect(Date.now() - started).toBeLessThan(15_000);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.kind).toBe("timeout");
+		await sandbox.close();
+	}, 30_000);
+
+	it("aborts when the caller's signal fires", async () => {
+		const { sandbox } = sandboxWith();
+		const controller = new AbortController();
+		const pending = sandbox.execute("await new Promise(() => {});", { signal: controller.signal });
+		controller.abort(new Error("user stopped"));
+		const result = await pending;
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.kind).toBe("aborted");
+		await sandbox.close();
+	}, 30_000);
+
+	it("reports a call's outcome and its duration", async () => {
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("await tools.read({ path: 'x.md' }); return 1;");
+		expect(result.calls).toHaveLength(1);
+		expect(result.calls[0]).toMatchObject({ name: "read", status: "ok" });
+		expect(result.calls[0]?.durationMs).toBeGreaterThanOrEqual(0);
+		await sandbox.close();
+	}, 30_000);
+
+	it("records a failed call as an error, so the panel can say so", async () => {
+		const { sandbox } = sandboxWith(() => { throw new Error("no such note"); });
+		const result = await sandbox.execute("try { await tools.read({ path: 'y.md' }); } catch {} return 1;");
+		expect(result.calls[0]).toMatchObject({ name: "read", status: "error" });
+		await sandbox.close();
+	}, 30_000);
+
+	it("collects the script's printed output in order, and keeps the return value apart", async () => {
+		// The distinction is load-bearing: `text()` is what the model reads as the
+		// script's narration, `return` is its answer. The tool layer appends the
+		// value after the output rather than merging them, so a script that both
+		// prints and returns does not have its answer land mid-narration.
+		const { sandbox } = sandboxWith();
+		const result = await sandbox.execute("text('one'); text('two'); return 'three';");
+		expect(result.output.filter(item => item.type === "text").map(item => (item.type === "text" ? item.text : ""))).toEqual(["one", "two"]);
+		expect(result.ok && result.value).toBe("three");
+		await sandbox.close();
+	}, 30_000);
+
+	it("round-trips a store write back as writes, and leaves the caller's store alone", async () => {
+		const { sandbox } = sandboxWith();
+		const store: Record<string, unknown> = { kept: 1 };
+		const result = await sandbox.execute("store('k', 41); return load('kept');", { store });
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value).toBe(1);
+			expect(result.storeWrites.set).toEqual({ k: 41 });
+		}
+		// The store belongs to the caller: the sandbox reports writes, it does not
+		// apply them.
+		expect(store).toEqual({ kept: 1 });
+		await sandbox.close();
+	}, 30_000);
+
+	it("enforces the memory limit inside the script", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: 15_000, memoryLimitBytes: 8 * 1024 * 1024 });
+		const result = await sandbox.execute("const a = []; while (true) a.push(new Array(1e5).fill(0));");
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.message).toMatch(/out of memory/i);
+		await sandbox.close();
+	}, 30_000);
+
+	it("survives one run not poisoning the next", async () => {
+		// One worker and one VM per execution is what buys this: a runaway script is
+		// terminated, and the next call gets a clean runtime.
+		const first = sandboxWith();
+		await first.sandbox.execute("while (true) {}");
+		await first.sandbox.close();
+		const second = sandboxWith();
+		const result = await second.sandbox.execute("return 'clean';");
+		expect(result.ok).toBe(true);
+		await second.sandbox.close();
+	}, 30_000);
+
+	it("surfaces a throwing tool as a rejection the script can catch", async () => {
+		const { sandbox } = sandboxWith(() => { throw new Error("no such note"); });
+		const result = await sandbox.execute(
+			"let caught = null; try { await tools.read({ path: 'z.md' }); } catch (e) { caught = e.message; } return caught;",
+		);
+		expect(result.ok).toBe(true);
+		// Verbatim, not JSON-encoded: the prelude rejects with the payload as the
+		// message, so quoting it here would put quotes in a script's own error text.
+		if (result.ok) expect(result.value).toBe("no such note");
+		await sandbox.close();
+	}, 30_000);
+
+	it("fails at once on a script that waits on nothing that can settle", async () => {
+		// The prelude's own guard: no pending tool call and no timers means the wait
+		// is unresolvable. It reports a script error immediately rather than burning
+		// the deadline, which is the difference between a model that can retry and
+		// one that waits out the clock.
+		const { sandbox } = sandboxWith();
+		const started = Date.now();
+		const result = await sandbox.execute("await new Promise(() => {});");
+		expect(Date.now() - started).toBeLessThan(10_000);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error.kind).toBe("script");
+			expect(result.error.message).toMatch(/never settle|stalled/i);
+		}
+		await sandbox.close();
 	}, 30_000);
 });
 

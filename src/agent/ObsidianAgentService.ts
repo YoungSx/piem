@@ -1321,7 +1321,13 @@ export class ObsidianAgentService {
 				signal,
 			},
 		);
-		return outcome.result;
+		// `isError` lives on the *outcome*, not on the result: `runToolCall` reports
+		// an unknown tool and a schema mismatch by setting it there while leaving
+		// `result` as the message. Returning `result` alone would hand the script a
+		// resolved promise holding the words "Tool not found", and a script that
+		// cannot tell a failure from an empty result writes the empty result into a
+		// note.
+		return { ...outcome.result, isError: outcome.isError };
 	}
 
 	// --- runtime pool (issue #235) ---

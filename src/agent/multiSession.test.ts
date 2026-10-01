@@ -6,7 +6,7 @@ import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat } from "obsidian";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult, StreamFn } from "@earendil-works/pi-agent-core";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { stubWindowMembers } from "../testUtils/windowStub";
 import { webcrypto } from "node:crypto";
@@ -1355,5 +1355,133 @@ describe("codemode ships off unless the user asked for it", () => {
 		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
 		expect(mounted).toContain("read");
 		expect(mounted).toContain("codemode");
+	}, 30_000);
+});
+
+describe("a codemode script's nested call goes through the agent's own tool path", () => {
+	/**
+	 * The last seam the unit tests cannot reach.
+	 *
+	 * `sandbox.test.ts` proves a script's call reaches whatever host it is given,
+	 * but not that the host is `runToolCall` — which is the difference between a
+	 * nested call and a direct one. This drives the real service with a real agent
+	 * and calls the private bridge, because that is the only place the wiring
+	 * exists.
+	 */
+	async function nestedCall(settings: PiemSettings, args: { name: string; args: JsonObject }): Promise<AgentToolResult> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				// One completed reply, so an agent exists with its tool set mounted.
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			const bridge = (service as unknown as {
+				executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
+			}).executeNestedTool.bind(service);
+			return await bridge(args.name, args.args, new AbortController().signal);
+		} finally {
+			service.dispose();
+		}
+	}
+
+	it("runs a real tool and hands the script its content", async () => {
+		// Valid against `grep`'s own schema, so the only thing left to prove is that
+		// the call reached the tool at all.
+		const result = await nestedCall(defaultTestSettings(), {
+			name: "grep",
+			args: { pattern: "TODO" } as JsonObject,
+		});
+		expect(result.isError).toBeFalsy();
+		// An empty vault matches nothing, and the tool says so rather than failing —
+		// which is what distinguishes "ran and found nothing" from "never ran".
+		expect(result.content?.[0]).toMatchObject({ type: "text" });
+	}, 30_000);
+
+	it("reports an unknown tool as an error rather than throwing", async () => {
+		// `runToolCall` never rejects for a tool failure; an unknown name is one.
+		// A rejection here would take the whole script down instead of letting it
+		// decide whether a miss matters.
+		const result = await nestedCall(defaultTestSettings(), {
+			name: "no_such_tool",
+			args: {} as JsonObject,
+		});
+		expect(result.isError).toBe(true);
+	}, 30_000);
+
+	it("refuses a call whose arguments do not match the tool's schema", async () => {
+		// The reason this goes through `runToolCall` and not `agentTool.execute`:
+		// validation is part of the path, so a script cannot smuggle past it.
+		const result = await nestedCall(defaultTestSettings(), {
+			name: "grep",
+			args: { wrong: 1 } as JsonObject,
+		});
+		expect(result.isError).toBe(true);
+	}, 30_000);
+});
+
+describe("a codemode script's nested call goes through the agent's own tool path", () => {
+	/**
+	 * The last seam the unit tests cannot reach.
+	 *
+	 * `sandbox.test.ts` proves a script's call reaches whatever host it is given,
+	 * but not that the host is `runToolCall` — which is the difference between a
+	 * nested call and a direct one. This drives the real service with a real agent
+	 * and calls the private bridge, because that is the only place the wiring
+	 * exists.
+	 */
+	async function nestedCall(settings: PiemSettings, args: { name: string; args: JsonObject }): Promise<AgentToolResult> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				// One completed reply, so an agent exists with its tool set mounted.
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			const bridge = (service as unknown as {
+				executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
+			}).executeNestedTool.bind(service);
+			return await bridge(args.name, args.args, new AbortController().signal);
+		} finally {
+			service.dispose();
+		}
+	}
+
+	it("runs a real tool and hands the script its content", async () => {
+		// Valid against `grep`'s own schema, so the only thing left to prove is that
+		// the call reached the tool at all.
+		const result = await nestedCall(defaultTestSettings(), {
+			name: "grep",
+			args: { pattern: "TODO" } as JsonObject,
+		});
+		expect(result.isError).toBeFalsy();
+		// An empty vault matches nothing, and the tool says so rather than failing —
+		// which is what distinguishes "ran and found nothing" from "never ran".
+		expect(result.content?.[0]).toMatchObject({ type: "text" });
+	}, 30_000);
+
+	it("reports an unknown tool as an error rather than throwing", async () => {
+		// `runToolCall` never rejects for a tool failure; an unknown name is one.
+		// A rejection here would take the whole script down instead of letting it
+		// decide whether a miss matters.
+		const result = await nestedCall(defaultTestSettings(), {
+			name: "no_such_tool",
+			args: {} as JsonObject,
+		});
+		expect(result.isError).toBe(true);
+	}, 30_000);
+
+	it("refuses a call whose arguments do not match the tool's schema", async () => {
+		// The reason this goes through `runToolCall` and not `agentTool.execute`:
+		// validation is part of the path, so a script cannot smuggle past it.
+		const result = await nestedCall(defaultTestSettings(), {
+			name: "grep",
+			args: { wrong: 1 } as JsonObject,
+		});
+		expect(result.isError).toBe(true);
 	}, 30_000);
 });

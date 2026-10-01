@@ -12,6 +12,7 @@ import type { JsonObject, JsonValue } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 import { renderDeclarations } from "@earendil-works/pi-codemode/declarations";
+import { parseCodemodeSource, type ParsedCodemodeSource } from "@earendil-works/pi-codemode/source";
 import { CodemodeSandbox } from "./sandbox";
 import type {
 	CodemodeCall,
@@ -135,6 +136,12 @@ Inside a script: \`tools\` and \`ALL_TOOLS\`; \`text(value)\` and \`console.*\` 
 across calls. A tool that fails rejects, so wrap a call in \`try\` when a miss is
 survivable. The script is the body of an async function, so \`await\` at the top
 level works.
+
+A first line of \`// @options: {"timeout_ms": 180000}\` asks for more time than
+the default two minutes, for a script that genuinely needs it.
+
+A first line of \`// @options: {"timeout_ms": 180000}\` asks for more time than
+the default two minutes, for a script that genuinely needs it.
 \`\`\`js
 const hits = await tools.grep({ query: "TODO" });
 const lines = hits.split("\\n");
@@ -153,6 +160,21 @@ export function createCodemodeTool(
 		description: `${USAGE}\n\n${renderToolDeclarations(scriptTools(host.tools(), host), options.inlineBudget ?? DEFAULT_INLINE_BUDGET)}`,
 		parameters: codemodeSchema,
 		execute: async (_toolCallId, params, signal) => {
+			// The script may ask for more time on its first line, which is what makes
+			// the sandbox's default deadline safe to keep short: a script that
+			// genuinely needs three minutes says so rather than being cut off.
+			// A malformed options line is the model's mistake to see, not ours to
+			// swallow, so it is reported as a script error.
+			let source: ParsedCodemodeSource;
+			try {
+				source = parseCodemodeSource(params.code);
+			} catch (error) {
+				return {
+					content: [{ type: "text", text: `Script error: ${error instanceof Error ? error.message : String(error)}` }],
+					details: undefined,
+					isError: true,
+				};
+			}
 			// Built per call so the tool list is the conversation's current one, and
 			// closed in `finally` so a thrown script cannot leave a worker running.
 			const sandbox = new CodemodeSandbox({
@@ -162,7 +184,7 @@ export function createCodemodeTool(
 			});
 			let result: CodemodeResult;
 			try {
-				result = await sandbox.execute(params.code, { signal });
+				result = await sandbox.execute(source.code, { signal, timeoutMs: source.options.timeoutMs });
 			} finally {
 				await sandbox.close();
 			}

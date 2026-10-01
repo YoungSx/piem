@@ -36,6 +36,50 @@ declare module "@earendil-works/pi-codemode/quickjs-wasm-url" {
 	export const QUICKJS_WASM_URL: string;
 }
 
+declare module "@earendil-works/pi-codemode/source" {
+	/** A token budget for the script's output. */
+	export interface CodemodeSourceOptions {
+		maxOutputTokens?: number;
+		/** Hard deadline for the whole script in milliseconds, including tool calls. */
+		timeoutMs?: number;
+	}
+	export interface ParsedCodemodeSource {
+		/**
+		 * The script with the options line replaced by an empty line, so a stack
+		 * trace still points at the line the model wrote.
+		 */
+		code: string;
+		options: CodemodeSourceOptions;
+	}
+	/**
+	 * Splits an optional first-line `// @options: {...}` from the script. Throws
+	 * {@link CodemodeSourceError} for empty input and invalid options.
+	 */
+	export function parseCodemodeSource(input: string): ParsedCodemodeSource;
+}
+
+declare module "@earendil-works/pi-codemode/source" {
+	/** A token budget for the script's output. */
+	export interface CodemodeSourceOptions {
+		maxOutputTokens?: number;
+		/** Hard deadline for the whole script in milliseconds, including tool calls. */
+		timeoutMs?: number;
+	}
+	export interface ParsedCodemodeSource {
+		/**
+		 * The script with the options line replaced by an empty line, so a stack
+		 * trace still points at the line the model wrote.
+		 */
+		code: string;
+		options: CodemodeSourceOptions;
+	}
+	/**
+	 * Splits an optional first-line `// @options: {...}` from the script. Throws
+	 * {@link CodemodeSourceError} for empty input and invalid options.
+	 */
+	export function parseCodemodeSource(input: string): ParsedCodemodeSource;
+}
+
 declare module "@earendil-works/pi-codemode/identifier" {
 	/**
 	 * The identifier a script uses for a tool: characters that are not valid in a
