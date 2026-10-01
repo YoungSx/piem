@@ -172,6 +172,9 @@ describe("tool registration", () => {
 			"insert_at_cursor",
 			"goto_location",
 			"notify",
+			// Obsidian's own settings, and the installed plugins'.
+			"get_settings",
+			"update_setting",
 			"ask_user",
 			// Last in the list, after the vault tools: a reader scanning the
 			// registration order meets the local capabilities before the outbound one.
@@ -231,6 +234,7 @@ describe("tool registration", () => {
 				"get_note_metadata",
 				"get_active_note",
 				"read_skill",
+				"get_settings",
 			].sort(),
 		);
 		expect(registered.filter((tool) => tool.executionMode === "sequential").map((tool) => tool.name).sort()).toEqual(
@@ -246,6 +250,7 @@ describe("tool registration", () => {
 				"goto_location",
 				"notify",
 				"ask_user",
+				"update_setting",
 				"web_fetch",
 			].sort(),
 		);

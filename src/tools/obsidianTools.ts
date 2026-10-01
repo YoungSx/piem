@@ -23,6 +23,7 @@ import { createFindTool, createGrepTool, createLsTool } from "./searchTools";
 import { createListTasksTool, createSummarizeTasksTool } from "./taskTools";
 import { createWebFetchTool } from "./webFetchTools";
 import { createReadSkillTool } from "./skillTools";
+import { createGetSettingsTool, createUpdateSettingTool } from "./settingsTools";
 import type { PiemSettings } from "../settings";
 import type { Keychain } from "../keychain";
 
@@ -43,12 +44,16 @@ import type { Keychain } from "../keychain";
  * object than the tools queue on.
  *
  * The remaining tools (ls, find, grep, tasks, notes, frontmatter, skills,
- * move, trash, and the screen tools — open/panel/cursor/notify/ask) are
- * application-specific
+ * move, trash, settings, and the screen tools — open/panel/cursor/notify/ask)
+ * are application-specific
  * and stay hand-written. `read_skill` serves the loaded in-memory snapshot
  * across built-in, user-level, and vault skill files. move/trash
  * stay out of the native set because pi's `FileSystem` rename replaces its
  * destination, while a user-facing move must refuse an occupied one.
+ * get_settings/update_setting stay out of the vault set entirely: they are the
+ * one door that changes Obsidian itself rather than a file in it, and their
+ * write half is deliberately narrow enough to need its own guards rather than
+ * `VaultExecutionEnv`'s whole-file semantics.
  *
  * Every tool carries an explicit `executionMode` — pi treats an omitted mark
  * as "parallel", and a batch runs concurrently unless one of its tools is
@@ -134,6 +139,12 @@ export function createObsidianTools(
 		createInsertAtCursorTool(app),
 		createGotoLocationTool(app),
 		createNotifyTool(app),
+		// Obsidian's own configuration, and the installed plugins'. Last of the
+		// screen tools because it is the only pair that changes how the app behaves
+		// rather than what the user is looking at — and the write half is the one
+		// tool here that reaches past the vault entirely.
+		createGetSettingsTool(app),
+		createUpdateSettingTool(app),
 		/*
 		 * Spread in place rather than pushed after the array, so the inventory keeps
 		 * its order whether or not a broker was supplied — the list is what the model

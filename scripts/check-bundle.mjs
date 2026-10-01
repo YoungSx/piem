@@ -192,6 +192,15 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     prompt/skills/MCP registry helpers contribute 8,107 B and the two
  *     boundary adapters 5,061 B.
  *
+ * 31. The `get_settings` / `update_setting` tool pair measures 2,539,268 B
+ *     (+11,378 B over #30). The ceiling follows to 2.43 MiB. The pair is two
+ *     hand-written tool factories over structural handles on Obsidian's own
+ *     undocumented `vault.getConfig` / `app.plugins` surface: no new dependency,
+ *     and the ~8 KiB is the typebox schemas, the bilingual descriptions, and
+ *     the kind-guard error prose. What it buys is the settings door that
+ *     replaces whole-file writes under `.obsidian/`, which is a real byte
+ *     saving in use even though it costs bytes in the bundle.
+ *
  * The ceiling moves one 0.01 MiB notch past the measured size, which is what
  * bumps 4 and 5 actually did — they left 8.4 KiB and ~10 KiB of headroom, not
  * the 80 KiB an earlier draft of this comment claimed. A notch is enough that
@@ -201,7 +210,7 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
  */
-const MAX_BUNDLE_BYTES = 2.42 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 2.43 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

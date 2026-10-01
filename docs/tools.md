@@ -16,8 +16,11 @@ does not track `.obsidian/` — the folder is invisible to the file explorer, to
 search, and to the vault API — so `ls` and `read` fall back to the filesystem
 for it. The agent can list your settings, hotkeys, workspace layout, and the
 manifests and `data.json` of every installed plugin, and can answer questions
-about them. Nothing under `.obsidian/` can be written, edited, moved or deleted
-by the agent.
+about them. No file under `.obsidian/` can be written, edited, moved or deleted
+by the agent. The one thing that changes a value there is
+[`update_setting`](#notes-and-obsidian), which replaces a single named setting
+through Obsidian's own API rather than by editing the file, and which refuses
+Piem's own settings by id.
 
 ## Model selection
 
@@ -56,6 +59,15 @@ lost.
 the agent can drive the editor, not just the file.
 
 `notify` — a Notice, for when something finished while you were elsewhere.
+
+`get_settings` · `update_setting` — Obsidian's own settings (theme, editor,
+files and links) and an installed plugin's. `get_settings` with no plugin id
+lists what is installed, which is where a plugin id comes from. Writes go
+through Obsidian's own API rather than by editing `data.json`, so a running
+plugin picks the value up immediately instead of the next save overwriting it.
+Two refusals worth knowing: Piem's own settings are off limits, and a value has
+to be the same kind as the one already stored — a list is not replaced with a
+string.
 
 `ask_user` — a question with clickable choices when the agent needs a decision,
 such as which of two notes you meant. It appears in the conversation that asked

@@ -608,6 +608,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		notify: "发出了一条提示",
 		askUser: "向你提了一个问题",
 		readSkill: "读取了一份技能",
+		getSettings: "读取了一项设置",
+		updateSetting: "改动了一项设置",
 		listTasks: "列出了任务",
 		summarizeTasks: "总结了任务",
 		webFetch: "抓取了一个网页",
