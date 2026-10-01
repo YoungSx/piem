@@ -288,7 +288,23 @@ export function createObsidianHostModule(record: PluginHostRecord, platform: Rec
 			}
 		},
 		Setting: class Setting {},
-		Modal: class Modal {},
+		// `open()` and `close()` because a Modal is constructed and opened at
+		// onload — the post-install welcome dialog does exactly that — and
+		// closed again at onunload, so a stand-in missing either fails the whole
+		// load rather than one assertion. Drawing the window is not this
+		// harness's business: it asserts the plugin loads.
+		Modal: class Modal {
+			open(): void {}
+			close(): void {}
+		},
+		// A real constructor because the welcome dialog news one up as a field
+		// initializer, so the bundle's `new Component()` runs during onload — a
+		// bare object or a missing key would fail the whole load rather than one
+		// assertion. `load`/`unload` are the two methods the dialog calls.
+		Component: class Component {
+			load(): void {}
+			unload(): void {}
+		},
 		SuggestModal: class SuggestModal {},
 		FuzzySuggestModal: class FuzzySuggestModal {},
 		// Extended by the settings panel's suggest fields at module scope, so it

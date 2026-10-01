@@ -6833,3 +6833,50 @@ input.piem-ask-other::placeholder {
 		min-height: 44px;
 	}
 }
+
+/*
+ * Post-install / post-update welcome dialog.
+ *
+ * Narrower than Obsidian's default modal: this is one column of release notes,
+ * and the default width leaves a measure too wide to read comfortably. The
+ * heading pairs the version with its date on one line, so a reader who has
+ * skipped several releases sees where they are in the backlog.
+ */
+.piem-welcome {
+	max-width: 32rem;
+}
+
+.piem-welcome__version {
+	color: var(--text-muted);
+	margin: 0 0 var(--size-4-3);
+}
+
+.piem-welcome__empty {
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.piem-welcome__heading {
+	display: flex;
+	align-items: baseline;
+	gap: var(--size-4-2);
+	margin: var(--size-4-4) 0 var(--size-4-2);
+}
+
+.piem-welcome__heading-version {
+	font-variant-numeric: tabular-nums;
+}
+
+.piem-welcome__heading-date {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+}
+
+.piem-welcome__body > :first-child {
+	margin-top: 0;
+}
+
+.piem-welcome__body > :last-child {
+	margin-bottom: 0;
+}

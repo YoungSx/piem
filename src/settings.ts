@@ -110,6 +110,21 @@ export interface PiemSettings {
 	 */
 	mobileComposerCollapsed?: boolean;
 	/**
+	 * The plugin version whose welcome dialog this reader has already been
+	 * shown, from `manifest.json` at the time it was shown.
+	 *
+	 * Bookkeeping, not a preference: nothing renders it, and the dialog decides
+	 * whether to greet by comparing it against the running manifest. It lives
+	 * here rather than in a key of its own because `normalizeSettings` rebuilds
+	 * the object from named fields on every load, so a key written straight to
+	 * `data.json` would be dropped by the next settings save and the dialog
+	 * would reappear on every restart.
+	 *
+	 * Absent means the reader has seen no dialog at the current version, which
+	 * is what makes a first install and an upgrade both greet.
+	 */
+	lastShownVersion?: string;
+	/**
 	 * How long a message typed mid-reply waits before it reaches the model —
 	 * the whole answer, or only the provider request in flight (issue #289).
 	 * Neither is an interrupt; the chip's own steer action is.
@@ -408,6 +423,12 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	// and a vault written before the field existed stays byte-identical on load.
 	if (data?.mobileComposerCollapsed === true) {
 		settings.mobileComposerCollapsed = true;
+	}
+	// Only a non-empty string counts, so a hand-edited `null` or a leftover
+	// number reads as "has not seen a dialog" and greets rather than comparing
+	// against something meaningless.
+	if (typeof data?.lastShownVersion === "string" && data.lastShownVersion.trim() !== "") {
+		settings.lastShownVersion = data.lastShownVersion;
 	}
 	if (activeModelId) {
 		settings.activeModelId = activeModelId;
