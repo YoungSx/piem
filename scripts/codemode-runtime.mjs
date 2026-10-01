@@ -154,11 +154,43 @@ export function codemodeRuntimePlugin() {
 				}
 			});
 
+			// `src/codemode/runtimeAsset.ts` is the one import site for the two
+			// inlined values, so that is what gets replaced. Resolving the *path*
+			// rather than a second specifier keeps `sandbox.ts` and the test
+			// preload pointing at one file: an alias for a specifier nothing imports
+			// builds green and ships an empty sandbox.
+			build.onResolve({ filter: /(^|\/)runtimeAsset$/ }, args => {
+				if (args.kind !== "import-statement") return undefined;
+				return { path: args.path, namespace: "piem-codemode-asset" };
+			});
+
+			// `src/codemode/runtimeAsset.ts` is the one import site for the two
+			// inlined values, so that is what gets replaced. Resolving the *path*
+			// rather than a second specifier keeps `sandbox.ts` and the test
+			// preload pointing at one file: an alias for a specifier nothing imports
+			// builds green and ships an empty sandbox.
+			build.onResolve({ filter: /(^|\/)runtimeAsset$/ }, args => {
+				if (args.kind !== "import-statement") return undefined;
+				return { path: args.path, namespace: "piem-codemode-asset" };
+			});
+
 			// Each specifier resolves to itself in its own namespace; `onLoad` then
 			// replaces the module with the literal it stands for.
 			build.onResolve({ filter: new RegExp(`^(${PRELUDE}|${QUICKJS}|${WASM})$`) }, args => ({
 				path: args.path,
 				namespace: "piem-codemode",
+			}));
+
+			build.onLoad({ filter: /.*/, namespace: "piem-codemode-asset" }, () => ({
+				contents: `export const QUICKJS_IIFE_SOURCE = ${JSON.stringify(quickjsSource)};`
+					+ `export const QUICKJS_WASM_URL = ${JSON.stringify(wasmUrl)};`,
+				loader: "js",
+			}));
+
+			build.onLoad({ filter: /.*/, namespace: "piem-codemode-asset" }, () => ({
+				contents: `export const QUICKJS_IIFE_SOURCE = ${JSON.stringify(quickjsSource)};`
+					+ `export const QUICKJS_WASM_URL = ${JSON.stringify(wasmUrl)};`,
+				loader: "js",
 			}));
 
 			build.onLoad({ filter: /.*/, namespace: "piem-codemode" }, args => {

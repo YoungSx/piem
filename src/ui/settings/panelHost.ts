@@ -254,6 +254,8 @@ export interface SettingsPanelSettings {
 	shareDiagnostics?: boolean;
 	/** Whether the `run_workflow` tool is offered; off unless the user turned it on. */
 	workflowEnabled?: boolean;
+	/** Whether the `codemode` tool is offered; off unless the user turned it on. */
+	codemodeEnabled?: boolean;
 	logLevel: LogLevelSetting;
 }
 

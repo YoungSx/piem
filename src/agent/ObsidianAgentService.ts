@@ -4,8 +4,10 @@ import { type App, Notice, parseLinktext, TFile } from "obsidian";
 import {
 	clampThinkingLevel,
 	getSupportedThinkingLevels,
+	type AssistantMessage,
 	type CredentialStore,
 	type ImageContent,
+	type JsonObject,
 	type Model,
 	type Models,
 	type RetryCallbacks,
@@ -20,6 +22,7 @@ import {
 	type AgentEvent,
 	type AgentMessage,
 	type AgentTool,
+	type AgentToolResult,
 	type Entry,
 	type AgentTurnContext,
 	type AgentTurnDecision,
@@ -28,6 +31,7 @@ import {
 	type ThinkingLevel,
 	calculateContextTokens,
 	estimateContextTokens,
+	runToolCall,
 	shouldCompact,
 } from "@earendil-works/pi-agent-core";
 import {
@@ -196,6 +200,7 @@ import {
 	createWorkflowTool,
 	createMemoryJournalStore,
 } from "../workflow/workflowTool";
+import { createCodemodeTool } from "../codemode/tool";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
 import type {
 	MemberSessionHandle,
@@ -566,6 +571,38 @@ export interface ChatSnapshot {
  */
 const RETRY_NOTICE_AFTER_MS = 2_000;
 
+/**
+ * The transcript's most recent assistant message, or `undefined`.
+ *
+ * A codemode script's tool calls are attributed to the reply that asked for the
+ * script. That message is real, and it is the one a transcript reader would expect
+ * the call to hang off.
+ */
+function lastAssistantMessage(messages: readonly AgentMessage[]): AssistantMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message && message.role === "assistant") return message;
+	}
+	return undefined;
+}
+
+/**
+ * What a call is attributed to when there is no assistant message yet.
+ *
+ * Reachable only if a script runs before the model's first reply finishes, which
+ * the loop does not normally allow; it exists so that path reports a tool error
+ * rather than throwing a `TypeError` out of the hook wiring.
+ */
+const SYNTHETIC_ASSISTANT_MESSAGE = {
+	role: "assistant",
+	content: [],
+	api: "unknown",
+	provider: "unknown",
+	model: "unknown",
+	usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+	stopReason: "stop",
+} as unknown as AssistantMessage;
+
 type SnapshotListener = (snapshot: ChatSnapshot) => void;
 
 /**
@@ -890,6 +927,15 @@ export class ObsidianAgentService {
 	 */
 	private readonly workflowTool: AgentTool;
 	/**
+	 * The `codemode` tool, built once and shared like {@link workflowTool}.
+	 *
+	 * The host it holds is a closure, not a snapshot: it reads the tool set and the
+	 * conversation from whichever runtime is current when a script calls a tool, so
+	 * a session that switches mid-script still resolves against the session the
+	 * script belongs to.
+	 */
+	private readonly codemodeTool: AgentTool;
+	/**
 	 * One runtime per open session file (issue #235). The service no longer
 	 * carries per-session state as singletons: every field that belongs to a
 	 * conversation lives on the {@link SessionRuntime} keyed by its file path,
@@ -1188,6 +1234,94 @@ export class ObsidianAgentService {
 			newRunId: () => crypto.randomUUID(),
 			agentTypes: SUBAGENT_ROLES.map((role) => role.name),
 		});
+
+		// The codemode tool holds no state of its own: every read is a closure over
+		// whatever runtime is current when a script calls a tool, so a script that
+		// outlives a session switch still resolves against the chat it belongs to.
+		// `runToolCall` is what makes a nested call the same kind of call as a
+		// model-issued one — same schema validation, same hooks, same permission
+		// checks — which `agentTool.execute` on its own would skip.
+		this.codemodeTool = createCodemodeTool({
+			tools: () => this.current()?.agent?.state.tools ?? [],
+			executeTool: (name, args, signal) =>
+				this.executeNestedTool(name, args, signal),
+		});
+	}
+
+	/**
+	 * Runs one tool call the way the agent loop runs one, for a codemode script.
+	 *
+	 * `runToolCall` rather than `tool.execute`: the direct call skips argument
+	 * validation and the `tool_call` / `tool_result` hooks, and those hooks are the
+	 * layer a community extension installs to vet tool calls. A script that could
+	 * route around them would make them advisory, so it cannot.
+	 *
+	 * Never rejects: an unknown tool, a validation failure or a throw all come back
+	 * as an error result, which the script sees as a rejected promise.
+	 */
+	private async executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult> {
+		const rt = this.current();
+		const agent = rt?.agent;
+		if (!rt || !agent) {
+			return { content: [{ type: "text", text: "No conversation is running." }], details: undefined, isError: true };
+		}
+		const community = rt.communityHost;
+		// The same non-throwing guard the loop's hooks use: a conversation replaced
+		// or closed while a script was running has no opinion about a tool call, and
+		// throwing would turn that into an error result for a call that is fine.
+		const hostIsCurrent = () =>
+			!rt.bookmarkClosing && this.runtimes.get(rt.sessionPath) === rt && rt.communityHost === community;
+		const outcome = await runToolCall(
+			{
+				id: `codemode/${name}/${crypto.randomUUID().slice(0, 8)}`,
+				type: "toolCall",
+				name,
+				arguments: args,
+			},
+			{
+				tools: agent.state.tools,
+				context: { messages: agent.state.messages },
+				// The message the loop would have attributed this call to. A script has
+				// no assistant turn of its own, so this is the most recent real one:
+				// it is what the hooks are told the call belongs to, and handing them
+				// a synthetic empty message would make a transcript audit show a call
+				// from nowhere. A fallback covers a script that somehow runs before
+				// the model's first reply.
+				assistantMessage: lastAssistantMessage(agent.state.messages) ?? SYNTHETIC_ASSISTANT_MESSAGE,
+				// The message the loop would have attributed this call to. A script has
+				// no assistant turn of its own, so this is the most recent real one:
+				// it is what the hooks are told the call belongs to, and handing them
+				// a synthetic empty message would make a transcript audit show a call
+				// from nowhere. A fallback covers a script that somehow runs before
+				// the model's first reply.
+				// The same hooks the loop installs, so an extension sees a script's
+				// calls exactly as it sees the model's own — and can still refuse one.
+				beforeToolCall: async ({ toolCall, args: validated }) =>
+					community && hostIsCurrent()
+						? community.toolCall({
+							type: "tool_call",
+							toolName: toolCall.name,
+							toolCallId: toolCall.id,
+							input: validated as Record<string, unknown>,
+						})
+						: undefined,
+				afterToolCall: async ({ toolCall, args: called, result, isError }) =>
+					community && hostIsCurrent()
+						? community.toolResult({
+							type: "tool_result",
+							toolName: toolCall.name,
+							toolCallId: toolCall.id,
+							input: called as Record<string, unknown>,
+							content: result.content ?? [],
+							details: result.details,
+							isError,
+							usage: result.usage,
+						})
+						: undefined,
+				signal,
+			},
+		);
+		return outcome.result;
 	}
 
 	// --- runtime pool (issue #235) ---
@@ -5940,6 +6074,11 @@ export class ObsidianAgentService {
 			// tool held, and the engine stays in the bundle (43 KiB) so the switch is
 			// reversible rather than a deletion. See {@link ../settings}.
 			...(this.getSettings().workflowEnabled === true ? [this.workflowTool] : []),
+			// The sandbox is opt-in for two reasons that are not one reason: it costs
+			// download, and a model that has the tool offered reaches for it when a
+			// direct call would have done — so turning it on changes every
+			// conversation, not only the ones that ask for it. See {@link ../settings}.
+			...(this.getSettings().codemodeEnabled === true ? [this.codemodeTool] : []),
 			...(rt.communityHost?.tools ?? []),
 		].map((tool) => {
 			if (!tool.execute) {

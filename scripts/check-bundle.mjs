@@ -209,8 +209,21 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * the line and gets caught here rather than on a user's phone. Re-opening a
  * large margin for a small feature would retire the ruler: a ratchet left
  * slack stops measuring anything.
+ *
+ * 16. The codemode sandbox, measured 3,530,524 B — +850,247 over the 2.68 MB
+ *     that preceded it. Almost all of it is `quickjs.wasm` (637,405 B) as a
+ *     base64 `data:` URL, because the release ships exactly
+ *     main.js/manifest.json/styles.css and a sibling `.wasm` would 404 for
+ *     anyone installing from a release archive. The +1.06 MB of *transfer* is
+ *     what a reader pays to have the feature available, which is why the tool
+ *     itself ships off. The ceiling follows to 3.37 MiB.
+ *
+ *     The parse cost of that base64 string is zero, measured both ways: V8 and
+ *     WebKit parse the 2.4 MB and the 3.3 MB bundle in the same 66 ms, because a
+ *     string literal is not evaluated until something reads it. So this is a
+ *     download bill and nothing else.
  */
-const MAX_BUNDLE_BYTES = 2.43 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.37 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

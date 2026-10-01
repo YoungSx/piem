@@ -135,18 +135,18 @@ describe("extensionsDefinitions", () => {
 		await settle();
 	});
 
-	it.each(["en", "zh-cn"] as const)("offers the workflow engine switch, off by default, in %s", async language => {
+	it.each(["en", "zh-cn"] as const)("offers the codemode switch, off by default, in %s", async language => {
 		const t = getT(language);
 		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
-		const row = definitions.find(item => "control" in item && item.control?.key === "workflowEnabled");
+		const row = definitions.find(item => "control" in item && item.control?.key === "codemodeEnabled");
 		expect(row).toBeDefined();
-		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Workflow toggle missing");
-		expect(row.name).toBe(t.t("extensions.workflowName"));
-		expect(row.desc).toBe(t.t("extensions.workflowDesc"));
-		// Off, not on: codemode took the orchestration seat. The row is a plain
-		// toggle rather than a `disabledExtensions` entry because workflow is a
-		// built-in tool, and a blocklist of extension ids would misname it.
+		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Codemode toggle missing");
+		expect(row.name).toBe(t.t("extensions.codemodeName"));
+		expect(row.desc).toBe(t.t("extensions.codemodeDesc"));
+		// Off by default, and the copy says why rather than selling it: the bill is
+		// the download and the behaviour change, and a reader deciding needs both.
 		expect(row.control.defaultValue).toBe(false);
+		expect(row.desc).toMatch(/370 KB/);
 		await settle();
 	});
 

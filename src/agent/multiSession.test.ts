@@ -1138,6 +1138,94 @@ describe("run_workflow ships off unless the user asked for it", () => {
 	}, 30_000);
 });
 
+describe("codemode ships off unless the user asked for it", () => {
+	async function names(settings: PiemSettings): Promise<string[]> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed").catch(() => undefined);
+			const agent = (service as unknown as {
+				agent?: { state: { tools: Array<{ name: string }> } };
+			}).agent;
+			return (agent?.state.tools ?? []).map(tool => tool.name);
+		} finally {
+			service.dispose();
+		}
+	}
+
+	it("offers no codemode on a vault that never turned it on", async () => {
+		expect(await names(defaultTestSettings())).not.toContain("codemode");
+	}, 30_000);
+
+	it("offers codemode once the setting is on", async () => {
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
+	}, 30_000);
+
+	// The switch is independent of the workflow one: a reader who wants the
+	// scriptable sandbox has not asked for the fixed engine, and the other way
+	// round. One toggle driving both would make them impossible to separate.
+	it("does not follow the workflow switch", async () => {
+		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
+	}, 30_000);
+
+	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
+	// instead of them, so a vault that turns it on keeps every tool it had.
+	it("leaves the rest of the tool set alone", async () => {
+		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
+		expect(mounted).toContain("read");
+		expect(mounted).toContain("codemode");
+	}, 30_000);
+});
+
+describe("codemode ships off unless the user asked for it", () => {
+	async function names(settings: PiemSettings): Promise<string[]> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed").catch(() => undefined);
+			const agent = (service as unknown as {
+				agent?: { state: { tools: Array<{ name: string }> } };
+			}).agent;
+			return (agent?.state.tools ?? []).map(tool => tool.name);
+		} finally {
+			service.dispose();
+		}
+	}
+
+	it("offers no codemode on a vault that never turned it on", async () => {
+		expect(await names(defaultTestSettings())).not.toContain("codemode");
+	}, 30_000);
+
+	it("offers codemode once the setting is on", async () => {
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
+	}, 30_000);
+
+	// The switch is independent of the workflow one: a reader who wants the
+	// scriptable sandbox has not asked for the fixed engine, and the other way
+	// round. One toggle driving both would make them impossible to separate.
+	it("does not follow the workflow switch", async () => {
+		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
+	}, 30_000);
+
+	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
+	// instead of them, so a vault that turns it on keeps every tool it had.
+	it("leaves the rest of the tool set alone", async () => {
+		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
+		expect(mounted).toContain("read");
+		expect(mounted).toContain("codemode");
+	}, 30_000);
+});
+
 describe("run_workflow ships off unless the user asked for it", () => {
 	/**
 	 * The top-level tool names the current settings produce.
@@ -1179,5 +1267,93 @@ describe("run_workflow ships off unless the user asked for it", () => {
 	// gate took the wrong slice: `read` proves the vault tools survive it.
 	it("leaves the rest of the tool set alone", async () => {
 		expect(await toolNames(defaultTestSettings())).toContain("read");
+	}, 30_000);
+});
+
+describe("codemode ships off unless the user asked for it", () => {
+	async function names(settings: PiemSettings): Promise<string[]> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed").catch(() => undefined);
+			const agent = (service as unknown as {
+				agent?: { state: { tools: Array<{ name: string }> } };
+			}).agent;
+			return (agent?.state.tools ?? []).map(tool => tool.name);
+		} finally {
+			service.dispose();
+		}
+	}
+
+	it("offers no codemode on a vault that never turned it on", async () => {
+		expect(await names(defaultTestSettings())).not.toContain("codemode");
+	}, 30_000);
+
+	it("offers codemode once the setting is on", async () => {
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
+	}, 30_000);
+
+	// The switch is independent of the workflow one: a reader who wants the
+	// scriptable sandbox has not asked for the fixed engine, and the other way
+	// round. One toggle driving both would make them impossible to separate.
+	it("does not follow the workflow switch", async () => {
+		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
+	}, 30_000);
+
+	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
+	// instead of them, so a vault that turns it on keeps every tool it had.
+	it("leaves the rest of the tool set alone", async () => {
+		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
+		expect(mounted).toContain("read");
+		expect(mounted).toContain("codemode");
+	}, 30_000);
+});
+
+describe("codemode ships off unless the user asked for it", () => {
+	async function names(settings: PiemSettings): Promise<string[]> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed").catch(() => undefined);
+			const agent = (service as unknown as {
+				agent?: { state: { tools: Array<{ name: string }> } };
+			}).agent;
+			return (agent?.state.tools ?? []).map(tool => tool.name);
+		} finally {
+			service.dispose();
+		}
+	}
+
+	it("offers no codemode on a vault that never turned it on", async () => {
+		expect(await names(defaultTestSettings())).not.toContain("codemode");
+	}, 30_000);
+
+	it("offers codemode once the setting is on", async () => {
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
+	}, 30_000);
+
+	// The switch is independent of the workflow one: a reader who wants the
+	// scriptable sandbox has not asked for the fixed engine, and the other way
+	// round. One toggle driving both would make them impossible to separate.
+	it("does not follow the workflow switch", async () => {
+		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
+		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
+	}, 30_000);
+
+	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
+	// instead of them, so a vault that turns it on keeps every tool it had.
+	it("leaves the rest of the tool set alone", async () => {
+		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
+		expect(mounted).toContain("read");
+		expect(mounted).toContain("codemode");
 	}, 30_000);
 });

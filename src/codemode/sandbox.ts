@@ -75,19 +75,6 @@ function parseTuples(json: string): string[][] {
 }
 
 /**
- * The prelude's tuples, each `[key]` or `[key, json]`.
- *
- * Narrowed element by element rather than cast: `JSON.parse` hands back `any`,
- * and a cast would move that `any` into every field instead of the one place the
- * shape is checked.
- */
-function parseTuples(json: string): string[][] {
-	const parsed: unknown = JSON.parse(json);
-	if (!Array.isArray(parsed)) return [];
-	return parsed.map(entry => (Array.isArray(entry) ? entry.map(part => String(part)) : [String(entry)]));
-}
-
-/**
  * The prelude's store writes, decoded.
  *
  * Its `serializeWrites()` emits an array of tuples — `[key]` for a delete,
@@ -271,6 +258,9 @@ class Execution {
 			};
 			if (record) record.status = "ok";
 		} catch (error) {
+			// Not encoded, unlike the success branch: the prelude rejects with
+			// `new Error(payload)` verbatim, and only parses on the success path. A
+			// JSON string here would arrive at the script with quotes around it.
 			reply = { type: "settle", id: message.id, ok: false, payload: errorMessage(error) };
 			if (record) record.status = "error";
 		}
@@ -291,7 +281,7 @@ class Execution {
 	private finish(error?: CodemodeError, value?: unknown, writes?: string): void {
 		if (this.finished) return;
 		this.finished = true;
-		window.window.clearTimeout(this.timer);
+		window.clearTimeout(this.timer);
 		this.signal?.removeEventListener("abort", this.onAbort);
 		const now = performance.now();
 		// A tool still running when the script ends is cancelled through its own
