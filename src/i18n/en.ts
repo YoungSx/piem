@@ -1013,6 +1013,8 @@ export const en = {
 		notify: "Sent a notice",
 		askUser: "Asked you a question",
 		readSkill: "Read a skill",
+		getSettings: "Read a setting",
+		updateSetting: "Changed a setting",
 		listTasks: "Listed tasks",
 		summarizeTasks: "Summarized tasks",
 		webFetch: "Fetched a web page",

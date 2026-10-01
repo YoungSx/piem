@@ -95,10 +95,18 @@ The agent can `write`, `edit`, `move_note`, and `trash_note` immediately. No
 dialog, no diff to approve, no "are you sure".
 
 One exception, enforced in code rather than drawn as a dialog: the
-configuration directory (`.obsidian/`) is read-only. The agent can read your
-settings and installed plugins' data — see
-[the agent's tools](tools.md#the-agents-tools) — and every attempt to write
-there comes back as an explicit refusal.
+configuration directory (`.obsidian/`) is not editable as files. The agent can
+read your settings and installed plugins' data — see
+[the agent's tools](tools.md#the-agents-tools) — and every attempt to `write`,
+`edit`, or `move` a file under that directory comes back as an explicit refusal.
+
+The one thing that does write there is `update_setting`, and it is deliberately
+narrower than a file edit: it replaces exactly one named setting, through
+Obsidian's own API, and refuses a value of a different kind than the one
+already stored. It is the reason a whole-file write stays refused — a file edit
+of a plugin's `data.json` drops every key the agent did not know about, while
+this cannot. What it cannot touch is Piem's own settings, which it refuses by
+id.
 
 This is a deliberate product decision, not a missing feature. What to do about
 it:

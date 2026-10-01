@@ -127,6 +127,22 @@ export const TOOL_CATALOG: Readonly<Record<string, ToolFacts>> = {
 	// Reading a skill, which is not a note — hence `other`, not `read`.
 	read_skill: { copyKey: "traceTool.readSkill", category: "other", icon: "book-open" },
 
+	// Obsidian's own settings, and an installed plugin's. Both wear `settings`:
+	// one glyph is the honest face for a pair of tools that address the same store,
+	// the same way `read` and `get_active_note` share `eye`. The read is `other`
+	// because a setting is a query, not a note; the write is `write` because it
+	// changes durable state, and the fold counting a mutation as a read is the
+	// miscount this column exists to prevent.
+	get_settings: { copyKey: "traceTool.getSettings", category: "other", icon: "settings" },
+	update_setting: { copyKey: "traceTool.updateSetting", category: "write", icon: "settings" },
+
+	// Obsidian's own settings, and an installed plugin's. Both wear `settings`:
+	// one glyph is the honest face for a pair of tools that address the same store,
+	// the same way `read` and `get_active_note` share `eye`. The read is `other`
+	// because a setting is a query, not a note; the write is `write` because it
+	// changes durable state, and the fold counting a mutation as a read is the
+	// miscount this column exists to prevent.
+
 	// Tasks, which are a query over the vault's checkboxes rather than a read of
 	// any one note.
 	list_tasks: { copyKey: "traceTool.listTasks", category: "other", icon: "list-checks" },
