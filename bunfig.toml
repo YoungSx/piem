@@ -1,4 +1,6 @@
 [test]
 # Compile scoped extension imports from the audited sources, even when a test
-# runs by itself before a production bundle has been built.
-preload = ["./src/testUtils/extensionBuildPreload.ts"]
+# runs by itself before a production bundle has been built. The second preload
+# does the same for codemode's build-only specifiers, which esbuild's aliases
+# rewrite and bun would otherwise fail to resolve.
+preload = ["./src/testUtils/extensionBuildPreload.ts", "./src/testUtils/codemodeBuildPreload.ts"]

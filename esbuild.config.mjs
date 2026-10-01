@@ -5,6 +5,7 @@ import process from "process";
 import { builtinModules } from 'node:module';
 import { piExtensionsPlugin } from "./scripts/pi-extensions.mjs";
 import { builtinSkillsPlugin } from "./scripts/builtin-skills.mjs";
+import { CODEMODE_ALIASES, codemodeRuntimePlugin } from "./scripts/codemode-runtime.mjs";
 
 /**
  * pi-ai imports the full `openai` and `@anthropic-ai/sdk` packages, but only
@@ -45,8 +46,8 @@ const context = await esbuild.context({
 		js: banner,
 	},
 	entryPoints: ["src/main.ts"],
-	alias: SDK_SHIM_ALIASES,
-	plugins: [piExtensionsPlugin(), builtinSkillsPlugin(process.cwd(), !prod)],
+	alias: { ...SDK_SHIM_ALIASES, ...CODEMODE_ALIASES },
+	plugins: [piExtensionsPlugin(), builtinSkillsPlugin(process.cwd(), !prod), codemodeRuntimePlugin()],
 	// Assets referenced from source are inlined as data URIs rather than emitted
 	// as sibling files: the release ships exactly main.js/manifest.json/styles.css,
 	// so a separate icon file would silently 404 for anyone installing from a
