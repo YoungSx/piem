@@ -6,15 +6,6 @@ import { DEFAULT_INLINE_BUDGET, createCodemodeTool } from "./tool";
 import type { CodemodeToolHost } from "./tool";
 
 /**
- * `window` for the sandbox's deadline.
- *
- * Obsidian always has one, and the sandbox reads it for `setTimeout` so a popout
- * window's throttle does not fire (the rule `obsidianmd/prefer-window-timers`
- * enforces). Bun has no `window` at all, so the stub is what makes the executor
- * reachable here; the timers are the real ones, so a timeout test still times out.
- */
-
-/**
  * The declarations block, checked without a VM.
  *
  * What matters here is the budget: the tool's description is on *every* request,
@@ -137,5 +128,23 @@ describe("the codemode tool's wiring", () => {
 		// every call, for no gain.
 		const built = createCodemodeTool(host([]));
 		expect(Object.keys((built.parameters as { properties: object }).properties)).toEqual(["code"]);
+	});
+});
+
+describe("the options line", () => {
+	it("passes the script through unchanged when there is no options line", () => {
+		// The parse runs before every call, so it has to be a no-op in the common
+		// case: a script without the line must reach the VM byte for byte.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.name).toBe("codemode");
+	});
+
+	it("is described in the usage text, so a model knows it can ask for more time", () => {
+		// The sandbox default is deliberately short — a spinning script on a phone
+		// is a spinner the user is watching. Saying so in the description is what
+		// keeps that from reading as an arbitrary cutoff.
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
+		expect(built.description).toMatch(/@options/);
+		expect(built.description).toMatch(/timeout_ms/);
 	});
 });

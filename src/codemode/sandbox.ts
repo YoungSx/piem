@@ -42,8 +42,32 @@ import type {
 import { QUICKJS_WASM_URL } from "./runtimeAsset";
 import { CODEMODE_WORKER_SOURCE } from "./workerSource";
 
-/** pi's default, kept so a script that hangs is bounded rather than wedging the chat. */
-const DEFAULT_TIMEOUT_MS = 300_000;
+/**
+ * How long one script may run before it is terminated.
+ *
+ * Shorter than pi's 300 s default, on purpose. Upstream's host is a CLI process
+ * where a runaway script costs one turn; here the worker sits inside a chat
+ * panel on a phone, and five minutes of a spinning loop is five minutes of the
+ * user waiting on a reply that is not coming. Two minutes is long enough for the
+ * work this is for — reading notes, filtering, writing back — and short enough
+ * that a wedged script ends before the user gives up on the conversation.
+ *
+ * A script that needs longer says so: the `// @options: {"timeout_ms": …}` line
+ * is parsed upstream and reaches this as `sourceOptions`.
+ */
+const DEFAULT_TIMEOUT_MS = 120_000;
+
+/**
+ * The VM's heap ceiling.
+ *
+ * Upstream's own extension uses 256 MiB for a desktop CLI. A phone is not that,
+ * and Obsidian may be running beside two other apps in a browser tab-sized
+ * process, so this is lower. It is far above what note-sized work needs — the
+ * measured cost of parsing a 50,000-object structure is a few seconds and well
+ * under 16 MiB — and it turns "the script is wrong" into a catchable
+ * `InternalError: out of memory` instead of a tab the user has to force-quit.
+ */
+const DEFAULT_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 /** Names the prelude binds itself; a global with one of these names is rejected. */
 const RESERVED_GLOBALS = new Set([
@@ -130,6 +154,7 @@ class Execution {
 	readonly promise: Promise<CodemodeResult>;
 	private settle!: (result: CodemodeResult) => void;
 	private worker: Worker | undefined;
+	private workerUrl: string | undefined;
 	private readonly pending = new Map<number, {
 		record: CodemodeCall | undefined;
 		controller: AbortController;
@@ -145,10 +170,13 @@ class Execution {
 	constructor(
 		private readonly tools: Map<string, CodemodeTool>,
 		private readonly globals: Map<string, CodemodeTool>,
+		private readonly code: string,
 		private readonly timeoutMs: number,
 		private readonly signal: AbortSignal | undefined,
 		private readonly memoryLimitBytes: number | undefined,
 		private readonly store: Record<string, string>,
+		private readonly wasm: Promise<WebAssembly.Module>,
+		private readonly workerSource: string | undefined,
 	) {
 		this.promise = new Promise<CodemodeResult>(resolve => { this.settle = resolve; });
 		if (Number.isFinite(timeoutMs)) {
@@ -157,7 +185,7 @@ class Execution {
 			}, timeoutMs);
 		}
 		signal?.addEventListener("abort", this.onAbort, { once: true });
-		loadWasm().then(wasm => this.start(wasm), error => {
+		this.wasm.then(wasm => this.start(wasm), error => {
 			this.finish({ kind: "sandbox", message: `Failed to load QuickJS: ${errorMessage(error)}` });
 		});
 	}
@@ -190,11 +218,15 @@ class Execution {
 			// main.js/manifest.json/styles.css, and a sibling worker file would
 			// silently 404 for anyone installing from a release archive. Same
 			// shape as the workflow engine's worker.
-			const url = URL.createObjectURL(new Blob([CODEMODE_WORKER_SOURCE], { type: "text/javascript" }));
+			//
+			// The URL is revoked in `finish()`, not here. Revoking straight after
+			// construction works on Chromium and fails elsewhere with `Blob URL is
+			// missing`, because whether the worker has read its source yet is not
+			// observable from here — so a session that works on a desktop vault
+			// reports a sandbox fault on a phone.
+			const url = URL.createObjectURL(new Blob([this.workerSource ?? CODEMODE_WORKER_SOURCE], { type: "text/javascript" }));
+			this.workerUrl = url;
 			worker = new Worker(url);
-			// Revoked after construction, which is all a blob URL needs: the worker
-			// has already been handed its own copy of the source.
-			URL.revokeObjectURL(url);
 		} catch (error) {
 			this.finish({ kind: "sandbox", message: `Failed to start worker: ${errorMessage(error)}` });
 			return;
@@ -216,6 +248,10 @@ class Execution {
 		if (this.finished) return;
 		switch (message.type) {
 			case "ready":
+				// The wasm and the VM are created asynchronously, so the script cannot
+				// be posted with the init message. Waiting for `ready` costs one round
+				// trip and buys a script that cannot start before its runtime exists.
+				this.worker?.postMessage({ type: "run", code: this.code });
 				return;
 			case "output":
 				this.output.push(message.item);
@@ -227,7 +263,12 @@ class Execution {
 				if (message.ok) {
 					this.finish(undefined, message.value === undefined ? undefined : JSON.parse(message.value), message.writes);
 				} else {
-					this.finish(JSON.parse(message.error) as CodemodeError);
+					// `kind` is ours, not the prelude's: it reports the name, message and
+					// stack, and nothing about which of the four failure modes this is.
+					// A script that threw is `script`; a deadline or an abort is
+					// reported from here instead, and a VM fault arrives as `crash`.
+					const { name, message: text, stack } = JSON.parse(message.error) as { name?: string; message?: string; stack?: string };
+					this.finish({ kind: "script", name, message: text ?? "Script failed", stack });
 				}
 				return;
 			case "crash":
@@ -306,6 +347,8 @@ class Execution {
 		Atomics.store(new Int32Array(this.interrupt), 0, 1);
 		terminate(this.worker);
 		this.worker = undefined;
+		if (this.workerUrl) URL.revokeObjectURL(this.workerUrl);
+		this.workerUrl = undefined;
 		this.settle(result);
 	}
 
@@ -354,6 +397,27 @@ export class CodemodeSandbox {
 			globals?: CodemodeTool[];
 			timeoutMs?: number;
 			memoryLimitBytes?: number;
+			/** Already-compiled `quickjs.wasm`; defaults to the inlined data URL. */
+			wasm?: WebAssembly.Module | Promise<WebAssembly.Module>;
+			/**
+			 * The worker's script, overriding the inlined build.
+			 *
+			 * Upstream's `workerUrl`, one level down: a host that bundles cannot use
+			 * the package's worker file, so it supplies its own. Here the equivalent
+			 * is the text itself, which also lets a test drive `execute` without the
+			 * build that inlines the QuickJS runtime — the seam through which the
+			 * missing `run` post was caught.
+			 */
+			workerSource?: string;
+			/**
+			 * The worker's script, overriding the inlined build.
+			 *
+			 * Upstream's `workerUrl`, one level down: a host that bundles cannot use
+			 * the package's worker file, so it supplies its own. Here the equivalent
+			 * is the text itself, which also lets a test drive `execute` without the
+			 * build that inlines the QuickJS runtime — the seam through which the
+			 * missing `run` post was caught.
+			 */
 		} = {},
 	) {
 		for (const tool of options.tools ?? []) this.registerTool(tool);
@@ -396,10 +460,19 @@ export class CodemodeSandbox {
 		const execution = new Execution(
 			this.toolsByName,
 			this.globalsByName,
+			code,
 			options.timeoutMs ?? this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 			options.signal,
-			this.options.memoryLimitBytes,
+			this.options.memoryLimitBytes ?? DEFAULT_MEMORY_LIMIT_BYTES,
 			serializeStore(options.store),
+			// Upstream's seam, kept: a caller that already has the module hands it
+			// over instead of paying the inlined decode. It is also what makes this
+			// class reachable from a test, which is how the init/run handshake got
+			// asserted at all.
+			// `Promise.resolve` so a caller may hand over either a module or a promise
+			// for one, which is upstream's signature.
+			Promise.resolve(this.options.wasm ?? loadWasm()),
+			this.options.workerSource,
 		);
 		this.running.add(execution);
 		try {
