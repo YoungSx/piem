@@ -64,29 +64,39 @@ async function runSmoke(root, expect) {
 	const tool = service.getCodemodeTool();
 	record("codemode tool is built", !!tool && tool.name === "codemode");
 	record("description says results stay inside the script", /stay inside it/.test(tool.description ?? ""));
-	record("description renders tool declarations", /declare const tools/.test(tool.description ?? ""));
-	report.descriptionTokens = Math.ceil((tool.description ?? "").length / 4);
+	// The declaration block is rendered from the *session's* tool set at the moment
+	// the tool was built, so it can only be checked once a conversation exists — an
+	// empty list is the honest answer before then, and asserting on it would either
+	// pass vacuously or fail for the wrong reason.
+	record("with no conversation yet, it says so rather than claiming tools", /No tools are available/.test(tool.description ?? ""));
 
 	// ---- the switch, on the shipped settings path -------------------------------
+	/** The tool names the current settings actually mount, read off the agent. */
+	const mountedTools = async () => {
+		await service.newSession({ force: true });
+		await service.sendPrompt("seed").catch(() => undefined);
+		return (service.agent?.state.tools ?? []).map((tool) => tool.name);
+	};
+
 	const wasEnabled = piem.settings.codemodeEnabled === true;
 	piem.settings.codemodeEnabled = false;
 	await piem.saveSettings();
-	const offTools = (await service.newSession({ force: true }).then(async () => {
-		await service.sendPrompt("seed").catch(() => undefined);
-		return (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent?.state.tools.map(t => t.name) ?? [];
-	}));
+	const offTools = await mountedTools();
 	record("codemode is not mounted while the setting is off", !offTools.includes("codemode"));
 	record("the rest of the tool set survives the gate", offTools.includes("read"));
 
 	piem.settings.codemodeEnabled = true;
 	await piem.saveSettings();
-	const onTools = (await service.newSession({ force: true }).then(async () => {
-		await service.sendPrompt("seed").catch(() => undefined);
-		return (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent?.state.tools.map(t => t.name) ?? [];
-	}));
+	const onTools = await mountedTools();
 	record("codemode is mounted once the setting is on", onTools.includes("codemode"));
 	record("it is offered alongside the direct tools, not instead", onTools.includes("read") && onTools.includes("grep"));
 	report.mounted = { off: offTools.length, on: onTools.length };
+
+	// Now that a session is mounted, the built description names real tools.
+	const liveDescription = service.getCodemodeTool().description ?? "";
+	record("with a conversation, it renders the mounted tools' declarations", /declare const tools/.test(liveDescription));
+	record("and does not offer codemode to a script", !/\n  codemode\(/.test(liveDescription));
+	report.descriptionTokens = Math.ceil(liveDescription.length / 4);
 
 	piem.settings.codemodeEnabled = wasEnabled;
 	await piem.saveSettings();

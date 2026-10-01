@@ -155,8 +155,22 @@ const SELF = "codemode";
  * a sandbox.
  */
 function scriptTools(tools: readonly AgentTool[], host: CodemodeToolHost): ScriptTool[] {
+	// First name wins, and duplicates are dropped rather than rejected.
+	//
+	// The sandbox's own registry throws on a duplicate name, so a list with one in
+	// it made the whole tool unusable — and a duplicate is reachable: MCP tools are
+	// appended to the mounted set from a background gather, and a server that
+	// connects twice registers the same name. Everything else here already takes the
+	// first match — `runToolCall` resolves by name, and the prelude keeps the first
+	// tool to claim an identifier — so dropping is the behaviour a caller expects
+	// rather than an error it has to learn about.
+	const seen = new Set<string>();
 	return tools
-		.filter(agentTool => agentTool.name !== SELF)
+		.filter((agentTool) => {
+			if (agentTool.name === SELF || seen.has(agentTool.name)) return false;
+			seen.add(agentTool.name);
+			return true;
+		})
 		.map((agentTool) => ({
 		name: agentTool.name,
 		description: agentTool.description,
@@ -230,10 +244,34 @@ export function createCodemodeTool(
 	host: CodemodeToolHost,
 	options: { inlineBudget?: number; memoryLimitBytes?: number; timeoutMs?: number; maxOutputTokens?: number } = {},
 ): AgentTool<typeof codemodeSchema> {
+	// Rendered on read, not at construction. The tool is built once per service,
+	// which happens before any conversation exists, so a description computed then
+	// would be "No tools are available" forever — the model would be told the
+	// sandbox has no tools and the declarations would never appear. A getter also
+	// keeps the callable set honest: the tools are read per call, so the list in
+	// the description is the same list the sandbox will offer.
+	//
+	// Memoized on the tool names, because `description` is read on every request
+	// and rendering thirty declarations is not free.
+	let memo: { signature: string; text: string } | undefined;
+	const describe = (): string => {
+		const tools = scriptTools(host.tools(), host);
+		const signature = tools.map(tool => tool.name).join(",");
+		if (memo?.signature !== signature) {
+			memo = {
+				signature,
+				text: `${USAGE}\n\n${renderToolDeclarations(tools, options.inlineBudget ?? DEFAULT_INLINE_BUDGET)}`,
+			};
+		}
+		return memo.text;
+	};
+
 	return {
 		name: "codemode",
 		label: "Codemode",
-		description: `${USAGE}\n\n${renderToolDeclarations(scriptTools(host.tools(), host), options.inlineBudget ?? DEFAULT_INLINE_BUDGET)}`,
+		get description() {
+			return describe();
+		},
 		parameters: codemodeSchema,
 		execute: async (_toolCallId, params, signal) => {
 			// The script may ask for more time on its first line, which is what makes
