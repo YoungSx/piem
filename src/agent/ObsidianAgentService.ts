@@ -200,7 +200,7 @@ import {
 	createWorkflowTool,
 	createMemoryJournalStore,
 } from "../workflow/workflowTool";
-import { createCodemodeTool } from "../codemode/tool";
+import { codemodeSample, createCodemodeTool } from "../codemode/tool";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
 import type {
 	MemberSessionHandle,
@@ -1225,6 +1225,10 @@ export class ObsidianAgentService {
 			getExternalTools: this.getMountedExternalToolsFn,
 		});
 
+		// Captured before the option literal below, which is the one place `this`
+		// would be the wrong receiver.
+		const readSettings = this.getSettings;
+
 		// The workflow tool spawns through the same subagent runner, so a workflow
 		// child resolves its model, tools, and transport exactly as a delegated
 		// subagent does. Built once and shared; the journal store lives here.
@@ -1241,11 +1245,28 @@ export class ObsidianAgentService {
 		// `runToolCall` is what makes a nested call the same kind of call as a
 		// model-issued one — same schema validation, same hooks, same permission
 		// checks — which `agentTool.execute` on its own would skip.
-		this.codemodeTool = createCodemodeTool({
-			tools: () => this.current()?.agent?.state.tools ?? [],
-			executeTool: (name, args, signal) =>
-				this.executeNestedTool(name, args, signal),
-		});
+		this.codemodeTool = createCodemodeTool(
+			{
+				// `rt.scriptTools` rather than `agent.state.tools`: in `only` mode the
+				// agent's list has had the direct tools taken out of it, which is the
+				// point for the model and the opposite of what a script may call.
+				tools: () => this.current()?.scriptTools ?? [],
+				executeTool: (name, args, signal) => this.executeNestedTool(name, args, signal),
+			},
+			{
+				// A getter, so the mode is read per render rather than captured: a
+				// conversation that outlives a settings change should not keep
+				// describing itself the way it was described when it started.
+				//
+				// The settings accessor is captured rather than `this`, because `this`
+				// inside an object-literal getter is the *literal*. Reading `this` there
+				// yields `undefined` and every description read throws — silent until
+				// a model asks what tools it has.
+				get mode() {
+					return readSettings().codemodeMode ?? "on";
+				},
+			},
+		);
 	}
 
 	/**
@@ -6071,7 +6092,30 @@ export class ObsidianAgentService {
 		// at spawn-execute time and must read the spawning session's state — a
 		// focused panel on session B must not leak B's thinking level or skills
 		// into a spawn started by session A.
-		return [
+		// `codemode.mode`. The two modes differ in *what the model is offered*, so
+		// they differ here rather than inside the tool:
+		//
+		// - `on` — nothing is withheld. Each tool gains a line saying the same
+		//   thing can be reached through a script, which is the whole cost: the model
+		//   already reads that tool's description, so the sample lands on ground it
+		//   is standing on rather than in a second catalog.
+		// - `only` — the sandbox is the path. The direct tools go, and the catalog
+		//   moves into `codemode`'s own description (see `createCodemodeTool`). That
+		//   is *cheaper* per request than shipping both: one capped block replaces
+		//   every tool's declaration, and the model has one consistent path instead
+		//   of two.
+		const codemodeOn = this.getSettings().codemodeEnabled === true;
+		const codemodeOnly = codemodeOn && (this.getSettings().codemodeMode ?? "on") === "only";
+		const offered = (tool: AgentTool): boolean =>
+			tool.name === "codemode" ? codemodeOn : !codemodeOnly;
+		const prepare = (tool: AgentTool): AgentTool => {
+			if (codemodeOnly || !codemodeOn || tool.name === "codemode") return tool;
+			// Appending rather than replacing: the tool's own description is what the
+			// model reads to decide whether to call it, and the sample is an addition
+			// to that, not a substitute for it.
+			return { ...tool, description: `${tool.description}\n\n${codemodeSample(tool).trim()}` };
+		};
+		const full = [
 			...this.subagentExtension.createTools(() => rt.skills, rt.sessionPath),
 			// One orchestration tool per set, top level only conceptually — a
 			// workflow's own children are leaves and never receive it, because they
@@ -6080,13 +6124,18 @@ export class ObsidianAgentService {
 			// tool held, and the engine stays in the bundle (43 KiB) so the switch is
 			// reversible rather than a deletion. See {@link ../settings}.
 			...(this.getSettings().workflowEnabled === true ? [this.workflowTool] : []),
-			// The sandbox is opt-in for two reasons that are not one reason: it costs
-			// download, and a model that has the tool offered reaches for it when a
-			// direct call would have done — so turning it on changes every
-			// conversation, not only the ones that ask for it. See {@link ../settings}.
-			...(this.getSettings().codemodeEnabled === true ? [this.codemodeTool] : []),
+			...(codemodeOn ? [this.codemodeTool] : []),
 			...(rt.communityHost?.tools ?? []),
-		].map((tool) => {
+		];
+		// Published before the filter below, because `only` withholds the direct
+		// tools from `agent.state.tools` — and the sandbox reads its callable list
+		// from *here*, not from the agent. Filtering first would leave every script
+		// with an empty `tools`, which is the mode working against itself.
+		rt.scriptTools = full;
+		return full
+			.filter(offered)
+			.map(prepare)
+			.map((tool) => {
 			if (!tool.execute) {
 				return tool;
 			}

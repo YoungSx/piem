@@ -262,6 +262,23 @@ export interface PiemSettings {
 	 * Only an explicit `true` counts on load, like every other opt-in here.
 	 */
 	codemodeEnabled?: boolean;
+	/**
+	 * How `codemode` presents the rest of the tool set: `"on"` or `"only"`.
+	 *
+	 * pi's own default is `"on"`, and the two mean different things rather than
+	 * being degrees of the same thing:
+	 *
+	 * - `"on"` — additive. Every tool stays declared to the model and each one gains
+	 *   a line showing how to call it from a script; `codemode` itself carries no
+	 *   catalog. The model may reach for either path.
+	 * - `"only"` — the sandbox is the path. The direct tools are withheld from the
+	 *   model and the whole catalog moves into `codemode`'s description, so a model
+	 *   cannot skip the sandbox. Cheaper per request than shipping both.
+	 *
+	 * `"on"` is the default because it is additive and reversible: a vault that tries
+	 * codemode and finds it worse turns it off without having lost anything.
+	 */
+	codemodeMode?: CodemodeMode;
 }
 
 /**
@@ -270,6 +287,11 @@ export interface PiemSettings {
  * Seeded into `disabledExtensions` once, tracked by `seededExtensionDefaults`.
  */
 export const DEFAULT_DISABLED_EXTENSIONS = ["@vincentff/pi-scheduler"];
+
+/** How `codemode` presents the other tools. See {@link PiemSettings.codemodeMode}. */
+export type CodemodeMode = "on" | "only";
+
+export const DEFAULT_CODEMODE_MODE: CodemodeMode = "on";
 
 export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	models: [],
@@ -293,6 +315,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	shareDiagnostics: true,
 	workflowEnabled: false,
 	codemodeEnabled: false,
+	codemodeMode: DEFAULT_CODEMODE_MODE,
 	mcpServers: [],
 };
 
@@ -430,6 +453,7 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		shareDiagnostics: data?.shareDiagnostics !== false,
 		workflowEnabled: data?.workflowEnabled === true,
 		codemodeEnabled: data?.codemodeEnabled === true,
+		codemodeMode: data?.codemodeMode === "only" ? "only" : DEFAULT_CODEMODE_MODE,
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
 	// and a vault written before the field existed stays byte-identical on load.

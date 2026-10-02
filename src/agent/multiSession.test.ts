@@ -1486,3 +1486,268 @@ describe("a codemode script's nested call goes through the agent's own tool path
 		expect(result.isError).toBe(true);
 	}, 30_000);
 });
+
+describe("codemode's mode decides what the model is offered", () => {
+	async function mounted(settings: PiemSettings): Promise<Array<{ name: string; description: string }>> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed").catch(() => undefined);
+			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string; description: string }> } } }).agent;
+			return agent?.state.tools ?? [];
+		} finally {
+			service.dispose();
+		}
+	}
+
+	const withMode = (mode: "on" | "only") => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: mode });
+
+	it("on withholds nothing", async () => {
+		const names = (await mounted(withMode("on"))).map((tool) => tool.name);
+		expect(names).toContain("codemode");
+		expect(names).toContain("read");
+	}, 30_000);
+
+	it("only withholds the direct tools, leaving codemode as the one way in", async () => {
+		// The point of the mode: a model that cannot see a tool cannot skip the
+		// sandbox to reach it. This is also cheaper per request than shipping both —
+		// one capped block replaces every tool's declaration.
+		const tools = await mounted(withMode("only"));
+		expect(tools.map((tool) => tool.name)).toEqual(["codemode"]);
+	}, 30_000);
+
+	it("on appends the script sample to a tool's own description", async () => {
+		// The model already reads this description, so the sample lands on ground it
+		// is standing on rather than in a second catalog it has to hold alongside it.
+		const read = (await mounted(withMode("on"))).find((tool) => tool.name === "read");
+		expect(read?.description).toMatch(/codemode tool declaration/);
+		expect(read?.description).toMatch(/declare const tools/);
+	}, 30_000);
+
+	it("only leaves descriptions alone, because the tool is not offered at all", async () => {
+		const tools = await mounted(withMode("only"));
+		expect(tools.find((tool) => tool.name === "read")).toBeUndefined();
+	}, 30_000);
+
+	it("adds no sample when codemode is off, whatever the mode says", async () => {
+		const read = (await mounted({ ...defaultTestSettings(), codemodeEnabled: false, codemodeMode: "on" }))
+			.find((tool) => tool.name === "read");
+		expect(read?.description).not.toMatch(/codemode tool declaration/);
+	}, 30_000);
+
+	it("reads the mode through a getter, so a settings change reaches a live conversation", async () => {
+		// The service hands the tool a getter rather than a snapshot. Getting that
+		// wrong is silent in a different way: an object-literal getter's `this` is
+		// the literal, so the read throws and every description read fails.
+		const tool = new ObsidianAgentService(createFakeApp(asDataAdapter(new MemoryAdapter())), () => defaultTestSettings(),
+			new ObsidianSessionManager(asDataAdapter(new MemoryAdapter()), SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("never"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			}).getCodemodeTool();
+		expect(() => tool.description).not.toThrow();
+	}, 30_000);
+});
+
+describe("codemode's mode decides what the model is offered", () => {
+	async function mounted(settings: PiemSettings): Promise<Array<{ name: string; description: string }>> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed").catch(() => undefined);
+			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string; description: string }> } } }).agent;
+			return agent?.state.tools ?? [];
+		} finally {
+			service.dispose();
+		}
+	}
+
+	const withMode = (mode: "on" | "only") => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: mode });
+
+	it("on withholds nothing", async () => {
+		const names = (await mounted(withMode("on"))).map((tool) => tool.name);
+		expect(names).toContain("codemode");
+		expect(names).toContain("read");
+	}, 30_000);
+
+	it("only withholds the direct tools, leaving codemode as the one way in", async () => {
+		// The point of the mode: a model that cannot see a tool cannot skip the
+		// sandbox to reach it. This is also cheaper per request than shipping both —
+		// one capped block replaces every tool's declaration.
+		const tools = await mounted(withMode("only"));
+		expect(tools.map((tool) => tool.name)).toEqual(["codemode"]);
+	}, 30_000);
+
+	it("on appends the script sample to a tool's own description", async () => {
+		// The model already reads this description, so the sample lands on ground it
+		// is standing on rather than in a second catalog it has to hold alongside it.
+		const read = (await mounted(withMode("on"))).find((tool) => tool.name === "read");
+		expect(read?.description).toMatch(/codemode tool declaration/);
+		expect(read?.description).toMatch(/declare const tools/);
+	}, 30_000);
+
+	it("only leaves descriptions alone, because the tool is not offered at all", async () => {
+		const tools = await mounted(withMode("only"));
+		expect(tools.find((tool) => tool.name === "read")).toBeUndefined();
+	}, 30_000);
+
+	it("adds no sample when codemode is off, whatever the mode says", async () => {
+		const read = (await mounted({ ...defaultTestSettings(), codemodeEnabled: false, codemodeMode: "on" }))
+			.find((tool) => tool.name === "read");
+		expect(read?.description).not.toMatch(/codemode tool declaration/);
+	}, 30_000);
+
+	it("reads the mode through a getter, so a settings change reaches a live conversation", async () => {
+		// The service hands the tool a getter rather than a snapshot. Getting that
+		// wrong is silent in a different way: an object-literal getter's `this` is
+		// the literal, so the read throws and every description read fails.
+		const tool = new ObsidianAgentService(createFakeApp(asDataAdapter(new MemoryAdapter())), () => defaultTestSettings(),
+			new ObsidianSessionManager(asDataAdapter(new MemoryAdapter()), SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: (() => { throw new Error("never"); }) as unknown as StreamFn,
+				loadUserSkills: NO_USER_SKILLS,
+			}).getCodemodeTool();
+		expect(() => tool.description).not.toThrow();
+	}, 30_000);
+});
+
+describe("codemode `only` does not withhold the catalog from the sandbox itself", () => {
+	it("a script can still reach the tools the model can no longer see", async () => {
+		// The mode working against itself is the failure this pins: `only` removes
+		// the direct tools from `agent.state.tools`, and the sandbox read its
+		// callable list from there — so the script would have been written against
+		// an empty `tools` and the model would have been told to use a sandbox that
+		// could do nothing.
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent;
+			const mounted = agent?.state.tools.map((tool) => tool.name) ?? [];
+			expect(mounted).toEqual(["codemode"]);
+			// The catalog the model reads is the whole point, and it comes from the
+			// same place the script's callable list does.
+			expect(service.getCodemodeTool().description ?? "").toMatch(/declare const tools/);
+			expect(service.getCodemodeTool().description ?? "").toMatch(/read\(args: /);
+		} finally {
+			service.dispose();
+		}
+	}, 30_000);
+
+	it("`on` reports the same catalog through the tools' own descriptions", async () => {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			expect(service.getCodemodeTool().description ?? "").not.toMatch(/declare const tools/);
+		} finally {
+			service.dispose();
+		}
+	}, 30_000);
+});
+
+describe("codemode `only` does not withhold the catalog from the sandbox itself", () => {
+	it("a script can still reach the tools the model can no longer see", async () => {
+		// The mode working against itself is the failure this pins: `only` removes
+		// the direct tools from `agent.state.tools`, and the sandbox read its
+		// callable list from there — so the script would have been written against
+		// an empty `tools` and the model would have been told to use a sandbox that
+		// could do nothing.
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent;
+			const mounted = agent?.state.tools.map((tool) => tool.name) ?? [];
+			expect(mounted).toEqual(["codemode"]);
+			// The catalog the model reads is the whole point, and it comes from the
+			// same place the script's callable list does.
+			expect(service.getCodemodeTool().description ?? "").toMatch(/declare const tools/);
+			expect(service.getCodemodeTool().description ?? "").toMatch(/read\(args: /);
+		} finally {
+			service.dispose();
+		}
+	}, 30_000);
+
+	it("`on` reports the same catalog through the tools' own descriptions", async () => {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			expect(service.getCodemodeTool().description ?? "").not.toMatch(/declare const tools/);
+		} finally {
+			service.dispose();
+		}
+	}, 30_000);
+});
+
+describe("codemode `only` does not withhold the catalog from the sandbox itself", () => {
+	it("a script can still reach the tools the model can no longer see", async () => {
+		// The mode working against itself is the failure this pins: `only` removes
+		// the direct tools from `agent.state.tools`, and the sandbox read its
+		// callable list from there — so the script would have been written against
+		// an empty `tools` and the model would have been told to use a sandbox that
+		// could do nothing.
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent;
+			const mounted = agent?.state.tools.map((tool) => tool.name) ?? [];
+			expect(mounted).toEqual(["codemode"]);
+			// The catalog the model reads is the whole point, and it comes from the
+			// same place the script's callable list does.
+			expect(service.getCodemodeTool().description ?? "").toMatch(/declare const tools/);
+			expect(service.getCodemodeTool().description ?? "").toMatch(/read\(args: /);
+		} finally {
+			service.dispose();
+		}
+	}, 30_000);
+
+	it("`on` reports the same catalog through the tools' own descriptions", async () => {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			expect(service.getCodemodeTool().description ?? "").not.toMatch(/declare const tools/);
+		} finally {
+			service.dispose();
+		}
+	}, 30_000);
+});

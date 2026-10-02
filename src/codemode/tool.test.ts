@@ -65,7 +65,7 @@ describe("the codemode tool's description", () => {
 		// on the declaration rather than on a dotted call — and `update_frontmatter`
 		// pins the identifier mapping, since a name with a `-` or `.` in it is the
 		// case that mapping exists for.
-		const built = createCodemodeTool(host(REAL_TOOLS));
+		const built = createCodemodeTool(host(REAL_TOOLS), { mode: "only" });
 		expect(built.description).toContain("declare const tools");
 		for (const mounted of REAL_TOOLS) {
 			expect(built.description).toMatch(new RegExp(`\\n  ${mounted.name}\\(args: `));
@@ -73,7 +73,7 @@ describe("the codemode tool's description", () => {
 	});
 
 	it("renders a name a script could not type as a valid identifier", () => {
-		const built = createCodemodeTool(host([tool("mcp__docs__search", "Search the docs."), tool("web-fetch", "Fetch a URL.")]));
+		const built = createCodemodeTool(host([tool("mcp__docs__search", "Search the docs."), tool("web-fetch", "Fetch a URL.")]), { mode: "only" });
 		expect(built.description).toContain("mcp__docs__search(args:");
 		// `web-fetch` is not a JavaScript identifier, so the declaration uses the
 		// mangled form the prelude binds; a script reaches it as `tools.web_fetch`.
@@ -82,7 +82,7 @@ describe("the codemode tool's description", () => {
 	});
 
 	it("renders a declaration per tool, with its schema as a parameter type", () => {
-		const built = createCodemodeTool(host([tool("update_frontmatter", "Set keys.", { path: { type: "string" }, keys: { type: "object" } })]));
+		const built = createCodemodeTool(host([tool("update_frontmatter", "Set keys.", { path: { type: "string" }, keys: { type: "object" } })]), { mode: "only" });
 		expect(built.description).toContain("declare const tools");
 		expect(built.description).toContain("update_frontmatter(");
 		expect(built.description).toContain("path: string");
@@ -92,14 +92,14 @@ describe("the codemode tool's description", () => {
 		// The scale that matters: a fixture with three tools would pass while the
 		// real thirty silently overflowed.
 		const many = Array.from({ length: 30 }, (_, index) => tool(`tool_${index}`, `Does operation ${index} on the vault, with a description roughly the length of a real one.`));
-		const built = createCodemodeTool(host(many));
+		const built = createCodemodeTool(host(many), { mode: "only" });
 		const tokens = Math.ceil(built.description.length / 4);
 		expect(tokens).toBeLessThanOrEqual(DEFAULT_INLINE_BUDGET + 400);
 	});
 
 	it("truncates by dropping whole tools, and says how many it dropped", () => {
 		const many = Array.from({ length: 60 }, (_, index) => tool(`tool_${index}`, `A verbose description ${index}. ${"padding ".repeat(12)}`));
-		const built = createCodemodeTool(host(many), { inlineBudget: 300 });
+		const built = createCodemodeTool(host(many), { inlineBudget: 300, mode: "only" });
 		expect(built.description).toContain("not listed here");
 		expect(built.description).toMatch(/\d+ more tools? (is|are) not listed here/);
 		// A declaration cut mid-signature is worse than an absent one, so the
@@ -108,12 +108,12 @@ describe("the codemode tool's description", () => {
 	});
 
 	it("says so when the budget leaves room for nothing", () => {
-		const built = createCodemodeTool(host([tool("read", "Read a note.")]), { inlineBudget: 1 });
+		const built = createCodemodeTool(host([tool("read", "Read a note.")]), { inlineBudget: 1, mode: "only" });
 		expect(built.description).toContain("call tools directly");
 	});
 
 	it("says plainly when a session has no tools", () => {
-		const built = createCodemodeTool(host([]));
+		const built = createCodemodeTool(host([]), { mode: "only" });
 		expect(built.description).toContain("No tools are available");
 	});
 });
@@ -156,7 +156,7 @@ describe("what a script is offered", () => {
 		// `Promise.all(Array.from({length: 200}, () => tools.codemode(...)))` is
 		// 200 workers on a phone — and a `Promise.all` over a loop is ordinary
 		// model output, so this is reachable by accident.
-		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]));
+		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]), { mode: "only" });
 		expect(built.description).toContain("read(args:");
 		expect(built.description).not.toContain("codemode(args:");
 	});
@@ -179,7 +179,7 @@ describe("what a script is offered", () => {
 			tool("run_workflow", "Run a workflow.", { script: { type: "string" } }),
 			tool("spawn_subagent", "Spawn a subagent.", { prompt: { type: "string" } }),
 			tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
-		]));
+		]), { mode: "only" });
 		expect(built.description).toContain("run_workflow(args:");
 		expect(built.description).toContain("spawn_subagent(args:");
 		expect(built.description).not.toContain("codemode(args:");
@@ -212,7 +212,7 @@ describe("what a script is offered", () => {
 		// `Promise.all(Array.from({length: 200}, () => tools.codemode(...)))` is
 		// 200 workers on a phone — and a `Promise.all` over a loop is ordinary
 		// model output, so this is reachable by accident.
-		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]));
+		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]), { mode: "only" });
 		expect(built.description).toContain("read(args:");
 		expect(built.description).not.toContain("codemode(args:");
 	});
@@ -235,7 +235,7 @@ describe("what a script is offered", () => {
 			tool("run_workflow", "Run a workflow.", { script: { type: "string" } }),
 			tool("spawn_subagent", "Spawn a subagent.", { prompt: { type: "string" } }),
 			tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
-		]));
+		]), { mode: "only" });
 		expect(built.description).toContain("run_workflow(args:");
 		expect(built.description).toContain("spawn_subagent(args:");
 		expect(built.description).not.toContain("codemode(args:");
@@ -268,7 +268,7 @@ describe("when the description is rendered", () => {
 		// model would never be shown a single declaration — the feature would work
 		// and be entirely undocumented to the caller that has to write the script.
 		let mounted: AgentTool[] = [];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) });
+		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
 		expect(built.description).toContain("No tools are available");
 
 		mounted = [tool("read", "Read a note."), tool("grep", "Search notes.")];
@@ -291,7 +291,7 @@ describe("when the description is rendered", () => {
 		// MCP servers connect in the background, so a session's tools are not fixed
 		// for its life. A memo keyed on nothing would freeze the list at first read.
 		let mounted: AgentTool[] = [tool("read", "Read a note.")];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) });
+		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
 		expect(built.description).toContain("read(args:");
 		mounted = [...mounted, tool("web_fetch", "Fetch a URL.")];
 		expect(built.description).toContain("web_fetch(args:");
@@ -305,7 +305,7 @@ describe("when the description is rendered", () => {
 		// model would never be shown a single declaration — the feature would work
 		// and be entirely undocumented to the caller that has to write the script.
 		let mounted: AgentTool[] = [];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) });
+		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
 		expect(built.description).toContain("No tools are available");
 
 		mounted = [tool("read", "Read a note."), tool("grep", "Search notes.")];
@@ -328,7 +328,7 @@ describe("when the description is rendered", () => {
 		// MCP servers connect in the background, so a session's tools are not fixed
 		// for its life. A memo keyed on nothing would freeze the list at first read.
 		let mounted: AgentTool[] = [tool("read", "Read a note.")];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) });
+		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
 		expect(built.description).toContain("read(args:");
 		mounted = [...mounted, tool("web_fetch", "Fetch a URL.")];
 		expect(built.description).toContain("web_fetch(args:");
@@ -344,7 +344,7 @@ describe("a tool set with a duplicate name", () => {
 			tool("read", "First wins."),
 			tool("read", "Second loses."),
 			tool("grep", "Search notes."),
-		]));
+		]), { mode: "only" });
 		expect(built.description).toContain("read(args:");
 		expect(built.description).toContain("First wins.");
 		expect(built.description).not.toContain("Second loses.");
@@ -360,9 +360,119 @@ describe("a tool set with a duplicate name", () => {
 			tool("read", "First wins."),
 			tool("read", "Second loses."),
 			tool("grep", "Search notes."),
-		]));
+		]), { mode: "only" });
 		expect(built.description).toContain("read(args:");
 		expect(built.description).toContain("First wins.");
 		expect(built.description).not.toContain("Second loses.");
+	});
+});
+
+describe("the two modes, which are not degrees of the same thing", () => {
+	const mounted = [
+		tool("read", "Read a note."),
+		tool("grep", "Search notes."),
+		tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
+	];
+
+	it("on — upstream's default — carries no catalog, because every tool is already declared", () => {
+		// In `on` the model already reads every tool's own declaration, so repeating
+		// thirty of them inside `codemode` would pay twice for the same list on every
+		// request. The line that tells a tool it can be reached from a script lands on
+		// the tool's own description instead — see `buildTools`.
+		const built = createCodemodeTool(host(mounted));
+		expect(built.description).not.toContain("declare const tools");
+		expect(built.description).toContain("ALL_TOOLS");
+		expect(built.description).toContain("await tools.<name>(args)");
+	});
+
+	it("on keeps the description inside the budget even with a hundred tools", () => {
+		// The point of the split: `on`'s description does not grow with the tool set,
+		// because the tool set is not in it.
+		const many = Array.from({ length: 100 }, (_, index) => tool(`tool_${index}`, `Operation ${index}. ${"padding ".repeat(20)}`));
+		const built = createCodemodeTool(host(many));
+		expect(Math.ceil(built.description.length / 4)).toBeLessThan(DEFAULT_INLINE_BUDGET);
+	});
+
+	it("only — carries the whole catalog, because it is the only place it can be", () => {
+		const built = createCodemodeTool(host(mounted), { mode: "only" });
+		expect(built.description).toContain("declare const tools");
+		expect(built.description).toContain("read(args:");
+		expect(built.description).toContain("grep(args:");
+	});
+
+	it("an unset mode means on, so an old vault cannot land in the strong one", () => {
+		expect(createCodemodeTool(host(mounted)).description)
+			.toBe(createCodemodeTool(host(mounted), { mode: "on" }).description);
+	});
+
+	it("excludes codemode from the catalog in either mode", () => {
+		for (const mode of ["on", "only"] as const) {
+			expect(createCodemodeTool(host(mounted), { mode }).description).not.toMatch(/\n  codemode\(/);
+		}
+	});
+
+	it("reads the mode through a getter, so a settings change reaches a live conversation", () => {
+		// The service passes a getter, not a snapshot: a conversation that outlives a
+		// settings change should describe itself the way it is now configured.
+		const state = { mode: "on" as "on" | "only" };
+		const built = createCodemodeTool(host(mounted), { get mode() { return state.mode; } });
+		expect(built.description).not.toContain("declare const tools");
+		state.mode = "only";
+		expect(built.description).toContain("declare const tools");
+	});
+});
+
+describe("the two modes, which are not degrees of the same thing", () => {
+	const mounted = [
+		tool("read", "Read a note."),
+		tool("grep", "Search notes."),
+		tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
+	];
+
+	it("on — upstream's default — carries no catalog, because every tool is already declared", () => {
+		// In `on` the model already reads every tool's own declaration, so repeating
+		// thirty of them inside `codemode` would pay twice for the same list on every
+		// request. The line that tells a tool it can be reached from a script lands on
+		// the tool's own description instead — see `buildTools`.
+		const built = createCodemodeTool(host(mounted));
+		expect(built.description).not.toContain("declare const tools");
+		expect(built.description).toContain("ALL_TOOLS");
+		expect(built.description).toContain("await tools.<name>(args)");
+	});
+
+	it("on keeps the description inside the budget even with a hundred tools", () => {
+		// The point of the split: `on`'s description does not grow with the tool set,
+		// because the tool set is not in it.
+		const many = Array.from({ length: 100 }, (_, index) => tool(`tool_${index}`, `Operation ${index}. ${"padding ".repeat(20)}`));
+		const built = createCodemodeTool(host(many));
+		expect(Math.ceil(built.description.length / 4)).toBeLessThan(DEFAULT_INLINE_BUDGET);
+	});
+
+	it("only — carries the whole catalog, because it is the only place it can be", () => {
+		const built = createCodemodeTool(host(mounted), { mode: "only" });
+		expect(built.description).toContain("declare const tools");
+		expect(built.description).toContain("read(args:");
+		expect(built.description).toContain("grep(args:");
+	});
+
+	it("an unset mode means on, so an old vault cannot land in the strong one", () => {
+		expect(createCodemodeTool(host(mounted)).description)
+			.toBe(createCodemodeTool(host(mounted), { mode: "on" }).description);
+	});
+
+	it("excludes codemode from the catalog in either mode", () => {
+		for (const mode of ["on", "only"] as const) {
+			expect(createCodemodeTool(host(mounted), { mode }).description).not.toMatch(/\n  codemode\(/);
+		}
+	});
+
+	it("reads the mode through a getter, so a settings change reaches a live conversation", () => {
+		// The service passes a getter, not a snapshot: a conversation that outlives a
+		// settings change should describe itself the way it is now configured.
+		const state = { mode: "on" as "on" | "only" };
+		const built = createCodemodeTool(host(mounted), { get mode() { return state.mode; } });
+		expect(built.description).not.toContain("declare const tools");
+		state.mode = "only";
+		expect(built.description).toContain("declare const tools");
 	});
 });
