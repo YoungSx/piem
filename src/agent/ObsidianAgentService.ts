@@ -201,6 +201,7 @@ import {
 	createMemoryJournalStore,
 } from "../workflow/workflowTool";
 import { codemodeSample, createCodemodeTool } from "../codemode/tool";
+import { parseCodemodeArgument, type CodemodeSessionMode } from "../codemode/mode";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
 import type {
 	MemberSessionHandle,
@@ -1227,7 +1228,7 @@ export class ObsidianAgentService {
 
 		// Captured before the option literal below, which is the one place `this`
 		// would be the wrong receiver.
-		const readSettings = this.getSettings;
+		const readCodemodeMode = (): CodemodeSessionMode => this.resolveCodemodeMode(this.current());
 
 		// The workflow tool spawns through the same subagent runner, so a workflow
 		// child resolves its model, tools, and transport exactly as a delegated
@@ -1263,10 +1264,71 @@ export class ObsidianAgentService {
 				// yields `undefined` and every description read throws — silent until
 				// a model asks what tools it has.
 				get mode() {
-					return readSettings().codemodeMode ?? "on";
+					// The same resolution `buildTools` used, or the description would
+					// describe one mode while the tool set reflects another. Captured
+					// through a closure because `this` in an object-literal getter is
+					// the literal, not the service.
+					//
+					// `off` collapses to `on` here, and that is not a fudge: with the
+					// tool unmounted nothing reads this description, and `on` is the
+					// conservative reading of "which catalog belongs here".
+					const mode = readCodemodeMode();
+					return mode === "only" ? "only" : "on";
 				},
 			},
 		);
+	}
+
+	/**
+	 * `/codemode [on|only|off|vault]` — this conversation's answer, not the vault's.
+	 *
+	 * Returns false so the turn never reaches the model: a command that changed
+	 * something and then also sent a message would have the model narrate a change
+	 * it did not make. The new mode lands on the next turn, which is where piem
+	 * already applies tool-set changes — a running agent's tools are never swapped
+	 * underneath it.
+	 */
+	private async runCodemodeCommand(rt: SessionRuntime, argument: string): Promise<boolean> {
+		const directive = parseCodemodeArgument(argument);
+		if (directive.kind === "unknown") {
+			this.setNotice(rt, this.t().t("commands.codemodeUnknown", { argument: directive.argument }));
+			return false;
+		}
+		const before = this.resolveCodemodeMode(rt);
+		if (directive.kind === "follow-vault") {
+			rt.codemodeModeOverride = undefined;
+		} else if (directive.kind === "set") {
+			rt.codemodeModeOverride = directive.mode;
+		}
+		const mode = this.resolveCodemodeMode(rt);
+		if (mode !== before) {
+			// The command changes nothing else, so the same rebuild a settings save
+			// performs is what makes it take effect: without it the override is set
+			// and the agent keeps the tool set it was built with.
+			await this.refreshConfiguration();
+		}
+		const key = mode === "off" ? "commands.codemodeOff"
+			: mode === "only" ? "commands.codemodeOnly"
+			: "commands.codemodeOn";
+		this.setNotice(rt, this.t().t(key));
+		return false;
+	}
+
+	/**
+	 * What `codemode` is doing in this conversation.
+	 *
+	 * The conversation's own answer wins over the vault's, because that is the
+	 * whole point of `/codemode`: a sweeping job wants `only` and the next chat
+	 * about something small wants `on`, and neither is a fact about the vault.
+	 * `off` covers a vault that has it enabled and a conversation that does not
+	 * want it right now.
+	 */
+	private resolveCodemodeMode(rt: SessionRuntime | null): CodemodeSessionMode {
+		const settings = this.getSettings();
+		const fromVault: CodemodeSessionMode = settings.codemodeEnabled
+			? (settings.codemodeMode ?? "on")
+			: "off";
+		return rt?.codemodeModeOverride ?? fromVault;
 	}
 
 	/**
@@ -1568,6 +1630,12 @@ export class ObsidianAgentService {
 			return false;
 		}
 		const extensionCommand = parsePromptCommand(trimmedPrompt);
+		// `/codemode` is ours, not an extension's, and it is handled before the
+		// extension dispatch so an extension cannot shadow it by name — a tool that
+		// changes which tools exist should not be something a vault file can replace.
+		if (extensionCommand?.name === "codemode" || extensionCommand?.name === "extension:codemode") {
+			return await this.runCodemodeCommand(rt, extensionCommand.additionalInstructions);
+		}
 		const explicitExtension = extensionCommand?.name.startsWith("extension:");
 		const extensionName = explicitExtension
 			? extensionCommand!.name.slice("extension:".length)
@@ -5505,6 +5573,14 @@ export class ObsidianAgentService {
 				kind: "extension" as const,
 				invocation: "extension:context",
 			},
+			{
+				name: "codemode",
+				description: this.t().t("commands.codemodeCommand"),
+				kind: "extension" as const,
+				// Namespaced, so the dispatch above recognises it as ours and an
+				// extension offering the same short name cannot take it.
+				invocation: "extension:codemode",
+			},
 			...(rt?.communityHost?.commands ?? []).map((command) => ({
 				name: command.name,
 				description:
@@ -6104,8 +6180,9 @@ export class ObsidianAgentService {
 		//   is *cheaper* per request than shipping both: one capped block replaces
 		//   every tool's declaration, and the model has one consistent path instead
 		//   of two.
-		const codemodeOn = this.getSettings().codemodeEnabled === true;
-		const codemodeOnly = codemodeOn && (this.getSettings().codemodeMode ?? "on") === "only";
+		const mode = this.resolveCodemodeMode(rt);
+		const codemodeOn = mode !== "off";
+		const codemodeOnly = mode === "only";
 		const offered = (tool: AgentTool): boolean =>
 			tool.name === "codemode" ? codemodeOn : !codemodeOnly;
 		const prepare = (tool: AgentTool): AgentTool => {

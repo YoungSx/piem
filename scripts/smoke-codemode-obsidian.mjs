@@ -71,12 +71,22 @@ async function runSmoke(root, expect) {
 	record("with no conversation yet, it says so rather than claiming tools", /No tools are available/.test(tool.description ?? ""), (tool.description ?? "").slice(-160));
 
 	// ---- the switch, on the shipped settings path -------------------------------
-	/** The tool names the current settings actually mount, read off the agent. */
+	/**
+	 * The tool names a fresh conversation mounts, read off the agent.
+	 *
+	 * A *new* session each time, so this answers the vault setting — which is what
+	 * it is for. It cannot answer a `/codemode` override: a new chat is a new
+	 * conversation, and a conversation-scoped override is exactly the thing that
+	 * does not follow it. {@link currentTools} is the probe for that.
+	 */
 	const mountedTools = async () => {
 		await service.newSession({ force: true });
 		await service.sendPrompt("seed").catch(() => undefined);
 		return (service.agent?.state.tools ?? []).map((tool) => tool.name);
 	};
+
+	/** What *this* conversation has mounted right now. */
+	const currentTools = () => (service.agent?.state.tools ?? []).map((tool) => tool.name);
 
 	const wasEnabled = piem.settings.codemodeEnabled === true;
 	piem.settings.codemodeEnabled = false;
@@ -128,8 +138,25 @@ async function runSmoke(root, expect) {
 	const onlyRun = await tool.execute("smoke-only", { code: "return 6 * 7;" }, new AbortController().signal);
 	record("and a script still runs in `only`", !onlyRun.isError && onlyRun.content?.[0]?.text === "42");
 
+
 	piem.settings.codemodeMode = wasMode;
 	await piem.saveSettings();
+
+	// ---- the slash command, on the shipped path -------------------------------
+	// The command is the feature's real surface: a conversation that wants the
+	// strong mode for one job should not have to change a vault setting and reload.
+	const commandNames = (service.getSnapshot().availableCommands ?? []).map((entry) => entry.name);
+	record("/codemode is offered in the composer", commandNames.includes("codemode"));
+	await service.sendPrompt("/codemode only");
+	record("/codemode only withholds the direct tools, for this conversation", !currentTools().includes("read"));
+	await service.sendPrompt("/codemode vault");
+	// After the restore, so the vault says `on`: following a vault that says
+	// `only` correctly keeps the tools hidden, and asserting otherwise would pin
+	// the wrong behaviour.
+	record("/codemode vault hands the decision back", currentTools().includes("read"));
+	await service.sendPrompt("/codemode off");
+	record("/codemode off unmounts the tool for this conversation", !currentTools().includes("codemode"));
+
 
 	piem.settings.codemodeEnabled = wasEnabled;
 	await piem.saveSettings();
@@ -231,7 +258,12 @@ const reply = await new Promise((resolve, reject) => {
 			returnByValue: true,
 		},
 	}));
-	setTimeout(() => reject(new Error("cdp timeout")), 180000);
+	// Generous, because the smoke drives several full conversation rebuilds —
+	// each `/codemode` change re-mounts the whole tool set through
+	// `refreshConfiguration` — and the page-side evaluation cannot be interrupted
+	// once it starts. A timeout here reads as a hang, which is the one thing this
+	// smoke exists to disprove.
+	setTimeout(() => reject(new Error("cdp timeout")), 420000);
 });
 ws.close();
 if (reply.exceptionDetails) {

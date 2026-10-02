@@ -1,5 +1,4 @@
 import type { JsonObject } from "@earendil-works/pi-ai";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { captureContext } from "../testUtils/captureContext";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
@@ -7,7 +6,7 @@ import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, ListedFiles, Stat } from "obsidian";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult, StreamFn } from "@earendil-works/pi-agent-core";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { stubWindowMembers } from "../testUtils/windowStub";
 import { webcrypto } from "node:crypto";
@@ -15,6 +14,7 @@ import { DEFAULT_SESSION_RETENTION } from "../session/retention";
 import { DEFAULT_SESSION_DIR } from "../session/sessionDir";
 import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
 import type { PiemSettings } from "../settings";
+import { parseCodemodeArgument, type CodemodeSessionMode } from "../codemode/mode";
 import type { ObsidianAgentService as ObsidianAgentServiceType } from "./ObsidianAgentService";
 import type { UserSkillsLoad } from "../skills/userSkills";
 import { withRunawayGuard, createBoundedCollector } from "../testUtils/runawayGuard";
@@ -1749,5 +1749,152 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 		} finally {
 			service.dispose();
 		}
+	}, 30_000);
+});
+
+describe("parseCodemodeArgument", () => {
+	it("reports when there is nothing to change to", () => {
+		// A command that changed something in answer to a question would be the
+		// wrong kind of surprise.
+		expect(parseCodemodeArgument(undefined)).toEqual({ kind: "report" });
+		expect(parseCodemodeArgument("   ")).toEqual({ kind: "report" });
+	});
+
+	const WORDS: [string, CodemodeSessionMode][] = [
+		["on", "on"], ["both", "on"], ["ON", "on"],
+		["only", "only"], ["scripts", "only"],
+		["off", "off"], ["none", "off"],
+	];
+	it.each(WORDS)("reads %s as %s", (word, mode) => {
+		expect(parseCodemodeArgument(word)).toEqual({ kind: "set", mode });
+	});
+
+	it("distinguishes following the vault from an unknown word", () => {
+		expect(parseCodemodeArgument("vault")).toEqual({ kind: "follow-vault" });
+		expect(parseCodemodeArgument("settings")).toEqual({ kind: "follow-vault" });
+		// Distinct from `report`, because silently ignoring a word and reporting
+		// success would leave the reader believing a mode they did not ask for.
+		expect(parseCodemodeArgument("maybe")).toEqual({ kind: "unknown", argument: "maybe" });
+	});
+
+	it("does not accept a word that only looks like one", () => {
+		expect(parseCodemodeArgument("only-ish")).toEqual({ kind: "unknown", argument: "only-ish" });
+	});
+});
+
+describe("/codemode", () => {
+	async function chat(settings: PiemSettings): Promise<{
+		service: ObsidianAgentServiceType;
+		adapter: DataAdapter;
+		mounted: () => string[];
+		send: (prompt: string) => Promise<boolean>;
+	}> {
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		await service.sendPrompt("seed");
+		return {
+			service,
+			adapter,
+			mounted: () => (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } })
+				.agent?.state.tools.map((tool) => tool.name) ?? [],
+			send: (prompt: string) => service.sendPrompt(prompt),
+		};
+	}
+
+	it("is offered in the composer alongside the other built-ins", async () => {
+		// A command nobody can see in the autocomplete is a command nobody finds.
+		const { service } = await chat(defaultTestSettings());
+		try {
+			const list = (service as unknown as { commandList(rt: unknown): Array<{ name: string }> }).commandList(null);
+			expect(list.map((entry) => entry.name)).toContain("codemode");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("reports the current mode with no argument, and changes nothing", async () => {
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" });
+		try {
+			expect(mounted()).not.toContain("read");
+			await send("/codemode");
+			expect(mounted()).not.toContain("read");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("turns `only` on for this chat without touching the vault setting", async () => {
+		// The point of a session-scoped command: this conversation wanted `only`,
+		// which is not a fact about the vault.
+		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const };
+		const { service, send, mounted } = await chat(settings);
+		try {
+			expect(mounted()).toContain("read");
+			await send("/codemode only");
+			expect(mounted()).not.toContain("read");
+			expect(settings.codemodeMode).toBe("on");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("turns the tool off for this chat even when the vault has it on", async () => {
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" });
+		try {
+			await send("/codemode off");
+			expect(mounted()).not.toContain("codemode");
+			expect(mounted()).toContain("read");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("turns the tool on for this chat even when the vault has it off", async () => {
+		const { service, send, mounted } = await chat(defaultTestSettings());
+		try {
+			expect(mounted()).not.toContain("codemode");
+			await send("/codemode only");
+			expect(mounted()).toContain("codemode");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("`vault` hands the decision back", async () => {
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" });
+		try {
+			await send("/codemode only");
+			expect(mounted()).not.toContain("read");
+			await send("/codemode vault");
+			expect(mounted()).toContain("read");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("reports an unknown word rather than pretending", async () => {
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" });
+		try {
+			await send("/codemode maybe");
+			expect(mounted()).toContain("read");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("never reaches the model", async () => {
+		// A command that changed something and then also sent a message would have
+		// the model narrate a change it did not make.
+		const { service, send } = await chat({ ...defaultTestSettings(), codemodeEnabled: true });
+		try {
+			await expect(send("/codemode only")).resolves.toBe(false);
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("keeps its override off the disk", async () => {
+		// The override is a fact about this conversation, not the vault; writing it
+		// back would make it a fact about every conversation after it.
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const service = new ObsidianAgentService(createFakeApp(adapter),
+			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
+			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+				streamFn: echoStreamFn(),
+				loadUserSkills: NO_USER_SKILLS,
+			});
+		try {
+			await service.sendPrompt("seed");
+			await service.sendPrompt("/codemode only");
+			expect((service as unknown as { getSettings(): PiemSettings }).getSettings().codemodeMode).toBe("on");
+		} finally { service.dispose(); }
 	}, 30_000);
 });
