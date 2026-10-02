@@ -673,8 +673,14 @@ export default class PiemPlugin extends Plugin {
 	 * `lastShownVersion` is not equal to anything. That is also what the
 	 * recorded version buys: the greeting happens once per version, not once
 	 * per launch.
+	 *
+	 * Opens only when there are notes to open *with*: an empty list would put
+	 * a modal in front of every upgrade to say there is nothing in it. The
+	 * switch is the list itself rather than a flag, so the release that writes
+	 * the first entry turns the greeting on without touching this file.
 	 */
 	private greetOnNewVersion(t: Translator): void {
+		if (WELCOME_ENTRIES.length === 0) return;
 		const version = this.manifest.version;
 		if (this.settings.lastShownVersion === version) return;
 		const entries = pendingEntries(WELCOME_ENTRIES, this.settings.lastShownVersion, version);
