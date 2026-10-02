@@ -1,4 +1,5 @@
 import { type Agent, type AgentTool, type Skill, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { CodemodeSessionMode } from "../codemode/mode";
 import { type Usage } from "@earendil-works/pi-ai";
 import type { CompactionResult } from "@earendil-works/pi-coding-agent";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
@@ -94,15 +95,14 @@ export class SessionRuntime {
 	/** One static community host for this agent lifetime, never for the focused panel. */
 	communityHost?: CommunityHost;
 	/**
-	 * Every tool this chat mounts, before `codemode.mode: "only"` withholds any.
+	 * `/codemode`'s answer for this conversation, overriding the vault setting.
 	 *
-	 * The sandbox reads this rather than `agent.state.tools`, and the difference is
-	 * the whole mode: `only` removes the direct tools from what the *model* sees, so
-	 * reading the agent's list would leave the sandbox with nothing to call — the
-	 * mode would withhold the catalog from the only thing that could use it, and
-	 * every script would be written against an empty `tools`.
+	 * Session-scoped on purpose. The setting says what a vault should usually be;
+	 * this says what *this* conversation wants, which is a different question — the
+	 * same conversation may want `only` for a sweeping job and `on` an hour later,
+	 * and neither answer is worth writing to disk.
 	 */
-	scriptTools?: AgentTool[];
+	codemodeModeOverride?: CodemodeSessionMode;
 	/**
 	 * Every tool this chat mounts, before `codemode.mode: "only"` withholds any.
 	 *
@@ -112,6 +112,7 @@ export class SessionRuntime {
 	 * mode would withhold the catalog from the only thing that could use it, and
 	 * every script would be written against an empty `tools`.
 	 */
+	scriptTools?: AgentTool[];
 	/** The panel attachment survives an agent rebuild within this conversation. */
 	extensionUI?: ExtensionUIAdapter;
 	/** Only the newest completed run may publish agent_settled. */
