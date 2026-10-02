@@ -256,6 +256,8 @@ export interface SettingsPanelSettings {
 	workflowEnabled?: boolean;
 	/** Whether the `codemode` tool is offered; off unless the user turned it on. */
 	codemodeEnabled?: boolean;
+	/** How `codemode` presents the other tools. See {@link CodemodeMode}. */
+	codemodeMode?: "on" | "only";
 	logLevel: LogLevelSetting;
 }
 

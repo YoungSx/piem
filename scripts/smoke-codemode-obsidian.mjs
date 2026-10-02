@@ -68,7 +68,7 @@ async function runSmoke(root, expect) {
 	// the tool was built, so it can only be checked once a conversation exists — an
 	// empty list is the honest answer before then, and asserting on it would either
 	// pass vacuously or fail for the wrong reason.
-	record("with no conversation yet, it says so rather than claiming tools", /No tools are available/.test(tool.description ?? ""));
+	record("with no conversation yet, it says so rather than claiming tools", /No tools are available/.test(tool.description ?? ""), (tool.description ?? "").slice(-160));
 
 	// ---- the switch, on the shipped settings path -------------------------------
 	/** The tool names the current settings actually mount, read off the agent. */
@@ -94,9 +94,42 @@ async function runSmoke(root, expect) {
 
 	// Now that a session is mounted, the built description names real tools.
 	const liveDescription = service.getCodemodeTool().description ?? "";
-	record("with a conversation, it renders the mounted tools' declarations", /declare const tools/.test(liveDescription));
+	record("with a conversation, `on` renders no catalog — the tools are already declared", !/declare const tools/.test(liveDescription));
 	record("and does not offer codemode to a script", !/\n  codemode\(/.test(liveDescription));
-	report.descriptionTokens = Math.ceil(liveDescription.length / 4);
+	report.descriptionTokensOn = Math.ceil(liveDescription.length / 4);
+
+	// ---- the two modes, on the shipped settings path ---------------------------
+	// `only` is the mode that withholds the direct tools, so it is the one that
+	// has to be driven end to end: a model that cannot see a tool cannot skip the
+	// sandbox to reach it, and a sandbox whose catalog is empty is a sandbox the
+	// model cannot write a script against.
+	const wasMode = piem.settings.codemodeMode ?? "on";
+	piem.settings.codemodeMode = "only";
+	await piem.saveSettings();
+	const onlyTools = await mountedTools();
+	report.onlyMounted = onlyTools;
+	// Named rather than counted: the mounted set differs between the desktop and
+	// phone passes (the community host mounts differently), and what the mode
+	// promises is that the *direct vault tools* are gone, not that codemode is the
+	// only thing left on the table.
+	const directTools = ["read", "grep", "ls", "update_frontmatter", "create_note"];
+	record(
+		"`only` withholds the direct vault tools",
+		onlyTools.includes("codemode") && directTools.every((name) => !onlyTools.includes(name)),
+		onlyTools.join(","),
+	);
+	const onlyDescription = service.getCodemodeTool().description ?? "";
+	report.descriptionTokensOnly = Math.ceil(onlyDescription.length / 4);
+	record("`only` carries the catalog the model can no longer see elsewhere", /declare const tools/.test(onlyDescription));
+	record("and it names real tools", /read\(args: /.test(onlyDescription));
+	// The description still has to fit: a catalog that overflows silently is a
+	// catalog the model half-believes.
+	record("the catalog stays inside its budget", report.descriptionTokensOnly <= 3400, String(report.descriptionTokensOnly));
+	const onlyRun = await tool.execute("smoke-only", { code: "return 6 * 7;" }, new AbortController().signal);
+	record("and a script still runs in `only`", !onlyRun.isError && onlyRun.content?.[0]?.text === "42");
+
+	piem.settings.codemodeMode = wasMode;
+	await piem.saveSettings();
 
 	piem.settings.codemodeEnabled = wasEnabled;
 	await piem.saveSettings();

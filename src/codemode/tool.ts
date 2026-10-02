@@ -11,7 +11,8 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { JsonObject, JsonValue } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
-import { renderDeclarations } from "@earendil-works/pi-codemode/declarations";
+import { renderDeclarations, renderToolSample } from "@earendil-works/pi-codemode/declarations";
+import { toCodemodeIdentifier } from "@earendil-works/pi-codemode/identifier";
 import { parseCodemodeSource, type ParsedCodemodeSource } from "@earendil-works/pi-codemode/source";
 import { CodemodeSandbox } from "./sandbox";
 import type {
@@ -99,6 +100,41 @@ export interface ScriptTool extends CodemodeTool {
 	/** The agent tool this shadow exists for, so a call can be run properly. */
 	readonly agentTool: AgentTool;
 }
+
+/**
+ * How `codemode` presents the rest of the tool set.
+ *
+ * pi's own two modes, which mean different things rather than being degrees of
+ * the same thing (`codemode.mode` in its settings docs):
+ *
+ * - `on` — additive, and upstream's default. Every tool stays declared to the model
+ *   and each gains a line showing how to call it from a script; `codemode` carries
+ *   no catalog. The model may reach for either path.
+ * - `only` — the sandbox is the path. The direct tools are withheld and the whole
+ *   catalog moves into `codemode`'s description, so a model cannot skip it.
+ */
+export type CodemodeMode = "on" | "only";
+
+/**
+ * One tool as a script would declare it, for a direct tool's own description.
+ *
+ * In `on` mode this is what a tool gains: a couple of lines saying the same thing
+ * can be reached through a script. It is deliberately short — it lands on a tool
+ * the model already reads, so thirty of them is thirty times whatever this costs.
+ */
+export function codemodeSample(tool: AgentTool): string {
+	return renderToolSample({
+		name: tool.name,
+		description: tool.description,
+		inputSchema: tool.parameters as CodemodeJsonSchema,
+	});
+}
+
+/** The identifier a script reaches this tool by; `my-tool` becomes `my_tool`. */
+export function scriptIdentifier(tool: AgentTool): string {
+	return toCodemodeIdentifier(tool.name);
+}
+
 
 /**
  * What the host hands the tool.
@@ -242,7 +278,7 @@ return lines.length + " matches";
 /** Builds the tool. */
 export function createCodemodeTool(
 	host: CodemodeToolHost,
-	options: { inlineBudget?: number; memoryLimitBytes?: number; timeoutMs?: number; maxOutputTokens?: number } = {},
+	options: { inlineBudget?: number; memoryLimitBytes?: number; timeoutMs?: number; maxOutputTokens?: number; mode?: CodemodeMode } = {},
 ): AgentTool<typeof codemodeSchema> {
 	// Rendered on read, not at construction. The tool is built once per service,
 	// which happens before any conversation exists, so a description computed then
@@ -258,10 +294,28 @@ export function createCodemodeTool(
 		const tools = scriptTools(host.tools(), host);
 		const signature = tools.map(tool => tool.name).join(",");
 		if (memo?.signature !== signature) {
-			memo = {
-				signature,
-				text: `${USAGE}\n\n${renderToolDeclarations(tools, options.inlineBudget ?? DEFAULT_INLINE_BUDGET)}`,
-			};
+			// `on` carries no catalog: every tool is already declared to the model
+			// with a sample appended, so repeating thirty declarations here would be
+			// paying twice for the same list on every request. `only` is the mode
+			// where the catalog has to live here, because it is the only place the
+			// model can read it.
+			//
+			// Read per render, not captured: the service hands this over as a getter,
+			// and a conversation that outlives a settings change should describe
+			// itself the way it is now configured. The memo key carries the mode for
+			// the same reason.
+			const mode = options.mode ?? "on";
+			// Both branches go through `renderToolDeclarations`, so an empty tool set
+			// says so in either mode. `on` otherwise claimed "every tool above" over
+			// a list that was not there — a description a model cannot act on and a
+			// reader cannot trust.
+			const catalog = mode === "only"
+				? renderToolDeclarations(tools, options.inlineBudget ?? DEFAULT_INLINE_BUDGET)
+				: tools.length === 0
+					? renderToolDeclarations(tools, 0)
+					: "Every tool above can also be reached from inside a script, as "
+						+ "`await tools.<name>(args)`. `ALL_TOOLS` lists them.";
+			memo = { signature: `${mode}:${signature}`, text: `${USAGE}\n\n${catalog}` };
 		}
 		return memo.text;
 	};

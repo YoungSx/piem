@@ -165,6 +165,7 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		communityExtensionsGroup(host),
 		workflowRow(host),
 		codemodeRow(host),
+		codemodeModeRow(host),
 		codemodeRow(host),
 		{
 			name: host.t.t("extensions.shareDiagnostics"),
@@ -212,6 +213,63 @@ function codemodeRow(host: SettingsPanelHost): SettingDefinitionItem {
 		control: { type: "toggle", key: "codemodeEnabled", defaultValue: false },
 	};
 }
+
+/**
+ * The mode row, beside the switch because the two are one decision.
+ *
+ * Not a page of its own: a reader who has not turned codemode on has no use for
+ * it, and one who has is already looking at the switch. The copy states the trade
+ * rather than the mechanism — `on` leaves every tool callable and adds a line to
+ * each, `only` makes the script the only path — because that is what the reader
+ * is choosing between.
+ */
+function codemodeModeRow(host: SettingsPanelHost): SettingDefinitionItem {
+	return {
+		name: host.t.t("extensions.codemodeMode"),
+		desc: host.t.t("extensions.codemodeModeDesc"),
+		// A record, not a list of pairs: the generic dropdown reads its current
+		// value out of `settings[key]`, and `{value, label}` is a different
+		// control's shape.
+		control: {
+			type: "dropdown",
+			key: "codemodeMode",
+			options: {
+				on: host.t.t("extensions.codemodeModeOn"),
+				only: host.t.t("extensions.codemodeModeOnly"),
+			},
+		},
+	};
+}
+
+/**
+ * The mode row, beside the switch because the two are one decision.
+ *
+ * Not a page of its own: a reader who has not turned codemode on has no use for
+ * it, and one who has is already looking at the switch. The copy states the trade
+ * rather than the mechanism — `on` leaves every tool callable and adds a line to
+ * each, `only` makes the script the only path — because that is what the reader
+ * is choosing between.
+ */
+
+/**
+ * The mode row, shown beside the switch because the two are one decision.
+ *
+ * Not a row of its own page: a reader who has not turned codemode on has no use
+ * for it, and one who has is already looking at the switch. The copy states the
+ * trade rather than the mechanism — `on` adds a line to each tool it can also
+ * reach through a script, `only` makes the script the only path — because that is
+ * what the reader is choosing between.
+ */
+
+/**
+ * The mode row, shown beside the switch because the two are one decision.
+ *
+ * Not a row of its own page: a reader who has not turned codemode on has no use
+ * for it, and one who has is already looking at the switch. The copy states the
+ * trade rather than the mechanism — `on` adds a line to each tool it can also
+ * reach through a script, `only` makes the script the only path — because that is
+ * what the reader is choosing between.
+ */
 
 /**
  * The built-in Pi extensions, one switch each, over {@link COMMUNITY_EXTENSION_CATALOG}.
