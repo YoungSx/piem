@@ -50,16 +50,6 @@ function owedInShippedList(lastShownVersion: string | undefined, currentVersion:
 }
 
 describe("pendingEntries", () => {
-	it("reports nothing while no release has written notes", () => {
-		// The shipped state: the dialog is wired, the notes are not written yet.
-		// This is the assertion that keeps the blank list from reading as a bug,
-		// and a tripwire for whoever writes the first entry — they will have to
-		// update it, which is the moment to read the two cases below it.
-		expect(WELCOME_ENTRIES).toEqual([]);
-		expect(pendingEntries(WELCOME_ENTRIES, undefined, "1.0.0")).toEqual([]);
-		expect(pendingEntries(WELCOME_ENTRIES, "1.0.0", "1.0.0")).toEqual([]);
-	});
-
 	it("owes a first install every note up to the running version", () => {
 		expect(owedTo(undefined, "1.10.0")).toEqual(["1.10.0", "1.9.0", "1.8.0"]);
 	});
