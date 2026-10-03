@@ -12,7 +12,7 @@
  * to be inlined before the worker starts. {@link ./runtimeAsset} holds the other
  * half.
  */
-import { PRELUDE_SOURCE } from "@earendil-works/pi-codemode/prelude";
+import { PRELUDE_SOURCE } from "../../node_modules/@earendil-works/pi-codemode/dist/runtime/prelude-source.js";
 import { QUICKJS_IIFE_SOURCE } from "./runtimeAsset";
 
 export const BRIDGE_SOURCE = `
@@ -212,21 +212,6 @@ self.onmessage = function (event) {
  * `WebAssembly.Module` in the init message, which is structured-cloneable and
  * so survives the trip into the worker without a second copy on disk or a fetch.
  */
-/**
- * The disposal-symbol polyfill, as a statement list.
- *
- * Guarded rather than assigned: `Symbol.dispose` is a **read-only** property on
- * the engines that have it, and this source is strict mode, so a bare assignment
- * throws `TypeError: Attempted to assign to readonly property` on exactly those
- * engines — while WebKit, which lacks the symbol and is the case the polyfill is
- * for, is the only one where the assignment was needed. Both halves were found by
- * running the worker, not by reading it.
- *
- * Exported so a test splices in the same lines the plugin runs rather than its own
- * copy, which is the failure this file already had once.
- */
-
-
 /**
  * The disposal-symbol polyfill, as a statement list.
  *

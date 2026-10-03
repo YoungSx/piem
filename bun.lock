@@ -8,6 +8,7 @@
         "@earendil-works/chord": "0.99.1",
         "@earendil-works/pi-agent-core": "^0.99.1",
         "@earendil-works/pi-ai": "^0.99.1",
+        "@earendil-works/pi-codemode": "0.99.1",
         "@earendil-works/pi-coding-agent": "0.99.1",
         "@geminixiang/pi-agent-team": "^0.3.0",
         "@juicesharp/rpiv-todo": "2.9.0",

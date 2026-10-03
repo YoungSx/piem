@@ -6,6 +6,7 @@ import { join } from "node:path";
 const script = join(import.meta.dir, "check-bundle.mjs");
 const providers = "node_modules/@earendil-works/pi-ai/dist/providers/";
 const agent = "node_modules/@earendil-works/pi-agent-core/dist/";
+const codemode = "node_modules/@earendil-works/pi-codemode/dist/";
 const codingAgent = "node_modules/@earendil-works/pi-coding-agent/";
 
 async function gate(inputs: Record<string, { bytesInOutput: number }>) {
@@ -16,6 +17,9 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 		// parsed, never evaluated; no request can leave the test process.
 		writeFileSync(bundle, "module.exports = () => import(globalThis.specifier);");
 		writeFileSync(`${bundle}.meta.json`, JSON.stringify({ outputs: { [bundle]: { inputs: {
+			[`${codemode}runtime/prelude-source.js`]: { bytesInOutput: 100 },
+			[`${codemode}declarations.js`]: { bytesInOutput: 100 },
+			[`${codemode}source.js`]: { bytesInOutput: 100 },
 			[`${agent}harness/env/nodejs.js`]: { bytesInOutput: 100 },
 			[`${agent}harness/tools/edit-diff.js`]: { bytesInOutput: 100 },
 			[`${agent}harness/session/jsonl/codec.js`]: { bytesInOutput: 100 },
@@ -81,7 +85,7 @@ describe("bundle composition after adding the public Node environment", () => {
 		}
 	});
 	it("requires all scoped extension graphs and the original truncation helper", async () => {
-		for (const module of ["pi-scoped-extension:pi-web-search", "pi-scoped-extension:pi-clarify", "pi-scoped-extension:pi-context", "pi-scoped-extension:pi-otel", "node_modules/buffer/index.js", `${codingAgent}dist/core/tools/truncate.js`]) {
+		for (const module of [`${codemode}runtime/prelude-source.js`, `${codemode}declarations.js`, `${codemode}source.js`, "pi-scoped-extension:pi-web-search", "pi-scoped-extension:pi-clarify", "pi-scoped-extension:pi-context", "pi-scoped-extension:pi-otel", "node_modules/buffer/index.js", `${codingAgent}dist/core/tools/truncate.js`]) {
 			expect((await gate({ [module]: { bytesInOutput: 0 } })).output).toContain(`required module missing from bundle: ${module}`);
 		}
 	});

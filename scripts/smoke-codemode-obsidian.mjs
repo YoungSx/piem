@@ -135,17 +135,18 @@ async function runSmoke(root, expect) {
 	record("and it names real tools", /read\(args: /.test(onlyDescription));
 	// The description still has to fit: a catalog that overflows silently is a
 	// catalog the model half-believes.
-	record("the catalog stays inside its budget", report.descriptionTokensOnly <= 3400, String(report.descriptionTokensOnly));
-	const onlyRun = await tool.execute("smoke-only", { code: "return 6 * 7;" }, new AbortController().signal);
+	const declarations = onlyDescription.match(/declare const tools: \{[\s\S]*?\n\};/)?.[0] ?? "";
+	record("the catalog stays inside its budget", Math.ceil(declarations.length / 4) <= 3000, String(declarations.length));
+	const onlyRun = await service.getCodemodeTool().execute("smoke-only", { code: "return 6 * 7;" }, new AbortController().signal);
 	record("and a script still runs in `only`", !onlyRun.isError && onlyRun.content?.[0]?.text === "42");
 	record("`only` withholds the MCP server's tools from the model as well", !onlyTools.includes("mcp_smoke_probe"));
 	// The mode's whole promise, executed rather than asserted: the model cannot
 	// see `read` or the probe, and a script can call both — through the real
 	// QuickJS VM, the real host bridge, the real nested tool path.
-	const probeRun = await tool.execute("smoke-only-mcp", { code: "const r = await tools.mcp_smoke_probe({}); return r;" }, new AbortController().signal);
+	const probeRun = await service.getCodemodeTool().execute("smoke-only-mcp", { code: "const r = await tools.mcp_smoke_probe({}); return r;" }, new AbortController().signal);
 	record("a script reaches the MCP tool the model cannot see", !probeRun.isError && probeRun.content?.at(-1)?.text === '"probe-ok"', JSON.stringify(probeRun).slice(0, 160));
-	const directRun = await tool.execute("smoke-only-direct", { code: "const files = await tools.ls({}); return typeof files;" }, new AbortController().signal);
-	record("and the direct vault tools, in the same mode", !directRun.isError && JSON.parse(directRun.content?.at(-1)?.text ?? '""') === "string", JSON.stringify(directRun).slice(0, 160));
+	const directRun = await service.getCodemodeTool().execute("smoke-only-direct", { code: "const files = await tools.ls({}); return typeof files;" }, new AbortController().signal);
+	record("and the direct vault tools, in the same mode", !directRun.isError && directRun.content?.at(-1)?.text === "string", JSON.stringify(directRun).slice(0, 160));
 
 
 	piem.settings.codemodeMode = wasMode;
@@ -175,7 +176,7 @@ async function runSmoke(root, expect) {
 	await piem.saveSettings();
 
 	// ---- the sandbox, on the shipped bytes --------------------------------------
-	const run = async (code, signal) => tool.execute("smoke", { code }, signal ?? new AbortController().signal);
+	const run = async (code, signal) => service.getCodemodeTool().execute("smoke", { code }, signal ?? new AbortController().signal);
 	const timing = {};
 
 	let started = performance.now();
@@ -218,7 +219,7 @@ async function runSmoke(root, expect) {
 	record("the VM's memory ceiling fires", hungry.__late !== true && /out of memory/i.test(hungry.content?.[hungry.content.length - 1]?.text ?? ""));
 
 	const optioned = await run("// @options: {\"timeout_ms\": 5000}\nreturn 'parsed';");
-	record("an @options line is honoured", !optioned.isError && JSON.parse(optioned.content?.[0]?.text ?? '""') === "parsed");
+	record("an @options line is honoured", !optioned.isError && optioned.content?.[0]?.text === "parsed");
 
 	const badOption = await run("// @options: {\"nope\": 1}\nreturn 1;");
 	record("a malformed @options line is the model's mistake to see", badOption.isError === true && /only supports/.test(badOption.content?.[0]?.text ?? ""));

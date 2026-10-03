@@ -24,6 +24,7 @@ import {
 	type AgentTool,
 	type AgentToolResult,
 	type Entry,
+	type JsonValue,
 	type AgentTurnContext,
 	type AgentTurnDecision,
 	type PromptTemplate,
@@ -103,6 +104,7 @@ import { extensionCompactionEntry } from "../extensions/extensionEvents";
 import { createExtensionRequestPool } from "../extensions/extensionResources";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 import { extensionSessionView } from "./extensionSessionView";
+import { CODEMODE_STORE_ENTRY_TYPE, readCodemodeStore } from "../codemode/store";
 import { ContextSession } from "../extensions/contextSession";
 import { captureExtensionEditor } from "../extensions/extensionEditor";
 import { navigateExtensionSummary } from "../session/extensionNavigation";
@@ -928,15 +930,6 @@ export class ObsidianAgentService {
 	 */
 	private readonly workflowTool: AgentTool;
 	/**
-	 * The `codemode` tool, built once and shared like {@link workflowTool}.
-	 *
-	 * The host it holds is a closure, not a snapshot: it reads the tool set and the
-	 * conversation from whichever runtime is current when a script calls a tool, so
-	 * a session that switches mid-script still resolves against the session the
-	 * script belongs to.
-	 */
-	private readonly codemodeTool: AgentTool;
-	/**
 	 * One runtime per open session file (issue #235). The service no longer
 	 * carries per-session state as singletons: every field that belongs to a
 	 * conversation lives on the {@link SessionRuntime} keyed by its file path,
@@ -1226,10 +1219,6 @@ export class ObsidianAgentService {
 			getExternalTools: this.getMountedExternalToolsFn,
 		});
 
-		// Captured before the option literal below, which is the one place `this`
-		// would be the wrong receiver.
-		const readCodemodeMode = (): CodemodeSessionMode => this.resolveCodemodeMode();
-
 		// The workflow tool spawns through the same subagent runner, so a workflow
 		// child resolves its model, tools, and transport exactly as a delegated
 		// subagent does. Built once and shared; the journal store lives here.
@@ -1240,43 +1229,6 @@ export class ObsidianAgentService {
 			agentTypes: SUBAGENT_ROLES.map((role) => role.name),
 		});
 
-		// The codemode tool holds no state of its own: every read is a closure over
-		// whatever runtime is current when a script calls a tool, so a script that
-		// outlives a session switch still resolves against the chat it belongs to.
-		// `runToolCall` is what makes a nested call the same kind of call as a
-		// model-issued one — same schema validation, same hooks, same permission
-		// checks — which `agentTool.execute` on its own would skip.
-		this.codemodeTool = createCodemodeTool(
-			{
-				// `rt.scriptTools` rather than `agent.state.tools`: in `only` mode the
-				// agent's list has had the direct tools taken out of it, which is the
-				// point for the model and the opposite of what a script may call.
-				tools: () => this.current()?.scriptTools ?? [],
-				executeTool: (name, args, signal) => this.executeNestedTool(name, args, signal),
-			},
-			{
-				// A getter, so the mode is read per render rather than captured: a
-				// conversation that outlives a settings change should not keep
-				// describing itself the way it was described when it started.
-				//
-				// The settings accessor is captured rather than `this`, because `this`
-				// inside an object-literal getter is the *literal*. Reading `this` there
-				// yields `undefined` and every description read throws — silent until
-				// a model asks what tools it has.
-				get mode() {
-					// The same resolution `buildTools` used, or the description would
-					// describe one mode while the tool set reflects another. Captured
-					// through a closure because `this` in an object-literal getter is
-					// the literal, not the service.
-					//
-					// `off` collapses to `on` here, and that is not a fudge: with the
-					// tool unmounted nothing reads this description, and `on` is the
-					// conservative reading of "which catalog belongs here".
-					const mode = readCodemodeMode();
-					return mode === "only" ? "only" : "on";
-				},
-			},
-		);
 	}
 
 	/**
@@ -1350,8 +1302,7 @@ export class ObsidianAgentService {
 	 * Never rejects: an unknown tool, a validation failure or a throw all come back
 	 * as an error result, which the script sees as a rejected promise.
 	 */
-	private async executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult> {
-		const rt = this.current();
+	private async executeNestedTool(rt: SessionRuntime | null, name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult> {
 		const agent = rt?.agent;
 		if (!rt || !agent) {
 			return { content: [{ type: "text", text: "No conversation is running." }], details: undefined, isError: true };
@@ -6198,10 +6149,8 @@ export class ObsidianAgentService {
 			tool.name === "codemode" ? codemodeOn : !codemodeOnly;
 		const prepare = (tool: AgentTool): AgentTool => {
 			if (codemodeOnly || !codemodeOn || tool.name === "codemode") return tool;
-			// Appending rather than replacing: the tool's own description is what the
-			// model reads to decide whether to call it, and the sample is an addition
-			// to that, not a substitute for it.
-			return { ...tool, description: `${tool.description}\n\n${codemodeSample(tool).trim()}` };
+			// Pi's sample already includes the original description.
+			return { ...tool, description: codemodeSample(tool).trim() };
 		};
 		const full = [
 			...this.subagentExtension.createTools(() => rt.skills, rt.sessionPath),
@@ -6212,7 +6161,7 @@ export class ObsidianAgentService {
 			// tool held, and the engine stays in the bundle (43 KiB) so the switch is
 			// reversible rather than a deletion. See {@link ../settings}.
 			...(this.getSettings().workflowEnabled === true ? [this.workflowTool] : []),
-			...(codemodeOn ? [this.codemodeTool] : []),
+			...(codemodeOn ? [this.createSessionCodemodeTool(rt)] : []),
 			...(rt.communityHost?.tools ?? []),
 			// Inside the set the `offered` filter governs, like everything else: MCP
 			// tools appended *after* `buildTools` were the one class of tool `only`
@@ -6226,10 +6175,7 @@ export class ObsidianAgentService {
 		// from *here*, not from the agent. Filtering first would leave every script
 		// with an empty `tools`, which is the mode working against itself.
 		rt.scriptTools = full;
-		return full
-			.filter(offered)
-			.map(prepare)
-			.map((tool) => {
+		const bound = full.map((tool) => {
 			if (!tool.execute) {
 				return tool;
 			}
@@ -6247,6 +6193,8 @@ export class ObsidianAgentService {
 				},
 			} satisfies AgentTool;
 		});
+		rt.scriptTools = bound;
+		return bound.filter(offered).map(prepare);
 	}
 
 	/**
@@ -6269,16 +6217,48 @@ export class ObsidianAgentService {
 		return this.workflowTool;
 	}
 
-	/**
-	 * The `codemode` tool, for the same reason {@link getWorkflowTool} is.
-	 *
-	 * Present whether or not the setting is on — the switch decides whether the
-	 * tool is *mounted* in a conversation, not whether the service built it. An
-	 * observer or a smoke reaching for this gets the tool and can tell the two
-	 * apart; the mounted set is read off the agent, which is what a model sees.
-	 */
+	/** The focused chat's tool, also reachable by the Obsidian smoke harness. */
 	getCodemodeTool(): AgentTool {
-		return this.codemodeTool;
+		return this.createSessionCodemodeTool(this.current());
+	}
+
+	/** Bind a script to its owning runtime before any asynchronous work starts. */
+	private createSessionCodemodeTool(rt: SessionRuntime | null): AgentTool {
+		const mode = this.resolveCodemodeMode();
+		return createCodemodeTool(() => {
+			const agent = rt?.agent;
+			const epoch = rt?.stopEpoch;
+			const lane = rt?.activeLane;
+			const assertCurrent = () => {
+				if (!rt || !agent || this.disposed || rt.bookmarkClosing || rt.stopEpoch !== epoch
+					|| rt.agent !== agent || rt.activeLane !== lane || this.runtimes.get(rt.sessionPath) !== rt) {
+					throw new Error("Codemode conversation is no longer available.");
+				}
+				return rt;
+			};
+			return {
+				tools: () => rt?.scriptTools ?? [],
+				executeTool: (name, args, signal) => {
+					assertCurrent();
+					return this.executeNestedTool(rt, name, args, signal);
+				},
+				readStore: async () => {
+					const runtime = assertCurrent();
+					const branch = await this.sessionManager.getSessionFor(runtime.sessionPath).view(runtime.activeLane).findEntriesOnBranch({ order: "oldestFirst" });
+					assertCurrent();
+					return readCodemodeStore(branch);
+				},
+				writeStore: async writes => {
+					const runtime = assertCurrent();
+					const session = this.sessionManager.getSessionFor(runtime.sessionPath);
+					const branch = await session.branch(runtime.activeLane);
+					assertCurrent();
+					if (!branch) throw new Error("Codemode conversation branch is no longer available.");
+					await branch.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, JSON.parse(JSON.stringify(writes)) as JsonValue);
+					assertCurrent();
+				},
+			};
+		}, { mode: mode === "only" ? "only" : "on" });
 	}
 
 	/** External tools for the current settings; empty when no provider is wired. */
