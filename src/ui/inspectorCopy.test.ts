@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { getT } from "../i18n";
 import type { SubagentSnapshot } from "../subagent/inspectorModel";
-import { configItems, formatDuration, incompleteNote, latestStep, processSteps, reportBody, statusText, timingLine, usageItems } from "./inspectorCopy";
+import { clipTaskTip, configItems, formatDuration, incompleteNote, latestStep, processSteps, reportBody, statusText, timingLine, usageItems } from "./inspectorCopy";
 
 /**
  * Wording rules for the subagent monitor.
@@ -260,6 +260,20 @@ describe("the process record is a sequence, one line per step", () => {
 		] as unknown as AgentMessage[];
 
 		expect(processSteps(images, t)[0]).toMatchObject({ text: "", clipped: false });
+	});
+});
+
+describe("a hover tip carries a preview, not the whole prompt", () => {
+	it("keeps a task that fits, untouched", () => {
+		expect(clipTaskTip("Sweep Projects/ for stale notes")).toBe("Sweep Projects/ for stale notes");
+	});
+
+	it("clips past 160 characters with an ellipsis", () => {
+		const task = "x".repeat(500);
+		const clipped = clipTaskTip(task);
+		expect(clipped).toHaveLength(161);
+		expect(clipped.endsWith("…")).toBe(true);
+		expect(clipped.slice(0, 160)).toBe(task.slice(0, 160));
 	});
 });
 

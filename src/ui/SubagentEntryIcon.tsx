@@ -3,7 +3,7 @@ import type { SubagentSnapshot } from "../subagent/inspectorModel";
 import { anyRunning } from "../subagent/inspectorModel";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { usePointerDownOutside } from "./usePointerDownOutside";
-import { statusText, timingLine } from "./inspectorCopy";
+import { clipTaskTip, statusText, timingLine } from "./inspectorCopy";
 import { useT } from "./TranslatorContext";
 import { suppressOwnTooltip } from "./tooltipSuppression";
 
@@ -252,7 +252,14 @@ export function SubagentEntryIcon({ snapshots, onOpen, onArchiveFinished }: Suba
 							key={snapshot.id}
 							type="button"
 							className="piem-chat__subagents-item"
-							aria-label={t.t("subagents.openDetail", { task: snapshot.task })}
+							/*
+							 * The label is the tooltip here — Obsidian hangs one off every
+							 * `aria-label` and this row's is deliberately let through — so
+							 * the task rides in clipped: the tip exists to recognize the
+							 * run the row's one-line clamp cut off, and the detail page it
+							 * opens holds the whole prompt.
+							 */
+							aria-label={t.t("subagents.openDetail", { task: clipTaskTip(snapshot.task) })}
 							onClick={() => {
 								closeNow();
 								onOpen(snapshot.id);

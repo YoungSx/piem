@@ -180,6 +180,33 @@ export function usageItems(
 export const TASK_FOLD_LIMIT = 300;
 
 /**
+ * Longest a task may run in a hover tip — the popover row's `aria-label`,
+ * which Obsidian renders as a tooltip verbatim, so an unbounded task paints
+ * the screen with the whole spawn prompt.
+ *
+ * The tip's job is to let a reader recognize the run the row's one-line clamp
+ * cut off, not to carry it in full: the detail page shows all of it (and folds
+ * it past {@link TASK_FOLD_LIMIT}). Same tier as a transcript step's text
+ * (`MAX_STEP_LENGTH`), because a tip and a step row are both glance-sized
+ * surfaces — and the ellipsis, not a translated word, is what says "more",
+ * since a tooltip carries no room for a label beside the cut.
+ */
+const MAX_TIP_TASK = 160;
+
+/**
+ * A task as a hover tip can afford it: whole when it fits, 160 characters and
+ * an ellipsis when it does not. Applied only where the label *is* the tooltip;
+ * the panel row's label is an accessible name whose tooltip is suppressed, and
+ * a screen reader hearing the entire task at the row is a feature there.
+ */
+export function clipTaskTip(task: string): string {
+	const trimmed = task.trim();
+	return trimmed.length <= MAX_TIP_TASK
+		? trimmed
+		: `${trimmed.slice(0, MAX_TIP_TASK)}…`;
+}
+
+/**
  * The running child's newest step, or null when there is nothing to say.
  *
  * Drawn from the same flattening as the process record so the live line and the
