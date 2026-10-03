@@ -1,288 +1,248 @@
 /**
- * Real Obsidian smoke for the codemode sandbox.
- * Disposable vault only. Drives the ACTUAL bundled `codemode` tool inside the
- * real Obsidian WebView — the QuickJS VM built from the inlined wasm, the
- * blob-URL Web Worker, the host bridge, the `runToolCall` nested path — proving
- * the integrated path runs on the shipped bytes, not just under bun.
- *
- * `--expect-mobile` runs the same checks in Obsidian's official phone
- * emulation. That pass changes the device mode and the viewport, not the JS
- * engine: the mobile WebView here is still Chromium/V8, not WebKit. So it
- * proves the plugin's mobile code paths and that nothing here depends on the
- * layout, and it is *not* evidence about WebKit — that is the separate
- * Playwright run, and the report says so rather than blurring the two.
- *
- * No model is configured in the disposable vault, so a nested tool call fails at
- * the "no conversation" branch. What is under test is the sandbox reaching that
- * point in-WebView, not a model call.
- *
- * Usage: node scripts/smoke-codemode-obsidian.mjs <CDP-port> <output-dir> [--expect-mobile]
+ * Real Obsidian + official phone emulation, using the unmodified release bundle.
+ * A loopback OpenAI/MCP fixture makes the test independent of credentials.
+ * Usage: node scripts/smoke-codemode-obsidian.mjs <CDP-port> <rig-root> [--expect-mobile]
+ * The rig must own <rig-root>/vault. Phone emulation is Chromium, not iOS WebKit.
  */
+import { createServer } from "node:http";
+import { writeFile } from "node:fs/promises";
+import { observePluginNodeAccess } from "./obsidian-plugin-node-audit.mjs";
+
 const [port, directory, mode, ...extra] = process.argv.slice(2);
-if (!port || !directory || (mode !== undefined && mode !== "--expect-mobile") || extra.length > 0) {
-	throw new Error("Usage: node scripts/smoke-codemode-obsidian.mjs <CDP-port> <output-dir> [--expect-mobile]");
+if (!port || !directory || (mode !== undefined && mode !== "--expect-mobile") || extra.length) {
+	throw new Error("Usage: node scripts/smoke-codemode-obsidian.mjs <CDP-port> <rig-root> [--expect-mobile]");
 }
-const expectMobile = mode === "--expect-mobile";
-
-async function runSmoke(root, expect) {
-	const report = { passed: false, checks: [], errors: [] };
-	const record = (name, ok) => { if (!ok) throw new Error(name); report.checks.push(name); };
-	const wait = async (test) => {
-		for (let attempt = 0; attempt < 1500; attempt++) {
-			if (await test()) return;
-			await new Promise((resolve) => setTimeout(resolve, 20));
-		}
-		throw new Error("Condition timed out");
-	};
-
+const mobile = mode === "--expect-mobile";
+const state = { requests: [], writes: [], probes: 0 };
+const timers = new Set();
+const fixture = createServer(async (req, res) => {
+	res.setHeader("Access-Control-Allow-Origin", "*");
+	res.setHeader("Access-Control-Allow-Headers", "*");
+	res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+	const json = value => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(value)); };
 	try {
-		app.plugins.setEnable(true);
-		if (!app.plugins.plugins?.piem?.agentService) {
-			await app.plugins.enablePluginAndSave("piem");
+		if (req.method === "OPTIONS") { res.writeHead(204).end(); return; }
+		if (req.url === "/state") { json(state); return; }
+		if (req.method !== "POST") { res.writeHead(405).end(); return; }
+		let raw = "";
+		for await (const chunk of req) raw += chunk;
+		const body = JSON.parse(raw);
+		if (req.url === "/mcp") {
+			if (body.id === undefined) { res.writeHead(202).end(); return; }
+			let result;
+			if (body.method === "initialize") result = { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "smoke", version: "1.0.0" } };
+			else if (body.method === "tools/list") result = { tools: [
+				{ name: "probe", description: "Return probe-ok", inputSchema: { type: "object", properties: {} } },
+				{ name: "write_probe", description: "Record a test write after a short delay", inputSchema: { type: "object", properties: { n: { type: "integer" } }, required: ["n"] } },
+			] };
+			else if (body.method === "tools/call") {
+				if (body.params.name === "write_probe") {
+					state.writes.push(body.params.arguments.n);
+					await new Promise(resolve => { const timer = setTimeout(() => { timers.delete(timer); resolve(); }, 350); timers.add(timer); });
+				} else state.probes++;
+				result = { content: [{ type: "text", text: "probe-ok" }] };
+			} else if (body.method === "ping") result = {};
+			else { json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: "Unknown fixture method" } }); return; }
+			json({ jsonrpc: "2.0", id: body.id, result });
+			return;
 		}
-	} catch (cause) {
-		report.errors.push(`enable: ${String(cause)}`);
-	}
-	await wait(() => window.app?.plugins?.plugins?.piem?.agentService);
-	if (app.vault.adapter.getBasePath() !== `${root}/vault`) throw new Error("Use a disposable vault at <output-dir>/vault.");
-	report.environment = {
-		mobile: app.isMobile,
-		phone: document.body.classList.contains("is-phone"),
-		obsidian: document.title.match(/Obsidian ([0-9.]+)/)?.[1],
-		sharedArrayBuffer: typeof SharedArrayBuffer,
+		if (req.url !== "/v1/chat/completions") { res.writeHead(404).end(); return; }
+		const lastUser = body.messages.findLastIndex(message => message.role === "user" && /smoke-seed|codemode-runtime-roundtrip/.test(JSON.stringify(message.content)));
+		const prompt = JSON.stringify(body.messages[lastUser]?.content ?? "");
+		const roundtrip = prompt.includes("codemode-runtime-roundtrip");
+		const afterTool = body.messages.slice(lastUser + 1).some(message => message.role === "tool");
+		state.requests.push({ prompt, tools: body.tools?.map(tool => tool.function?.name ?? tool.name) ?? [], toolResults: body.messages.filter(message => message.role === "tool").length });
+		res.setHeader("Content-Type", "text/event-stream");
+		const chunk = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ id: "smoke", object: "chat.completion.chunk", model: "smoke", choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+		chunk({ role: "assistant" });
+		if (roundtrip && !afterTool) {
+			chunk({ tool_calls: [{ index: 0, id: "smoke-codemode", type: "function", function: { name: "codemode", arguments: JSON.stringify({ code: 'text(await tools.mcp_smoke_probe({})); text(await tools.read({path:"smoke-note.md"})); store("roundtrip",42); return "runtime-ok";' }) } }] });
+			chunk({}, "tool_calls");
+		} else { chunk({ content: roundtrip ? "Smoke complete" : "Seed complete" }); chunk({}, "stop"); }
+		res.end("data: [DONE]\n\n");
+	} catch (error) { res.writeHead(500).end(String(error)); }
+});
+await new Promise(resolve => fixture.listen(0, "127.0.0.1", resolve));
+const endpoint = `http://127.0.0.1:${fixture.address().port}`;
+
+async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
+	const report = { passed: false, checks: [], errors: [] };
+	const check = (name, ok) => { if (!ok) throw new Error(name); report.checks.push(name); };
+	const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+	const wait = async (test, label) => {
+		const end = performance.now() + 15000;
+		while (performance.now() < end) { if (await test()) return; await pause(25); }
+		throw new Error(`Timed out: ${label}`);
 	};
-	record("correct official device mode", app.isMobile === expect);
-	if (expect) record("official phone emulation", document.body.classList.contains("emulate-mobile"));
-
-	const errors = [];
-	const onError = (event) => errors.push(String(event.error ?? event.reason ?? event.message));
-	window.addEventListener("error", onError);
-	window.addEventListener("unhandledrejection", onError);
-
-	const piem = app.plugins.plugins.piem;
-	const service = piem.agentService;
-	const tool = service.getCodemodeTool();
-	record("codemode tool is built", !!tool && tool.name === "codemode");
-	record("description says results stay inside the script", /stay inside it/.test(tool.description ?? ""));
-	// The declaration block is rendered from the *session's* tool set at the moment
-	// the tool was built, so it can only be checked once a conversation exists — an
-	// empty list is the honest answer before then, and asserting on it would either
-	// pass vacuously or fail for the wrong reason.
-	record("with no conversation yet, it says so rather than claiming tools", /No tools are available/.test(tool.description ?? ""), (tool.description ?? "").slice(-160));
-
-	// ---- the switch, on the shipped settings path -------------------------------
-	/**
-	 * The tool names a fresh conversation mounts, read off the agent.
-	 *
-	 * A *new* session each time, so this answers the vault setting — which is what
-	 * it is for. It cannot answer a `/codemode` override: a new chat is a new
-	 * conversation, and a conversation-scoped override is exactly the thing that
-	 * does not follow it. {@link currentTools} is the probe for that.
-	 */
-	const mountedTools = async () => {
+	let audit;
+	const workers = new Set();
+	const workerUrls = new Set();
+	let created = 0;
+	let revoked = 0;
+	const NativeWorker = window.Worker;
+	const revoke = URL.revokeObjectURL;
+	const onError = event => report.errors.push(String(event.error ?? event.reason ?? event.message));
+	try {
+		if (app.vault.adapter.getBasePath() !== `${root}/vault`) throw new Error("Use the disposable <rig-root>/vault.");
+		check("official device mode", app.isMobile === expectMobile);
+		if (expectMobile) check("official phone emulation", document.body.classList.contains("emulate-mobile") && document.body.classList.contains("is-phone"));
+		const initialPlugin = app.plugins.plugins.piem;
+		Object.assign(initialPlugin.settings, {
+			language: "en", networkTransport: "requestUrl", shareDiagnostics: false,
+			providers: [{ id: "runtime-smoke", name: "Local smoke", baseUrl: `${endpoint}/v1`, protocol: "openai-completions", apiKey: "local-fixture-only", secretRef: "", source: "user", oauthFlow: "" }],
+			models: [{ id: "runtime-smoke", providerId: "runtime-smoke", modelApiId: "smoke", displayName: "Smoke", reasoning: false, supportsImages: false }],
+			activeModelId: "runtime-smoke",
+			mcpServers: [{ id: "builtin-exa", name: "Exa", url: "https://mcp.exa.ai/mcp", token: "", secretRef: "", enabled: false },
+				{ id: "runtime-smoke", name: "smoke", url: `${endpoint}/mcp`, token: "", secretRef: "", enabled: true }],
+			codemodeEnabled: true, codemodeMode: "on",
+		});
+		// Persist the new loopback endpoint before reload, so startup cannot race a dead previous fixture.
+		await initialPlugin.saveSettings({ reconfigure: false });
+		audit = expectMobile ? observeNodeAccess("piem") : undefined;
+		await app.plugins.unloadPlugin("piem");
+		await app.plugins.loadPlugin("piem");
+		await wait(() => app.plugins.plugins.piem?.agentService, "plugin service");
+		const plugin = app.plugins.plugins.piem;
+		const service = plugin.agentService;
+		await plugin.activateChatView();
 		await service.newSession({ force: true });
-		await service.sendPrompt("seed").catch(() => undefined);
-		return (service.agent?.state.tools ?? []).map((tool) => tool.name);
-	};
+		await wait(() => service.agent?.state.tools.some(tool => tool.name === "mcp_smoke_probe"), "MCP handshake and mount");
+		if (!app.vault.getFileByPath("smoke-note.md")) await app.vault.create("smoke-note.md", "runtime fixture note\n");
+		report.environment = { obsidian: document.title.match(/Obsidian ([0-9.]+)/)?.[1], plugin: plugin.manifest.version,
+			mobile: app.isMobile, phone: document.body.classList.contains("is-phone"), width: innerWidth, height: innerHeight, engine: navigator.userAgent };
+		window.addEventListener("error", onError);
+		window.addEventListener("unhandledrejection", onError);
+		window.Worker = class extends NativeWorker {
+			constructor(...args) { super(...args); created++; workers.add(this); workerUrls.add(String(args[0])); }
+			terminate() { try { super.terminate(); } finally { workers.delete(this); } }
+		};
+		URL.revokeObjectURL = function (url) { if (workerUrls.delete(url)) revoked++; return revoke.call(URL, url); };
+		const names = () => service.agent.state.tools.map(tool => tool.name);
+		const run = (code, signal) => service.getCodemodeTool().execute("runtime-smoke", { code }, signal ?? new AbortController().signal);
+		const text = result => result.content.filter(item => item.type === "text").map(item => item.text).join("\n");
+		const stats = async () => (await fetch(`${endpoint}/state`)).json();
 
-	/** What *this* conversation has mounted right now. */
-	const currentTools = () => (service.agent?.state.tools ?? []).map((tool) => tool.name);
+		check("on declares direct and script tools", names().includes("codemode") && names().includes("read") && names().includes("mcp_smoke_probe"));
+		await service.sendPrompt("smoke-seed-on");
+		check("configured local model responds", !service.getSnapshot().errorMessage);
+		check("on sends direct MCP declaration", (await stats()).requests.find(request => request.prompt.includes("smoke-seed-on"))?.tools.includes("mcp_smoke_probe"));
+		await service.sendPrompt("/codemode only");
+		check("only declares exactly codemode", JSON.stringify(names()) === '["codemode"]');
+		const data = JSON.parse(await app.vault.adapter.read(".obsidian/plugins/piem/data.json"));
+		check("slash command persists the setting", data.codemodeEnabled && data.codemodeMode === "only");
+		check("only description supplies tool parameters", /read\(args:/.test(service.getCodemodeTool().description));
+		await service.sendPrompt("codemode-runtime-roundtrip");
+		const wire = (await stats()).requests.filter(request => request.prompt.includes("codemode-runtime-roundtrip"));
+		check("only stays exclusive on the actual provider requests", wire.length >= 2 && wire.every(request => JSON.stringify(request.tools) === '["codemode"]'));
+		check("provider sees the completed tool result", wire.some(request => request.toolResults > 0));
+		check("real model-tool-model loop completes", !service.getSnapshot().errorMessage && JSON.stringify(service.getSnapshot().messages).includes("runtime-ok"));
+		check("MCP tool reaches the local HTTP server", (await stats()).probes > 0);
+		check("MCP string is not double quoted", text(await run("return await tools.mcp_smoke_probe({})")) === "probe-ok");
+		check("real Vault read returns the fixture", text(await run('return await tools.read({path:"smoke-note.md"})')).includes("runtime fixture note"));
+		check("ALL_TOOLS provides discoverable parameters", text(await run('return ALL_TOOLS.find(t=>t.name==="read").description')).includes("path: string"));
 
-	const wasEnabled = piem.settings.codemodeEnabled === true;
-	piem.settings.codemodeEnabled = false;
-	await piem.saveSettings();
-	const offTools = await mountedTools();
-	record("codemode is not mounted while the setting is off", !offTools.includes("codemode"));
-	record("the rest of the tool set survives the gate", offTools.includes("read"));
+		check("store survives the agent loop", text(await run('return load("roundtrip")')) === "42");
+		const ownerPath = service.getActiveSessionPath();
+		const ownerTool = service.getCodemodeTool();
+		await service.newSession();
+		await service.sendPrompt("smoke-seed-second-chat");
+		check("new chat does not inherit another store", text(await run('return load("roundtrip") ?? "empty"')) === "empty");
+		check("captured tool keeps its owning chat", text(await ownerTool.execute("owner", { code: 'return load("roundtrip")' }, new AbortController().signal)) === "42");
+		await service.openSession(ownerPath);
+		const failedStore = await run('store("roundtrip", 99); throw new Error("expected failure")');
+		check("failed scripts discard store writes", failedStore.isError && text(await run('return load("roundtrip")')) === "42");
+		await run('store("roundtrip", undefined)');
+		check("undefined deletes a stored key", text(await run('return load("roundtrip") ?? "deleted"')) === "deleted");
 
-	piem.settings.codemodeEnabled = true;
-	await piem.saveSettings();
-	const onTools = await mountedTools();
-	record("codemode is mounted once the setting is on", onTools.includes("codemode"));
-	record("it is offered alongside the direct tools, not instead", onTools.includes("read") && onTools.includes("grep"));
-	record("`on` mounts the MCP server's tools too", onTools.includes("mcp_smoke_probe"));
-	report.mounted = { off: offTools.length, on: onTools.length };
+		const capabilities = JSON.parse(text(await run('return [typeof fetch,typeof process,typeof require,typeof setTimeout]')));
+		check("VM has no direct host capabilities", capabilities.every(value => value === "undefined"));
+		check("strings are returned as text", text(await run('text("one"); return "two"')) === "one\ntwo");
+		const oversized = text(await run('// @options: {"max_output_tokens":20}\ntext("a".repeat(80)); return "z".repeat(80)'));
+		check("return value shares the output budget", oversized.includes("truncated output") && oversized.includes("a".repeat(40)) && oversized.includes("z".repeat(40)) && !oversized.includes("z".repeat(41)));
+		const image = await run('// @options: {"max_output_tokens":1}\nimage("data:image/png;base64,aGVsbG8="); return "x".repeat(200)');
+		check("output truncation preserves images", image.content.some(item => item.type === "image" && item.data === "aGVsbG8="));
+		const thrown = await run('\n\nthrow new Error("smoke boom")');
+		check("error stack keeps script line numbers", thrown.isError && /codemode\.js:3/.test(text(thrown)));
+		const missing = await run('await tools.read({path:"missing-smoke-note.md"})');
+		check("nested tool errors propagate", missing.isError && text(missing).includes("Script error"));
 
-	// Now that a session is mounted, the built description names real tools.
-	const liveDescription = service.getCodemodeTool().description ?? "";
-	record("with a conversation, `on` renders no catalog — the tools are already declared", !/declare const tools/.test(liveDescription));
-	record("and does not offer codemode to a script", !/\n  codemode\(/.test(liveDescription));
-	report.descriptionTokensOn = Math.ceil(liveDescription.length / 4);
-
-	// ---- the two modes, on the shipped settings path ---------------------------
-	// `only` is the mode that withholds the direct tools, so it is the one that
-	// has to be driven end to end: a model that cannot see a tool cannot skip the
-	// sandbox to reach it, and a sandbox whose catalog is empty is a sandbox the
-	// model cannot write a script against.
-	const wasMode = piem.settings.codemodeMode ?? "on";
-	piem.settings.codemodeMode = "only";
-	await piem.saveSettings();
-	const onlyTools = await mountedTools();
-	report.onlyMounted = onlyTools;
-	// Named rather than counted: the mounted set differs between the desktop and
-	// phone passes (the community host mounts differently), and what the mode
-	// promises is that the *direct vault tools* are gone, not that codemode is the
-	// only thing left on the table.
-	const directTools = ["read", "grep", "ls", "update_frontmatter", "create_note"];
-	record(
-		"`only` withholds the direct vault tools",
-		onlyTools.includes("codemode") && directTools.every((name) => !onlyTools.includes(name)),
-		onlyTools.join(","),
-	);
-	const onlyDescription = service.getCodemodeTool().description ?? "";
-	report.descriptionTokensOnly = Math.ceil(onlyDescription.length / 4);
-	record("`only` carries the catalog the model can no longer see elsewhere", /declare const tools/.test(onlyDescription));
-	record("and it names real tools", /read\(args: /.test(onlyDescription));
-	// The description still has to fit: a catalog that overflows silently is a
-	// catalog the model half-believes.
-	const declarations = onlyDescription.match(/declare const tools: \{[\s\S]*?\n\};/)?.[0] ?? "";
-	record("the catalog stays inside its budget", Math.ceil(declarations.length / 4) <= 3000, String(declarations.length));
-	const onlyRun = await service.getCodemodeTool().execute("smoke-only", { code: "return 6 * 7;" }, new AbortController().signal);
-	record("and a script still runs in `only`", !onlyRun.isError && onlyRun.content?.[0]?.text === "42");
-	record("`only` withholds the MCP server's tools from the model as well", !onlyTools.includes("mcp_smoke_probe"));
-	// The mode's whole promise, executed rather than asserted: the model cannot
-	// see `read` or the probe, and a script can call both — through the real
-	// QuickJS VM, the real host bridge, the real nested tool path.
-	const probeRun = await service.getCodemodeTool().execute("smoke-only-mcp", { code: "const r = await tools.mcp_smoke_probe({}); return r;" }, new AbortController().signal);
-	record("a script reaches the MCP tool the model cannot see", !probeRun.isError && probeRun.content?.at(-1)?.text === '"probe-ok"', JSON.stringify(probeRun).slice(0, 160));
-	const directRun = await service.getCodemodeTool().execute("smoke-only-direct", { code: "const files = await tools.ls({}); return typeof files;" }, new AbortController().signal);
-	record("and the direct vault tools, in the same mode", !directRun.isError && directRun.content?.at(-1)?.text === "string", JSON.stringify(directRun).slice(0, 160));
-
-
-	piem.settings.codemodeMode = wasMode;
-	await piem.saveSettings();
-
-	// ---- the slash command, on the shipped path -------------------------------
-	// The command is the composer's handle on the same two fields the settings page
-	// renders: it must write them, not remember something beside them, or the two
-	// surfaces drift and the settings page shows an answer the model never got.
-	const commandNames = (service.getSnapshot().availableCommands ?? []).map((entry) => entry.name);
-	record("/codemode is offered in the composer", commandNames.includes("codemode"));
-	await service.sendPrompt("/codemode only");
-	record("/codemode only withholds the direct tools", !currentTools().includes("read"));
-	record("and the MCP server's tools with them", !currentTools().includes("mcp_smoke_probe"));
-	record("and writes the same two fields the settings page renders", piem.settings.codemodeEnabled === true && piem.settings.codemodeMode === "only");
-	const dataJson = JSON.parse(await app.vault.adapter.read(`${directory}/vault/.obsidian/plugins/piem/data.json`));
-	record("the write reached data.json, so a reopen agrees with the toast", dataJson.codemodeEnabled === true && dataJson.codemodeMode === "only");
-	await service.sendPrompt("/codemode vault");
-	// There is no session-scoped answer to hand back any more, so the old word is
-	// refused rather than honoured — and refusing must change nothing.
-	record("`vault` is not a word any more, and changes nothing", piem.settings.codemodeMode === "only" && !currentTools().includes("read"));
-	await service.sendPrompt("/codemode off");
-	record("/codemode off unmounts the tool and writes the switch off", !currentTools().includes("codemode") && piem.settings.codemodeEnabled === false);
-
-
-	piem.settings.codemodeEnabled = wasEnabled;
-	await piem.saveSettings();
-
-	// ---- the sandbox, on the shipped bytes --------------------------------------
-	const run = async (code, signal) => service.getCodemodeTool().execute("smoke", { code }, signal ?? new AbortController().signal);
-	const timing = {};
-
-	let started = performance.now();
-	const arithmetic = await run("return 2 + 3;");
-	timing.arithmeticMs = Math.round(performance.now() - started);
-	record("a script runs in the webview", !arithmetic.isError);
-	record("and returns its value", arithmetic.content?.[0]?.text === "5");
-
-	const capabilities = await run("return { f: typeof fetch, t: typeof setTimeout, p: typeof process, r: typeof require };");
-	const probed = JSON.parse(capabilities.content?.[0]?.text ?? "{}");
-	report.capabilities = probed;
-	record("the VM has no fetch, timers, process or require", probed.f === "undefined" && probed.t === "undefined" && probed.p === "undefined" && probed.r === "undefined");
-
-	const printed = await run("text('one'); text('two'); return 'three';");
-	const details = printed.details ?? {};
-	record("printed output is kept, in order", JSON.stringify(details.calls ?? []).length >= 0 && printed.content?.[0]?.text === "one");
-
-	const thrown = await run("\n\nthrow new Error('smoke boom');");
-	record("a thrown script is an error result", thrown.isError === true);
-	const stack = thrown.content?.[thrown.content.length - 1]?.text ?? "";
-	record("the stack names the script file", /codemode\.js/.test(stack));
-	// The wrapper's prefix shares line 1 with the body, so line 3 of the script is
-	// line 3 of what the model wrote. Getting this wrong costs a model a wrong answer.
-	record("and points at the line the model wrote", /codemode\.js:3/.test(stack), stack.slice(0, 120));
-
-	started = performance.now();
-	const spin = await Promise.race([
-		run("// @options: {\"timeout_ms\": 1200}\nwhile (true) {}"),
-		new Promise((resolve) => setTimeout(() => resolve({ __late: true }), 20000)),
-	]);
-	timing.spinMs = Math.round(performance.now() - started);
-	record("a spinning script is terminated by its deadline", spin.__late !== true && spin.isError === true && /timed out/i.test(spin.content?.[spin.content.length - 1]?.text ?? ""));
-
-	started = performance.now();
-	const hungry = await Promise.race([
-		run("const a = []; while (true) a.push(new Array(1e5).fill(0));"),
-		new Promise((resolve) => setTimeout(() => resolve({ __late: true }), 30000)),
-	]);
-	timing.memoryMs = Math.round(performance.now() - started);
-	record("the VM's memory ceiling fires", hungry.__late !== true && /out of memory/i.test(hungry.content?.[hungry.content.length - 1]?.text ?? ""));
-
-	const optioned = await run("// @options: {\"timeout_ms\": 5000}\nreturn 'parsed';");
-	record("an @options line is honoured", !optioned.isError && optioned.content?.[0]?.text === "parsed");
-
-	const badOption = await run("// @options: {\"nope\": 1}\nreturn 1;");
-	record("a malformed @options line is the model's mistake to see", badOption.isError === true && /only supports/.test(badOption.content?.[0]?.text ?? ""));
-
-	// One run must not poison the next: a fresh worker and VM per execution is what
-	// buys that, and a sandbox that reused one would fail here and nowhere else.
-	const afterFailure = await run("return 'still works';");
-	record("a run after a killed one still works", !afterFailure.isError && afterFailure.content?.[0]?.text === '"still works"');
-
-	// ---- the nested path -------------------------------------------------------
-	// No model is configured here, so the call resolves to the "no conversation is
-	// running" branch. What this proves in-WebView is that a script's `tools.x()`
-	// reaches the host bridge and comes back as a rejection rather than a hang.
-	started = performance.now();
-	const nested = await Promise.race([
-		run("try { await tools.read({ path: 'x.md' }); return 'no throw'; } catch (e) { return e.message; }"),
-		new Promise((resolve) => setTimeout(() => resolve({ __late: true }), 20000)),
-	]);
-	timing.nestedMs = Math.round(performance.now() - started);
-	record("a nested call reaches the host and rejects cleanly", nested.__late !== true && !nested.isError, JSON.stringify(nested).slice(0, 160));
-	report.nestedReply = nested.content?.[0]?.text?.slice(0, 120);
-
-	report.timing = timing;
-	record("no uncaught errors in the page", errors.length === 0, errors.join(" | ").slice(0, 200));
-
-	window.removeEventListener("error", onError);
-	window.removeEventListener("unhandledrejection", onError);
-	report.passed = true;
+		const started = performance.now();
+		const spin = await run('// @options: {"timeout_ms":200}\nwhile(true){}');
+		report.spinMs = Math.round(performance.now() - started);
+		check("runaway worker is terminated", spin.isError && /timed out/.test(text(spin)) && report.spinMs < 5000);
+		const hungry = await run('const all=[]; while(true) all.push(new Array(1e5).fill(0));');
+		check("VM heap limit is enforced", hungry.isError && /out of memory/i.test(text(hungry)));
+		const controller = new AbortController();
+		const cancelled = run('await Promise.all([tools.mcp_smoke_write_probe({n:1}),tools.mcp_smoke_write_probe({n:2})]);', controller.signal);
+		await wait(async () => (await stats()).writes.includes(1), "first sequential call");
+		controller.abort();
+		check("caller cancellation returns an error", (await cancelled).isError);
+		await pause(500);
+		check("cancelled queued write never reaches MCP", JSON.stringify((await stats()).writes) === "[1]");
+		check("new VM works after failed runs", text(await run('return "still works"')) === "still works");
+		await service.sendPrompt("/codemode off");
+		check("off restores direct tools", !names().includes("codemode") && names().includes("read") && names().includes("mcp_smoke_probe"));
+		await service.sendPrompt("smoke-seed-off");
+		check("off removes codemode from provider requests", !(await stats()).requests.find(request => request.prompt.includes("smoke-seed-off"))?.tools.includes("codemode"));
+		await service.sendPrompt("/codemode on");
+		check("all script workers and blob URLs are released", workers.size === 0 && workerUrls.size === 0 && created === revoked);
+		report.resources = { createdWorkers: created, liveWorkers: workers.size, revokedWorkerUrls: revoked };
+		if (audit) {
+			report.nodeAudit = audit.report;
+			check("mobile plugin loaded exactly once", audit.report.evaluations === 1);
+			check("mobile reload has no unexpected console errors", audit.report.consoleErrors.every(error => error.control));
+			check("mobile loader denies Node negative controls", audit.report.controls.every(control => !control.provided));
+			check("mobile plugin does not request Node modules", audit.report.requests.every(request => !/^(node:|fs$|child_process$|electron$)/.test(request.id)));
+		}
+		check("no unhandled renderer errors", report.errors.length === 0);
+		report.passed = true;
+	} catch (error) { report.failure = String(error.stack ?? error); }
+	finally {
+		if (audit) report.nodeAudit = audit.report;
+		for (const worker of workers) worker.terminate();
+		for (const url of workerUrls) URL.revokeObjectURL(url);
+		window.Worker = NativeWorker;
+		URL.revokeObjectURL = revoke;
+		window.removeEventListener("error", onError);
+		window.removeEventListener("unhandledrejection", onError);
+		audit?.restore();
+	}
 	return report;
 }
 
-const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const target = targets.find((t) => t.type === "page" && t.url.startsWith("app://") && t.url.includes("index.html"))
-	?? targets.find((t) => t.type === "page" && t.url.startsWith("app://"));
-if (!target) { console.error("no index.html target"); process.exit(2); }
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-const reply = await new Promise((resolve, reject) => {
-	const id = 1;
-	ws.addEventListener("message", (ev) => {
-		const m = JSON.parse(ev.data);
-		if (m.id === id) m.error ? reject(new Error(JSON.stringify(m.error))) : resolve(m.result);
+let ws;
+let deadline;
+try {
+	const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+	const target = targets.find(target => target.type === "page" && target.url.startsWith("app://") && target.url.includes("index.html"));
+	if (!target) throw new Error("No Obsidian index.html target");
+	ws = new WebSocket(target.webSocketDebuggerUrl);
+	await new Promise((resolve, reject) => { ws.addEventListener("open", resolve, { once: true }); ws.addEventListener("error", reject, { once: true }); });
+	const call = (id, method, params) => new Promise((resolve, reject) => {
+		const listener = event => {
+			const message = JSON.parse(event.data);
+			if (message.id !== id) return;
+			ws.removeEventListener("message", listener);
+			message.error ? reject(new Error(JSON.stringify(message.error))) : resolve(message.result);
+		};
+		ws.addEventListener("message", listener);
+		ws.send(JSON.stringify({ id, method, params }));
 	});
-	ws.send(JSON.stringify({
-		id,
-		method: "Runtime.evaluate",
-		params: {
-			expression: `(${runSmoke})(${JSON.stringify(directory)}, ${expectMobile})`,
-			awaitPromise: true,
-			returnByValue: true,
-		},
-	}));
-	// Generous, because the smoke drives several full conversation rebuilds —
-	// each `/codemode` change re-mounts the whole tool set through
-	// `refreshConfiguration` — and the page-side evaluation cannot be interrupted
-	// once it starts. A timeout here reads as a hang, which is the one thing this
-	// smoke exists to disprove.
-	setTimeout(() => reject(new Error("cdp timeout")), 420000);
-});
-ws.close();
-if (reply.exceptionDetails) {
-	console.log(JSON.stringify({ passed: false, failure: reply.exceptionDetails.exception?.description ?? "exception" }));
-	process.exit(1);
+	const reply = await Promise.race([
+		call(1, "Runtime.evaluate", { expression: `(${runSmoke})(${JSON.stringify(directory)},${mobile},${JSON.stringify(endpoint)},(${observePluginNodeAccess}))`, awaitPromise: true, returnByValue: true }),
+		new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("Smoke CDP timeout")), 180000); }),
+	]);
+	const report = reply.exceptionDetails ? { passed: false, failure: reply.exceptionDetails.exception?.description } : reply.result.value;
+	const kind = mobile ? "mobile" : "desktop";
+	await writeFile(`${directory}/${kind}.json`, JSON.stringify({ ...report, fixture: state }, null, 2));
+	const screenshot = await call(2, "Page.captureScreenshot", { format: "png" });
+	await writeFile(`${directory}/${kind}.png`, Buffer.from(screenshot.data, "base64"));
+	console.log(JSON.stringify(report));
+	process.exitCode = report.passed ? 0 : 1;
+} finally {
+	clearTimeout(deadline);
+	ws?.close();
+	for (const timer of timers) clearTimeout(timer);
+	fixture.closeAllConnections();
+	await new Promise(resolve => fixture.close(resolve));
 }
-console.log(JSON.stringify(reply.result.value));
-process.exit(reply.result.value?.passed ? 0 : 1);
