@@ -1184,50 +1184,6 @@ describe("codemode ships off unless the user asked for it", () => {
 	}, 30_000);
 });
 
-describe("codemode ships off unless the user asked for it", () => {
-	async function names(settings: PiemSettings): Promise<string[]> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed").catch(() => undefined);
-			const agent = (service as unknown as {
-				agent?: { state: { tools: Array<{ name: string }> } };
-			}).agent;
-			return (agent?.state.tools ?? []).map(tool => tool.name);
-		} finally {
-			service.dispose();
-		}
-	}
-
-	it("offers no codemode on a vault that never turned it on", async () => {
-		expect(await names(defaultTestSettings())).not.toContain("codemode");
-	}, 30_000);
-
-	it("offers codemode once the setting is on", async () => {
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
-	}, 30_000);
-
-	// The switch is independent of the workflow one: a reader who wants the
-	// scriptable sandbox has not asked for the fixed engine, and the other way
-	// round. One toggle driving both would make them impossible to separate.
-	it("does not follow the workflow switch", async () => {
-		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
-	}, 30_000);
-
-	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
-	// instead of them, so a vault that turns it on keeps every tool it had.
-	it("leaves the rest of the tool set alone", async () => {
-		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
-		expect(mounted).toContain("read");
-		expect(mounted).toContain("codemode");
-	}, 30_000);
-});
-
 describe("run_workflow ships off unless the user asked for it", () => {
 	/**
 	 * The top-level tool names the current settings produce.
@@ -1272,94 +1228,6 @@ describe("run_workflow ships off unless the user asked for it", () => {
 	}, 30_000);
 });
 
-describe("codemode ships off unless the user asked for it", () => {
-	async function names(settings: PiemSettings): Promise<string[]> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed").catch(() => undefined);
-			const agent = (service as unknown as {
-				agent?: { state: { tools: Array<{ name: string }> } };
-			}).agent;
-			return (agent?.state.tools ?? []).map(tool => tool.name);
-		} finally {
-			service.dispose();
-		}
-	}
-
-	it("offers no codemode on a vault that never turned it on", async () => {
-		expect(await names(defaultTestSettings())).not.toContain("codemode");
-	}, 30_000);
-
-	it("offers codemode once the setting is on", async () => {
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
-	}, 30_000);
-
-	// The switch is independent of the workflow one: a reader who wants the
-	// scriptable sandbox has not asked for the fixed engine, and the other way
-	// round. One toggle driving both would make them impossible to separate.
-	it("does not follow the workflow switch", async () => {
-		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
-	}, 30_000);
-
-	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
-	// instead of them, so a vault that turns it on keeps every tool it had.
-	it("leaves the rest of the tool set alone", async () => {
-		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
-		expect(mounted).toContain("read");
-		expect(mounted).toContain("codemode");
-	}, 30_000);
-});
-
-describe("codemode ships off unless the user asked for it", () => {
-	async function names(settings: PiemSettings): Promise<string[]> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed").catch(() => undefined);
-			const agent = (service as unknown as {
-				agent?: { state: { tools: Array<{ name: string }> } };
-			}).agent;
-			return (agent?.state.tools ?? []).map(tool => tool.name);
-		} finally {
-			service.dispose();
-		}
-	}
-
-	it("offers no codemode on a vault that never turned it on", async () => {
-		expect(await names(defaultTestSettings())).not.toContain("codemode");
-	}, 30_000);
-
-	it("offers codemode once the setting is on", async () => {
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
-	}, 30_000);
-
-	// The switch is independent of the workflow one: a reader who wants the
-	// scriptable sandbox has not asked for the fixed engine, and the other way
-	// round. One toggle driving both would make them impossible to separate.
-	it("does not follow the workflow switch", async () => {
-		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
-	}, 30_000);
-
-	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
-	// instead of them, so a vault that turns it on keeps every tool it had.
-	it("leaves the rest of the tool set alone", async () => {
-		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
-		expect(mounted).toContain("read");
-		expect(mounted).toContain("codemode");
-	}, 30_000);
-});
-
 describe("a codemode script's nested call goes through the agent's own tool path", () => {
 	/**
 	 * The last seam the unit tests cannot reach.
@@ -1381,9 +1249,10 @@ describe("a codemode script's nested call goes through the agent's own tool path
 		try {
 			await service.sendPrompt("seed");
 			const bridge = (service as unknown as {
-				executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
+				current(): unknown;
+				executeNestedTool(rt: unknown, name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
 			}).executeNestedTool.bind(service);
-			return await bridge(args.name, args.args, new AbortController().signal);
+			return await bridge((service as unknown as { current(): unknown }).current(), args.name, args.args, new AbortController().signal);
 		} finally {
 			service.dispose();
 		}
@@ -1421,135 +1290,6 @@ describe("a codemode script's nested call goes through the agent's own tool path
 			args: { wrong: 1 } as JsonObject,
 		});
 		expect(result.isError).toBe(true);
-	}, 30_000);
-});
-
-describe("a codemode script's nested call goes through the agent's own tool path", () => {
-	/**
-	 * The last seam the unit tests cannot reach.
-	 *
-	 * `sandbox.test.ts` proves a script's call reaches whatever host it is given,
-	 * but not that the host is `runToolCall` — which is the difference between a
-	 * nested call and a direct one. This drives the real service with a real agent
-	 * and calls the private bridge, because that is the only place the wiring
-	 * exists.
-	 */
-	async function nestedCall(settings: PiemSettings, args: { name: string; args: JsonObject }): Promise<AgentToolResult> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				// One completed reply, so an agent exists with its tool set mounted.
-				streamFn: echoStreamFn(),
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed");
-			const bridge = (service as unknown as {
-				executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
-			}).executeNestedTool.bind(service);
-			return await bridge(args.name, args.args, new AbortController().signal);
-		} finally {
-			service.dispose();
-		}
-	}
-
-	it("runs a real tool and hands the script its content", async () => {
-		// Valid against `grep`'s own schema, so the only thing left to prove is that
-		// the call reached the tool at all.
-		const result = await nestedCall(defaultTestSettings(), {
-			name: "grep",
-			args: { pattern: "TODO" } as JsonObject,
-		});
-		expect(result.isError).toBeFalsy();
-		// An empty vault matches nothing, and the tool says so rather than failing —
-		// which is what distinguishes "ran and found nothing" from "never ran".
-		expect(result.content?.[0]).toMatchObject({ type: "text" });
-	}, 30_000);
-
-	it("reports an unknown tool as an error rather than throwing", async () => {
-		// `runToolCall` never rejects for a tool failure; an unknown name is one.
-		// A rejection here would take the whole script down instead of letting it
-		// decide whether a miss matters.
-		const result = await nestedCall(defaultTestSettings(), {
-			name: "no_such_tool",
-			args: {} as JsonObject,
-		});
-		expect(result.isError).toBe(true);
-	}, 30_000);
-
-	it("refuses a call whose arguments do not match the tool's schema", async () => {
-		// The reason this goes through `runToolCall` and not `agentTool.execute`:
-		// validation is part of the path, so a script cannot smuggle past it.
-		const result = await nestedCall(defaultTestSettings(), {
-			name: "grep",
-			args: { wrong: 1 } as JsonObject,
-		});
-		expect(result.isError).toBe(true);
-	}, 30_000);
-});
-
-describe("codemode's mode decides what the model is offered", () => {
-	async function mounted(settings: PiemSettings): Promise<Array<{ name: string; description: string }>> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed").catch(() => undefined);
-			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string; description: string }> } } }).agent;
-			return agent?.state.tools ?? [];
-		} finally {
-			service.dispose();
-		}
-	}
-
-	const withMode = (mode: "on" | "only") => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: mode });
-
-	it("on withholds nothing", async () => {
-		const names = (await mounted(withMode("on"))).map((tool) => tool.name);
-		expect(names).toContain("codemode");
-		expect(names).toContain("read");
-	}, 30_000);
-
-	it("only withholds the direct tools, leaving codemode as the one way in", async () => {
-		// The point of the mode: a model that cannot see a tool cannot skip the
-		// sandbox to reach it. This is also cheaper per request than shipping both —
-		// one capped block replaces every tool's declaration.
-		const tools = await mounted(withMode("only"));
-		expect(tools.map((tool) => tool.name)).toEqual(["codemode"]);
-	}, 30_000);
-
-	it("on appends the script sample to a tool's own description", async () => {
-		// The model already reads this description, so the sample lands on ground it
-		// is standing on rather than in a second catalog it has to hold alongside it.
-		const read = (await mounted(withMode("on"))).find((tool) => tool.name === "read");
-		expect(read?.description).toMatch(/codemode tool declaration/);
-		expect(read?.description).toMatch(/declare const tools/);
-	}, 30_000);
-
-	it("only leaves descriptions alone, because the tool is not offered at all", async () => {
-		const tools = await mounted(withMode("only"));
-		expect(tools.find((tool) => tool.name === "read")).toBeUndefined();
-	}, 30_000);
-
-	it("adds no sample when codemode is off, whatever the mode says", async () => {
-		const read = (await mounted({ ...defaultTestSettings(), codemodeEnabled: false, codemodeMode: "on" }))
-			.find((tool) => tool.name === "read");
-		expect(read?.description).not.toMatch(/codemode tool declaration/);
-	}, 30_000);
-
-	it("reads the mode through a getter, so a settings change reaches a live conversation", async () => {
-		// The service hands the tool a getter rather than a snapshot. Getting that
-		// wrong is silent in a different way: an object-literal getter's `this` is
-		// the literal, so the read throws and every description read fails.
-		const tool = new ObsidianAgentService(createFakeApp(asDataAdapter(new MemoryAdapter())), () => defaultTestSettings(),
-			new ObsidianSessionManager(asDataAdapter(new MemoryAdapter()), SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("never"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			}).getCodemodeTool();
-		expect(() => tool.description).not.toThrow();
 	}, 30_000);
 });
 
@@ -1753,8 +1493,9 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 			});
 		const nested = (name: string, args: JsonObject) =>
 			(service as unknown as {
-				executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
-			}).executeNestedTool(name, args, new AbortController().signal);
+				current(): unknown;
+				executeNestedTool(rt: unknown, name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
+			}).executeNestedTool((service as unknown as { current(): unknown }).current(), name, args, new AbortController().signal);
 		try {
 			await service.sendPrompt("seed");
 			const direct = await nested("ls", {});
@@ -1940,5 +1681,58 @@ describe("/codemode", () => {
 			await service.sendPrompt("/codemode only");
 			expect(saves.length).toBe(1);
 		} finally { service.dispose(); }
+	}, 30_000);
+});
+
+describe("codemode session ownership and branch store", () => {
+	it("keeps nested calls and persisted writes in the captured chat after focus changes", async () => {
+		const { spyOn } = await import("bun:test");
+		const { CodemodeSandbox } = await import("../codemode/sandbox");
+		const { readCodemodeStore } = await import("../codemode/store");
+		const adapter = asDataAdapter(new MemoryAdapter());
+		const sessions = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
+		let service: ObsidianAgentServiceType;
+		service = new ObsidianAgentService(createFakeApp(adapter), () => ({ ...defaultTestSettings(), codemodeEnabled: true }), sessions,
+			{ streamFn: echoStreamFn(), loadUserSkills: NO_USER_SKILLS, getMountedExternalTools: () => [{
+				name: "owner_probe", label: "Owner", description: "Return the owning conversation", parameters: Type.Object({}),
+				execute: async () => ({ content: [{ type: "text", text: (service as unknown as { toolRuntime: { sessionPath: string } }).toolRuntime.sessionPath }], details: undefined }),
+			}] });
+		let captured!: () => void;
+		let release!: () => void;
+		const started = new Promise<void>(resolve => { captured = resolve; });
+		const held = new Promise<void>(resolve => { release = resolve; });
+		const loadedStores: unknown[] = [];
+		const execute = spyOn(CodemodeSandbox.prototype, "execute").mockImplementation(async function (this: InstanceType<typeof CodemodeSandbox>, _code, options) {
+			loadedStores.push(options?.store);
+			captured();
+			await held;
+			const probe = this.tools.find(tool => tool.name === "owner_probe")!;
+			const value = await probe.execute({}, { signal: options?.signal ?? new AbortController().signal });
+			return { ok: true, value, output: [], calls: [], storeWrites: { set: { owner: "a" }, delete: [] } };
+		});
+		try {
+			await service.sendPrompt("seed-a");
+			const pathA = service.getActiveSessionPath()!;
+			const originalTip = await sessions.getSessionFor(pathA).view("main").getLeafId();
+			const toolA = service.getCodemodeTool();
+			const running = toolA.execute("session-a", { code: "store('owner', 'a')" });
+			await started;
+			await service.newSession();
+			await service.sendPrompt("seed-b");
+			const pathB = service.getActiveSessionPath()!;
+			release();
+			const result = await running;
+			expect(result.isError).toBe(false);
+			expect(result.content).toEqual([{ type: "text", text: pathA }]);
+			const branch = (path: string) => sessions.getSessionFor(path).view("main").findEntriesOnBranch({ order: "oldestFirst" });
+			expect(readCodemodeStore(await branch(pathA))).toEqual({ owner: "a" });
+			expect(readCodemodeStore(await branch(pathB))).toEqual({});
+			expect(service.getActiveSessionPath()).toBe(pathB);
+			await toolA.execute("load-a", { code: "load('owner')" });
+			expect(loadedStores.at(-1)).toEqual({ owner: "a" });
+			await sessions.getSessionFor(pathA).moveLane("main", originalTip);
+			await toolA.execute("fork-a", { code: "load('owner')" });
+			expect(loadedStores.at(-1)).toEqual({});
+		} finally { release(); execute.mockRestore(); service.dispose(); }
 	}, 30_000);
 });

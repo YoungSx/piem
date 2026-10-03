@@ -23,11 +23,11 @@ function tool(name: string, description: string, properties: Record<string, unkn
 	};
 }
 
-function host(tools: AgentTool[], result: AgentToolResult = { content: [{ type: "text", text: "ok" }], details: undefined }): CodemodeToolHost {
-	return {
+function host(tools: AgentTool[], result: AgentToolResult = { content: [{ type: "text", text: "ok" }], details: undefined }): () => CodemodeToolHost {
+	return () => ({
 		tools: () => tools,
 		executeTool: async () => result,
-	};
+	});
 }
 
 /** The tools piem actually mounts, by name. Thirty is the shipped count. */
@@ -195,63 +195,7 @@ describe("the ceilings a script asks for", () => {
 		// would print ten thousand lines and have no idea why the tail is missing.
 		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
 		expect(built.description).toMatch(/max_output_tokens/);
-		expect(built.description).toContain("caps what the script may print");
-	});
-
-	it("does not promise state across calls", () => {
-		// `store`/`load` exist inside the VM, and nothing persists them between two
-		// calls. Telling the model otherwise invites it to write a state machine
-		// whose state is silently discarded.
-		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
-		expect(built.description).not.toContain("across calls");
-		expect(built.description).toContain("its own VM");
-	});
-});
-
-describe("what a script is offered", () => {
-	it("does not offer codemode to a script", () => {
-		// A script that could call `codemode` could nest: each level is a fresh
-		// worker with its own 64 MiB VM and nothing counts depth, so
-		// `Promise.all(Array.from({length: 200}, () => tools.codemode(...)))` is
-		// 200 workers on a phone — and a `Promise.all` over a loop is ordinary
-		// model output, so this is reachable by accident.
-		const built = createCodemodeTool(host([tool("read", "Read a note."), tool("codemode", "The sandbox itself.", { code: { type: "string" } })]), { mode: "only" });
-		expect(built.description).toContain("read(args:");
-		expect(built.description).not.toContain("codemode(args:");
-	});
-
-	it("carries a sequential pin through, so the sandbox can order those calls", () => {
-		// `executionMode: "sequential"` is the primary serialization for the
-		// frontmatter, navigation, interaction and sequential MCP tools, none of
-		// which has an internal lock. Dropping it would let one script's
-		// `Promise.all` interleave writes the agent loop would have ordered.
-		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
-		expect(built.name).toBe("codemode");
-	});
-
-	it("still offers the orchestrating tools that are not sandboxes", () => {
-		// Excluding `codemode` is about nesting a VM, not about orchestration. A
-		// script fanning out through `run_workflow` or `spawn_subagent` does not
-		// pin a worker per call.
-		const built = createCodemodeTool(host([
-			tool("read", "Read a note."),
-			tool("run_workflow", "Run a workflow.", { script: { type: "string" } }),
-			tool("spawn_subagent", "Spawn a subagent.", { prompt: { type: "string" } }),
-			tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
-		]), { mode: "only" });
-		expect(built.description).toContain("run_workflow(args:");
-		expect(built.description).toContain("spawn_subagent(args:");
-		expect(built.description).not.toContain("codemode(args:");
-	});
-});
-
-describe("the ceilings a script asks for", () => {
-	it("describes the output limit it will be given", () => {
-		// A cap the model was never told about is a cap it cannot plan around: it
-		// would print ten thousand lines and have no idea why the tail is missing.
-		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
-		expect(built.description).toMatch(/max_output_tokens/);
-		expect(built.description).toContain("caps what the script may print");
+		expect(built.description).toContain("caps printed text");
 	});
 
 	it("does not promise state across calls", () => {
@@ -271,7 +215,7 @@ describe("when the description is rendered", () => {
 		// model would never be shown a single declaration — the feature would work
 		// and be entirely undocumented to the caller that has to write the script.
 		let mounted: AgentTool[] = [];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
+		const built = createCodemodeTool(() => ({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }), { mode: "only" });
 		expect(built.description).toContain("No tools are available");
 
 		mounted = [tool("read", "Read a note."), tool("grep", "Search notes.")];
@@ -280,148 +224,39 @@ describe("when the description is rendered", () => {
 		expect(built.description).toContain("grep(args:");
 	});
 
-	it("renders once per tool set, however often it is read", () => {
-		// `description` is read on every request, and rendering thirty declarations
-		// each time is a cost paid on every call.
+	it("refreshes same-name schema changes instead of caching only tool names", () => {
 		const mounted = [tool("read", "Read a note.")];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) });
-		const first = built.description;
-		expect(built.description).toBe(first);
-		expect(built.description).toBe(first);
-	});
-
-	it("re-renders when the tool set changes under it", () => {
-		// MCP servers connect in the background, so a session's tools are not fixed
-		// for its life. A memo keyed on nothing would freeze the list at first read.
-		let mounted: AgentTool[] = [tool("read", "Read a note.")];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
-		expect(built.description).toContain("read(args:");
-		mounted = [...mounted, tool("web_fetch", "Fetch a URL.")];
-		expect(built.description).toContain("web_fetch(args:");
-	});
-});
-
-describe("when the description is rendered", () => {
-	it("follows the session's tool set, not the one present at construction", () => {
-		// The tool is built once per service, which is before any conversation
-		// exists. A description computed then would say "no tools" forever, and the
-		// model would never be shown a single declaration — the feature would work
-		// and be entirely undocumented to the caller that has to write the script.
-		let mounted: AgentTool[] = [];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
-		expect(built.description).toContain("No tools are available");
-
-		mounted = [tool("read", "Read a note."), tool("grep", "Search notes.")];
-		expect(built.description).toContain("declare const tools");
-		expect(built.description).toContain("read(args:");
-		expect(built.description).toContain("grep(args:");
-	});
-
-	it("renders once per tool set, however often it is read", () => {
-		// `description` is read on every request, and rendering thirty declarations
-		// each time is a cost paid on every call.
-		const mounted = [tool("read", "Read a note.")];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) });
-		const first = built.description;
-		expect(built.description).toBe(first);
-		expect(built.description).toBe(first);
-	});
-
-	it("re-renders when the tool set changes under it", () => {
-		// MCP servers connect in the background, so a session's tools are not fixed
-		// for its life. A memo keyed on nothing would freeze the list at first read.
-		let mounted: AgentTool[] = [tool("read", "Read a note.")];
-		const built = createCodemodeTool({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }, { mode: "only" });
-		expect(built.description).toContain("read(args:");
-		mounted = [...mounted, tool("web_fetch", "Fetch a URL.")];
-		expect(built.description).toContain("web_fetch(args:");
-	});
-});
-
-describe("a tool set with a duplicate name", () => {
-	it("keeps the first and drops the rest, rather than failing the whole tool", () => {
-		// Reachable: MCP tools are appended from a background gather, and a server
-		// that connects twice registers the same name. The sandbox's registry throws
-		// on a duplicate, so passing one through made the tool unusable.
-		const built = createCodemodeTool(host([
-			tool("read", "First wins."),
-			tool("read", "Second loses."),
-			tool("grep", "Search notes."),
-		]), { mode: "only" });
-		expect(built.description).toContain("read(args:");
-		expect(built.description).toContain("First wins.");
-		expect(built.description).not.toContain("Second loses.");
-	});
-});
-
-describe("a tool set with a duplicate name", () => {
-	it("keeps the first and drops the rest, rather than failing the whole tool", () => {
-		// Reachable: MCP tools are appended from a background gather, and a server
-		// that connects twice registers the same name. The sandbox's registry throws
-		// on a duplicate, so passing one through made the tool unusable.
-		const built = createCodemodeTool(host([
-			tool("read", "First wins."),
-			tool("read", "Second loses."),
-			tool("grep", "Search notes."),
-		]), { mode: "only" });
-		expect(built.description).toContain("read(args:");
-		expect(built.description).toContain("First wins.");
-		expect(built.description).not.toContain("Second loses.");
-	});
-});
-
-describe("the two modes, which are not degrees of the same thing", () => {
-	const mounted = [
-		tool("read", "Read a note."),
-		tool("grep", "Search notes."),
-		tool("codemode", "The sandbox itself.", { code: { type: "string" } }),
-	];
-
-	it("on — upstream's default — carries no catalog, because every tool is already declared", () => {
-		// In `on` the model already reads every tool's own declaration, so repeating
-		// thirty of them inside `codemode` would pay twice for the same list on every
-		// request. The line that tells a tool it can be reached from a script lands on
-		// the tool's own description instead — see `buildTools`.
-		const built = createCodemodeTool(host(mounted));
-		expect(built.description).not.toContain("declare const tools");
-		expect(built.description).toContain("ALL_TOOLS");
-		expect(built.description).toContain("await tools.<name>(args)");
-	});
-
-	it("on keeps the description inside the budget even with a hundred tools", () => {
-		// The point of the split: `on`'s description does not grow with the tool set,
-		// because the tool set is not in it.
-		const many = Array.from({ length: 100 }, (_, index) => tool(`tool_${index}`, `Operation ${index}. ${"padding ".repeat(20)}`));
-		const built = createCodemodeTool(host(many));
-		expect(Math.ceil(built.description.length / 4)).toBeLessThan(DEFAULT_INLINE_BUDGET);
-	});
-
-	it("only — carries the whole catalog, because it is the only place it can be", () => {
 		const built = createCodemodeTool(host(mounted), { mode: "only" });
-		expect(built.description).toContain("declare const tools");
+		expect(built.description).toContain("path: string");
+		mounted[0] = tool("read", "Updated tool.", { query: { type: "number" } });
+		expect(built.description).toContain("query: number");
+		expect(built.description).not.toContain("path: string");
+	});
+
+	it("re-renders when the tool set changes under it", () => {
+		// MCP servers connect in the background, so a session's tools are not fixed
+		// for its life. A memo keyed on nothing would freeze the list at first read.
+		let mounted: AgentTool[] = [tool("read", "Read a note.")];
+		const built = createCodemodeTool(() => ({ tools: () => mounted, executeTool: async () => ({ content: [], details: undefined }) }), { mode: "only" });
 		expect(built.description).toContain("read(args:");
-		expect(built.description).toContain("grep(args:");
+		mounted = [...mounted, tool("web_fetch", "Fetch a URL.")];
+		expect(built.description).toContain("web_fetch(args:");
 	});
+});
 
-	it("an unset mode means on, so an old vault cannot land in the strong one", () => {
-		expect(createCodemodeTool(host(mounted)).description)
-			.toBe(createCodemodeTool(host(mounted), { mode: "on" }).description);
-	});
-
-	it("excludes codemode from the catalog in either mode", () => {
-		for (const mode of ["on", "only"] as const) {
-			expect(createCodemodeTool(host(mounted), { mode }).description).not.toMatch(/\n  codemode\(/);
-		}
-	});
-
-	it("reads the mode through a getter, so a settings change reaches a live conversation", () => {
-		// The service passes a getter, not a snapshot: a conversation that outlives a
-		// settings change should describe itself the way it is now configured.
-		const state = { mode: "on" as "on" | "only" };
-		const built = createCodemodeTool(host(mounted), { get mode() { return state.mode; } });
-		expect(built.description).not.toContain("declare const tools");
-		state.mode = "only";
-		expect(built.description).toContain("declare const tools");
+describe("a tool set with a duplicate name", () => {
+	it("keeps the first and drops the rest, rather than failing the whole tool", () => {
+		// Reachable: MCP tools are appended from a background gather, and a server
+		// that connects twice registers the same name. The sandbox's registry throws
+		// on a duplicate, so passing one through made the tool unusable.
+		const built = createCodemodeTool(host([
+			tool("read", "First wins."),
+			tool("read", "Second loses."),
+			tool("grep", "Search notes."),
+		]), { mode: "only" });
+		expect(built.description).toContain("read(args:");
+		expect(built.description).toContain("First wins.");
+		expect(built.description).not.toContain("Second loses.");
 	});
 });
 

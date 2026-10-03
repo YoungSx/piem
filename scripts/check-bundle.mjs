@@ -319,6 +319,9 @@ const EMPTY_FAUX_INITIALIZER_BYTES = 18;
  * {@link BANNED_MODULES}, so a nested or pnpm-style layout is caught too.
  */
 const REQUIRED_MODULES = new Map([
+	["node_modules/@earendil-works/pi-codemode/dist/runtime/prelude-source.js", "Codemode must ship Pi's original VM prelude."],
+	["node_modules/@earendil-works/pi-codemode/dist/declarations.js", "Codemode declarations must use Pi's public renderer."],
+	["node_modules/@earendil-works/pi-codemode/dist/source.js", "Codemode must use Pi's public source parser."],
 	["node_modules/buffer/index.js", "The scoped global Buffer must be bundled; mobile has no external Node buffer module."],
 	["pi-scoped-extension:pi-otel", "The unmodified Git-pinned telemetry extension must ship through the scoped factory bridge."],
 	["pi-scoped-extension:pi-web-search", "The audited original web-search graph must ship in a per-host factory."],
