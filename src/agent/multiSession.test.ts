@@ -1618,6 +1618,38 @@ describe("codemode's mode decides what the model is offered", () => {
 	}, 30_000);
 });
 
+it("codemode only sends one callable tool and script-only guidance to the provider", async () => {
+	const adapter = asDataAdapter(new MemoryAdapter());
+	const contexts: Context[] = [];
+	const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" as const };
+	const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
+		new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
+			streamFn: (model, context) => {
+				contexts.push(captureContext(context));
+				return scriptedTextStream(model, "done");
+			},
+			loadUserSkills: NO_USER_SKILLS,
+		});
+	try {
+		await service.sendPrompt("fresh only session");
+		await service.sendPrompt("/codemode on");
+		await service.sendPrompt("direct tools enabled");
+		await service.sendPrompt("/codemode only");
+		await service.sendPrompt("back to scripts");
+		expect(contexts).toHaveLength(3);
+		expect(contexts[1]?.tools?.map(tool => tool.name)).toContain("read");
+		for (const context of [contexts[0], contexts[2]]) {
+			expect(context?.tools?.map(tool => tool.name)).toEqual(["codemode"]);
+			const description = context?.tools?.[0]?.description ?? "";
+			expect(description).not.toMatch(/call (?:tools|it|them) directly/i);
+			expect(description).toContain("only callable tool");
+			expect(description).toContain("ALL_TOOLS.filter");
+		}
+	} finally {
+		service.dispose();
+	}
+}, 30_000);
+
 describe("codemode `only` does not withhold the catalog from the sandbox itself", () => {
 	it("a script can still reach the tools the model can no longer see", async () => {
 		// The mode working against itself is the failure this pins: `only` removes

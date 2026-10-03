@@ -102,6 +102,8 @@ describe("the codemode tool's description", () => {
 		const built = createCodemodeTool(host(many), { inlineBudget: 300, mode: "only" });
 		expect(built.description).toContain("not listed here");
 		expect(built.description).toMatch(/\d+ more tools? (is|are) not listed here/);
+		expect(built.description).toContain("ALL_TOOLS.filter");
+		expect(built.description).not.toMatch(/call (?:tools|it|them) directly/i);
 		// A declaration cut mid-signature is worse than an absent one, so the
 		// truncation must not leave a half-written line behind.
 		expect(built.description).not.toMatch(/\(\s*[^)]*$/m);
@@ -109,7 +111,8 @@ describe("the codemode tool's description", () => {
 
 	it("says so when the budget leaves room for nothing", () => {
 		const built = createCodemodeTool(host([tool("read", "Read a note.")]), { inlineBudget: 1, mode: "only" });
-		expect(built.description).toContain("call tools directly");
+		expect(built.description).toContain("ALL_TOOLS.filter");
+		expect(built.description).not.toMatch(/call (?:tools|it|them) directly/i);
 	});
 
 	it("says plainly when a session has no tools", () => {
