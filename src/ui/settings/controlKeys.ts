@@ -59,6 +59,9 @@ const CONTROL_KEYS = [
 	"cacheRetention",
 	"activeModelId",
 	"shareDiagnostics",
+	"workflowEnabled",
+	"codemodeEnabled",
+	"codemodeMode",
 ] as const satisfies readonly (keyof SettingsPanelSettings)[];
 
 /**
@@ -139,6 +142,22 @@ export function writeControlValue(settings: SettingsPanelSettings, key: ControlK
 		case "shareDiagnostics":
 			if (typeof value !== "boolean") return false;
 			settings.shareDiagnostics = value;
+			return true;
+		// The two orchestration switches and the codemode mode, one decision each.
+		// A row bound to a key that is missing here renders and silently drops
+		// every change — which is how a switch can appear in the panel while the
+		// vault never hears about it.
+		case "workflowEnabled":
+			if (typeof value !== "boolean") return false;
+			settings.workflowEnabled = value;
+			return true;
+		case "codemodeEnabled":
+			if (typeof value !== "boolean") return false;
+			settings.codemodeEnabled = value;
+			return true;
+		case "codemodeMode":
+			if (value !== "on" && value !== "only") return false;
+			settings.codemodeMode = value;
 			return true;
 		default:
 			// Exhaustiveness, not a runtime fallback: a key added to `ControlKey`
