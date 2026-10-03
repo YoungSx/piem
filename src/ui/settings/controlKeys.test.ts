@@ -62,6 +62,16 @@ describe("isControlKey", () => {
 		expect(isControlKey("showAgentDetail")).toBe(false);
 		expect(isControlKey("")).toBe(false);
 	});
+
+	it("admits the three orchestration keys the Extensions tab binds", () => {
+		// Each of these renders as a plain row on the Extensions page, so the
+		// only thing standing between the toggle and the vault is membership
+		// here. All three were absent once; the panel showed switches that
+		// reset themselves to off on reopen.
+		expect(isControlKey("workflowEnabled")).toBe(true);
+		expect(isControlKey("codemodeEnabled")).toBe(true);
+		expect(isControlKey("codemodeMode")).toBe(true);
+	});
 });
 
 describe("readControlValue", () => {
@@ -156,6 +166,26 @@ describe("writeControlValue", () => {
 
 		expect(writeControlValue(stored, "cacheRetention", "none")).toBe(true);
 		expect(stored.cacheRetention).toBe("none");
+	});
+
+	it("writes the two codemode fields and the workflow switch, refusing values that are not theirs", () => {
+		const stored = settings({ workflowEnabled: false, codemodeEnabled: false, codemodeMode: "on" });
+
+		expect(writeControlValue(stored, "workflowEnabled", true)).toBe(true);
+		expect(stored.workflowEnabled).toBe(true);
+		expect(writeControlValue(stored, "workflowEnabled", "on")).toBe(false);
+
+		expect(writeControlValue(stored, "codemodeEnabled", true)).toBe(true);
+		expect(stored.codemodeEnabled).toBe(true);
+		expect(writeControlValue(stored, "codemodeEnabled", "only")).toBe(false);
+		expect(stored.codemodeEnabled).toBe(true);
+
+		expect(writeControlValue(stored, "codemodeMode", "only")).toBe(true);
+		expect(stored.codemodeMode).toBe("only");
+		// `off` is not a mode: it is the enabled switch's answer, and a dropdown
+		// that could store it would let the two fields contradict each other.
+		expect(writeControlValue(stored, "codemodeMode", "off")).toBe(false);
+		expect(stored.codemodeMode).toBe("only");
 	});
 
 	it("writes a trace-expand mode the panel renders, and refuses one it does not", () => {

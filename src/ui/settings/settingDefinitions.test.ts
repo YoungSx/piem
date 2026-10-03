@@ -13,6 +13,7 @@ installObsidianStub();
 const { buildSettingDefinitions } = await import("./settingDefinitions");
 import { SettingsPanelState } from "./panelState";
 import type { SettingsPanelHost } from "./panelHost";
+import { isControlKey } from "./controlKeys";
 
 const en = getT("en");
 
@@ -133,6 +134,31 @@ describe("buildSettingDefinitions", () => {
 		buildSettingDefinitions(host, new SettingsPanelState());
 
 		expect(reads).toBe(0);
+	});
+
+	it("binds every declarative control to a key the panel persists", () => {
+		// `setControlValue` silently ignores a key `isControlKey` does not know:
+		// a row added without registering its key renders, moves, and drops every
+		// change — a switch on the page that the vault never hears about, which is
+		// how a codemode toggle could sit there resetting itself to off. Building
+		// the definitions walks every row of every page, so this is the one place
+		// the two sides meet and the drift fails loudly.
+		const definitions = buildSettingDefinitions(stubHost(), new SettingsPanelState());
+		const keys = new Set<string>();
+		const visit = (item: Record<string, unknown>): void => {
+			const control = item.control as { key?: string } | undefined;
+			if (control?.key) keys.add(control.key);
+			for (const child of (item.items as Array<Record<string, unknown>> | undefined) ?? []) visit(child);
+		};
+		for (const page of definitions) {
+			for (const item of (page as { items: unknown[] }).items as Array<Record<string, unknown>>) visit(item);
+		}
+		expect([...keys].sort()).toEqual([...keys].filter(isControlKey).sort());
+		// The three the drift was found on, pinned by name so removing one fails
+		// here rather than in a user's settings window.
+		expect(keys.has("codemodeEnabled")).toBe(true);
+		expect(keys.has("codemodeMode")).toBe(true);
+		expect(keys.has("workflowEnabled")).toBe(true);
 	});
 
 	it("declares every page's rows inline, so none is drawn outside the index", () => {
