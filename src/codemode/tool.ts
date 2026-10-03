@@ -29,10 +29,9 @@ import type {
  * Every tool in the session is offered to a script — thirty-odd by default — and
  * each declaration carries a doc comment drawn from the tool's own description,
  * which is written for a model reading it in a tool list. That is a lot of text
- * for a description the model reads on *every* request, so it is capped here and
- * the description says so when it truncates: a model told the list is partial
- * goes and calls the tool directly, while one told a truncated list is complete
- * invents the missing tools.
+ * for a description the model reads on *every* request, so it is capped here.
+ * When truncated, the description points to ALL_TOOLS inside the script;
+ * tools omitted from the inline catalog remain callable there.
  */
 export const DEFAULT_INLINE_BUDGET = 3000;
 
@@ -245,9 +244,9 @@ function renderToolDeclarations(tools: readonly ScriptTool[], budget: number): s
 	}
 	const hidden = tools.length - kept.length;
 	const rendered = kept.length === 0
-		? "// The declarations are too long for this budget; call tools directly."
+		? ""
 		: renderDeclarations({ tools: kept });
-	return `${rendered}\n// ${hidden} more tool${hidden === 1 ? " is" : "s are"} not listed here (description budget reached). Call ${hidden === 1 ? "it" : "them"} directly if you need ${hidden === 1 ? "it" : "them"}.`;
+	return `${rendered}\n// ${hidden} more tool${hidden === 1 ? " is" : "s are"} not listed here (description budget reached). Use ALL_TOOLS.filter(...) in the script to discover ${hidden === 1 ? "it" : "them"}, then call through tools[name].`;
 }
 
 /** How to write a script at all, above the declarations. */
@@ -260,6 +259,10 @@ Inside a script: \`tools\` and \`ALL_TOOLS\`; \`text(value)\` and \`console.*\` 
 miss is survivable. The script is the body of an async function, so \`await\` at
 the top level works.
 
+Discover tools and their parameter declarations inside a script:
+\`text(ALL_TOOLS.filter(t => /keyword/i.test(t.name + " " + t.description)));\`
+Then call the matching tool with \`await tools[name](args)\` inside a script.
+
 Each call is its own VM and nothing carries over between two calls, so a script
 that needs to remember something has to finish and be called again.
 
@@ -269,7 +272,7 @@ the default two minutes, for a script that genuinely needs it; \`max_output_toke
 the run says so, so a script that wants more should print less.
 
 \`\`\`js
-const hits = await tools.grep({ query: "TODO" });
+const hits = await tools.grep({ pattern: "TODO" });
 const lines = hits.split("\\n");
 text(lines.slice(0, 5).join("\\n"));
 return lines.length + " matches";
@@ -315,7 +318,10 @@ export function createCodemodeTool(
 					? renderToolDeclarations(tools, 0)
 					: "Every tool above can also be reached from inside a script, as "
 						+ "`await tools.<name>(args)`. `ALL_TOOLS` lists them.";
-			memo = { signature: `${mode}:${signature}`, text: `${USAGE}\n\n${catalog}` };
+			const scope = mode === "only"
+				? "`codemode` is the only callable tool. Every other tool named in the prompt, skills, history, or catalog must be called inside its JavaScript via `tools`; never emit a direct tool call to those names.\n\n"
+				: "";
+			memo = { signature: `${mode}:${signature}`, text: `${scope}${USAGE}\n\n${catalog}` };
 		}
 		return memo.text;
 	};

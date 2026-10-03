@@ -375,6 +375,38 @@ describe("a script's nested call", () => {
 	}, 30_000);
 });
 
+it("ALL_TOOLS exposes parameter declarations and callable identifiers for discovery", async () => {
+	const sandbox = new CodemodeSandbox({
+		wasm: WASM_MODULE,
+		workerSource: WORKER_SOURCE,
+		timeoutMs: 5_000,
+		tools: [{
+			name: "read-note",
+			description: "Read a note.",
+			inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+			execute: async (args) => args,
+		}],
+	});
+	try {
+		const result = await sandbox.execute(`
+			const [tool] = ALL_TOOLS.filter(t => /note/i.test(t.name + " " + t.description));
+			text(tool.description);
+			return await tools[tool.name]({ path: "a.md" });
+		`);
+		expect(result.ok).toBe(true);
+		expect(result.ok && result.value).toEqual({ path: "a.md" });
+		expect(result.calls).toMatchObject([{ name: "read-note", status: "ok" }]);
+		const description = result.output
+			.filter((item): item is { type: "text"; text: string } => item.type === "text")
+			.map(item => item.text)
+			.join("\n");
+		expect(description).toContain("read_note(args:");
+		expect(description).toContain("path: string");
+	} finally {
+		await sandbox.close();
+	}
+});
+
 /**
  * The sandbox's own class, driven end to end.
  *

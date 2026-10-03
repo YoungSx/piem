@@ -31,6 +31,7 @@
  *   WebKit — so there is nothing here to lose.
  */
 import { toCodemodeIdentifier } from "@earendil-works/pi-codemode/identifier";
+import { renderToolSample } from "@earendil-works/pi-codemode/declarations";
 import type {
 	CodemodeCall,
 	CodemodeError,
@@ -224,7 +225,8 @@ class Execution {
 			tools: [...this.tools.values()].map(tool => ({
 				name: tool.name,
 				jsName: toCodemodeIdentifier(tool.name),
-				description: tool.description ?? "",
+				// Like Pi's executor, ALL_TOOLS carries the schema for omitted tools.
+				description: renderToolSample(tool),
 			})),
 			globals: [...this.globals.values()].map(global => ({
 				name: global.name,
