@@ -82,6 +82,7 @@ proactive smoke；新场景一律用管家。
 
 | 脚本 | 覆盖 |
 | --- | --- |
+| `smoke-codemode-obsidian.mjs` | Code Mode：本机模型/MCP 测试服务、真实 Vault 调用、取消、输出限额、分支存储及移动端 Node 访问 |
 | `smoke-community-obsidian.mjs` | 成品服务上的社区扩展桥 |
 | `smoke-research-extensions-obsidian.mjs` | research/clarify 扩展端到端 |
 | `smoke-extension-ui-obsidian.mjs` | 原生弹窗、composer、生命周期、模型请求 |

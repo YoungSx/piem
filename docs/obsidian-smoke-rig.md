@@ -107,6 +107,7 @@ facts, not piem facts.
 
 | Script | Covers |
 | --- | --- |
+| `smoke-codemode-obsidian.mjs` | Code Mode with local model/MCP fixtures: provider declarations, real Vault calls, cancellation, output limits, branch store and mobile Node access |
 | `smoke-community-obsidian.mjs` | Community extension bridge against shipped services |
 | `smoke-research-extensions-obsidian.mjs` | Research/clarify extensions end-to-end |
 | `smoke-extension-ui-obsidian.mjs` | Native dialogs, composer, lifecycle, model requests |
