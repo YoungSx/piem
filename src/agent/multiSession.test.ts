@@ -1,4 +1,5 @@
 import type { JsonObject } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { captureContext } from "../testUtils/captureContext";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
@@ -1660,92 +1661,75 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 			service.dispose();
 		}
 	}, 30_000);
-});
 
-describe("codemode `only` does not withhold the catalog from the sandbox itself", () => {
-	it("a script can still reach the tools the model can no longer see", async () => {
-		// The mode working against itself is the failure this pins: `only` removes
-		// the direct tools from `agent.state.tools`, and the sandbox read its
-		// callable list from there — so the script would have been written against
-		// an empty `tools` and the model would have been told to use a sandbox that
-		// could do nothing.
+	it("`only` withholds an MCP server's tools from the model and keeps them scriptable", async () => {
+		// The one class of tool the mode used to miss: MCP tools were spliced into
+		// the mounted set outside `buildTools`, after the filter, so a server's
+		// tools reached the model no matter what the mode promised. They belong on
+		// the same side of the gate as everything else — hidden from the model,
+		// present in the catalog a script reads.
 		const adapter = asDataAdapter(new MemoryAdapter());
+		const probe = {
+			name: "mcp_probe", label: "probe", description: "A mounted MCP tool.",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text" as const, text: "probe-ok" }], details: undefined }),
+		};
 		const service = new ObsidianAgentService(createFakeApp(adapter),
 			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
+				getMountedExternalTools: () => [probe],
 			});
 		try {
 			await service.sendPrompt("seed");
 			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent;
 			const mounted = agent?.state.tools.map((tool) => tool.name) ?? [];
-			expect(mounted).toEqual(["codemode"]);
-			// The catalog the model reads is the whole point, and it comes from the
-			// same place the script's callable list does.
-			expect(service.getCodemodeTool().description ?? "").toMatch(/declare const tools/);
-			expect(service.getCodemodeTool().description ?? "").toMatch(/read\(args: /);
+			expect(mounted).toContain("codemode");
+			expect(mounted).not.toContain("read");
+			expect(mounted).not.toContain("mcp_probe");
+			// Scriptable is a fact about `scriptTools` — the array the sandbox's
+			// registry and the nested executor both read — not about the catalog's
+			// rendering, which the budget may truncate (and `tool.test.ts` covers).
+			const scriptable = (service as unknown as { current(): { scriptTools?: Array<{ name: string }> } })
+				.current()?.scriptTools?.map((tool) => tool.name) ?? [];
+			expect(scriptable).toContain("mcp_probe");
+			expect(scriptable).toContain("read");
 		} finally {
 			service.dispose();
 		}
 	}, 30_000);
 
-	it("`on` reports the same catalog through the tools' own descriptions", async () => {
+	it("`only` leaves the withheld tools callable from a script, vault tools and MCP tools alike", async () => {
+		// The executor used to resolve a script's call against the mounted set —
+		// the very list the mode empties — so every script call came back
+		// "Tool read not found" and the sandbox could only do arithmetic. It
+		// resolves against `scriptTools` now: what the catalog promised is what
+		// runs, whichever provider shipped the tool.
 		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: echoStreamFn(),
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed");
-			expect(service.getCodemodeTool().description ?? "").not.toMatch(/declare const tools/);
-		} finally {
-			service.dispose();
-		}
-	}, 30_000);
-});
-
-describe("codemode `only` does not withhold the catalog from the sandbox itself", () => {
-	it("a script can still reach the tools the model can no longer see", async () => {
-		// The mode working against itself is the failure this pins: `only` removes
-		// the direct tools from `agent.state.tools`, and the sandbox read its
-		// callable list from there — so the script would have been written against
-		// an empty `tools` and the model would have been told to use a sandbox that
-		// could do nothing.
-		const adapter = asDataAdapter(new MemoryAdapter());
+		const probe = {
+			name: "mcp_probe", label: "probe", description: "A mounted MCP tool.",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text" as const, text: "probe-ok" }], details: undefined }),
+		};
 		const service = new ObsidianAgentService(createFakeApp(adapter),
 			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
+				getMountedExternalTools: () => [probe],
 			});
+		const nested = (name: string, args: JsonObject) =>
+			(service as unknown as {
+				executeNestedTool(name: string, args: JsonObject, signal: AbortSignal): Promise<AgentToolResult>;
+			}).executeNestedTool(name, args, new AbortController().signal);
 		try {
 			await service.sendPrompt("seed");
-			const agent = (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } }).agent;
-			const mounted = agent?.state.tools.map((tool) => tool.name) ?? [];
-			expect(mounted).toEqual(["codemode"]);
-			// The catalog the model reads is the whole point, and it comes from the
-			// same place the script's callable list does.
-			expect(service.getCodemodeTool().description ?? "").toMatch(/declare const tools/);
-			expect(service.getCodemodeTool().description ?? "").toMatch(/read\(args: /);
-		} finally {
-			service.dispose();
-		}
-	}, 30_000);
-
-	it("`on` reports the same catalog through the tools' own descriptions", async () => {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: echoStreamFn(),
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			await service.sendPrompt("seed");
-			expect(service.getCodemodeTool().description ?? "").not.toMatch(/declare const tools/);
+			const direct = await nested("ls", {});
+			expect(JSON.stringify(direct)).not.toContain("not found");
+			const external = await nested("mcp_probe", {});
+			expect(external.isError).not.toBe(true);
+			expect(external.content[0]).toEqual({ type: "text", text: "probe-ok" });
 		} finally {
 			service.dispose();
 		}
@@ -1769,11 +1753,13 @@ describe("parseCodemodeArgument", () => {
 		expect(parseCodemodeArgument(word)).toEqual({ kind: "set", mode });
 	});
 
-	it("distinguishes following the vault from an unknown word", () => {
-		expect(parseCodemodeArgument("vault")).toEqual({ kind: "follow-vault" });
-		expect(parseCodemodeArgument("settings")).toEqual({ kind: "follow-vault" });
-		// Distinct from `report`, because silently ignoring a word and reporting
-		// success would leave the reader believing a mode they did not ask for.
+	it("has no `vault` to follow any more, and says so rather than pretending", () => {
+		// Session-scoped overrides are gone: the settings page and the command are
+		// two surfaces over the same two fields, so there is nothing to hand the
+		// decision back to. A reader who types the old word gets the same honest
+		// refusal as any other unknown word.
+		expect(parseCodemodeArgument("vault")).toEqual({ kind: "unknown", argument: "vault" });
+		expect(parseCodemodeArgument("settings")).toEqual({ kind: "unknown", argument: "settings" });
 		expect(parseCodemodeArgument("maybe")).toEqual({ kind: "unknown", argument: "maybe" });
 	});
 
@@ -1783,9 +1769,8 @@ describe("parseCodemodeArgument", () => {
 });
 
 describe("/codemode", () => {
-	async function chat(settings: PiemSettings): Promise<{
+	async function chat(settings: PiemSettings, serviceOptions: Record<string, unknown> = {}): Promise<{
 		service: ObsidianAgentServiceType;
-		adapter: DataAdapter;
 		mounted: () => string[];
 		send: (prompt: string) => Promise<boolean>;
 	}> {
@@ -1794,11 +1779,11 @@ describe("/codemode", () => {
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
+				...serviceOptions,
 			});
 		await service.sendPrompt("seed");
 		return {
 			service,
-			adapter,
 			mounted: () => (service as unknown as { agent?: { state: { tools: Array<{ name: string }> } } })
 				.agent?.state.tools.map((tool) => tool.name) ?? [],
 			send: (prompt: string) => service.sendPrompt(prompt),
@@ -1815,7 +1800,7 @@ describe("/codemode", () => {
 	}, 30_000);
 
 	it("reports the current mode with no argument, and changes nothing", async () => {
-		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" });
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" as const });
 		try {
 			expect(mounted()).not.toContain("read");
 			await send("/codemode");
@@ -1823,49 +1808,72 @@ describe("/codemode", () => {
 		} finally { service.dispose(); }
 	}, 30_000);
 
-	it("turns `only` on for this chat without touching the vault setting", async () => {
-		// The point of a session-scoped command: this conversation wanted `only`,
-		// which is not a fact about the vault.
-		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const };
+	it("writes the vault setting — the settings page and the command are one switch", async () => {
+		// The command's whole job is to be the composer's handle on the same two
+		// fields the settings page renders. Writing anything else (a session-local
+		// override, an in-memory only answer) is how the two surfaces drift apart.
+		const settings = { ...defaultTestSettings() };
 		const { service, send, mounted } = await chat(settings);
 		try {
-			expect(mounted()).toContain("read");
+			expect(mounted()).not.toContain("codemode");
 			await send("/codemode only");
+			expect(settings.codemodeEnabled).toBe(true);
+			expect(settings.codemodeMode).toBe("only");
 			expect(mounted()).not.toContain("read");
-			expect(settings.codemodeMode).toBe("on");
-		} finally { service.dispose(); }
-	}, 30_000);
-
-	it("turns the tool off for this chat even when the vault has it on", async () => {
-		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" });
-		try {
-			await send("/codemode off");
-			expect(mounted()).not.toContain("codemode");
-			expect(mounted()).toContain("read");
-		} finally { service.dispose(); }
-	}, 30_000);
-
-	it("turns the tool on for this chat even when the vault has it off", async () => {
-		const { service, send, mounted } = await chat(defaultTestSettings());
-		try {
-			expect(mounted()).not.toContain("codemode");
-			await send("/codemode only");
 			expect(mounted()).toContain("codemode");
 		} finally { service.dispose(); }
 	}, 30_000);
 
-	it("`vault` hands the decision back", async () => {
-		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" });
+	it("applies to every conversation, not just the one that asked", async () => {
+		// One answer for the vault is the semantic: a new chat must not come up
+		// with the mode the previous conversation was still holding.
+		const { service, send, mounted } = await chat(defaultTestSettings());
 		try {
 			await send("/codemode only");
+			expect(mounted()).toContain("codemode");
+			await service.newSession({ force: true });
+			await service.sendPrompt("seed").catch(() => undefined);
 			expect(mounted()).not.toContain("read");
+			expect(mounted()).toContain("codemode");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("turns the tool off by writing the setting off", async () => {
+		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" as const };
+		const { service, send, mounted } = await chat(settings);
+		try {
+			expect(mounted()).not.toContain("read");
+			await send("/codemode off");
+			expect(settings.codemodeEnabled).toBe(false);
+			expect(mounted()).toContain("read");
+			expect(mounted()).not.toContain("codemode");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("turns the tool on even when the vault had it off", async () => {
+		const settings = { ...defaultTestSettings() };
+		const { service, send, mounted } = await chat(settings);
+		try {
+			expect(mounted()).not.toContain("codemode");
+			await send("/codemode on");
+			expect(settings.codemodeEnabled).toBe(true);
+			expect(mounted()).toContain("codemode");
+			expect(mounted()).toContain("read");
+		} finally { service.dispose(); }
+	}, 30_000);
+
+	it("treats `vault` as unknown now that there is nothing to hand back", async () => {
+		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const };
+		const { service, send, mounted } = await chat(settings);
+		try {
 			await send("/codemode vault");
+			expect(settings.codemodeMode).toBe("on");
 			expect(mounted()).toContain("read");
 		} finally { service.dispose(); }
 	}, 30_000);
 
 	it("reports an unknown word rather than pretending", async () => {
-		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" });
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const });
 		try {
 			await send("/codemode maybe");
 			expect(mounted()).toContain("read");
@@ -1881,20 +1889,24 @@ describe("/codemode", () => {
 		} finally { service.dispose(); }
 	}, 30_000);
 
-	it("keeps its override off the disk", async () => {
-		// The override is a fact about this conversation, not the vault; writing it
-		// back would make it a fact about every conversation after it.
+	it("does not save when the mode asked for is already the mode on disk", async () => {
+		// An unchanged save would be a no-op with a toast claiming otherwise — and
+		// worse, it would reconfigure the agent for nothing.
+		const saves: number[] = [];
 		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
+		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const };
+		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
+				persistSettings: async () => { saves.push(Date.now()); },
 			});
 		try {
 			await service.sendPrompt("seed");
+			await service.sendPrompt("/codemode on");
+			expect(saves.length).toBe(0);
 			await service.sendPrompt("/codemode only");
-			expect((service as unknown as { getSettings(): PiemSettings }).getSettings().codemodeMode).toBe("on");
+			expect(saves.length).toBe(1);
 		} finally { service.dispose(); }
 	}, 30_000);
 });

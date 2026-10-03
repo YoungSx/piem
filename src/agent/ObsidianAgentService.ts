@@ -1228,7 +1228,7 @@ export class ObsidianAgentService {
 
 		// Captured before the option literal below, which is the one place `this`
 		// would be the wrong receiver.
-		const readCodemodeMode = (): CodemodeSessionMode => this.resolveCodemodeMode(this.current());
+		const readCodemodeMode = (): CodemodeSessionMode => this.resolveCodemodeMode();
 
 		// The workflow tool spawns through the same subagent runner, so a workflow
 		// child resolves its model, tools, and transport exactly as a delegated
@@ -1280,13 +1280,18 @@ export class ObsidianAgentService {
 	}
 
 	/**
-	 * `/codemode [on|only|off|vault]` — this conversation's answer, not the vault's.
+	 * `/codemode [on|only|off]` — the vault's answer, written from the composer.
+	 *
+	 * The settings page and this command are two switches over the same two
+	 * fields, so the command *is* a settings save: it writes the settings object
+	 * and persists through the same path a settings save takes, which carries the
+	 * rebuild to the live agent on the way back. There is nothing else to
+	 * remember — no session-scoped override exists, which is what keeps the two
+	 * surfaces from drifting apart.
 	 *
 	 * Returns false so the turn never reaches the model: a command that changed
 	 * something and then also sent a message would have the model narrate a change
-	 * it did not make. The new mode lands on the next turn, which is where piem
-	 * already applies tool-set changes — a running agent's tools are never swapped
-	 * underneath it.
+	 * it did not make.
 	 */
 	private async runCodemodeCommand(rt: SessionRuntime, argument: string): Promise<boolean> {
 		const directive = parseCodemodeArgument(argument);
@@ -1294,19 +1299,25 @@ export class ObsidianAgentService {
 			this.setNotice(rt, this.t().t("commands.codemodeUnknown", { argument: directive.argument }));
 			return false;
 		}
-		const before = this.resolveCodemodeMode(rt);
-		if (directive.kind === "follow-vault") {
-			rt.codemodeModeOverride = undefined;
-		} else if (directive.kind === "set") {
-			rt.codemodeModeOverride = directive.mode;
+		if (directive.kind === "set") {
+			const settings = this.getSettings();
+			const next = {
+				codemodeEnabled: directive.mode !== "off",
+				codemodeMode: directive.mode === "only" ? "only" : "on",
+			} as const;
+			if (
+				settings.codemodeEnabled === next.codemodeEnabled &&
+				(settings.codemodeMode ?? "on") === next.codemodeMode
+			) {
+				// Already there: an unchanged save would be a no-op with a toast
+				// claiming otherwise.
+			} else {
+				settings.codemodeEnabled = next.codemodeEnabled;
+				settings.codemodeMode = next.codemodeMode;
+				await this.persistSettings();
+			}
 		}
-		const mode = this.resolveCodemodeMode(rt);
-		if (mode !== before) {
-			// The command changes nothing else, so the same rebuild a settings save
-			// performs is what makes it take effect: without it the override is set
-			// and the agent keeps the tool set it was built with.
-			await this.refreshConfiguration();
-		}
+		const mode = this.resolveCodemodeMode();
 		const key = mode === "off" ? "commands.codemodeOff"
 			: mode === "only" ? "commands.codemodeOnly"
 			: "commands.codemodeOn";
@@ -1315,20 +1326,17 @@ export class ObsidianAgentService {
 	}
 
 	/**
-	 * What `codemode` is doing in this conversation.
+	 * What `codemode` is doing — one answer, for every conversation.
 	 *
-	 * The conversation's own answer wins over the vault's, because that is the
-	 * whole point of `/codemode`: a sweeping job wants `only` and the next chat
-	 * about something small wants `on`, and neither is a fact about the vault.
-	 * `off` covers a vault that has it enabled and a conversation that does not
-	 * want it right now.
+	 * Read from the settings alone: the settings page and `/codemode` write the
+	 * same two fields, and no conversation carries an opinion of its own, so
+	 * there is nothing to resolve against a runtime.
 	 */
-	private resolveCodemodeMode(rt: SessionRuntime | null): CodemodeSessionMode {
+	private resolveCodemodeMode(): CodemodeSessionMode {
 		const settings = this.getSettings();
-		const fromVault: CodemodeSessionMode = settings.codemodeEnabled
+		return settings.codemodeEnabled
 			? (settings.codemodeMode ?? "on")
 			: "off";
-		return rt?.codemodeModeOverride ?? fromVault;
 	}
 
 	/**
@@ -1362,7 +1370,14 @@ export class ObsidianAgentService {
 				arguments: args,
 			},
 			{
-				tools: agent.state.tools,
+				// `rt.scriptTools`, not the mounted list: `only` withholds the direct
+				// tools from the *model*, and resolving a script's call against the
+				// mounted set would make every one of them an unknown tool — the
+				// catalog the description promised and the registry accepted would
+				// be uncallable at the only layer that runs it. The sandbox registry
+				// and this resolver read the same array, so what a script is told it
+				// can call is exactly what it can.
+				tools: rt.scriptTools ?? agent.state.tools,
 				context: { messages: agent.state.messages },
 				// The message the loop would have attributed this call to. A script has
 				// no assistant turn of its own, so this is the most recent real one:
@@ -1371,12 +1386,6 @@ export class ObsidianAgentService {
 				// from nowhere. A fallback covers a script that somehow runs before
 				// the model's first reply.
 				assistantMessage: lastAssistantMessage(agent.state.messages) ?? SYNTHETIC_ASSISTANT_MESSAGE,
-				// The message the loop would have attributed this call to. A script has
-				// no assistant turn of its own, so this is the most recent real one:
-				// it is what the hooks are told the call belongs to, and handing them
-				// a synthetic empty message would make a transcript audit show a call
-				// from nowhere. A fallback covers a script that somehow runs before
-				// the model's first reply.
 				// The same hooks the loop installs, so an extension sees a script's
 				// calls exactly as it sees the model's own — and can still refuse one.
 				beforeToolCall: async ({ toolCall, args: validated }) =>
@@ -5280,15 +5289,12 @@ export class ObsidianAgentService {
 			rt,
 			thinkingLevel ?? agent.state.thinkingLevel,
 		);
-		agent.state.tools = [
-			...this.buildTools(rt),
-			// The mounted list, connect-free: a send awaits this apply on its
-			// prelude, and one unreachable server would hold the composer for the
-			// full connect timeout on every turn. A settings save still forces the
-			// reconnect — the background sync below is what carries a handshake
-			// that outlives this apply into the live agent.
-			...this.mountedExternalTools(),
-		];
+		// The mounted MCP list, connect-free, is folded in by `buildTools` itself —
+		// a send awaits this apply on its prelude, and one unreachable server would
+		// hold the composer for the full connect timeout on every turn. A settings
+		// save still forces the reconnect — the background sync below is what
+		// carries a handshake that outlives this apply into the live agent.
+		agent.state.tools = this.buildTools(rt);
 		this.syncExternalToolsInBackground(rt);
 		await rt.communityHost?.syncModel();
 		// Skills are read from the vault here too: `saveSettings` calls this after
@@ -6159,8 +6165,10 @@ export class ObsidianAgentService {
 	 * Vault tools come straight from the tools module; delegation rides in
 	 * wholesale from the subagent extension, which owns the spawn/wait pair,
 	 * the depth cap, and the registry — this service only supplies the host
-	 * getters the extension resolves at execution time. MCP tools are appended
-	 * by the callers, whose async gather may connect to servers.
+	 * getters the extension resolves at execution time. MCP tools are folded in
+	 * from the mounted cache, connect-free; the background gather that connects
+	 * servers lands its results here too, on the rebuild it performs when it
+	 * resolves.
 	 */
 	private buildTools(rt: SessionRuntime): AgentTool[] {
 		// Each tool is wrapped so its execute runs with `toolRuntime` pointing at
@@ -6175,12 +6183,15 @@ export class ObsidianAgentService {
 		//   thing can be reached through a script, which is the whole cost: the model
 		//   already reads that tool's description, so the sample lands on ground it
 		//   is standing on rather than in a second catalog.
-		// - `only` — the sandbox is the path. The direct tools go, and the catalog
-		//   moves into `codemode`'s own description (see `createCodemodeTool`). That
-		//   is *cheaper* per request than shipping both: one capped block replaces
-		//   every tool's declaration, and the model has one consistent path instead
-		//   of two.
-		const mode = this.resolveCodemodeMode(rt);
+		// - `only` — the sandbox is the path. The direct tools go — *all* of them,
+		//   MCP included — and the catalog moves into `codemode`'s own description
+		//   (see `createCodemodeTool`). That is *cheaper* per request than shipping
+		//   both: one capped block replaces every tool's declaration, and the model
+		//   has one consistent path instead of two. What `only` hides from the
+		//   model stays callable from a script: `rt.scriptTools` is the unfiltered
+		//   set, and the nested executor resolves against it, so a server's tools
+		//   are neither leaked to the model nor sealed off from it.
+		const mode = this.resolveCodemodeMode();
 		const codemodeOn = mode !== "off";
 		const codemodeOnly = mode === "only";
 		const offered = (tool: AgentTool): boolean =>
@@ -6203,6 +6214,12 @@ export class ObsidianAgentService {
 			...(this.getSettings().workflowEnabled === true ? [this.workflowTool] : []),
 			...(codemodeOn ? [this.codemodeTool] : []),
 			...(rt.communityHost?.tools ?? []),
+			// Inside the set the `offered` filter governs, like everything else: MCP
+			// tools appended *after* `buildTools` were the one class of tool `only`
+			// never withheld, because the three assembly points splice them in outside
+			// the filter. Appending them *inside* puts the mode's one promise — the
+			// script is the only path — back over every tool, whatever provides it.
+			...this.mountedExternalTools(),
 		];
 		// Published before the filter below, because `only` withholds the direct
 		// tools from `agent.state.tools` — and the sandbox reads its callable list
@@ -6296,14 +6313,18 @@ export class ObsidianAgentService {
 	 */
 	private syncExternalToolsInBackground(rt: SessionRuntime): void {
 		void this.fetchExternalTools()
-			.then((external) => {
+			.then(() => {
 				if (
 					this.disposed ||
 					this.runtimes.get(rt.sessionPath) !== rt ||
 					rt.agent === null
 				)
 					return;
-				rt.agent.state.tools = [...this.buildTools(rt), ...external];
+				// The gather's result is the mounted cache by the time it resolves —
+				// `buildTools` reads the same source — so the rebuild is the whole
+				// update: whatever the handshake just added is in it, under the same
+				// codemode filter as everything else.
+				rt.agent.state.tools = this.buildTools(rt);
 			})
 			.catch((error) => {
 				this.log.debug("Background external tool sync failed", () => ({
@@ -6841,14 +6862,12 @@ export class ObsidianAgentService {
 		let tools: AgentTool[];
 		try {
 			// The vault tool list is synchronous; MCP tools come from the mounted
-			// cache when every server is already connected. The connect itself
-			// never rides this await: a server that cannot be reached would hold
-			// the session switch for the full connect timeout, and the background
-			// sync below hands the tools over the moment they exist.
-			tools = [
-				...(await this.buildToolsAsync(rt)),
-				...this.mountedExternalTools(),
-			];
+			// cache when every server is already connected, folded in by `buildTools`
+			// itself. The connect itself never rides this await: a server that cannot
+			// be reached would hold the session switch for the full connect timeout,
+			// and the background sync below hands the tools over the moment they
+			// exist.
+			tools = await this.buildToolsAsync(rt);
 			assertOwner();
 		} catch (error) {
 			community.dispose();

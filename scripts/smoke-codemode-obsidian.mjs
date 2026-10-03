@@ -100,6 +100,7 @@ async function runSmoke(root, expect) {
 	const onTools = await mountedTools();
 	record("codemode is mounted once the setting is on", onTools.includes("codemode"));
 	record("it is offered alongside the direct tools, not instead", onTools.includes("read") && onTools.includes("grep"));
+	record("`on` mounts the MCP server's tools too", onTools.includes("mcp_smoke_probe"));
 	report.mounted = { off: offTools.length, on: onTools.length };
 
 	// Now that a session is mounted, the built description names real tools.
@@ -137,25 +138,37 @@ async function runSmoke(root, expect) {
 	record("the catalog stays inside its budget", report.descriptionTokensOnly <= 3400, String(report.descriptionTokensOnly));
 	const onlyRun = await tool.execute("smoke-only", { code: "return 6 * 7;" }, new AbortController().signal);
 	record("and a script still runs in `only`", !onlyRun.isError && onlyRun.content?.[0]?.text === "42");
+	record("`only` withholds the MCP server's tools from the model as well", !onlyTools.includes("mcp_smoke_probe"));
+	// The mode's whole promise, executed rather than asserted: the model cannot
+	// see `read` or the probe, and a script can call both — through the real
+	// QuickJS VM, the real host bridge, the real nested tool path.
+	const probeRun = await tool.execute("smoke-only-mcp", { code: "const r = await tools.mcp_smoke_probe({}); return r;" }, new AbortController().signal);
+	record("a script reaches the MCP tool the model cannot see", !probeRun.isError && probeRun.content?.at(-1)?.text === '"probe-ok"', JSON.stringify(probeRun).slice(0, 160));
+	const directRun = await tool.execute("smoke-only-direct", { code: "const files = await tools.ls({}); return typeof files;" }, new AbortController().signal);
+	record("and the direct vault tools, in the same mode", !directRun.isError && JSON.parse(directRun.content?.at(-1)?.text ?? '""') === "string", JSON.stringify(directRun).slice(0, 160));
 
 
 	piem.settings.codemodeMode = wasMode;
 	await piem.saveSettings();
 
 	// ---- the slash command, on the shipped path -------------------------------
-	// The command is the feature's real surface: a conversation that wants the
-	// strong mode for one job should not have to change a vault setting and reload.
+	// The command is the composer's handle on the same two fields the settings page
+	// renders: it must write them, not remember something beside them, or the two
+	// surfaces drift and the settings page shows an answer the model never got.
 	const commandNames = (service.getSnapshot().availableCommands ?? []).map((entry) => entry.name);
 	record("/codemode is offered in the composer", commandNames.includes("codemode"));
 	await service.sendPrompt("/codemode only");
-	record("/codemode only withholds the direct tools, for this conversation", !currentTools().includes("read"));
+	record("/codemode only withholds the direct tools", !currentTools().includes("read"));
+	record("and the MCP server's tools with them", !currentTools().includes("mcp_smoke_probe"));
+	record("and writes the same two fields the settings page renders", piem.settings.codemodeEnabled === true && piem.settings.codemodeMode === "only");
+	const dataJson = JSON.parse(await app.vault.adapter.read(`${directory}/vault/.obsidian/plugins/piem/data.json`));
+	record("the write reached data.json, so a reopen agrees with the toast", dataJson.codemodeEnabled === true && dataJson.codemodeMode === "only");
 	await service.sendPrompt("/codemode vault");
-	// After the restore, so the vault says `on`: following a vault that says
-	// `only` correctly keeps the tools hidden, and asserting otherwise would pin
-	// the wrong behaviour.
-	record("/codemode vault hands the decision back", currentTools().includes("read"));
+	// There is no session-scoped answer to hand back any more, so the old word is
+	// refused rather than honoured — and refusing must change nothing.
+	record("`vault` is not a word any more, and changes nothing", piem.settings.codemodeMode === "only" && !currentTools().includes("read"));
 	await service.sendPrompt("/codemode off");
-	record("/codemode off unmounts the tool for this conversation", !currentTools().includes("codemode"));
+	record("/codemode off unmounts the tool and writes the switch off", !currentTools().includes("codemode") && piem.settings.codemodeEnabled === false);
 
 
 	piem.settings.codemodeEnabled = wasEnabled;
