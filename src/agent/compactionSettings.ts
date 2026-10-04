@@ -1,4 +1,4 @@
-import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from "@earendil-works/pi-agent-core";
+import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from "./piCompaction";
 
 /**
  * The compaction configuration, as the user can set it.

@@ -7,7 +7,7 @@ import { buildScopedFactory, SCOPED_FACTORY_PREFIX } from "./pi-scoped-factories
 
 /** Audited, unmodified upstream modules. A changed pin requires a fresh dependency review. */
 const AUDIT = JSON.parse(await readFile(new URL("./pi-extension-packages.json", import.meta.url), "utf8"));
-const PURE_DEPENDENCIES = new Set(["typebox", "typebox/compile", "typebox/value", "chalk"]);
+const PURE_DEPENDENCIES = new Set(["typebox", "typebox/compile", "typebox/value", "chalk", "ignore", "yaml"]);
 const BUILTINS = new Set(builtinModules.map(name => name.replace(/^node:/, "")));
 const COMPAT_ENTRIES = new Map([
 	["pi-ai", "piAI.ts"], ["pi-tui", "piTui.ts"], ["pi-coding-agent", "piCodingAgent.ts"],
@@ -25,7 +25,7 @@ export function extensionCompatEntry(specifier, root = process.cwd()) {
  * Upstream function bodies remain unchanged. New network/timer factories get a
  * per-host static closure; import.meta receives each original module's identity.
  */
-export function piExtensionsPlugin(root = process.cwd()) {
+export function piExtensionsPlugin(root = process.cwd(), resourceSnapshot = false) {
 	const pkg = path.join(root, "node_modules/@earendil-works/pi-coding-agent");
 	const bridge = path.join(root, "src/extensions/node");
 	const packages = Object.entries(AUDIT).map(([name, audit]) => ({ name, audit, directory: path.join(root, "node_modules", name) }));
@@ -35,6 +35,10 @@ export function piExtensionsPlugin(root = process.cwd()) {
 	const runner = path.join(pkg, "dist/core/extensions/runner.js");
 	const systemPrompt = path.join(pkg, "dist/core/system-prompt.js");
 	const skills = path.join(pkg, "dist/core/skills.js");
+	const sessionManager = path.join(pkg, "dist/core/session-manager.js");
+	const compaction = path.join(pkg, "dist/core/compaction/compaction.js");
+	const branchSummary = path.join(pkg, "dist/core/compaction/branch-summarization.js");
+	const compactionUtils = path.join(pkg, "dist/core/compaction/utils.js");
 	const children = path.join(pkg, "dist/utils/child-process.js");
 	const truncate = path.join(pkg, "dist/core/tools/truncate.js");
 	const pruned = new Set();
@@ -46,6 +50,15 @@ export function piExtensionsPlugin(root = process.cwd()) {
 	return {
 		name: "pi-static-extensions",
 		setup(build) {
+			// Every Models instance belongs to Obsidian; never fall back to Node
+			// environment probing through an opaque import in an eval-loaded bundle.
+			build.onResolve({ filter: /^\.\/auth\/context\.js$/ }, args => args.importer === path.join(root, "node_modules/@earendil-works/pi-ai/dist/models.js")
+				? { path: path.join(root, "src/auth/authContext.ts") } : undefined);
+			build.onResolve({ filter: /^pi-resource-factory$/ }, () => ({ path: "resources", namespace: "pi-resources" }));
+			build.onLoad({ filter: /.*/, namespace: "pi-resources" }, async () => {
+				const { buildResourceFactory } = await import("./pi-resource-factory.mjs");
+				return { ...await buildResourceFactory(root), resolveDir: root };
+			});
 			build.onStart(async () => {
 				pruned.clear();
 				resources = {};
@@ -71,6 +84,11 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				const owner = ownerOf(args.importer);
 				if (!owner) return;
 				const community = owner.name !== "@earendil-works/pi-coding-agent" ? owner : undefined;
+				if (args.importer === sessionManager && ["crypto", "fs", "fs/promises", "path", "readline", "string_decoder", "../config.js", "../utils/paths.js"].includes(args.path.replace(/^node:/, ""))) {
+					pruned.add(args.path);
+					return { path: args.path, external: true, sideEffects: false };
+				}
+				if (args.importer === compaction && args.path === "@earendil-works/pi-ai/compat") return { path: path.join(root, "src/agent/compactionTransport.ts") };
 				if (community && args.kind === "dynamic-import") throw new Error(`Dynamic extension loading is unavailable: ${args.path}`);
 				const compatibility = community && extensionCompatEntry(args.path, root);
 				if (compatibility) return { path: compatibility };
@@ -79,9 +97,8 @@ export function piExtensionsPlugin(root = process.cwd()) {
 					["./jiti-loader.js", "./jiti-static-loader.js", "./virtual-modules.js"].includes(args.path)
 				);
 				const terminalOnly = args.importer === theme && (args.path === "@earendil-works/pi-tui" || args.path === "../../../utils/syntax-highlight.js" || args.path === "./system-theme.js");
-				// system-prompt uses only formatSkillsForPrompt; directory discovery and
-				// frontmatter parsing remain unavailable, even if a future import uses them.
-				const discoveryOnly = args.importer === skills && (args.path === "ignore" || args.path === "../utils/frontmatter.js");
+				// Discovery needs an invocation-owned snapshot, never the static fs stub.
+				const discoveryOnly = !resourceSnapshot && args.importer === skills && (args.path === "ignore" || args.path === "../utils/frontmatter.js");
 				const windowsOnly = args.importer === children && args.path === "cross-spawn";
 				if (dynamicOnly || terminalOnly || discoveryOnly || windowsOnly) {
 					// These values occur only in uncalled dynamic/terminal functions. If a future
@@ -98,7 +115,7 @@ export function piExtensionsPlugin(root = process.cwd()) {
 				if (BUILTINS.has(name) || args.path.startsWith("node:")) throw new Error(`Unsupported extension builtin: ${args.path}`);
 				// These hashed files import only transcript projection helpers. Do not
 				// open the pi-ai root to community graphs (which use our compatibility API).
-				if ((args.importer === runner || args.importer === systemPrompt) && args.path === "@earendil-works/pi-ai") return;
+				if ([runner, systemPrompt, sessionManager, compaction, branchSummary, compactionUtils].includes(args.importer) && args.path === "@earendil-works/pi-ai") return;
 				if (PURE_DEPENDENCIES.has(args.path)) return;
 				if (args.path.startsWith(".")) {
 					const resolved = path.resolve(path.dirname(args.importer), args.path);

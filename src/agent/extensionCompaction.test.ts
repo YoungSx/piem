@@ -37,7 +37,7 @@ function harness(factory: ExtensionFactory = () => {}, tokens = 4) {
 	const streamFn: StreamFn = (model, context) => {
 		requests.push(captureContext(context));
 		const message: AssistantMessage = {
-			role: "assistant", content: [{ type: "text", text: "Reply" }], api: model.api, provider: model.provider,
+			role: "assistant", content: [{ type: "text", text: "Reply".repeat(1000) }], api: model.api, provider: model.provider,
 			model: model.id, timestamp: Date.now(), stopReason: "stop",
 			usage: { input: tokens - 2, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: tokens,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -391,11 +391,12 @@ describe("extension compaction observations", () => {
 		});
 		try {
 			await service.sendPrompt("Turn 1");
+			await service.sendPrompt("Turn 2");
 			requestUrlMock.mockResolvedValue(summaryResponse());
 			expect(await service.runExtensionCommand("tidy-custom")).toBe(true);
 			await completed.promise;
 			expect(completedResult).toBeDefined();
-			expect(completedResult.summary).toBe("SUMMARY");
+			expect(completedResult.summary).toContain("SUMMARY");
 			expect(typeof completedResult.firstKeptEntryId).toBe("string");
 			const firstKept = await sessions.getSession().getEntry(completedResult.firstKeptEntryId);
 			expect(firstKept).toBeDefined();

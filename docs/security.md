@@ -58,6 +58,22 @@ The practical consequence: **point Piem at a vault you are willing to send to
 your model provider.** A search that touches a file lists that file, and the
 model sees the listing.
 
+## Local conversation storage
+
+Conversations use Piem's single-file JSONL format backed by Pi's durable
+transaction engine. Opening an older conversation migrates it locally, verifies
+the replacement and keeps the original beside it as a `.legacy` backup. Those
+backups contain the original conversation and may be copied by your vault sync
+or backup service. Older Piem builds cannot read the new format; a downgrade
+requires restoring the corresponding legacy file.
+
+Sync reconciliation preserves transcript UUIDs and bookmarks, then rebuilds
+Pi's device-local storage IDs. It does not provide a cross-device lock or resume
+unfinished tools automatically. An uncertain partial write blocks the current storage instance; reopening or an
+idle recovery checkpoint backs up the damaged file and rebuilds its confirmed
+entries before accepting new writes. Interrupted file replacements restore their
+saved original on the next open or listing.
+
 ## OpenTelemetry export
 
 The bundled original `b1tank/pi-otel` extension sends traces, metrics and lifecycle

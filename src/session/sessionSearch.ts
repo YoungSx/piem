@@ -1,4 +1,4 @@
-import type { Entry, EntrySearchHit, JsonlSessionMetadata } from "@earendil-works/pi-agent-core";
+import type { Entry, EntrySearchHit, JsonlSessionMetadata } from "./sessionTypes";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 /** A pi entry hit with the stable vault path needed by the picker. */

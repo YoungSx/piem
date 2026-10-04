@@ -1,17 +1,9 @@
 import type { App, DataAdapter, Plugin } from "obsidian";
-import {
-	type BranchSummaryResult,
-	type FileError,
-	JsonlSessionRepo,
-	MemorySessionRepo,
-	type Result,
-	type AgentMessage,
-	type CompactResult,
-	type Entry,
-	type JsonlSessionMetadata,
-	type Session,
-	type ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
+import { type BranchSummaryResult, type CompactResult, type Entry, type JsonlSessionMetadata } from "./sessionTypes";
+import { JsonlSessionRepo, MemorySessionRepo } from "./SessionRepository";
+import { type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { type Session } from "./PiemSession";
+import { type FileError, type Result } from "@earendil-works/pi-durable/env";
 import { uuidv7 } from "@earendil-works/pi-ai";
 import type { LoggerLike } from "../logging/Logger";
 import { normalizeFolderPath } from "../vault/path";
@@ -20,12 +12,12 @@ import { DEFAULT_THINKING_LEVEL } from "../constants";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { selectSessionsToEvict, UNLIMITED_SESSION_RETENTION } from "./retention";
 import { mergeSessions, serializeLogLines } from "./sessionMerge";
+import { snapshotSession, readLegacySnapshot } from "./sessionSnapshot";
 import { collapseSkillInvocation, parseSkillInvocation } from "../agent/skillInvocation";
 import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
 import { readSessionMetadata } from "./sessionMetadata";
 import {
 	BACKGROUND_CONTEXT,
-	laneConfig,
 	buildContextEntries,
 	sessionEntryToContextMessages,
 } from "./sessionCompat";
@@ -362,7 +354,7 @@ export class ObsidianSessionManager {
 		// the v4 one pi validates on load).
 		const header: Record<string, unknown> = {
 			kind: "header",
-			v: 4,
+			v: 5,
 			id: blank.metadata.id,
 			createdAt: blank.metadata.createdAt,
 			storageVersion: 1,
@@ -374,33 +366,9 @@ export class ObsidianSessionManager {
 		fileResultOrThrow(await this.fs.writeFile(path, encodeHeader(header)), `Failed to initialize session ${path}`);
 		const session = await this.repo(sessionDir).open(blank.metadata);
 		const metadata = await session.getMetadata();
-		const items = await blank.session.getLog();
-		const lanes = await blank.session.getLanes();
-		const name = await blank.session.getName();
-		if (name) {
-			await session.setName(name);
-		}
-		for (const item of items) {
-			if (item.kind === "record") {
-				const { seq: _seq, timestamp: _timestamp, ...restored } = item.record;
-				await session.appendRecord(restored);
-			} else if (item.kind === "entry") {
-				const { seq: _s, timestamp: _t, parentId: _p, ...restored } = item.entry;
-				await session.appendEntry(restored, "main");
-			} else if (item.kind === "fact" && item.fact === "label") {
-				await session.setLabel(item.targetId, item.label);
-			}
-			// "lane" pointers are replayed below from `getLanes`, which carries
-			// the branch heads the entries' own appends lost. Label facts above
-			// retain their order, including replacements and removals.
-		}
-		for (const lane of lanes) {
-			if (lane.lane !== "main") {
-				await session.createLane(lane.lane, lane.leafId);
-			} else if (lane.leafId !== null) {
-				await session.moveLane("main", lane.leafId);
-			}
-		}
+		const snapshot = await snapshotSession(blank.session);
+		await session.restoreLog(snapshot.log, snapshot.lanes, snapshot.legacyValues);
+		await blank.session.close();
 		// The swap must precede any further appends: they go through
 		// `getSessionFor`, which reads this registry — writing them while the
 		// blank sheet still occupies the entry would leave them in memory,
@@ -735,7 +703,7 @@ export class ObsidianSessionManager {
 		}
 		const previous = await this.repo(this.resolveSessionDir()).open(metadata);
 		try {
-			const config = (await previous.getValue(laneConfig("main"), BACKGROUND_CONTEXT))?.value;
+			const config = await previous.getConfiguration("main");
 			if (config?.thinkingLevel) {
 				return config.thinkingLevel;
 			}
@@ -973,7 +941,7 @@ export class ObsidianSessionManager {
 				messageOrigins.push(...projected.map(() => null));
 			}
 		});
-		const config = (await session.getValue(laneConfig(lane), BACKGROUND_CONTEXT))?.value;
+		const config = await session.getConfiguration(lane);
 		let model = config?.model ?? null;
 		let thinkingLevel = config?.thinkingLevel ?? "off";
 		if (!model || thinkingLevel === "off") {
@@ -1116,7 +1084,8 @@ export class ObsidianSessionManager {
 			return undefined;
 		}
 		const fresh = await this.repo(this.resolveSessionDir()).open(this.hydrated.get(path)!.metadata);
-		return (await fresh.getName())?.trim() || undefined;
+		try { return (await fresh.getName())?.trim() || undefined; }
+		finally { await fresh.close(); }
 	}
 
 	/**
@@ -1152,16 +1121,28 @@ export class ObsidianSessionManager {
 	 */
 	async reconcileExternalDrift(path: string): Promise<SessionReconcileOutcome> {
 		const target = normalizeFolderPath(path, { allowPluginInternals: true });
-		const live = this.hydrated.get(target);
+		let live = this.hydrated.get(target);
 		if (!live) {
 			throw new Error(`No session loaded: ${target}`);
 		}
+		const recovered = live.session.needsRecovery;
+		if (recovered) {
+			await live.session.close();
+			const session = await this.repo(this.resolveSessionDir()).open(live.metadata);
+			live = { session, metadata: live.metadata };
+			this.hydrated.set(target, live);
+		}
 		const foreign = await this.fs.readTextFile(target);
 		if (!foreign.ok) {
-			return { action: "skipped" };
+			return { action: recovered ? "merged" : "skipped" };
 		}
 		const localLines = serializeLogLines(await live.session.getLog(), await live.session.getLanes());
-		const result = mergeSessions(localLines, foreign.value.split("\n"), live.metadata.id);
+		const foreignSession = await this.repo(this.resolveSessionDir()).open(live.metadata);
+		let foreignLines: string[];
+		try {
+			foreignLines = [foreign.value.split("\n", 1)[0]!, ...serializeLogLines(await foreignSession.getLog(), await foreignSession.getLanes())];
+		} finally { await foreignSession.close(); }
+		const result = mergeSessions(localLines, foreignLines, live.metadata.id);
 
 		if (result.merged === null) {
 			// Quarantine: copy the foreign file as it sits on disk to `conflicts/`
@@ -1174,16 +1155,18 @@ export class ObsidianSessionManager {
 			return { action: "conflict", backupPath };
 		}
 		if (result.localTail > 0 || result.localFactsChanged) {
-			const staged = `${target}.tmp`;
-			await this.writeFileStrict(staged, result.merged.join(""), target);
+			const snapshot = readLegacySnapshot(result.merged.join(""));
+			snapshot.legacyValues = await live.session.getLegacyValues();
+			await this.repo(this.resolveSessionDir()).replace(live.metadata, snapshot, foreign.value, false);
 		} else if (result.foreignTail === 0 && !result.factsChanged) {
 			// Both sides already hold the full union: writing anything would only
 			// churn mtime and invite the sync plugin to arbitrate a file that did
 			// not change. The live instance is also still current, so no rebuild.
-			return { action: "skipped" };
+			return { action: recovered ? "merged" : "skipped" };
 		}
 		const fresh = await this.repo(this.resolveSessionDir()).open(live.metadata, BACKGROUND_CONTEXT);
 		this.hydrated.set(target, { session: fresh, metadata: await fresh.getMetadata() });
+		await live.session.close();
 		return { action: "merged" };
 	}
 
@@ -1256,6 +1239,7 @@ export class ObsidianSessionManager {
 	}
 
 	private async findMetadata(path: string): Promise<JsonlSessionMetadata | undefined> {
+		await this.repo(this.resolveSessionDir()).recover(path);
 		return readSessionMetadata(this.fs, this.resolveSessionDir(), path);
 	}
 

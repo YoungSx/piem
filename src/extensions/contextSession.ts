@@ -1,4 +1,6 @@
-import type { CustomEntry, Entry, JsonValue, Session } from "@earendil-works/pi-agent-core";
+import type { CustomEntry, Entry } from "../session/sessionTypes";
+import type { Session } from "../session/PiemSession";
+import type { JsonValue } from "@earendil-works/chord";
 import { ContextSnapshot } from "./contextSnapshot";
 
 export type ProvisionedEntry<T extends Entry = Entry> = Omit<T, "seq" | "timestamp" | "parentId">;

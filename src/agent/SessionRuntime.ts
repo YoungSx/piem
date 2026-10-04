@@ -1,4 +1,5 @@
-import { type Agent, type AgentTool, type Skill, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { type Agent, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { type Skill } from "../skills/piResources";
 import { type Usage } from "@earendil-works/pi-ai";
 import type { CompactionResult } from "@earendil-works/pi-coding-agent";
 import { type ActiveSessionInfo } from "../session/ObsidianSessionManager";
@@ -119,6 +120,9 @@ export class SessionRuntime {
 	bookmarkWork = 0;
 	bookmarkClosing = false;
 	sessionRefreshing = false;
+	sessionRefresh?: Promise<void>;
+	configurationApplied?: Promise<void>;
+	readonly pendingRunFinishes: Array<{ runId: string; lane: string; outcome: "completed" | "aborted" | "failed"; error?: { code: string; message: string } }> = [];
 	promptPreparations = 0;
 	/** Short session changes that must not overlap an extension snapshot. */
 	sessionOperations = 0;

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
-import { convertToLlm } from "@earendil-works/pi-agent-core";
+import { convertToLlm } from "./piMessages";
 import { createReferenceMessage, messageReferences, parseContextReferences, type ContextReference } from "./contextReference";
 import { installObsidianStub, requestUrlMock } from "../testUtils/obsidianStub";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";

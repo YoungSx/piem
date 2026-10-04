@@ -1,4 +1,5 @@
-import { calculateContextTokens, estimateContextTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
+import { calculateContextTokens, estimateContextTokens } from "./piCompaction";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { CompactionSettings } from "./compactionSettings";
 

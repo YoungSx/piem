@@ -1,4 +1,5 @@
-import { createCustomMessage, type AgentMessage, type CustomMessage } from "@earendil-works/pi-agent-core";
+import { createCustomMessage, type CustomMessage } from "./piMessages";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
 import { parseSkillInvocation } from "./skillInvocation";
 
 const SKILL_CONTEXT_TYPE = "piem-skill-context";

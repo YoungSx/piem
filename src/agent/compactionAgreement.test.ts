@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { prepareCompaction, shouldCompact, type AgentMessage, type Entry } from "@earendil-works/pi-agent-core";
+import { prepareCompaction, shouldCompact } from "./piCompaction";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
+import { type Entry } from "../session/sessionTypes";
 import { resolveCompactionSettings, type CompactionConfig } from "./compactionSettings";
 import { measureContextFill } from "./usage";
 

@@ -4,15 +4,9 @@ import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { afterAll, describe, expect, it } from "bun:test";
 import type { Api, AssistantMessage, Context, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import {
-	Agent,
-	convertToLlm,
-	formatSkillInvocation,
-	type AgentMessage,
-	type AgentTool,
-	type Skill,
-	type StreamFn,
-} from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { formatSkillInvocation, type Skill } from "../skills/piResources";
+import { convertToLlm } from "../agent/piMessages";
 import { Type } from "typebox";
 import { clampWait, clampWaitTimeoutMs, WAIT_DEFAULT_MS, WAIT_MIN_MS, type WaitPacing } from "./waitTool";
 import { resumableTranscript, runSubagent } from "./runner";
@@ -199,7 +193,7 @@ function fullContextStreamFn(toolTurns: number): StreamFn {
 		};
 		const message: AssistantMessage =
 			requests <= toolTurns
-				? { ...base, content: [{ type: "toolCall", id: `c${requests}`, name: "noop", arguments: {} }], stopReason: "toolUse" }
+				? { ...base, content: [{ type: "text", text: "Progress so far. ".repeat(300) }, { type: "toolCall", id: `c${requests}`, name: "noop", arguments: {} }], stopReason: "toolUse" }
 				: { ...base, content: [{ type: "text", text: "Report." }], stopReason: "stop" };
 		stream.push({ type: "done", reason: message.stopReason as never, message });
 		stream.end(message);

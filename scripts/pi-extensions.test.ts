@@ -65,7 +65,7 @@ describe("static official extension bundle", () => {
 	});
 	it("the integration pin remains explicit and carries the official factory unchanged", () => {
 		const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies: Record<string, string> };
-		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("0.99.1");
+		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("1.0.1");
 		expect(readFileSync("src/extensions/bookmarkFactory.mjs", "utf8")).toContain("examples/extensions/bookmark.ts");
 	});
 });
@@ -99,7 +99,7 @@ describe("audited community graph", () => {
 
 	it("refuses unreviewed upstream source before it enters the bundle", async () => {
 		await expect(build({
-			stdin: { contents: `export * from ${JSON.stringify(path.join(pkg, "dist/core/session-manager.js"))};`, resolveDir: root, loader: "ts" },
+			stdin: { contents: `export * from ${JSON.stringify(path.join(pkg, "dist/core/agent-session.js"))};`, resolveDir: root, loader: "ts" },
 			bundle: true, write: false, metafile: true, plugins: [piExtensionsPlugin(root)], logLevel: "silent",
 		})).rejects.toThrow("Unaudited extension source");
 	});

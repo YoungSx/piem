@@ -1,10 +1,10 @@
 import type { DataAdapter } from "obsidian";
-import { err, FileError, ok, type FileInfo, type FileSystem, type Result } from "@earendil-works/pi-agent-core";
-import type { Context } from "@earendil-works/pi-agent-core";
+import { err, FileError, ok, type FileInfo, type FileSystem, type Result } from "@earendil-works/pi-durable/env";
+import type { Context } from "@earendil-works/chord";
 import { normalizeVaultPath } from "../vault/path";
 import { parseMutationLine, SessionLogRepairNet, type SessionDriftEvent } from "./sessionMutationLine";
-import "./sessionCompat";
 import { textLineReader } from "../vault/textLineReader";
+import { fileSystemIdentity } from "../vault/fileSystemIdentity";
 
 function signalFrom(contextOrSignal?: Context | AbortSignal): AbortSignal | undefined {
 	if (!contextOrSignal) return undefined;
@@ -208,13 +208,27 @@ export type SessionRepoFileSystem = FileSystem;
  */
 export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 	readonly cwd = "";
+	readonly id: string;
 
-	private readonly adapter: DataAdapter;
+	async truncateFile(path: string, size: number, context?: Context): Promise<Result<void, FileError>> {
+		if (!Number.isSafeInteger(size) || size < 0) return err(new FileError("invalid", "Invalid file size", path));
+		const read = await this.readBinaryFile(path, context);
+		if (!read.ok) return read;
+		if (size > read.value.length) return err(new FileError("not_supported", "Session files cannot be extended by truncation", path));
+		return this.writeFile(path, read.value.slice(0, size), context);
+	}
+
+	async flushFile(path: string, _context?: Context): Promise<Result<void, FileError>> {
+		return err(new FileError("not_supported", "Obsidian does not expose filesystem flush", path));
+	}
+
+	readonly adapter: DataAdapter;
 	private readonly trash: (path: string) => Promise<void>;
 	private readonly repairNet: SessionLogRepairNet;
 
 	constructor(adapter: DataAdapter, trash?: (path: string) => Promise<void>, onDrift?: (event: SessionDriftEvent) => void) {
 		this.adapter = adapter;
+		this.id = fileSystemIdentity(adapter);
 		this.trash = trash ?? ((path) => trashSessionFile(adapter, path));
 		this.repairNet = new SessionLogRepairNet(onDrift);
 	}

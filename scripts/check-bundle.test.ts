@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 const script = join(import.meta.dir, "check-bundle.mjs");
 const providers = "node_modules/@earendil-works/pi-ai/dist/providers/";
-const agent = "node_modules/@earendil-works/pi-agent-core/dist/";
+const agent = "node_modules/@earendil-works/pi-durable/dist/";
 const codemode = "node_modules/@earendil-works/pi-codemode/dist/";
 const codingAgent = "node_modules/@earendil-works/pi-coding-agent/";
 
@@ -20,9 +20,9 @@ async function gate(inputs: Record<string, { bytesInOutput: number }>) {
 			[`${codemode}runtime/prelude-source.js`]: { bytesInOutput: 100 },
 			[`${codemode}declarations.js`]: { bytesInOutput: 100 },
 			[`${codemode}source.js`]: { bytesInOutput: 100 },
-			[`${agent}harness/env/nodejs.js`]: { bytesInOutput: 100 },
-			[`${agent}harness/tools/edit-diff.js`]: { bytesInOutput: 100 },
-			[`${agent}harness/session/jsonl/codec.js`]: { bytesInOutput: 100 },
+			[`${agent}env/node.js`]: { bytesInOutput: 100 },
+			[`${agent}tools/edit-diff.js`]: { bytesInOutput: 100 },
+			[`${agent}session/session.js`]: { bytesInOutput: 100 },
 			[`${codingAgent}dist/core/extensions/loader.js`]: { bytesInOutput: 100 },
 			[`${codingAgent}dist/core/extensions/runner.js`]: { bytesInOutput: 100 },
 			[`${codingAgent}dist/core/extensions/wrapper.js`]: { bytesInOutput: 100 },
@@ -74,7 +74,7 @@ describe("bundle composition after adding the public Node environment", () => {
 	});
 
 	it("requires Pi's filesystem to actually contribute to the bundle", async () => {
-		const result = await gate({ [`${agent}harness/env/nodejs.js`]: { bytesInOutput: 0 } });
+		const result = await gate({ [`${agent}env/node.js`]: { bytesInOutput: 0 } });
 		expect(result.exitCode).toBe(1);
 		expect(result.output).toContain("required module missing from bundle");
 	});

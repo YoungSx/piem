@@ -6,7 +6,7 @@ installObsidianStub();
 afterAll(stubWindowTimers());
 const { harness } = await import("../testUtils/nativeExtensionServiceHarness");
 const { ObsidianSessionManager } = await import("../session/ObsidianSessionManager");
-const { BACKGROUND_CONTEXT } = await import("@earendil-works/pi-agent-core");
+const { BACKGROUND_CONTEXT } = await import("@earendil-works/chord/context");
 
 test("boundary continuation reaches the provider once and survives stored-session replay", async () => {
 	let calls = 0;

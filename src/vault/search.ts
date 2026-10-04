@@ -1,4 +1,4 @@
-import { truncateLine } from "@earendil-works/pi-agent-core";
+import { truncateLine } from "./piTruncate";
 
 export interface GrepMatch {
 	path: string;

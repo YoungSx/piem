@@ -33,3 +33,6 @@ export function pluginAuthContext(): AuthContext {
 		fileExists: async () => false,
 	};
 }
+
+/** Build-time platform binding for Pi's default, with the same explicit policy. */
+export { pluginAuthContext as defaultProviderAuthContext };

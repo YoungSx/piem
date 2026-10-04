@@ -1,5 +1,6 @@
 import { Type, type TLiteral } from "typebox";
-import type { AgentMessage, AgentTool, Skill, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/piResources";
 import { clampThinkingLevel, type Model, type Models } from "@earendil-works/pi-ai";
 import type { CompactionSettings } from "../agent/compactionSettings";
 import { textResult, throwIfAborted } from "../tools/toolResult";

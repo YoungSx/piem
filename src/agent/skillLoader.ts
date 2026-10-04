@@ -1,6 +1,7 @@
-import type { PromptTemplateDiagnostic, SkillDiagnostic, Skill } from "@earendil-works/pi-agent-core";
-import { BACKGROUND_CONTEXT, formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "@earendil-works/pi-agent-core";
-import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import type { PromptTemplateDiagnostic, SkillDiagnostic, Skill } from "../skills/piResources";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { formatSkillInvocation, formatSkillsForSystemPrompt, loadSkills } from "../skills/piResources";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 // Type-only, and it must stay that way: `../skills/userSkills` reaches the node
 // filesystem through a lazy NodeExecutionEnv bridge, and `src/subagent/` is
 // allowed to import this module. A value import would pull in a `require`.

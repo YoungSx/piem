@@ -1,19 +1,11 @@
 import { TFile, TFolder, type App } from "obsidian";
 import type { Context } from "@earendil-works/chord";
-import {
-	err,
-	ExecutionError,
-	FileError,
-	ok,
-	type ExecutionEnv,
-	type FileInfo,
-	type Result,
-	type ShellExecOptions,
-	type ShellExecResult,
-} from "@earendil-works/pi-agent-core";
+import { err, ExecutionError, FileError, ok, type ExecutionEnv, type FileInfo, type Result, type ShellExecOptions, type ShellExecResult } from "@earendil-works/pi-durable/env";
 import { getParentPath, normalizeVaultPath } from "./path";
 import { trashOrDelete } from "./trash";
 import { textLineReader } from "./textLineReader";
+import { fileSystemIdentity } from "./fileSystemIdentity";
+import { resolve } from "pathe";
 
 /**
  * Exposes an Obsidian vault as pi's {@link ExecutionEnv} so the native
@@ -48,11 +40,25 @@ import { textLineReader } from "./textLineReader";
  */
 export class VaultExecutionEnv implements ExecutionEnv {
 	readonly cwd = "/";
+	readonly id: string;
 
 	private readonly app: App;
 
 	constructor(app: App) {
 		this.app = app;
+		this.id = fileSystemIdentity(app.vault.adapter);
+	}
+
+	async truncateFile(path: string, size: number, context?: Context): Promise<Result<void, FileError>> {
+		if (!Number.isSafeInteger(size) || size < 0) return err(new FileError("invalid", "Invalid file size", path));
+		const read = await this.readBinaryFile(path, context);
+		if (!read.ok) return read;
+		if (size > read.value.length) return err(new FileError("not_supported", "Vault files cannot be extended by truncation", path));
+		return this.writeFile(path, read.value.slice(0, size), context);
+	}
+
+	async flushFile(path: string, _context?: Context): Promise<Result<void, FileError>> {
+		return err(new FileError("not_supported", "Obsidian does not expose filesystem flush", path));
 	}
 
 	private get vault(): App["vault"] {
@@ -64,7 +70,7 @@ export class VaultExecutionEnv implements ExecutionEnv {
 	}
 
 	async joinPath(parts: string[], _context?: Context): Promise<Result<string, FileError>> {
-		return this.run(parts.join("/"), async () => ok(toEnvironmentPath(parts.filter((part) => part !== "").join("/"))));
+		return this.run(parts.join("/"), async () => ok(toEnvironmentPath(resolve("/", ...parts))));
 	}
 
 	async readTextFile(path: string, contextOrSignal?: Context | AbortSignal): Promise<Result<string, FileError>> {

@@ -1,5 +1,5 @@
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
-import type { Session } from "@earendil-works/pi-agent-core";
+import type { Session } from "../session/PiemSession";
 import type { ChatSnapshot } from "../agent/ObsidianAgentService";
 import type { SessionRuntime } from "../agent/SessionRuntime";
 import type { PiemSettings } from "../settings";

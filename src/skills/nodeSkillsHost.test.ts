@@ -1,3 +1,4 @@
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { describe, expect, it } from "bun:test";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -69,9 +70,9 @@ describe("user-skills host capabilities", () => {
 		const env = await createUserSkillsEnv();
 		try {
 			expect(env?.cwd).toBe(homedir());
-			expect(await env?.absolutePath("~")).toEqual({ ok: true, value: homedir() });
+			expect(await env?.absolutePath("~", BACKGROUND_CONTEXT)).toEqual({ ok: true, value: homedir() });
 		} finally {
-			await env?.cleanup();
+			await env?.cleanup(BACKGROUND_CONTEXT);
 		}
 	});
 });

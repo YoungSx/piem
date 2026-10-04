@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { DataAdapter } from "obsidian";
-import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 

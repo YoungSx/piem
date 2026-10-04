@@ -1,6 +1,6 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import type { DataAdapter } from "obsidian";
-import { JsonlSessionRepo } from "@earendil-works/pi-agent-core";
+import { JsonlSessionRepo } from "./SessionRepository";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 import { ObsidianSessionManager } from "./ObsidianSessionManager";
 
@@ -181,7 +181,7 @@ describe("ObsidianSessionManager cold open", () => {
 		const path = await seed(adapter, "Unreadable conversation");
 		const original = adapter.contentOf(path)!;
 		const broken = corruption === "header"
-			? original.replace('"v":4', '"v":999')
+			? original.replace('"v":5', '"v":999')
 			: `${original}{"kind":"entry","seq":999,"type":"unknown"}\n`;
 		await adapter.write(path, broken);
 		adapter.reset();

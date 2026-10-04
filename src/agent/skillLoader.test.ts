@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 
 installObsidianStub();
@@ -30,7 +30,7 @@ function fakeEnv(files: Record<string, string>): ExecutionEnv {
 	return {
 		cwd: "/",
 		fileInfo: async (p: string) => info(p),
-		absolutePath: async (p: string) => info(p),
+		absolutePath: async (p: string) => ({ ok: true, value: p }),
 		// pi passes env-absolute dirs into `joinPath`, so parts already carry the
 		// leading `/`; collapsing doubled slashes mirrors the real adapter, which
 		// is pure concatenation and never consults the filesystem.
@@ -49,7 +49,7 @@ function fakeEnv(files: Record<string, string>): ExecutionEnv {
 			];
 			return { ok: true as const, value: entries };
 		},
-		canonicalPath: async (p: string) => info(p),
+		canonicalPath: async (p: string) => ({ ok: true, value: p }),
 	} as unknown as ExecutionEnv;
 }
 

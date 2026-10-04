@@ -13,28 +13,14 @@ import {
 	type RetryCallbacks,
 	type Usage,
 } from "@earendil-works/pi-ai";
-import {
-	Agent,
-	collectEntriesForBranchSummary,
-	convertToLlm,
-	createBranchSummaryMessage,
-	generateBranchSummary,
-	type AgentEvent,
-	type AgentMessage,
-	type AgentTool,
-	type AgentToolResult,
-	type Entry,
-	type JsonValue,
-	type AgentTurnContext,
-	type AgentTurnDecision,
-	type PromptTemplate,
-	type StreamFn,
-	type ThinkingLevel,
-	calculateContextTokens,
-	estimateContextTokens,
-	runToolCall,
-	shouldCompact,
-} from "@earendil-works/pi-agent-core";
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type AgentToolResult, type AgentTurnContext, type AgentTurnDecision, type StreamFn, type ThinkingLevel, runToolCall } from "@earendil-works/pi-agent-core";
+import { collectEntriesForBranchSummary, generateBranchSummary } from "./piBranchSummary";
+import { calculateContextTokens, estimateContextTokens, shouldCompact } from "./piCompaction";
+import { type PromptTemplate } from "../skills/piResources";
+import { convertToLlm, createBranchSummaryMessage } from "./piMessages";
+import { type Entry } from "../session/sessionTypes";
+import { SessionChangedError } from "../session/DurableVaultStorage";
+import { type JsonValue } from "@earendil-works/chord";
 import {
 	BACKGROUND_CONTEXT,
 	withAbortSignal,
@@ -204,7 +190,6 @@ import {
 } from "../workflow/workflowTool";
 import { codemodeSample, createCodemodeTool } from "../codemode/tool";
 import { parseCodemodeArgument, type CodemodeSessionMode } from "../codemode/mode";
-import { adaptHarnessTool } from "../vault/harnessAdapter";
 import type {
 	MemberSessionHandle,
 	MemberSessionSpec,
@@ -222,7 +207,7 @@ import {
 	type SkillLoadReport,
 } from "./skillLoader";
 import { loadUserSkills, type UserSkillsLoad } from "../skills/userSkills";
-import type { Skill, SkillDiagnostic } from "@earendil-works/pi-agent-core";
+import type { Skill, SkillDiagnostic } from "../skills/piResources";
 import { BUILTIN_SKILLS_DIR } from "../skills/builtinSkillPackage";
 import {
 	emptyBuiltinSkillReport,
@@ -2743,6 +2728,7 @@ export class ObsidianAgentService {
 				ledger.lane,
 			);
 		} catch (failure) {
+			if ((failure instanceof SessionChangedError || this.sessionManager.getSessionFor(rt.sessionPath).needsRecovery)) rt.pendingRunFinishes.push({ ...ledger, outcome, error });
 			// The orphan this leaves is exactly what recovery looks for, so a failed
 			// close degrades to a spurious recovery offer — never to a lost reply.
 			this.log.error("Failed to record run finish", () => ({
@@ -4056,6 +4042,7 @@ export class ObsidianAgentService {
 	): Promise<BookmarkOutcome> {
 		const rt = this.runtimes.get(path);
 		if (!rt) throw new Error(this.t().t("bookmarks.unavailable"));
+		await rt.sessionRefresh;
 		const host = this.bookmarksFor(rt);
 		const release = this.sessionManager.claimOperation(path);
 		rt.bookmarkWork += 1;
@@ -4075,6 +4062,7 @@ export class ObsidianAgentService {
 	async listBookmarks(path: string): Promise<ChatBookmark[]> {
 		const rt = this.runtimes.get(path);
 		if (!rt) throw new Error(this.t().t("bookmarks.unavailable"));
+		await rt.sessionRefresh;
 		const host = this.bookmarksFor(rt);
 		const release = this.sessionManager.claimOperation(path);
 		rt.bookmarkWork += 1;
@@ -4189,6 +4177,9 @@ export class ObsidianAgentService {
 		name: string,
 		args: string,
 	): Promise<boolean> {
+		// A completed reply may still be adopting synced entries. Commands must
+		// see that finished snapshot before choosing a branch or starting a turn.
+		await rt.sessionRefresh;
 		const host = rt.communityHost;
 		const agent = rt.agent;
 		if (
@@ -4200,7 +4191,6 @@ export class ObsidianAgentService {
 			rt.bookmarkWork ||
 			rt.isCompacting ||
 			rt.retryInFlight ||
-			rt.sessionRefreshing ||
 			rt.sessionOperations ||
 			(!agent.state.isStreaming && rt.promptPreparations) ||
 			(agent.state.isStreaming && name !== "continue" && name !== "context")
@@ -4819,6 +4809,7 @@ export class ObsidianAgentService {
 			return;
 		}
 		const rt = this.runtimes.get(activePath);
+		if (rt?.sessionRefresh) return rt.sessionRefresh;
 		if (
 			!rt ||
 			rt.agent?.state.isStreaming ||
@@ -4828,11 +4819,11 @@ export class ObsidianAgentService {
 			return;
 		}
 		rt.sessionRefreshing = true;
-		try {
-			await this.reconcileRuntimeDrift(rt, activePath);
-		} finally {
+		rt.sessionRefresh = this.reconcileRuntimeDrift(rt, activePath).finally(() => {
 			rt.sessionRefreshing = false;
-		}
+			rt.sessionRefresh = undefined;
+		});
+		await rt.sessionRefresh;
 	}
 
 	private async reconcileRuntimeDrift(
@@ -4848,13 +4839,25 @@ export class ObsidianAgentService {
 			);
 			return;
 		}
-		if (outcome.action === "skipped") {
+		if (outcome.action === "skipped" && rt.unpersistedMessages.size === 0 && rt.pendingRunFinishes.length === 0) {
 			return;
 		}
 		if (outcome.action === "conflict") {
 			rt.syncConflict = outcome.backupPath;
 		} else {
 			rt.syncConflict = null;
+			// A foreign snapshot can land while the model streams. Its completion
+			// stays in memory when the old storage rejects a stale append. Save it
+			// to the reconciled session before replacing the live transcript.
+			for (const message of [...rt.unpersistedMessages]) {
+				try { await this.persistMessage(rt, message as AgentMessage); }
+				catch { return; } // Keep the visible reply and its unsaved marker.
+			}
+			while (rt.pendingRunFinishes.length) {
+				const finish = rt.pendingRunFinishes[0]!;
+				await this.sessionManager.endRunOperationFor(activePath, finish.runId, finish.outcome, finish.error, finish.lane);
+				rt.pendingRunFinishes.shift();
+			}
 			const context = await this.sessionManager.buildSessionContextFor(
 				activePath,
 				rt.activeLane,
@@ -5215,12 +5218,12 @@ export class ObsidianAgentService {
 		}
 		rt.configurationApplying = true;
 		rt.sessionOperations += 1;
-		try {
-			await this.applyRuntimeConfiguration(rt, thinkingLevel);
-		} finally {
+		rt.configurationApplied = this.applyRuntimeConfiguration(rt, thinkingLevel).finally(() => {
 			rt.sessionOperations -= 1;
 			rt.configurationApplying = false;
-		}
+			rt.configurationApplied = undefined;
+		});
+		await rt.configurationApplied;
 		await this.flushPendingConfiguration(rt);
 	}
 
@@ -5313,6 +5316,7 @@ export class ObsidianAgentService {
 	 * not fail the settle.
 	 */
 	private async flushPendingConfiguration(rt: SessionRuntime): Promise<void> {
+		if (rt.configurationApplied) await rt.configurationApplied;
 		if (!rt.pendingConfiguration) {
 			return;
 		}
@@ -7210,8 +7214,8 @@ export class ObsidianAgentService {
 			(tool) => tool.name && !excluded.has(tool.name),
 		);
 		const coordination = (
-			spec.customTools as unknown as Parameters<typeof adaptHarnessTool>[0][]
-		).map((def) => adaptHarnessTool(def, { context: {} }));
+			spec.customTools as AgentTool[]
+		).map((def) => ({ ...def, execute: def.execute.bind(def) }));
 		return [...vaultTools, ...coordination];
 	}
 
@@ -7615,10 +7619,12 @@ export class ObsidianAgentService {
 						failure ??= error instanceof Error ? error : new Error(String(error));
 					}
 				}
-				if (failure) {
-					throw failure;
+				// A sync rejection is recoverable at the idle checkpoint. Queue the
+				// run finish along with its unsaved reply before leaving this handler.
+				if (!failure || failure instanceof SessionChangedError || this.sessionManager.getSessionFor(rt.sessionPath).needsRecovery) {
+					await this.settleRunLedger(rt, event.messages);
 				}
-				await this.settleRunLedger(rt, event.messages);
+				if (failure) throw failure;
 			}
 		} catch (error) {
 			const message = causeMessage(error);

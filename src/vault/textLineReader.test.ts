@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { textLineReader } from "./textLineReader";
 
 test("line reading preserves CRLF, empty lines and torn tails without inventing EOF records", async () => {

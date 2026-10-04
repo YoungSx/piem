@@ -1,20 +1,12 @@
-import {
-	compact,
-	createCompactionSummaryMessage,
-	estimateContextTokens,
-	prepareCompaction,
-	shouldCompact,
-	type AgentMessage,
-	type CompactResult,
-	type Entry,
-	type JsonValue,
-	type MessageEntry,
-	type ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
+import { compact, estimateContextTokens, prepareCompaction, shouldCompact } from "./piCompaction";
+import { type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { createCompactionSummaryMessage } from "./piMessages";
+import { type CompactResult, type Entry, type MessageEntry } from "../session/sessionTypes";
+import { type JsonValue } from "@earendil-works/chord";
 export { createCompactionSummaryMessage, prepareCompaction, type CompactResult };
 import type { Api, Model, Models, RetryPolicy } from "@earendil-works/pi-ai";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
-import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from "./compactionSettings";
+import { DEFAULT_COMPACTION_SETTINGS, resolveCompactionSettings, type CompactionSettings } from "./compactionSettings";
 import { retainSkillContext } from "./skillContext";
 
 export { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings };
@@ -137,7 +129,7 @@ export function needsCompaction(
  * already-loaded skill instructions in the retained tail before persistence.
  */
 export async function compactIfNeeded(request: CompactionRequest): Promise<CompactionOutcome> {
-	const settings = request.settings ?? DEFAULT_COMPACTION_SETTINGS;
+	const settings = request.settings ?? resolveCompactionSettings(undefined, request.model.contextWindow);
 	if (!request.force && !needsCompaction(request.messages, request.model, settings)) {
 		return { status: "skipped" };
 	}

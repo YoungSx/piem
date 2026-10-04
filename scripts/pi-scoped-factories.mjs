@@ -18,7 +18,7 @@ const BINDINGS = "pi-extension-bindings";
  * imports inside a factory closure; shared pure imports stay static and dedupe
  * in the outer bundle. No runtime source evaluation or global swapping occurs.
  */
-function closeOverPlatform(code, allowedImports, ts) {
+export function closeOverPlatform(code, allowedImports, ts) {
 	const source = ts.createSourceFile("scoped-extension.js", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 	if (source.parseDiagnostics.length) throw new Error("Invalid compiled extension module.");
 	const imports = [];

@@ -1,4 +1,5 @@
-import { DEFAULT_MAX_BYTES, type AgentToolResult } from "@earendil-works/pi-agent-core";
+import { DEFAULT_MAX_BYTES } from "../vault/piTruncate";
+import { type AgentToolResult } from "@earendil-works/pi-agent-core";
 import { sha256Hex } from "./skillHash";
 
 export interface SkillPageOptions {

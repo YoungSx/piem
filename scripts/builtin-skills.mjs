@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
-import { BACKGROUND_CONTEXT, loadSkills } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { loadSkillsFromDir } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/skills.js";
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_PACKAGE_BYTES = 1024 * 1024;
@@ -64,14 +63,9 @@ export async function buildBuiltinSkills(root = process.cwd()) {
 			}
 		}
 	}
-	const env = new NodeExecutionEnv({ cwd: root });
-	try {
-		const loaded = await loadSkills(env, skillsRoot, BACKGROUND_CONTEXT);
-		if (loaded.diagnostics.length || loaded.skills.length !== names.length) {
-			throw new Error(`Pi rejected the skill collection: ${JSON.stringify(loaded.diagnostics)}`);
-		}
-	} finally {
-		await env.cleanup();
+	const loaded = loadSkillsFromDir({ dir: skillsRoot, source: "project" });
+	if (loaded.diagnostics.length || loaded.skills.length !== names.length) {
+		throw new Error(`Pi rejected the skill collection: ${JSON.stringify(loaded.diagnostics)}`);
 	}
 	const { version } = JSON.parse(await readFile(path.join(root, "manifest.json"), "utf8"));
 	const content = `${JSON.stringify({ schema: 1, version, files })}\n`;

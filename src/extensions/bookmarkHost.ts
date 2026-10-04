@@ -1,4 +1,5 @@
-import type { Entry, Session } from "@earendil-works/pi-agent-core";
+import type { Entry } from "../session/sessionTypes";
+import type { Session } from "../session/PiemSession";
 import { createOfficialBookmark, type BookmarkEntry } from "./officialBookmark";
 
 export type BookmarkCommand = "bookmark" | "unbookmark";

@@ -1,13 +1,6 @@
-import {
-	BACKGROUND_CONTEXT,
-	formatPromptTemplateInvocation,
-	loadPromptTemplates,
-	parseCommandArgs,
-	type ExecutionEnv,
-	type PromptTemplate,
-	type PromptTemplateDiagnostic,
-	type Skill,
-} from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { formatPromptTemplateInvocation, loadPromptTemplates, parseCommandArgs, type PromptTemplate, type PromptTemplateDiagnostic, type Skill } from "../skills/piResources";
+import { type ExecutionEnv } from "@earendil-works/pi-durable/env";
 
 /**
  * Prompt-template loading and command parsing, built on pi's native functions.

@@ -1,4 +1,4 @@
-import type { Session } from "@earendil-works/pi-agent-core";
+import type { Session } from "./PiemSession";
 import type { ContextNavigation } from "../extensions/contextSession";
 
 /** One reusable pointer, not a new lane for every handoff. */

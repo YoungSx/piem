@@ -16,6 +16,7 @@ import type { PromptQueue } from "./promptQueue";
 import { createReferenceMessage, messageReferences, type ContextReference } from "./contextReference";
 import type { SessionRuntime } from "./SessionRuntime";
 import { ObsidianSessionManager, type OperationStartedRecord } from "../session/ObsidianSessionManager";
+import type { Entry } from "../session/sessionTypes";
 import { DEFAULT_SESSION_RETENTION } from "../session/retention";
 import { DEFAULT_SESSION_DIR } from "../session/sessionDir";
 import { DEFAULT_LOG_LEVEL } from "../logging/logLevel";
@@ -42,6 +43,14 @@ const { describeReplyCutoff } = await import("../ui/replyCutoff");
 // Tests drive ObsidianSessionManager directly, so the directory is supplied here
 // rather than derived from a Vault; `Vault#configDir` is used in production code.
 const SESSION_DIR = `.${"obsidian"}/plugins/piem/sessions`;
+
+/** Reopen through the shipped durable adapter, so assertions read committed data. */
+async function storedEntries(adapter: MemoryAdapter, path: string): Promise<Entry[]> {
+	const manager = new ObsidianSessionManager(asDataAdapter(adapter), SESSION_DIR, "obsidian-vault:Test");
+	await manager.loadSession(path);
+	try { return await manager.getSession().findEntries(); }
+	finally { await manager.getSession().close(); }
+}
 
 // The real home directory may hold user-level skills, and a test that asserts
 // on the composed prompt has to be hermetic — every service gets an empty loader.
@@ -559,11 +568,13 @@ describe("ObsidianAgentService", () => {
 		const service = createService(adapter);
 		await service.sendPrompt("First conversation");
 		const session = service.getSnapshot().session;
+		const before = await adapter.read(session?.path ?? "");
 
 		await service.renameSession("Release notes");
 
 		const content = await adapter.read(session?.path ?? "");
-		expect(content).toContain('"namespace":"pi.session.name"');
+		expect(content.startsWith(before)).toBe(true);
+		expect(content.slice(before.length)).toContain("Release notes");
 		expect(content).toContain("First conversation");
 		expect(content.split("\n")[0]).toContain('"kind":"header"');
 	});
@@ -1253,7 +1264,8 @@ describe("ObsidianAgentService", () => {
 	it("flips isCompacting while a forced compaction request is in flight", async () => {
 		requestUrlMock.mockImplementation(async () => sseResponse([summaryChunk(), usageChunk()]));
 		const service = createService();
-		await service.sendPrompt("Long conversation");
+		await service.sendPrompt("Earlier conversation");
+		await service.sendPrompt("Long conversation".repeat(6000));
 		const seen = [service.getSnapshot()];
 		service.subscribe((snapshot) => seen.push(snapshot));
 
@@ -1263,7 +1275,7 @@ describe("ObsidianAgentService", () => {
 		const finalSnapshot = seen[seen.length - 1];
 		expect(finalSnapshot?.isCompacting).toBe(false);
 		expect(finalSnapshot?.messages[0]?.role).toBe("compactionSummary");
-		// Compaction bills its own request; it must show up in the running total.
+		// One retained reply and the summary request both report usage.
 		expect(finalSnapshot?.usage.requests).toBe(2);
 	});
 
@@ -1287,7 +1299,8 @@ describe("ObsidianAgentService", () => {
 	it("keeps the compaction summary visible in the transcript after compaction", async () => {
 		requestUrlMock.mockImplementation(async () => sseResponse([summaryChunk("EARLIER HISTORY SUMMARIZED"), usageChunk()]));
 		const service = createService();
-		await service.sendPrompt("Long conversation");
+		await service.sendPrompt("Earlier conversation");
+		await service.sendPrompt("Long conversation".repeat(6000));
 
 		await service.compactNow();
 
@@ -1580,7 +1593,8 @@ describe("ObsidianAgentService", () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter);
 		service.setActiveNotePath("Notes/today.md");
-		await service.sendPrompt("Long conversation");
+		await service.sendPrompt("Earlier conversation");
+		await service.sendPrompt("Long conversation".repeat(6000));
 
 		await service.compactNow();
 
@@ -1813,18 +1827,11 @@ describe("ObsidianAgentService", () => {
 			// then replay the tool result twice: once from retainedTail, once as its
 			// own entry.
 			const sessionPath = (await service.listSessions())[0]?.path ?? "";
-			const raw = (await adapter.read(sessionPath))
-				.split("\n")
-				.filter((line) => line.trim() !== "")
-				.map((line) => JSON.parse(line));
-			const entries = raw.flatMap((item) => (Array.isArray(item) ? item : [item])) as { kind: string; type?: string; id?: string; parentId?: string }[];
-			const compaction = entries.filter((e) => e.kind === "entry" && e.type === "compaction");
+			const entries = await storedEntries(adapter, sessionPath);
+			const compaction = entries.filter(e => e.type === "compaction");
 			expect(compaction).toHaveLength(1);
-			const entryIndex = entries.findIndex((e) => e.kind === "entry" && e.type === "compaction");
-			const precedingMessageIds = entries
-				.slice(0, entryIndex)
-				.filter((e) => e.kind === "entry" && e.type === "message")
-				.map((e) => e.id ?? "");
+			const entryIndex = entries.findIndex(e => e.type === "compaction");
+			const precedingMessageIds = entries.slice(0, entryIndex).filter(e => e.type === "message").map(e => e.id);
 			expect(compaction[0]?.parentId).toBe(precedingMessageIds.at(-1));
 
 			// Reload in a fresh service: the replayed transcript must equal the
@@ -3169,12 +3176,7 @@ describe("exporting a session as a note", () => {
 describe("recording a reply's duration", () => {
 	/** The message entries of a session log, in order. */
 	async function loggedMessages(adapter: MemoryAdapter, sessionPath: string): Promise<AssistantMessage[]> {
-		const raw = (await adapter.read(sessionPath))
-			.split("\n")
-			.filter((line) => line.trim() !== "")
-			.map((line) => JSON.parse(line));
-		const entries = raw.flatMap((item) => (Array.isArray(item) ? item : [item])) as { type?: string; message?: AssistantMessage }[];
-		return entries.filter((entry) => entry.type === "message").map((entry) => entry.message!) as AssistantMessage[];
+		return (await storedEntries(adapter, sessionPath)).flatMap(entry => entry.type === "message" ? [entry.message] : []) as AssistantMessage[];
 	}
 
 	it("stamps each settled reply with the gap from its own start, in the log", async () => {
@@ -3505,7 +3507,8 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 		// `agent_end` dispatch and the send's own settle. Take-then-apply is what
 		// keeps the second one from doing the work a second time.
 		const gated = createRecordingGatedStreamFn();
-		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn });
+		const { logger, records } = spyLogger();
+		const { service, settings } = createServiceWithSettings(new MemoryAdapter(), { streamFn: gated.streamFn, logger });
 		configureTwoModels(settings);
 
 		const run = service.sendPrompt("First question");
@@ -3518,7 +3521,8 @@ describe("mid-run model and thinking changes (issue #252)", () => {
 
 		gated.release();
 		await run;
-		await waitFor(() => gated.requestedModels.length >= 2);
+		await waitForSettled(() => gated.requestedModels.length >= 2);
+		expect(records.filter(record => record.level === "error")).toEqual([]);
 
 		expect(reconfigures).toHaveLength(1);
 		const rt = peekRuntime(service, service.getActiveSessionPath() ?? "");
@@ -4099,9 +4103,9 @@ describe("vault skills", () => {
 		await service.initialize();
 		const { vault, user } = service.getSkillLoad();
 
-		// pi's message names the offending skill, and `path` names the file — the
+		// Pi's message names the problem, and `path` names the file — the
 		// pair is what makes the row actionable, so both must survive the trip.
-		expect(vault.some((diagnostic) => diagnostic.message.includes("Not_A_Name"))).toBe(true);
+		expect(vault.some((diagnostic) => diagnostic.message.includes("name contains invalid characters"))).toBe(true);
 		expect(vault.some((diagnostic) => diagnostic.path.endsWith("bad/SKILL.md"))).toBe(true);
 		// The user layer stays its own list: its consequences differ, and its
 		// messages are raw filesystem text rather than pi's own wording.
@@ -4752,7 +4756,10 @@ function createRecordingToolCallingStreamFn(
 				// The arguments must actually succeed: a failed tool result would
 				// make the agent loop turn again and swallow the second request
 				// these tests are about. `""` normalizes to the vault root.
-				content: [{ type: "toolCall", id: "call-1", name: toolName, arguments: { path: "" } }],
+				content: [
+					{ type: "text", text: "Working through the context. ".repeat(3500) },
+					{ type: "toolCall", id: "call-1", name: toolName, arguments: { path: "" } },
+				],
 				stopReason: "toolUse",
 			};
 			stream.push({ type: "done", reason: "toolUse", message });
@@ -5650,29 +5657,22 @@ describe("streaming refresh cost", () => {
 	 * whose inputs had not changed.
 	 */
 	it("does not re-stat the session file per streaming delta", async () => {
-		const adapter = new CountingAdapter();
-		const chunks = 200;
-		const service = createService(adapter, {
-			streamFn: (model) => scriptedDeltaStream(model, "Long reply, streamed one chunk at a time. ".repeat(2), chunks),
-		});
-		// The startup cost (session creation, configuration) is part of every
-		// run; measure it before the stream so the assertion below says
-		// "streaming added nothing", not "the total is small".
-		await service.initialize();
-		const setupStatCalls = adapter.statCalls;
-
-		await service.sendPrompt("Hello");
-
-		// Streaming rendered, and the settled summary reflects the persisted turn.
-		const snapshot = service.getSnapshot();
-		expect(snapshot.isStreaming).toBe(false);
-		expect(snapshot.session?.messageCount).toBe(2);
-		// Every persisted mutation now pays exactly two stats — the repair net's
-		// pre-append disk verify and the post-write fingerprint refresh — so a
-		// turn of N mutations costs ~2N, which is what this slack covers. The
-		// pinned behavior is still the one-per-delta regression: 200 chunks
-		// would mean 200+ stats, orders of magnitude past this bound.
-		expect(adapter.statCalls).toBeLessThanOrEqual(setupStatCalls + 24);
+		const measure = async (chunks: number) => {
+			const adapter = new CountingAdapter();
+			const service = createService(adapter, {
+				streamFn: model => scriptedDeltaStream(model, "Long reply, streamed one chunk at a time. ".repeat(2), chunks),
+			});
+			try {
+				await service.sendPrompt("Hello");
+				await service.reconcileActiveSessionDrift();
+				expect(service.getSnapshot().isStreaming).toBe(false);
+				expect(service.getSnapshot().session?.messageCount).toBe(2);
+				return adapter.statCalls;
+			} finally { service.dispose(); }
+		};
+		// Compare identical turns rather than hardcoding the storage format's
+		// setup cost. Extra deltas must add no disk round-trips.
+		expect(await measure(200)).toBe(await measure(1));
 	});
 });
 
@@ -5869,7 +5869,7 @@ describe("original bookmark extension integration", () => {
 			const entered = new Promise<void>(resolve => { started = resolve; });
 			const append = adapter.append.bind(adapter);
 			adapter.append = async (target, data) => {
-				if (data.includes('"pi.entry.label"') || data.includes('"fact":"label"')) { started(); await gate; }
+				if (data.includes('["labels",')) { started(); await gate; }
 				await append(target, data);
 			};
 			const saving = service.runBookmark(path, "bookmark", "Wait for disk");
@@ -5893,7 +5893,7 @@ describe("original bookmark extension integration", () => {
 			const entered = new Promise<void>(resolve => { started = resolve; });
 			const append = adapter.append.bind(adapter);
 			adapter.append = async (target, data) => {
-				if (data.includes('"pi.entry.label"') || data.includes('"fact":"label"')) { started(); await gate; }
+				if (data.includes('["labels",')) { started(); await gate; }
 				await append(target, data);
 			};
 			const saving = service.runBookmark(path, "bookmark", "To delete");

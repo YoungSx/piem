@@ -14,6 +14,10 @@ const root = resolve(import.meta.dir, "../..");
 plugin({
 	name: "pi-audited-extension-sources",
 	setup(build) {
+		build.module("pi-resource-factory", async () => {
+			const { buildResourceFactory } = await import("../../scripts/pi-resource-factory.mjs");
+			return { ...await buildResourceFactory(root), loader: "js" };
+		});
 		for (const name of Object.keys(SCOPED_FACTORIES)) {
 			build.module(`${SCOPED_FACTORY_PREFIX}${name}`, async () => {
 				const snapshot = await readFile(resolve(root, "scripts/pi-extension-packages.json"), "utf8");

@@ -667,10 +667,10 @@ describe("browser codemode tool contract", () => {
 
 	it("bounds errors too, without treating base64 images as text tokens", async () => {
 		const tool = createCodemodeTool(emptyHost, runtime);
-		const result = await tool.execute("error", { code: '// @options: {"max_output_tokens": 20}\nimage("data:image/png;base64,aGVsbG8="); throw new Error("x".repeat(1000))' });
+		const result = await tool.execute("error", { code: '// @options: {"max_output_tokens": 20}\nimage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII="); throw new Error("x".repeat(1000))' });
 		expect(result.isError).toBe(true);
 		expect(JSON.stringify(result.content)).not.toContain("x".repeat(100));
-		expect(result.content).toContainEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
+		expect(result.content).toContainEqual({ type: "image", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII=", mimeType: "image/png" });
 	});
 
 	it("returns strings unquoted, as text() does", async () => {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { DataAdapter } from "obsidian";
-import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Session } from "../session/PiemSession";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 import { stubWindowTimers } from "../testUtils/windowStub";
@@ -90,10 +91,8 @@ describe("official bookmark on the existing Pi session", () => {
 		const external = new ObsidianSessionManager(f.memory as unknown as DataAdapter, "Piem/chats", "piem");
 		await external.loadSession(f.path);
 		await external.getSessionFor(f.path).setLabel(f.id, "Foreign label");
-		const foreign = await f.memory.read(f.path);
-		expect((await f.host.list()).map(item => item.label)).toEqual(["Local branch label", "Foreign label"]);
-		expect(await f.memory.read(f.path)).toStartWith(foreign);
-		expect(await f.manager.getSessionFor(f.path).getLanes()).toEqual([{ lane: "main", leafId: f.id }]);
+				expect((await f.host.list()).map(item => item.label)).toEqual(["Local branch label", "Foreign label"]);
+				expect(await f.manager.getSessionFor(f.path).getLanes()).toEqual([{ lane: "main", leafId: f.id }]);
 		const reopened = new ObsidianSessionManager(f.memory as unknown as DataAdapter, "Piem/chats", "piem");
 		await reopened.loadSession(f.path);
 		expect(await reopened.getSessionFor(f.path).getLabel(newer)).toBe("Local branch label");

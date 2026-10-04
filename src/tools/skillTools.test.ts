@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_MAX_BYTES, type AgentTool } from "@earendil-works/pi-agent-core";
+import { DEFAULT_MAX_BYTES } from "../vault/piTruncate";
+import { type AgentTool } from "@earendil-works/pi-agent-core";
 import { createReadSkillTool } from "./skillTools";
 
 describe("read_skill", () => {

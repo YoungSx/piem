@@ -1,13 +1,13 @@
 {
 	"@earendil-works/pi-coding-agent": {
-		"version": "0.99.1",
+		"version": "1.0.1",
 		"virtualRoot": "/pi",
 		"files": {
-			"dist/config.js": "c1142ae8703f8d6e913d5b7b0f32edcf6de28cebb14fe2949d920ce5c860e6e1",
+			"dist/config.js": "1cb67c079000a6ec800601e9774f7c23bcce6f8064c62251b97bd0232b8601d1",
 			"dist/core/event-bus.js": "f96a9a13071b2832955608387bf2482bcaf5310ce667f32f85a0d5bca44f08e3",
 			"dist/core/exec.js": "6aed92abe5273445a9bddcd92d4178264d0a23890b54b175a0efc73b20cdf53f",
-			"dist/core/extensions/loader.js": "83f5bd84e867be32258f01f2f6f0efc4cff1c8f05e46651a414a91f3ca4998b7",
-			"dist/core/extensions/runner.js": "7583772d6d29a23c06496b6e0b4764ace220fb4289d5523916323642efa50306",
+			"dist/core/extensions/loader.js": "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
+			"dist/core/extensions/runner.js": "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36",
 			"dist/core/extensions/wrapper.js": "ea82999a05ca0af25ed31e76aaaba6e5ce6b99b5fcde3681f0d74766e4935247",
 			"dist/core/pi-manifest.js": "2ae94bb81155fc66766a5643f21ec38e808177ec5f2271e77c82013971ae5c03",
 			"dist/core/source-info.js": "67562eea112e99f4a7880913143730bd90e3655381c0f353e3dd18c5e9f1ef07",
@@ -20,9 +20,17 @@
 			"dist/utils/text.js": "e5520be5740ddb7d67ebd09ef33ea2aee2e360925593ad3a7842b6534304a0f3",
 			"examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79",
 			"dist/core/tools/truncate.js": "24c5350761b487c154f950acf56a995dc1acdeac0c5d0f096efdaac71c8c231e",
-			"dist/core/mcp-servers.js": "98599a627f0c80a82588a4e3c8bd48eff1bcb6a4a20d145b27af448642788cbf",
-			"dist/core/system-prompt.js": "0f22e4dfe8c90b70b12c1cfd50bcdd4b49d59bd97adac90c2e9345cf711839fa",
-			"dist/core/skills.js": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c"
+			"dist/core/mcp-servers.js": "ef845623605c0554e0eb33e0b11abf3a7e76db319342b1ca79aa7401d2460062",
+			"dist/core/system-prompt.js": "83aa42fae07830d5a73431935af3390ec397d8333269d75cfe49c1afbc55369c",
+			"dist/core/skills.js": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c",
+			"dist/core/messages.js": "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6",
+			"dist/core/prompt-templates.js": "f378bb43f6a5ee8e7a2e1b53fe8d91a6e0504d96d3a724a97a58c3bd9b647555",
+			"dist/utils/frontmatter.js": "3e1a0e99ecc419748d87202a342dd315160764cf8588551cefcf780208165da5",
+			"dist/core/session-manager.js": "046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926",
+			"dist/core/usage-totals.js": "aa324545a6bdc16293380b8b0d09dd960356b99c2f5d4870f1bc2046e590c465",
+			"dist/core/compaction/compaction.js": "573f0321e9a93a4e8dca8c327f6459082ac438d1bc8b6c3c171d90894dd1543c",
+			"dist/core/compaction/branch-summarization.js": "0327aead9ce78dab3c3c7e54779b5974ec41bcb769dd3024f0c61edcd9ebea7e",
+			"dist/core/compaction/utils.js": "f7b64982eba185f03051cc4baedf52fdb5747bb2104d2398aec3426d02a5aa80"
 		}
 	},
 	"pi-assistant-provenance": {

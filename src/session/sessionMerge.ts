@@ -1,12 +1,8 @@
-import type { Entry } from "@earendil-works/pi-agent-core";
+import type { Entry } from "./sessionTypes";
 import { encodeMutation, parseMutationFromObject, scanDiskLines } from "./sessionMutationLine";
 
-export type LogItem =
-	| { kind: "entry"; seq: number; entry: Entry }
-	| { kind: "fact"; seq: number; fact: "name"; name?: string }
-	| { kind: "fact"; seq: number; fact: "label"; targetId: string; label?: string }
-	| { kind: "lane"; seq: number; lane: string; leafId: string | null }
-	| { kind: "record"; seq: number; [key: string]: unknown };
+import type { LogItem } from "./sessionTypes";
+export type { LogItem } from "./sessionTypes";
 
 function parseHeader(line: string): { ok: true; value: { id: string } } | { ok: false } {
 	try {

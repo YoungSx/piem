@@ -1,5 +1,5 @@
 import type { Context } from "@earendil-works/chord";
-import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { VaultExecutionEnv } from "./VaultExecutionEnv";
 
 /**

@@ -120,8 +120,8 @@ describe("ObsidianSessionManager", () => {
 		const content = await adapter.read(info.path);
 		expect(info.path).toContain(`${SESSION_DIR}/`);
 		expect(content.split("\n")[0]).toContain('"kind":"header"');
-		expect(content).toContain('"kind":"entry"');
-		expect(content).toContain('"pi.lane.config"');
+		expect(content).toContain('"kind":"piem.transcript"');
+		expect(content).toContain('"type":"model_change"');
 		expect(content).toContain('"deepseek-v4-pro"');
 		expect(content).toContain('"thinkingLevel":"high"');
 		expect(content).toContain('"role":"user"');
@@ -256,7 +256,7 @@ describe("ObsidianSessionManager", () => {
 		expect((await manager.getActiveSessionInfo()).name).toBe("Named before the first word");
 		// And the configuration the first run speaks is durable in the file.
 		const content = await adapter.read(blank.path);
-		expect(content).toContain('"pi.lane.config"');
+		expect(content).toContain('"type":"model_change"');
 		expect(content).toContain('"deepseek-v4-pro"');
 		expect(content).toContain('"thinkingLevel":"high"');
 		// Appends after materialization land in the file directly.
@@ -532,7 +532,7 @@ describe("ObsidianSessionManager open-zero-write contract", () => {
 		// First run start after the divergence: exactly one model change configuration write.
 		await next.ensureConfigurationFor(info.path, { provider: "openai", modelId: "gpt-5.2", thinkingLevel: "high" }, "main");
 		const withChange = await adapter.read(info.path);
-		expect(withChange.slice(baseline)).toContain('"pi.lane.config"');
+		expect(withChange.slice(baseline)).toContain('"type":"model_change"');
 		expect(withChange.slice(baseline)).toContain('"gpt-5.2"');
 		const afterFirst = withChange.length;
 

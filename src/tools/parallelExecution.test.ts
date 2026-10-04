@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type { AssistantMessage, TranscriptContext, JsonObject, Model, Api, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
-import { Agent, convertToLlm } from "@earendil-works/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { convertToLlm } from "../agent/piMessages";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { TFile } from "obsidian";
 
@@ -11,7 +12,7 @@ installObsidianStub();
 const { TFile: TFileClass } = await import("obsidian");
 const { VaultExecutionEnv } = await import("../vault/VaultExecutionEnv");
 const { adaptHarnessTool, createVaultHarnessContext } = await import("../vault/harnessAdapter");
-const core = await import("@earendil-works/pi-agent-core");
+const core = await import("@earendil-works/pi-durable/tools");
 
 const MODEL: Model<Api> = {
 	id: "test-model",
