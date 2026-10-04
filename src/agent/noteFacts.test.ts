@@ -188,7 +188,7 @@ describe("probeNoteFacts", () => {
 	});
 
 	it("probes tasks and code blocks from metadataCache", () => {
-		const mockFile = { path: "Dev.md", stat: { size: 1024 } } as TFile;
+		const mockFile = { path: "Dev.md", stat: { size: 100 } } as TFile;
 		const app = {
 			vault: {
 				getFileByPath: (path: string) => (path === "Dev.md" ? mockFile : null),
@@ -204,8 +204,8 @@ describe("probeNoteFacts", () => {
 						{ task: undefined }, // regular bullet
 					],
 					sections: [
-						{ type: "paragraph" },
-						{ type: "code" },
+						{ type: "paragraph", position: { start: { offset: 0 }, end: { offset: 30 } } },
+						{ type: "code", position: { start: { offset: 40 }, end: { offset: 100 } } },
 					],
 					tags: [{ tag: "#project" }],
 				}),
@@ -216,9 +216,58 @@ describe("probeNoteFacts", () => {
 		expect(facts).not.toBeNull();
 		expect(facts?.todoCount).toBe(2);
 		expect(facts?.doneTodoCount).toBe(1);
+		// Code occupies 60 of 100 bytes: dominant.
 		expect(facts?.hasCode).toBe(true);
 		expect(facts?.dominantTopic).toBe("tasks");
 		expect(facts?.hasPriorSession).toBe(true);
+	});
+
+	it("does not flag a writing note that quotes one small snippet", () => {
+		const mockFile = { path: "Essay.md", stat: { size: 100 } } as TFile;
+		const app = {
+			vault: {
+				getFileByPath: (path: string) => (path === "Essay.md" ? mockFile : null),
+			},
+			metadataCache: {
+				resolvedLinks: {},
+				unresolvedLinks: {},
+				getFileCache: () => ({
+					sections: [
+						{ type: "paragraph", position: { start: { offset: 0 }, end: { offset: 90 } } },
+						{ type: "code", position: { start: { offset: 91 }, end: { offset: 100 } } },
+					],
+				}),
+			},
+		} as unknown as App;
+
+		const facts = probeNoteFacts(app, "Essay.md");
+		expect(facts).not.toBeNull();
+		// A quoted YAML example or shell command is 9% of the note: prose.
+		expect(facts?.hasCode).toBe(false);
+		expect(facts?.dominantTopic).toBeNull();
+	});
+
+	it("lets declared reading tags outrank code-dominant content", () => {
+		const mockFile = { path: "BookNotes.md", stat: { size: 100 } } as TFile;
+		const app = {
+			vault: {
+				getFileByPath: (path: string) => (path === "BookNotes.md" ? mockFile : null),
+			},
+			metadataCache: {
+				resolvedLinks: {},
+				unresolvedLinks: {},
+				getFileCache: () => ({
+					sections: [{ type: "code", position: { start: { offset: 0 }, end: { offset: 100 } } }],
+					tags: [{ tag: "#book" }],
+				}),
+			},
+		} as unknown as App;
+
+		const facts = probeNoteFacts(app, "BookNotes.md");
+		expect(facts).not.toBeNull();
+		expect(facts?.hasCode).toBe(true);
+		// The author declared it a book note; quoting code does not change that.
+		expect(facts?.dominantTopic).toBe("reading");
 	});
 
 	it("integrates scout insights into probed facts and rendered lines", () => {

@@ -186,9 +186,7 @@ export function emptyScreenQuickActions(hasActiveNote: boolean, t: Translator, n
 		if (noteFacts?.hasPriorSession) {
 			const secondary = (noteFacts.todoCount ?? 0) > 0
 				? { id: "extractTodos", label: t.t("quickActions.empty.extractTodos.label"), prompt: t.t("quickActions.empty.extractTodos.prompt") }
-				: noteFacts.hasCode
-					? { id: "reviewCode", label: t.t("quickActions.empty.reviewCode.label"), prompt: t.t("quickActions.empty.reviewCode.prompt") }
-					: { id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") };
+				: { id: "summarizeNote", label: t.t("quickActions.empty.summarizeNote.label"), prompt: t.t("quickActions.empty.summarizeNote.prompt") };
 			return [
 				{ id: "recallSession", label: t.t("quickActions.empty.recallSession.label"), prompt: t.t("quickActions.empty.recallSession.prompt") },
 				secondary,
