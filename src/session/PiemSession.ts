@@ -1,15 +1,17 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createSession, defineDoc, type ConversationId, type Session as DurableSession, type Storage, type Tx } from "@earendil-works/pi-durable";
+import { createSession, defineDoc, AgentDoc, configure, type ConversationId, type EntryId, type Session as DurableSession, type Storage, type Tx } from "@earendil-works/pi-durable";
 import { uuidv7 } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { BranchScan, Entry, EntryQuery, LaneConfiguration, LogItem, OperationRecord, SessionMetadata } from "./sessionTypes";
 import { DurableVaultStorage } from "./DurableVaultStorage";
+import { appendTranscript, scanTranscript, transcriptEntry } from "./piTranscript";
 
-type Pointer = { seq: number; leafId: string | null };
+type Pointer = { seq: number; conversationId: ConversationId };
 type Label = { seq: number; value: string | null };
 type State = {
 	seq: number;
+	entryIds: Record<string, EntryId>;
 	name: Label;
 	lanes: Record<string, Pointer>;
 	labels: Record<string, Label>;
@@ -18,25 +20,25 @@ type State = {
 };
 const SessionState = defineDoc<State>({
 	kind: "piem.session", version: 1, scope: "session",
-	initial: () => ({ seq: 0, name: { seq: 0, value: null }, lanes: { main: { seq: 0, leafId: null } }, labels: {}, records: {}, legacyValues: {} }),
+	initial: () => ({ seq: 0, entryIds: {}, name: { seq: 0, value: null }, lanes: {}, labels: {}, records: {}, legacyValues: {} }),
 });
 
 /** Piem's UUID transcript and branch pointers over Pi's unmodified transaction kernel. */
 export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	readonly idGenerator = { next: uuidv7 };
-	private constructor(readonly metadata: TMetadata, private readonly native: DurableSession, private readonly conversation: ConversationId, private readonly storage: Storage) {}
+	private constructor(readonly metadata: TMetadata, private readonly native: DurableSession, private readonly storage: Storage) {}
 	get needsRecovery(): boolean { return this.storage instanceof DurableVaultStorage && this.storage.needsRecovery; }
 
 	static async open<T extends SessionMetadata>(storage: Storage, metadata: T, context = BACKGROUND_CONTEXT): Promise<PiemSession<T>> {
 		const native = createSession(storage);
-		const conversation = await native.commit(async tx => {
-			const existing = await tx.scanConversations({}, 1);
-			if (existing.items[0]) return existing.items[0].id;
-			const created = await tx.createConversation({ ownership: { kind: "ownerless" } });
-			await tx.doc(SessionState);
-			return created.id;
+		await native.commit(async tx => {
+			const state = await tx.doc(SessionState);
+			if (!state.lanes.main) {
+				const root = await tx.createConversation({ ownership: { kind: "ownerless" } });
+				state.lanes.main = { seq: 0, conversationId: root.id };
+			}
 		}, context);
-		return new PiemSession(metadata, native, conversation, storage);
+		return new PiemSession(metadata, native, storage);
 	}
 
 	async getMetadata(): Promise<TMetadata> { return this.metadata; }
@@ -45,16 +47,21 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 		return (await this.native.snapshot(SessionState, context))!;
 	}
 	private async entries(tx: Tx): Promise<Entry[]> {
+		const state = await tx.doc(SessionState);
 		const entries: Entry[] = [];
-		let cursor;
-		do {
-			const page = await tx.scanEntries({ conversationId: this.conversation }, 512, cursor);
-			for (const record of page.items) {
-				if (record.kind === "piem.transcript") entries.push(record.data as unknown as Entry);
-			}
-			cursor = page.next;
-		} while (cursor);
+		for (const id of Object.values(state.entryIds)) entries.push(transcriptEntry((await tx.entry(id))!));
 		return entries.sort((a, b) => a.seq - b.seq);
+	}
+	private async at(tx: Tx, uuid: string) {
+		const id = (await tx.doc(SessionState)).entryIds[uuid];
+		const record = id === undefined ? undefined : await tx.entry(id);
+		if (!record) throw new Error(`Unknown entry: ${uuid}`);
+		return record;
+	}
+	private async forkAt(tx: Tx, uuid: string | null): Promise<ConversationId> {
+		if (uuid === null) return (await tx.createConversation({ ownership: { kind: "ownerless" } })).id;
+		const at = await this.at(tx, uuid);
+		return (await tx.forkConversation(at.conversationId, at.id, { ownership: { kind: "ownerless" } })).id;
 	}
 	async findEntries(query: EntryQuery = {}, context = BACKGROUND_CONTEXT): Promise<Entry[]> {
 		return this.native.commit(async tx => select(await this.entries(tx), query), context);
@@ -77,20 +84,28 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	async getLabel(id: string): Promise<string | undefined> { return (await this.state()).labels[id]?.value ?? undefined; }
 	async setLabel(id: string, label: string | undefined): Promise<void> {
 		await this.native.commit(async tx => {
-			if (!(await this.entries(tx)).some(entry => entry.id === id)) throw new Error(`Unknown entry: ${id}`);
+			await this.at(tx, id);
 			const state = await tx.doc(SessionState);
 			state.labels[id] = { seq: ++state.seq, value: label ?? null };
 		}, BACKGROUND_CONTEXT);
 	}
-	async getLeafId(lane = "main"): Promise<string | null> { return (await this.state()).lanes[lane]?.leafId ?? null; }
+	async getLeafId(lane = "main"): Promise<string | null> {
+		return this.native.commit(async tx => this.leaf(tx, (await tx.doc(SessionState)).lanes[lane]?.conversationId), BACKGROUND_CONTEXT);
+	}
+	private async leaf(tx: Tx, conversationId?: ConversationId): Promise<string | null> {
+		const last = conversationId === undefined ? undefined : (await tx.scanEntries({ conversationId }, 1)).items[0];
+		return last ? transcriptEntry(last).id : null;
+	}
 	async getLanes(): Promise<Array<{ lane: string; leafId: string | null }>> {
-		return Object.entries((await this.state()).lanes).map(([lane, pointer]) => ({ lane, leafId: pointer.leafId }));
+		return this.native.commit(async tx => {
+			const lanes = Object.entries((await tx.doc(SessionState)).lanes);
+			return Promise.all(lanes.map(async ([lane, pointer]) => ({ lane, leafId: await this.leaf(tx, pointer.conversationId) })));
+		}, BACKGROUND_CONTEXT);
 	}
 	async moveLane(lane: string, targetId: string | null): Promise<void> {
 		await this.native.commit(async tx => {
-			if (targetId !== null && !(await this.entries(tx)).some(entry => entry.id === targetId)) throw new Error(`Unknown entry: ${targetId}`);
 			const state = await tx.doc(SessionState);
-			state.lanes[lane] = { seq: ++state.seq, leafId: targetId };
+			state.lanes[lane] = { seq: ++state.seq, conversationId: await this.forkAt(tx, targetId) };
 		}, BACKGROUND_CONTEXT);
 	}
 	async createLane(lane: string, targetId: string | null): Promise<void> { await this.moveLane(lane, targetId); }
@@ -104,19 +119,13 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	view(lane = "main") {
 		const find = async (query: BranchScan = {}, context = BACKGROUND_CONTEXT): Promise<Entry[]> => {
 			return this.native.commit(async tx => {
-				const entries = new Map((await this.entries(tx)).map(entry => [entry.id, entry]));
 				const state = await tx.doc(SessionState);
-				const path: Entry[] = [];
-				const seen = new Set<string>();
-				for (let id = query.fromId ?? state.lanes[lane]?.leafId; id; id = entries.get(id)?.parentId) {
-					if (seen.has(id)) throw new Error("Conversation branch contains a cycle");
-					seen.add(id);
-					const entry = entries.get(id);
-					if (!entry) throw new Error(`Missing branch entry: ${id}`);
-					path.push(entry);
-					if (id === query.stopAtId) break;
-				}
-				return select(path.reverse(), query);
+				const from = query.fromId ? await this.at(tx, query.fromId) : undefined;
+				const conversation = from?.conversationId ?? state.lanes[lane]?.conversationId;
+				if (conversation === undefined) return [];
+				const stop = query.stopAtId ? await this.at(tx, query.stopAtId) : undefined;
+				const entries = await scanTranscript(tx, conversation, { maxEntryId: from?.id, minEntryId: stop?.id });
+				return select(query.includeStopAt === false ? entries.filter(entry => entry.id !== query.stopAtId) : entries, query);
 			}, context);
 		};
 		return {
@@ -135,22 +144,23 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	}
 	async appendEntries(drafts: Array<{ type: string; [key: string]: unknown }>, lane: string, options?: { expectedTip: string | null; assertCurrent(): void }): Promise<Entry[]> {
 		return this.native.commit(async tx => {
-			const known = new Set((await this.entries(tx)).map(entry => entry.id));
 			const state = await tx.doc(SessionState);
-			let parentId = state.lanes[lane]?.leafId ?? null;
+			let conversation = state.lanes[lane]?.conversationId;
+			const tail = conversation === undefined ? undefined : (await tx.scanEntries({ conversationId: conversation }, 1)).items[0];
+			conversation ??= await this.forkAt(tx, null);
+			let parentId = tail ? transcriptEntry(tail).id : null;
 			options?.assertCurrent();
 			if (options && parentId !== options.expectedTip) throw new Error("Conversation changed before drafts were saved");
 			const result: Entry[] = [];
 			for (const draft of drafts) {
 				const id = typeof draft.id === "string" ? draft.id : uuidv7();
-				if (known.has(id)) throw new Error(`Duplicate entry: ${id}`);
-				known.add(id);
+				if (state.entryIds[id] !== undefined) throw new Error(`Duplicate entry: ${id}`);
 				const entry = JSON.parse(JSON.stringify({ ...draft, id, parentId, seq: ++state.seq, timestamp: draft.timestamp ?? Date.now() })) as Entry;
-				await tx.appendEntry(this.conversation, { kind: "piem.transcript", data: entry as unknown as JsonValue });
+				state.entryIds[id] = (await appendTranscript(tx, conversation, entry)).id;
 				result.push(entry);
 				parentId = id;
 			}
-			state.lanes[lane] = { seq: state.seq, leafId: parentId };
+			state.lanes[lane] = { seq: state.seq, conversationId: conversation };
 			options?.assertCurrent();
 			return result;
 		}, BACKGROUND_CONTEXT);
@@ -163,11 +173,10 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 		return (await this.appendEntry({ type: "custom", customType, data }, lane)).id;
 	}
 	async getConfiguration(lane = "main"): Promise<LaneConfiguration | undefined> {
-		const entries = await this.view(lane).findEntries({ order: "newestFirst" });
-		const model = entries.find(entry => entry.type === "model_change");
-		const thinking = entries.find(entry => entry.type === "thinking_level_change");
-		const legacy = (await this.state()).legacyValues[`pi.lane.config/${lane}`] as unknown as LaneConfiguration | undefined;
-		return model?.type === "model_change" ? { model: { provider: model.provider, modelId: model.modelId }, thinkingLevel: thinking?.type === "thinking_level_change" ? thinking.thinkingLevel : legacy?.thinkingLevel ?? "off", activeToolNames: [] } : legacy;
+		const state = await this.state();
+		const conversation = state.lanes[lane]?.conversationId;
+		const agent = conversation === undefined ? undefined : await this.native.snapshot(AgentDoc, conversation, BACKGROUND_CONTEXT);
+		return agent?.model ? { model: agent.model, thinkingLevel: agent.thinkingLevel ?? "off", activeToolNames: Array.isArray(agent.tools) ? [...agent.tools] : [] } : undefined;
 	}
 	async appendRecord(record: { type: string; [key: string]: unknown }): Promise<{ id: string }> {
 		return this.native.commit(async tx => {
@@ -192,34 +201,60 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 		const log: LogItem[] = entries.map(entry => ({ kind: "entry", seq: entry.seq, entry }));
 		if (state.name.seq) log.push({ kind: "fact", seq: state.name.seq, fact: "name", name: state.name.value ?? undefined });
 		for (const [targetId, label] of Object.entries(state.labels)) log.push({ kind: "fact", seq: label.seq, fact: "label", targetId, label: label.value ?? undefined });
-		for (const [lane, pointer] of Object.entries(state.lanes)) if (pointer.seq && !entries.some(entry => entry.seq === pointer.seq)) log.push({ kind: "lane", lane, ...pointer });
+		for (const [lane, pointer] of Object.entries(state.lanes)) if (pointer.seq && !entries.some(entry => entry.seq === pointer.seq)) log.push({ kind: "lane", lane, seq: pointer.seq, leafId: await this.getLeafId(lane) });
 		for (const raw of Object.values(state.records)) { const record = raw as unknown as OperationRecord; log.push({ kind: "record", seq: record.seq, record }); }
 		return log.sort((a, b) => a.seq - b.seq).filter(item => item.seq > (options?.afterSeq ?? -1)).slice(0, options?.limit);
 	}
 
 	/** Import only into an empty session. UUIDs and branch ancestry survive numeric ID allocation. */
 	async restoreLog(log: LogItem[], lanes: Array<{ lane: string; leafId: string | null }>, legacyValues: Record<string, JsonValue> = {}): Promise<void> {
+		if (Object.keys((await this.state()).entryIds).length) throw new Error("Import requires an empty conversation");
+		const entries = log.flatMap(item => item.kind === "entry" ? [item.entry] : []).sort((a, b) => a.seq - b.seq);
+		const tips = new Map<ConversationId, string>();
+		// A fork inherits committed document checkpoints. Import into the staged
+		// file in commit order, then publish only after the repository verifies it.
+		for (const entry of entries) {
+			await this.native.commit(async tx => {
+				const state = await tx.doc(SessionState);
+				if (state.entryIds[entry.id] !== undefined) throw new Error("Imported conversation has duplicate entry IDs");
+				const parent = entry.parentId === null ? undefined : await this.at(tx, entry.parentId);
+				const conversation = parent && tips.get(parent.conversationId) === entry.parentId
+					? parent.conversationId : await this.forkAt(tx, entry.parentId);
+				if (!parent) {
+					const legacy = legacyValues["pi.lane.config/main"] as unknown as LaneConfiguration | undefined;
+					if (legacy) {
+						await configure(tx, conversation, { model: legacy.model, thinkingLevel: legacy.thinkingLevel });
+						(await tx.doc(AgentDoc, conversation)).tools = legacy.activeToolNames ?? [];
+					}
+				}
+				state.entryIds[entry.id] = (await appendTranscript(tx, conversation, entry)).id;
+				tips.set(conversation, entry.id);
+			}, BACKGROUND_CONTEXT);
+		}
+		for (const { lane, leafId } of lanes) await this.moveLane(lane, leafId);
 		await this.native.commit(async tx => {
-			if ((await this.entries(tx)).length) throw new Error("Import requires an empty conversation");
 			const state = await tx.doc(SessionState);
-			const entries = log.flatMap(item => item.kind === "entry" ? [item.entry] : []);
-			const known = new Set(entries.map(entry => entry.id));
-			if (known.size !== entries.length) throw new Error("Imported conversation has duplicate entry IDs");
-			for (const entry of entries) {
-				if (entry.parentId !== null && !known.has(entry.parentId)) throw new Error(`Missing parent of imported entry: ${entry.id}`);
-				await tx.appendEntry(this.conversation, { kind: "piem.transcript", data: entry as unknown as JsonValue });
-			}
+			state.seq = 0;
+			for (const lane of Object.values(state.lanes)) lane.seq = 0;
 			for (const item of log) {
 				state.seq = Math.max(state.seq, item.seq);
 				if (item.kind === "fact" && item.fact === "name") state.name = { seq: item.seq, value: item.name ?? null };
 				if (item.kind === "fact" && item.fact === "label") state.labels[item.targetId] = { seq: item.seq, value: item.label ?? null };
 				if (item.kind === "record") state.records[item.record.id] = item.record as unknown as JsonValue;
 			}
-			for (const { lane, leafId } of lanes) {
-				if (leafId !== null && !known.has(leafId)) throw new Error(`Missing imported branch tip: ${lane}`);
-				state.lanes[lane] = { seq: 0, leafId };
-			}
 			state.legacyValues = legacyValues;
+			for (const [lane, pointer] of Object.entries(state.lanes)) {
+				const legacy = legacyValues[`pi.lane.config/${lane}`] as unknown as LaneConfiguration | undefined;
+				if (!legacy) continue;
+				const history = await scanTranscript(tx, pointer.conversationId);
+				const agent = await tx.doc(AgentDoc, pointer.conversationId);
+				await configure(tx, pointer.conversationId, {
+					model: history.some(entry => entry.type === "model_change") ? undefined : legacy.model,
+					thinkingLevel: history.some(entry => entry.type === "thinking_level_change") ? undefined : legacy.thinkingLevel,
+				});
+				// Migration has persisted names, not live ToolRegistration objects.
+				agent.tools = legacy.activeToolNames ?? [];
+			}
 		}, BACKGROUND_CONTEXT);
 	}
 	async getLegacyValues(): Promise<Record<string, JsonValue>> { return { ...(await this.state()).legacyValues }; }

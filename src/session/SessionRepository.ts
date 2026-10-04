@@ -6,8 +6,8 @@ import type { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { normalizeFolderPath } from "../vault/path";
 import { DurableVaultStorage } from "./DurableVaultStorage";
 import { PiemSession } from "./PiemSession";
-import { parseSessionHeaderMetadata } from "./sessionMetadata";
-import { readLegacySnapshot, snapshotSession, type SessionSnapshot } from "./sessionSnapshot";
+import { parseSessionHeaderMetadata, SESSION_FORMAT } from "./sessionMetadata";
+import { readLegacySnapshot, readPreviousDurableSnapshot, snapshotSession, type SessionSnapshot } from "./sessionSnapshot";
 import type { ForkOptions, JsonlSessionMetadata, SessionCreateOptions, SessionMetadata } from "./sessionTypes";
 
 const fileOperations = new WeakMap<object, Map<string, Promise<void>>>();
@@ -38,8 +38,8 @@ export class VaultSessionRepository {
 		await this.recoverFile(metadata.path);
 		const raw = await this.fs.adapter.read(metadata.path);
 		const first = JSON.parse(raw.split("\n", 1)[0]!) as { v?: unknown };
-		if (first.v !== 5) {
-			const snapshot = readLegacySnapshot(raw);
+		if (first.v !== SESSION_FORMAT) {
+			const snapshot = first.v === 5 ? await readPreviousDurableSnapshot(await DurableVaultStorage.open(this.fs.adapter, metadata.path)) : readLegacySnapshot(raw);
 			await this.replaceFile(metadata, snapshot, raw);
 		}
 		const storage = await DurableVaultStorage.open(this.fs.adapter, metadata.path);
@@ -162,7 +162,7 @@ export class MemorySessionRepository {
 }
 
 export function header(metadata: JsonlSessionMetadata): string {
-	return `${JSON.stringify({ kind: "header", v: 5, id: metadata.id, createdAt: metadata.createdAt, cwd: metadata.cwd, storageVersion: metadata.storageVersion, ...(metadata.parentSessionId ? { parentSessionId: metadata.parentSessionId } : {}) })}\n`;
+	return `${JSON.stringify({ kind: "header", v: SESSION_FORMAT, id: metadata.id, createdAt: metadata.createdAt, cwd: metadata.cwd, storageVersion: metadata.storageVersion, ...(metadata.parentSessionId ? { parentSessionId: metadata.parentSessionId } : {}) })}\n`;
 }
 
 export { VaultSessionRepository as JsonlSessionRepo, MemorySessionRepository as MemorySessionRepo };

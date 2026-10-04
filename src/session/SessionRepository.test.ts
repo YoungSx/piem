@@ -5,6 +5,9 @@ import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { VaultSessionRepository } from "./SessionRepository";
 import { ObsidianSessionManager } from "./ObsidianSessionManager";
 import { snapshotSession } from "./sessionSnapshot";
+import { createSession, defineDoc } from "@earendil-works/pi-durable";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { DurableVaultStorage } from "./DurableVaultStorage";
 
 const root = "Piem/chats";
 function repository(adapter: MemoryAdapter) {
@@ -97,4 +100,38 @@ it("lets another repository wait for publication before attempting recovery", as
 		expect(await reopened.findEntries()).toHaveLength(1);
 		await reopened.close();
 	} finally { release(); await publishing; }
+});
+
+it("migrates the previous flat durable format into native forks without losing UUIDs or bookmarks", async () => {
+	const adapter = new MemoryAdapter();
+	const metadata = { id: "previous", path: `${root}/--vault--/previous.jsonl`, cwd: "vault", createdAt: 1, modifiedAt: 1, storageVersion: 1 };
+	await adapter.write(metadata.path, `${JSON.stringify({ kind: "header", v: 5, ...metadata })}\n`);
+	const storage = await DurableVaultStorage.open(adapter, metadata.path);
+	const old = createSession(storage);
+	const state = defineDoc({ kind: "piem.session", version: 1, scope: "session", initial: () => ({
+		seq: 6, name: { seq: 5, value: "Previous chat" }, labels: { old: { seq: 4, value: "Keep" } }, records: {},
+		lanes: { main: { seq: 6, leafId: "old" }, alternative: { seq: 3, leafId: "alternate" } },
+		legacyValues: { "pi.lane.config/main": { model: { provider: "test", modelId: "original" }, thinkingLevel: "high" } },
+	}) });
+	await old.commit(async tx => {
+		const conversation = await tx.createConversation({ ownership: { kind: "ownerless" } });
+		await tx.doc(state);
+		for (const [index, [id, parentId]] of [["first", null], ["old", "first"], ["alternate", "first"]].entries()) {
+			await tx.appendEntry(conversation.id, { kind: "piem.transcript", data: { type: "message", id: id!, parentId: parentId ?? null, seq: index + 1, timestamp: index + 1, message: { role: "user", content: id!, timestamp: index + 1 } } });
+		}
+	}, BACKGROUND_CONTEXT);
+	await old.close(BACKGROUND_CONTEXT);
+	const before = await adapter.read(metadata.path);
+	const migrated = await repository(adapter).open(metadata);
+	try {
+		expect((await migrated.view().findEntries()).map(entry => entry.id)).toEqual(["first", "old"]);
+		expect((await migrated.view("alternative").findEntries()).map(entry => entry.id)).toEqual(["first", "alternate"]);
+		expect(await migrated.getLabel("old")).toBe("Keep");
+		expect(await migrated.getName()).toBe("Previous chat");
+		expect(await migrated.getConfiguration()).toMatchObject({ model: { modelId: "original" }, thinkingLevel: "high" });
+		await migrated.appendMessage("Still independent", "alternative");
+		expect(await migrated.getLeafId()).toBe("old");
+		expect(await adapter.read(adapter.filePaths().find(path => path.endsWith(".legacy"))!)).toBe(before);
+		expect(JSON.parse((await adapter.read(metadata.path)).split("\n")[0]!).v).toBe(6);
+	} finally { await migrated.close(); }
 });

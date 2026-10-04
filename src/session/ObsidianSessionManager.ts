@@ -15,12 +15,9 @@ import { mergeSessions, serializeLogLines } from "./sessionMerge";
 import { snapshotSession, readLegacySnapshot } from "./sessionSnapshot";
 import { collapseSkillInvocation, parseSkillInvocation } from "../agent/skillInvocation";
 import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
-import { readSessionMetadata } from "./sessionMetadata";
-import {
-	BACKGROUND_CONTEXT,
-	buildContextEntries,
-	sessionEntryToContextMessages,
-} from "./sessionCompat";
+import { readSessionMetadata, SESSION_FORMAT } from "./sessionMetadata";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { projectSession } from "./sessionProjection";
 
 export interface SessionSearchOptions {
 	limit?: number;
@@ -354,7 +351,7 @@ export class ObsidianSessionManager {
 		// the v4 one pi validates on load).
 		const header: Record<string, unknown> = {
 			kind: "header",
-			v: 5,
+			v: SESSION_FORMAT,
 			id: blank.metadata.id,
 			createdAt: blank.metadata.createdAt,
 			storageVersion: 1,
@@ -918,49 +915,9 @@ export class ObsidianSessionManager {
 	async buildSessionContextFor(path: string, lane = "main"): Promise<SessionContext> {
 		const session = this.getSessionFor(path);
 		const entries = await session.view(lane).findEntriesOnBranch({ order: "oldestFirst" });
-		const contextEntries = buildContextEntries(entries);
-		const messages: AgentMessage[] = [];
-		const messageOrigins: (string | null)[] = [];
-		contextEntries.forEach((entry) => {
-			const projected = sessionEntryToContextMessages(entry) ?? [];
-			messages.push(...projected);
-			if (entry.type === "message") {
-				messageOrigins.push(...projected.map(() => entry.id));
-			} else if (entry.type === "compaction") {
-				const origins: (string | null)[] = [null];
-				const compactionEntry = entry as unknown as { retainedMessageOrigins?: (string | null)[] };
-				const retainedOrigins = Array.isArray(compactionEntry.retainedMessageOrigins)
-					? compactionEntry.retainedMessageOrigins
-					: [];
-				const tailLength = Math.max(0, projected.length - 1);
-				for (let i = 0; i < tailLength; i++) {
-					origins.push(retainedOrigins[i] ?? null);
-				}
-				messageOrigins.push(...origins);
-			} else {
-				messageOrigins.push(...projected.map(() => null));
-			}
-		});
+		const projection = projectSession(entries);
 		const config = await session.getConfiguration(lane);
-		let model = config?.model ?? null;
-		let thinkingLevel = config?.thinkingLevel ?? "off";
-		if (!model || thinkingLevel === "off") {
-			for (let i = entries.length - 1; i >= 0; i--) {
-				const rec = entries[i] as unknown as Record<string, unknown>;
-				if (!model && rec.type === "model_change" && typeof rec.provider === "string" && typeof rec.modelId === "string") {
-					model = { provider: rec.provider, modelId: rec.modelId };
-				}
-				if (thinkingLevel === "off" && rec.type === "thinking_level_change" && typeof rec.thinkingLevel === "string") {
-					thinkingLevel = rec.thinkingLevel as ThinkingLevel;
-				}
-			}
-		}
-		return {
-			messages,
-			messageOrigins,
-			model,
-			thinkingLevel,
-		};
+		return { ...projection, model: config?.model ?? null, thinkingLevel: config?.thinkingLevel ?? "off" };
 	}
 
 	async rewindTo(entryId: string, lane = "main"): Promise<void> {

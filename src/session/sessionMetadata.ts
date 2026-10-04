@@ -2,13 +2,15 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { JsonlSessionMetadata } from "./sessionTypes";
 import type { SessionRepoFileSystem } from "./ObsidianSessionFileSystem";
 
+export const SESSION_FORMAT = 6;
+
 export function parseSessionHeaderMetadata(line: string, path: string, modifiedAt: number): JsonlSessionMetadata | undefined {
 	try {
 		const parsed = JSON.parse(line) as Record<string, unknown>;
 		if (typeof parsed !== "object" || parsed === null) return undefined;
 
 		// 0.85.1 format 4 or legacy 0.84 format 4
-		if (parsed.kind === "header" && (parsed.v === 5 || parsed.v === 4 || parsed.version === 4)) {
+		if (parsed.kind === "header" && (parsed.v === SESSION_FORMAT || parsed.v === 5 || parsed.v === 4 || parsed.version === 4)) {
 			if (typeof parsed.id !== "string" || typeof parsed.cwd !== "string") return undefined;
 			const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
 			const storageVersion = typeof parsed.storageVersion === "number" ? parsed.storageVersion : 1;

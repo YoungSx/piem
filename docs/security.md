@@ -61,7 +61,9 @@ model sees the listing.
 ## Local conversation storage
 
 Conversations use Piem's single-file JSONL format backed by Pi's durable
-transaction engine. Opening an older conversation migrates it locally, verifies
+transaction engine. Branch ancestry and model/thinking settings use Pi's native
+conversations and configuration documents. Opening an older conversation migrates
+it locally, verifies
 the replacement and keeps the original beside it as a `.legacy` backup. Those
 backups contain the original conversation and may be copied by your vault sync
 or backup service. Older Piem builds cannot read the new format; a downgrade

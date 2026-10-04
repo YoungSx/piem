@@ -1,4 +1,6 @@
 import type { JsonValue } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Storage } from "@earendil-works/pi-durable";
 import type { PiemSession } from "./PiemSession";
 import type { LogItem, OperationRecord } from "./sessionTypes";
 import { normalizeLegacyJsonlContent } from "./ObsidianSessionFileSystem";
@@ -11,6 +13,37 @@ export interface SessionSnapshot {
 }
 export async function snapshotSession(session: PiemSession): Promise<SessionSnapshot> {
 	return { log: await session.getLog(), lanes: await session.getLanes(), legacyValues: await session.getLegacyValues() };
+}
+
+/** One-time import of the earlier durable wrapper; no legacy tree is used at runtime. */
+export async function readPreviousDurableSnapshot(storage: Storage): Promise<SessionSnapshot> {
+	try {
+		const doc = await storage.findDocument({ kind: "piem.session", scope: { kind: "session" } }, "current", BACKGROUND_CONTEXT);
+		if (!doc) return { log: [], lanes: [{ lane: "main", leafId: null }], legacyValues: {} };
+		const state = (await storage.document(doc.id, "current", BACKGROUND_CONTEXT))!.value as {
+			name: { seq: number; value: string | null };
+			labels: Record<string, { seq: number; value: string | null }>;
+			lanes: Record<string, { seq: number; leafId: string | null }>;
+			records: Record<string, JsonValue>;
+			legacyValues: Record<string, JsonValue>;
+		};
+		const root = (await storage.scanConversations({}, 1, undefined, BACKGROUND_CONTEXT)).items[0]!;
+		const log: LogItem[] = [];
+		let cursor;
+		do {
+			const page = await storage.scanEntries({ conversationId: root.id }, 512, cursor, BACKGROUND_CONTEXT);
+			for (const record of page.items) {
+				const entry = record.data as unknown as import("./sessionTypes").Entry;
+				log.push({ kind: "entry", seq: entry.seq, entry });
+			}
+			cursor = page.next;
+		} while (cursor);
+		if (state.name.seq) log.push({ kind: "fact", seq: state.name.seq, fact: "name", name: state.name.value ?? undefined });
+		for (const [targetId, label] of Object.entries(state.labels)) log.push({ kind: "fact", seq: label.seq, fact: "label", targetId, label: label.value ?? undefined });
+		for (const [lane, pointer] of Object.entries(state.lanes)) if (pointer.seq && !log.some(item => item.seq === pointer.seq)) log.push({ kind: "lane", lane, ...pointer });
+		for (const raw of Object.values(state.records)) { const record = raw as unknown as OperationRecord; log.push({ kind: "record", seq: record.seq, record }); }
+		return { log: log.sort((a, b) => a.seq - b.seq), lanes: Object.entries(state.lanes).map(([lane, pointer]) => ({ lane, leafId: pointer.leafId })), legacyValues: state.legacyValues };
+	} finally { await storage.close(BACKGROUND_CONTEXT); }
 }
 
 /** Read the historical wire format once; new transactions never use this codec. */
