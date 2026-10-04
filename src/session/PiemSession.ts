@@ -210,6 +210,7 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	async restoreLog(log: LogItem[], lanes: Array<{ lane: string; leafId: string | null }>, legacyValues: Record<string, JsonValue> = {}): Promise<void> {
 		if (Object.keys((await this.state()).entryIds).length) throw new Error("Import requires an empty conversation");
 		const entries = log.flatMap(item => item.kind === "entry" ? [item.entry] : []).sort((a, b) => a.seq - b.seq);
+		const importedIds = new Set(entries.map(entry => entry.id));
 		const tips = new Map<ConversationId, string>();
 		// A fork inherits committed document checkpoints. Import into the staged
 		// file in commit order, then publish only after the repository verifies it.
@@ -217,9 +218,13 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 			await this.native.commit(async tx => {
 				const state = await tx.doc(SessionState);
 				if (state.entryIds[entry.id] !== undefined) throw new Error("Imported conversation has duplicate entry IDs");
-				const parent = entry.parentId === null ? undefined : await this.at(tx, entry.parentId);
+				// Older logs can retain a child after its parent was removed. Preserve
+				// its original parentId in the transcript, but start a native root at
+				// that boundary. Never attach it to an unrelated surviving message.
+				const parentId = entry.parentId !== null && importedIds.has(entry.parentId) ? entry.parentId : null;
+				const parent = parentId === null ? undefined : await this.at(tx, parentId);
 				const conversation = parent && tips.get(parent.conversationId) === entry.parentId
-					? parent.conversationId : await this.forkAt(tx, entry.parentId);
+					? parent.conversationId : await this.forkAt(tx, parentId);
 				if (!parent) {
 					const legacy = legacyValues["pi.lane.config/main"] as unknown as LaneConfiguration | undefined;
 					if (legacy) {
