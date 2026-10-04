@@ -6,6 +6,7 @@ import type { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { normalizeFolderPath } from "../vault/path";
 import { DurableVaultStorage } from "./DurableVaultStorage";
 import { PiemSession } from "./PiemSession";
+import { jsonEqual } from "./jsonEqual";
 import { parseSessionHeaderMetadata, SESSION_FORMAT } from "./sessionMetadata";
 import { readLegacySnapshot, readPreviousDurableSnapshot, snapshotSession, type SessionSnapshot } from "./sessionSnapshot";
 import type { ForkOptions, JsonlSessionMetadata, SessionCreateOptions, SessionMetadata } from "./sessionTypes";
@@ -31,6 +32,23 @@ export class VaultSessionRepository {
 
 	async open(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT): Promise<PiemSession<JsonlSessionMetadata>> {
 		return this.withFile(metadata.path, () => this.openFile(metadata, context));
+	}
+
+	/** Listing must never migrate old conversations or rewrite their timestamps. */
+	async readSnapshot(metadata: JsonlSessionMetadata): Promise<SessionSnapshot> {
+		return this.withFile(metadata.path, async () => {
+			await this.recoverFile(metadata.path);
+			const raw = await this.fs.adapter.read(metadata.path);
+			const first = JSON.parse(raw.split("\n", 1)[0]!) as { v?: unknown };
+			if (first.v !== SESSION_FORMAT && first.v !== 5) return readLegacySnapshot(raw);
+			const storage = await DurableVaultStorage.open(this.fs.adapter, metadata.path);
+			if (first.v === 5) return readPreviousDurableSnapshot(storage);
+			try {
+				const session = await PiemSession.open(storage, metadata);
+				try { return await snapshotSession(session); }
+				finally { await session.close(); }
+			} finally { await storage.close(); }
+		});
 	}
 
 	private async openFile(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT): Promise<PiemSession<JsonlSessionMetadata>> {
@@ -75,8 +93,8 @@ export class VaultSessionRepository {
 		try {
 			const restored = await snapshotSession(verified);
 			const expectedEntries = snapshot.log.filter(item => item.kind === "entry").sort((a, b) => a.seq - b.seq);
-			if (JSON.stringify(restored.log.filter(item => item.kind === "entry")) !== JSON.stringify(expectedEntries)) throw new Error("Conversation migration verification failed");
-			if (JSON.stringify([...restored.lanes].sort((a, b) => a.lane.localeCompare(b.lane))) !== JSON.stringify([...snapshot.lanes].sort((a, b) => a.lane.localeCompare(b.lane)))) throw new Error("Branch migration verification failed");
+			if (!jsonEqual(restored.log.filter(item => item.kind === "entry"), expectedEntries)) throw new Error("Conversation migration verification failed");
+			if (!jsonEqual([...restored.lanes].sort((a, b) => a.lane.localeCompare(b.lane)), [...snapshot.lanes].sort((a, b) => a.lane.localeCompare(b.lane)))) throw new Error("Branch migration verification failed");
 		} finally { await verified.close(); }
 		if (original !== undefined && await this.fs.adapter.read(path) !== original) throw new Error("Conversation changed during migration");
 		const backup = `${path}.replaced.tmp`;

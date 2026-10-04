@@ -191,11 +191,11 @@ export class ObsidianSessionManager {
 	 * retention eviction both funnel through {@link deleteSession}, so this is
 	 * the one announcement side state living beside the session log — composer
 	 * drafts — can learn its chat is gone from. Fire and forget from here: the
-	 * listener owns its errors, and the manager holds no logger to report them.
+	 * listener owns its errors.
 	 */
 	onSessionDeleted: ((sessionId: string) => void) | null = null;
 
-	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string, log?: LoggerLike, lastOpened?: LastOpenedSessionStore) {
+	constructor(adapter: DataAdapter, location: string | SessionPolicy, cwd: string, private readonly log?: LoggerLike, lastOpened?: LastOpenedSessionStore) {
 		this.fs = new ObsidianSessionFileSystem(adapter, undefined, log ? (event) => {
 			// The repair net's verdicts are the sync story the panel cannot show:
 			// either one means another device's file version was on disk under
@@ -892,11 +892,20 @@ export class ObsidianSessionManager {
 
 	async findAllOpenRunOperationsFor(path: string): Promise<Map<string, OperationStartedRecord[]>> {
 		const open = new Map<string, OperationStartedRecord[]>();
-		// Cold-start recovery probes a candidate before deciding whether to hydrate
-		// it. Reuse the live session when available; otherwise inspect a throwaway
-		// disk session without changing focus or the hydrated registry.
-		const session = this.hydrated.get(path)?.session ?? (await this.openStoredSession(path));
+		// A cold recovery probe is a read, not an instruction to migrate a chat.
+		const session = this.hydrated.get(path)?.session;
 		if (!session) {
+			const metadata = await readSessionMetadata(this.fs, this.resolveSessionDir(), path);
+			if (!metadata || metadata.cwd !== this.cwd) return open;
+			const snapshot = await this.repo(this.resolveSessionDir()).readSnapshot(metadata);
+			const records = snapshot.log.flatMap(item => item.kind === "record" ? [item.record] : []);
+			const finished = new Set(records.filter(record => record.type === "operation_finished").map(record => record.runId));
+			for (const record of records) {
+				if (record.type !== "operation_started" || finished.has(record.id)) continue;
+				const lane = open.get(record.lane) ?? [];
+				lane.push({ ...record, sourceLeafId: record.sourceLeafId ?? null, intent: record.intent ?? {} });
+				open.set(record.lane, lane);
+			}
 			return open;
 		}
 		for (const { lane } of await session.getLanes()) {
@@ -1016,18 +1025,16 @@ export class ObsidianSessionManager {
 	 * live session object. pi hydrates `SessionState` once at open and mutates it
 	 * only through its own writes, so a name appended by anyone else — a second
 	 * Obsidian window on the same vault, a running pi CLI, a hand edit — is
-	 * invisible to `getName()` forever. `listSessions()` already re-reads disk
-	 * per entry via `repo.open()`, which is why the picker can be externally
+	 * invisible to `getName()` forever. `listSessions()` reads disk snapshots,
+	 * which is why the picker can be externally
 	 * correct while the active header is not; this gives that same freshness to
 	 * just the active name without the list's cost.
 	 *
 	 * The throwaway session is deliberately discarded and the hydrated registry is
 	 * never touched: swapping the live storage object out from under an in-flight
 	 * append or stream would be destructive, and `loadSession()` on the same path
-	 * is a session switch, not a refresh. One consequence is inherited from
-	 * `listSessions()`, which already opens throwaways concurrently with the live
-	 * session's appends: pi's loader may repair a torn tail it finds, a benign
-	 * self-healing write. Deliberately no `ensureConfiguration` here — it derives
+	 * is a session switch, not a refresh. Unlike the read-only picker, this open
+	 * may repair a torn tail it finds. Deliberately no `ensureConfiguration` here — it derives
 	 * model/thinking level from the branch and would append junk entries.
 	 *
 	 * Returns undefined both for "no active session" and "name cleared or absent";
@@ -1257,9 +1264,12 @@ export class ObsidianSessionManager {
 
 	private async readSessionInfo(metadata: JsonlSessionMetadata): Promise<SessionFileInfo | null> {
 		try {
-			const session = await this.repo(this.resolveSessionDir()).open(metadata);
-			return this.summarize(metadata, session);
-		} catch {
+			const snapshot = await this.repo(this.resolveSessionDir()).readSnapshot(metadata);
+			const entries = snapshot.log.flatMap(item => item.kind === "entry" ? [item.entry] : []).sort((a, b) => a.seq - b.seq);
+			const name = snapshot.log.filter(item => item.kind === "fact" && item.fact === "name").sort((a, b) => a.seq - b.seq).at(-1);
+			return await this.summarizeEntries(metadata, entries, name?.kind === "fact" && name.fact === "name" ? name.name : undefined);
+		} catch (error) {
+			this.log?.warn("Failed to read conversation summary", () => ({ path: metadata.path, error: String(error) }));
 			return null;
 		}
 	}
@@ -1268,6 +1278,10 @@ export class ObsidianSessionManager {
 		const entries = await session.findEntries({ order: "oldestFirst" });
 		const stats = await session.getStats();
 		const name = await session.getName();
+		return this.summarizeEntries(metadata, entries, name, stats.messageCount);
+	}
+
+	private async summarizeEntries(metadata: JsonlSessionMetadata, entries: Entry[], name?: string, messageCount = entries.filter(entry => entry.type === "message").length): Promise<SessionFileInfo> {
 		const info = await this.fs.fileInfo(metadata.path);
 		const entryTime = entries.reduce((latest, entry) => {
 			const messageTime = entry.type === "message" && typeof entry.message.timestamp === "number" ? entry.message.timestamp : 0;
@@ -1290,7 +1304,7 @@ export class ObsidianSessionManager {
 			createdAt: new Date(metadata.createdAt).toISOString(),
 			updatedAt: new Date(modifiedTime).toISOString(),
 			name: name?.trim() || undefined,
-			messageCount: stats.messageCount,
+			messageCount,
 			// Empty string, not a placeholder: sessionTitle's fallback to
 			// session.untitled only triggers on emptiness.
 			firstMessage: firstMessage ? extractMessageText(firstMessage.message) : "",
