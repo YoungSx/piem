@@ -93,6 +93,25 @@ describe("emptyScreenQuickActions", () => {
 		expect(actions.map((action) => action.id)).toEqual(["recallSession", "summarizeNote", "improveNote"]);
 	});
 
+	it("does not swap the prior-session secondary for code review even when the note has code", () => {
+		// The branch is about conversation continuity; a code-dominant note
+		// gets its chips from the code branch only when there is no prior
+		// session to recall.
+		const priorCodeFacts = {
+			path: "Arch.md",
+			isDailyNote: false,
+			isPeriodicNote: false,
+			isEmpty: false,
+			isOrphan: false,
+			backlinkCount: 1,
+			unresolvedLinkCount: 0,
+			hasPriorSession: true,
+			hasCode: true,
+		};
+		const actions = emptyScreenQuickActions(true, t, priorCodeFacts);
+		expect(actions.map((action) => action.id)).toEqual(["recallSession", "summarizeNote", "improveNote"]);
+	});
+
 	it("suggests morning focus for today's daily note in the morning", () => {
 		const morningDaily = {
 			path: "2026-09-20.md",

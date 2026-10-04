@@ -49,7 +49,7 @@ export interface NoteFacts {
 	todoCount?: number;
 	/** Count of completed task items (- [x]). Defaults to 0. */
 	doneTodoCount?: number;
-	/** Whether the note contains code blocks. Defaults to false. */
+	/** Whether code blocks dominate the note (over 40% of its bytes). Defaults to false. */
 	hasCode?: boolean;
 	/** Whether this daily journal note matches today's date. Defaults to false. */
 	isToday?: boolean;
@@ -223,7 +223,17 @@ export function probeNoteFacts(
 			}
 		}
 
-		const hasCode = cache?.sections ? cache.sections.some((s) => s.type === "code") : false;
+		// Code-dominant, not code-present: a writing note quoting one YAML
+		// example or shell command must not flip the suggestion row into code
+		// chips, so the gate is the share of the file the code sections
+		// occupy. Position offsets come free from the metadata cache.
+		const codeChars = cache?.sections
+			? cache.sections.reduce(
+				(total, section) => (section.type === "code" ? total + section.position.end.offset - section.position.start.offset : total),
+				0,
+			)
+			: 0;
+		const hasCode = file !== null && file.stat.size > 0 && codeChars / file.stat.size > 0.4;
 		const timeOfDay = getTimeOfDay(now);
 		const isToday = isDaily ? isTodayNotePath(activePath, now) : false;
 		const hasPriorSession = options?.hasPriorSession ?? false;
@@ -245,23 +255,24 @@ export function probeNoteFacts(
 			}
 		}
 
+		// Declared identity (daily/periodic path, reading tags or frontmatter)
+		// outranks the content heuristic: a tagged reading note that quotes
+		// code is still a reading note, so "code" only wins when nothing the
+		// author declared says otherwise.
+		const fmType = typeof cache?.frontmatter?.type === "string" ? cache.frontmatter.type.toLowerCase() : "";
+		const isReadingNote =
+			tagList.some((t) => t.includes("reading") || t.includes("book") || t.includes("paper") || t.includes("research")) ||
+			fmType.includes("book") ||
+			fmType.includes("paper");
 		let dominantTopic: "code" | "tasks" | "reading" | "daily" | null = null;
 		if (isDaily || isPeriodic) {
 			dominantTopic = "daily";
 		} else if (todoCount >= 2) {
 			dominantTopic = "tasks";
+		} else if (isReadingNote) {
+			dominantTopic = "reading";
 		} else if (hasCode) {
 			dominantTopic = "code";
-		} else if (cache) {
-			const rawType: unknown = cache.frontmatter?.type;
-			const fmType = typeof rawType === "string" ? rawType.toLowerCase() : "";
-			if (
-				tagList.some((t) => t.includes("reading") || t.includes("book") || t.includes("paper") || t.includes("research")) ||
-				fmType.includes("book") ||
-				fmType.includes("paper")
-			) {
-				dominantTopic = "reading";
-			}
 		}
 
 		const scoutInsight = options?.scoutInsight;
