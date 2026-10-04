@@ -241,6 +241,7 @@ describe("extension compaction observations", () => {
 	});
 
 	it("lets a failure observer await a retry without waiting on its own attempt", async () => {
+		const retried = Promise.withResolvers<void>();
 		let failures = 0;
 		let retryError = "";
 		const { service } = harness(pi => {
@@ -248,13 +249,17 @@ describe("extension compaction observations", () => {
 				if (++failures === 1) await new Promise<void>(resolve => {
 					ctx.compact({ onError: error => { retryError = error.message; resolve(); } });
 				});
+				else retried.resolve();
 			});
 		});
 		try {
 			await service.sendPrompt("Hello");
 			requestUrlMock.mockResolvedValue({ status: 400, headers: {}, arrayBuffer: new ArrayBuffer(0) });
 			await service.compactNow();
-			expect(retryError).not.toBe("");
+			// The retry deliberately returns before its own observer to avoid a
+			// recursive wait; synchronize on that observer, not microtask timing.
+			await retried.promise;
+			expect(retryError).toContain("400");
 			expect(failures).toBe(2);
 		} finally { service.dispose(); }
 	});

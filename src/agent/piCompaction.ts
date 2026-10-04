@@ -3,32 +3,14 @@ import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-a
 import { createAssistantMessageEventStream, type Api, type Model, type Models, type RetryCallbacks, type RetryPolicy } from "@earendil-works/pi-ai";
 import { ok, err, type Result } from "@earendil-works/pi-durable/env";
 import * as native from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js";
-import { buildSessionProjection, type SessionEntry } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/session-manager.js";
+import { buildSessionProjection } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/session-manager.js";
+import { nativeEntries } from "../session/sessionProjection";
 import type { CompactResult, Entry } from "../session/sessionTypes";
 
 export { DEFAULT_COMPACTION_SETTINGS, calculateContextTokens, estimateContextTokens, shouldCompact, type CompactionSettings } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js";
 export type CompactionPreparation = NonNullable<ReturnType<typeof native.prepareCompaction>> & { retainedTail: AgentMessage[] };
 type Failure = { code: string; message: string };
 
-/** Convert Piem's retained-tail snapshots to Pi's current entry-reference projection. */
-export function nativeEntries(entries: Entry[]): SessionEntry[] {
-	const result: SessionEntry[] = [];
-	for (const entry of entries) {
-		const timestamp = new Date(entry.timestamp).toISOString();
-		if (entry.type === "compaction") {
-			let parentId = entry.parentId;
-			const tail = entry.retainedTail.map((message, index): SessionEntry => {
-				const id = `${entry.id}/retained/${index}`;
-				const item: SessionEntry = { type: "message", id, parentId, timestamp, message };
-				parentId = id;
-				return item;
-			});
-			result.push(...tail, { ...entry, parentId, timestamp, firstKeptEntryId: tail[0]?.id ?? entry.id });
-		} else if (entry.type === "branch_summary") result.push({ ...entry, timestamp, fromId: entry.fromId ?? "" });
-		else result.push({ ...entry, timestamp });
-	}
-	return result;
-}
 
 export function prepareCompaction(entries: Entry[], settings: native.CompactionSettings): Result<CompactionPreparation | undefined, Failure> {
 	try {

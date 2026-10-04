@@ -318,17 +318,18 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 			const entered = deferred(), gate = deferred();
 			cleanup.push(gate.resolve);
 			const append = f.memory.append.bind(f.memory);
-			let summaryId = "", selectionWrites = 0;
+			let summaryId = "", nativeSummaryId = 0, selectionWrites = 0;
 			f.memory.append = async (file, value) => {
 				const parsed = JSON.parse(value) as { writes: import("@earendil-works/pi-durable").StorageWrite[] };
 				let isSummary = false, isSelection = false;
 				for (const write of parsed.writes) {
 					if (write.type === "entry" && write.value.kind === "piem.transcript") {
 						const entry = write.value.data as { type?: string; id?: string };
-						if (entry.type === "branch_summary") { summaryId = entry.id!; isSummary = true; }
+						if (entry.type === "branch_summary") { summaryId = entry.id!; nativeSummaryId = write.value.id; isSummary = true; }
 					}
 					if (summaryId && write.type === "document.change" && write.content.kind === "delta") {
-						isSelection ||= write.content.ops.some(op => op[0] === "s" && JSON.stringify(op[1]) === '["lanes","main"]' && (op[2] as { leafId?: string })?.leafId === summaryId);
+						const selected = parsed.writes.find(candidate => candidate.type === "conversation" && candidate.value.parent?.at === nativeSummaryId);
+						isSelection ||= selected?.type === "conversation" && write.content.ops.some(op => op[0] === "s" && JSON.stringify(op[1]) === '["lanes","main"]' && (op[2] as { conversationId?: number })?.conversationId === selected.value.id);
 					}
 				}
 				if (isSelection) selectionWrites++;
