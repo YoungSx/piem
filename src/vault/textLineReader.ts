@@ -1,4 +1,6 @@
-import { BACKGROUND_CONTEXT, err, FileError, ok, type Context, type FileSystem } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { err, FileError, ok, type FileSystem } from "@earendil-works/pi-durable/env";
+import { type Context } from "@earendil-works/chord";
 
 type TextLineReader = Extract<Awaited<ReturnType<FileSystem["openTextLineReader"]>>, { ok: true }>["value"];
 

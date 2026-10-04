@@ -5,7 +5,7 @@
  * the display diff inside that module, but none of it is exported from the
  * package root: the `exports` map only admits ".", "./node" and
  * "./session/testing", so the canonical
- * `@earendil-works/pi-agent-core/dist/harness/tools/edit-diff.js` specifier is
+ * `@earendil-works/pi-durable/dist/tools/edit-diff.js` specifier is
  * rejected by Bun and esbuild at runtime even though TypeScript resolves it.
  * Importing the emitted file through its real location under `node_modules/`
  * works in every toolchain this repo uses (verified against
@@ -24,5 +24,5 @@ export {
 	normalizeToLF,
 	restoreLineEndings,
 	stripBom,
-} from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/tools/edit-diff.js";
-export type { AppliedEditsResult, Edit } from "../../node_modules/@earendil-works/pi-agent-core/dist/harness/tools/edit-diff.js";
+} from "../../node_modules/@earendil-works/pi-durable/dist/tools/edit-diff.js";
+export type { AppliedEditsResult, Edit } from "../../node_modules/@earendil-works/pi-durable/dist/tools/edit-diff.js";

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_MAX_BYTES, formatSkillInvocation, type AgentMessage } from "@earendil-works/pi-agent-core";
+import { DEFAULT_MAX_BYTES } from "../vault/piTruncate";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
+import { formatSkillInvocation } from "../skills/piResources";
 import { createReadSkillTool } from "../tools/skillTools";
 import { retainSkillContext } from "./skillContext";
 

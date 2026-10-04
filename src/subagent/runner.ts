@@ -1,18 +1,8 @@
 import { conversationMessages, replaceConversation } from "../agent/transcript";
-import {
-	Agent,
-	calculateContextTokens,
-	convertToLlm,
-	shouldCompact,
-	type AgentEvent,
-	type AgentMessage,
-	type AgentTool,
-	type AgentTurnContext,
-	type AgentTurnDecision,
-	type Skill,
-	type StreamFn,
-	type ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type AgentTurnContext, type AgentTurnDecision, type StreamFn, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { calculateContextTokens, shouldCompact } from "../agent/piCompaction";
+import { type Skill } from "../skills/piResources";
+import { convertToLlm } from "../agent/piMessages";
 import { isContextOverflow, type Model } from "@earendil-works/pi-ai";
 import type { Models, Usage } from "@earendil-works/pi-ai";
 import { compactIfNeeded, DEFAULT_COMPACTION_SETTINGS, needsCompaction, type CompactResult } from "../agent/compaction";

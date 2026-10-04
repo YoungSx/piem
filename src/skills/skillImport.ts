@@ -1,4 +1,5 @@
-import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { parse } from "yaml";
 import type { FetchFn } from "../net/obsidianFetch";
 import { DEFAULT_SKILLS_DIR } from "../agent/skillLoader";
@@ -364,7 +365,7 @@ export class SkillImporter {
 	async installSkill(source: FetchedSource, skill: FetchedSkill): Promise<void> {
 		const files: Record<string, string> = {};
 		for (const file of skill.files) {
-			getOrThrow(await this.env.writeFile(this.installPath(skill.dirName, file.path), file.content));
+			getOrThrow(await this.env.writeFile(this.installPath(skill.dirName, file.path), file.content, BACKGROUND_CONTEXT));
 			files[file.path] = await sha256Hex(file.content);
 		}
 		const provenance: SkillProvenance = {
@@ -375,11 +376,11 @@ export class SkillImporter {
 			importedAt: new Date().toISOString(),
 			files,
 		};
-		getOrThrow(await this.env.writeFile(this.installPath(skill.dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`));
+		getOrThrow(await this.env.writeFile(this.installPath(skill.dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`, BACKGROUND_CONTEXT));
 	}
 
 	async readProvenance(dirName: string): Promise<SkillProvenance | undefined> {
-		const sidecar = await this.env.readTextFile(this.installPath(dirName, SIDECAR_FILENAME));
+		const sidecar = await this.env.readTextFile(this.installPath(dirName, SIDECAR_FILENAME), BACKGROUND_CONTEXT);
 		if (!sidecar.ok) {
 			return undefined;
 		}
@@ -390,7 +391,7 @@ export class SkillImporter {
 	async hashInstalled(dirName: string, provenance: SkillProvenance): Promise<Record<string, string | undefined>> {
 		const hashes: Record<string, string | undefined> = {};
 		for (const path of Object.keys(provenance.files)) {
-			const read = await this.env.readTextFile(this.installPath(dirName, path));
+			const read = await this.env.readTextFile(this.installPath(dirName, path), BACKGROUND_CONTEXT);
 			hashes[path] = read.ok ? await sha256Hex(read.value) : undefined;
 		}
 		return hashes;
@@ -409,7 +410,7 @@ export class SkillImporter {
 		if (!skill) {
 			// Older single-folder imports used the fallback directory "skill".
 			// Match an unambiguous recorded name, then keep the existing directory.
-			const installed = await this.env.readTextFile(this.installPath(dirName, "SKILL.md"));
+			const installed = await this.env.readTextFile(this.installPath(dirName, "SKILL.md"), BACKGROUND_CONTEXT);
 			const name = installed.ok ? parseSkillFrontmatter(installed.value).name : undefined;
 			const matches = name ? source.skills.filter((candidate) => candidate.name === name) : [];
 			if (matches.length === 1 && matches[0]) skill = { ...matches[0], dirName };
@@ -440,14 +441,14 @@ export class SkillImporter {
 				continue;
 			}
 			if (entry.action === "remove") {
-				getOrThrow(await this.env.remove(this.installPath(dirName, entry.path)));
+				getOrThrow(await this.env.remove(this.installPath(dirName, entry.path), undefined, BACKGROUND_CONTEXT));
 				continue;
 			}
 			const file = skill.files.find((candidate) => candidate.path === entry.path);
 			if (!file) {
 				throw new Error(`Plan references missing file "${entry.path}"`);
 			}
-			getOrThrow(await this.env.writeFile(this.installPath(dirName, file.path), file.content));
+			getOrThrow(await this.env.writeFile(this.installPath(dirName, file.path), file.content, BACKGROUND_CONTEXT));
 		}
 		const files: Record<string, string> = {};
 		for (const file of skill.files) {
@@ -461,7 +462,7 @@ export class SkillImporter {
 			importedAt: new Date().toISOString(),
 			files,
 		};
-		getOrThrow(await this.env.writeFile(this.installPath(dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`));
+		getOrThrow(await this.env.writeFile(this.installPath(dirName, SIDECAR_FILENAME), `${JSON.stringify(provenance, null, "\t")}\n`, BACKGROUND_CONTEXT));
 	}
 
 	private async fetchGithubTree(parsed: Extract<ParsedSkillSource, { kind: "github-tree" }>, originalUrl: string): Promise<FetchedSource> {

@@ -1,5 +1,5 @@
 import { Notice, TFile, type App, type ButtonComponent, type ExtraButtonComponent, type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
-import type { SkillDiagnostic } from "@earendil-works/pi-agent-core";
+import type { SkillDiagnostic } from "../../skills/piResources";
 import type { Translator } from "../../i18n";
 import type { SkillCatalogEntry } from "../../agent/skillLoader";
 import { builtinSkillsDefinitions } from "./builtinSkillsDefinitions";

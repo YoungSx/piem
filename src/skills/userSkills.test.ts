@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 
 installObsidianStub();
@@ -32,7 +32,7 @@ function fakeHomeEnv(files: Record<string, string>): ExecutionEnv {
 	return {
 		cwd: "/home/tester",
 		fileInfo: async (p: string) => info(p),
-		absolutePath: async (p: string) => info(p),
+		absolutePath: async (p: string) => ({ ok: true as const, value: p }),
 		joinPath: async (parts: string[]) => ({ ok: true as const, value: parts.filter(Boolean).join("/").replace(/\/{2,}/g, "/") }),
 		readTextFile: async (p: string) =>
 			files[p] !== undefined ? { ok: true as const, value: files[p] } : { ok: false as const, error: { code: "not_found" as const, message: "missing", path: p } },
@@ -48,7 +48,7 @@ function fakeHomeEnv(files: Record<string, string>): ExecutionEnv {
 			];
 			return { ok: true as const, value: entries };
 		},
-		canonicalPath: async (p: string) => info(p),
+		canonicalPath: async (p: string) => ({ ok: true as const, value: p }),
 		// Present because the real env has it and the loader probes it. Its
 		// absence here is what caught the loader assuming every env implements
 		// the full interface, which no interface guarantees.

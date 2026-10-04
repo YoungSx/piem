@@ -1,5 +1,6 @@
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { describe, expect, it } from "bun:test";
-import type { FileError } from "@earendil-works/pi-agent-core";
+import type { FileError } from "@earendil-works/pi-durable/env";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, TFile, TFolder } from "obsidian";
 
@@ -9,7 +10,7 @@ installObsidianStub();
 const { TFile: TFileClass, TFolder: TFolderClass } = await import("obsidian");
 const { VaultExecutionEnv: VaultExecutionEnvClass } = await import("./VaultExecutionEnv");
 const { adaptHarnessTool, createVaultHarnessContext } = await import("./harnessAdapter");
-const core = await import("@earendil-works/pi-agent-core");
+const core = await import("@earendil-works/pi-durable/tools");
 
 export interface VaultFixture {
 	kind: "file" | "folder";
@@ -599,11 +600,11 @@ describe("write CAS (content ledger, PR-B)", () => {
 		const sessionA = ledger(env);
 		const sessionB = ledger(env);
 
-		await sessionA.readTextFile("/Shared.md");
-		await sessionB.readTextFile("/Shared.md");
+		await sessionA.readTextFile("/Shared.md", BACKGROUND_CONTEXT);
+		await sessionB.readTextFile("/Shared.md", BACKGROUND_CONTEXT);
 
-		const writeA = await sessionA.writeFile("/Shared.md", "v2 from A");
-		const writeB = await sessionB.writeFile("/Shared.md", "v2 from B");
+		const writeA = await sessionA.writeFile("/Shared.md", "v2 from A", BACKGROUND_CONTEXT);
+		const writeB = await sessionB.writeFile("/Shared.md", "v2 from B", BACKGROUND_CONTEXT);
 
 		expect(writeA.ok).toBe(true);
 		expect(writeB.ok).toBe(false);
@@ -617,8 +618,8 @@ describe("write CAS (content ledger, PR-B)", () => {
 		const { withContentLedger: ledger } = await import("./contentLedger");
 		const session = ledger(env);
 
-		const first = await session.writeFile("/Draft.md", "first");
-		const second = await session.writeFile("/Draft.md", "second");
+		const first = await session.writeFile("/Draft.md", "first", BACKGROUND_CONTEXT);
+		const second = await session.writeFile("/Draft.md", "second", BACKGROUND_CONTEXT);
 
 		expect(first.ok).toBe(true);
 		expect(second.ok).toBe(true);
@@ -713,11 +714,11 @@ describe("write CAS (content ledger, PR-B)", () => {
 		const sessionA = ledger(env);
 		const sessionB = ledger(env);
 
-		await sessionA.readTextFile("/Shared.md");
-		await sessionB.readTextFile("/Shared.md");
+		await sessionA.readTextFile("/Shared.md", BACKGROUND_CONTEXT);
+		await sessionB.readTextFile("/Shared.md", BACKGROUND_CONTEXT);
 
-		const writeA = await sessionA.writeFile("/Shared.md", "v2 from A");
-		const writeB = await sessionB.writeFile("/Shared.md", "v2 from B");
+		const writeA = await sessionA.writeFile("/Shared.md", "v2 from A", BACKGROUND_CONTEXT);
+		const writeB = await sessionB.writeFile("/Shared.md", "v2 from B", BACKGROUND_CONTEXT);
 
 		expect(writeA.ok).toBe(true);
 		expect(writeB.ok).toBe(false);
@@ -731,8 +732,8 @@ describe("write CAS (content ledger, PR-B)", () => {
 		const { withContentLedger: ledger } = await import("./contentLedger");
 		const session = ledger(env);
 
-		const first = await session.writeFile("/Draft.md", "first");
-		const second = await session.writeFile("/Draft.md", "second");
+		const first = await session.writeFile("/Draft.md", "first", BACKGROUND_CONTEXT);
+		const second = await session.writeFile("/Draft.md", "second", BACKGROUND_CONTEXT);
 
 		expect(first.ok).toBe(true);
 		expect(second.ok).toBe(true);
@@ -902,7 +903,7 @@ describe("createNativeFileTools registration (issue #20)", () => {
 	it("returns read/write/edit tools with the names pi's agent loop expects", async () => {
 		const vault = new MemoryVault([{ kind: "file", path: "Note.md", content: "hello\n" }]);
 		const { createNativeFileTools: createNative } = await import("./harnessAdapter");
-		const core = await import("@earendil-works/pi-agent-core");
+		const core = await import("@earendil-works/pi-durable/tools");
 
 		const tools = createNative(createApp(vault), {
 			read: () => core.createReadTool(),
@@ -923,7 +924,7 @@ describe("createNativeFileTools registration (issue #20)", () => {
 		// The shared env instance is what makes pi's mutation queue serialize them.
 		const vault = new MemoryVault([{ kind: "file", path: "Shared.md", content: "alpha\nbeta\ngamma\n" }]);
 		const { createNativeFileTools: createNative } = await import("./harnessAdapter");
-		const core = await import("@earendil-works/pi-agent-core");
+		const core = await import("@earendil-works/pi-durable/tools");
 
 		const tools = createNative(createApp(vault), {
 			read: () => core.createReadTool(),

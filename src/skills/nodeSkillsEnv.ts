@@ -1,33 +1,6 @@
 import type { Context } from "@earendil-works/chord";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { BACKGROUND_CONTEXT, err, ExecutionError, FileError, type ExecutionEnv, type Result, type ShellExecOptions, type ShellExecResult } from "@earendil-works/pi-agent-core";
-
-const envProto = NodeExecutionEnv.prototype as unknown as Record<string, unknown>;
-const methodsToPatch = [
-	"exec", "readTextFile", "readTextLines", "readBinaryFile",
-	"writeFile", "appendFile", "renameFile", "fileInfo", "listDir",
-	"canonicalPath", "exists", "createDir", "remove", "createTempDir", "createTempFile", "absolutePath",
-];
-for (const method of methodsToPatch) {
-	const orig = envProto[method];
-	if (typeof orig === "function" && !(orig as { __patched?: boolean }).__patched) {
-		const targetIdx = orig.length - 1;
-		const patched = function (this: unknown, ...args: unknown[]) {
-			while (args.length < orig.length) {
-				args.push(undefined);
-			}
-			const ctx = args[targetIdx];
-			if (!ctx || typeof ctx !== "object" || !("abortSignal" in ctx)) {
-				args[targetIdx] = BACKGROUND_CONTEXT;
-			}
-			return (orig as (...a: unknown[]) => unknown).apply(this, args);
-		};
-		(patched as { __patched?: boolean }).__patched = true;
-		envProto[method] = patched;
-	}
-}
-
-
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { err, ExecutionError, FileError, type ExecutionEnv, type Result, type ShellExecOptions, type ShellExecResult } from "@earendil-works/pi-durable/env";
 
 /**
  * Pi owns filesystem operations and host-native path semantics. This bridge

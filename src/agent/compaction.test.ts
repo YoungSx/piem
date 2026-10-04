@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { convertToLlm, formatSkillInvocation, type AgentMessage, type CompactResult } from "@earendil-works/pi-agent-core";
+import { convertToLlm } from "./piMessages";
+import { formatSkillInvocation } from "../skills/piResources";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
+import { type CompactResult } from "../session/sessionTypes";
 import type { Api, AssistantMessage, Model, Models, Usage } from "@earendil-works/pi-ai";
 import { compactIfNeeded, toCompactedMessages } from "./compaction";
 import { createReadSkillTool } from "../tools/skillTools";
@@ -50,7 +53,8 @@ describe("compactIfNeeded", () => {
 
 	it("compacts a fitting context when forced, for the manual command", async () => {
 		const outcome = await compactIfNeeded({
-			messages: [userMessage("short"), assistantMessage("short answer", EMPTY_USAGE)],
+			messages: buildOverflowingHistory(),
+			settings: { enabled: true, reserveTokens: 1000, keepRecentTokens: 200 },
 			model: createModel({ contextWindow: 1_000_000 }),
 			models: createModels("MANUAL SUMMARY"),
 			thinkingLevel: "off",
@@ -125,12 +129,12 @@ describe("compactIfNeeded", () => {
 	 * `retainedTail` — and from there the JSONL line written for it.
 	 */
 	it("does not re-list a tail the previous compaction already carries", async () => {
-		const keptQuestion = userMessage("KEPT QUESTION");
+		const keptQuestion = userMessage("KEPT QUESTION".repeat(120));
 		const keptAnswer = assistantMessage("KEPT ANSWER", { ...EMPTY_USAGE, input: 4_000, totalTokens: 4_000 });
-		const previous = createCompactResult("EARLIER HISTORY", [keptQuestion, keptAnswer]);
+		const previous = createCompactResult("EARLIER HISTORY", [userMessage("older tail"), assistantMessage("older answer", EMPTY_USAGE), keptQuestion, keptAnswer]);
 		// Something has to follow the tail, or there is genuinely nothing left to
 		// compact and pi reports "skipped" before the duplication could show.
-		const messages = [...toCompactedMessages(previous), userMessage("NEXT QUESTION")];
+		const messages = [...toCompactedMessages(previous), userMessage("NEXT QUESTION".repeat(30))];
 
 		const outcome = await compactIfNeeded({
 			messages,
@@ -260,7 +264,7 @@ function buildOverflowingHistory(): AgentMessage[] {
 	return [
 		userMessage("first question"),
 		assistantMessage("first answer", { ...EMPTY_USAGE, input: 4_000, totalTokens: 4_000 }),
-		userMessage("second question"),
+		userMessage("second question".repeat(120)),
 		assistantMessage("second answer", { ...EMPTY_USAGE, input: 4_000, totalTokens: 4_000 }),
 		userMessage("third question"),
 	];

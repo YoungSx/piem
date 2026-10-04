@@ -338,16 +338,16 @@ const REQUIRED_MODULES = new Map([
 	["node_modules/@earendil-works/pi-coding-agent/dist/core/event-bus.js", "The bundled extension must use Pi's original event bus."],
 	["node_modules/@earendil-works/pi-coding-agent/examples/extensions/bookmark.ts", "The original bookmark example must be present, not a local reimplementation."],
 	[
-		"node_modules/@earendil-works/pi-agent-core/dist/harness/env/nodejs.js",
+		"node_modules/@earendil-works/pi-durable/dist/env/node.js",
 		"User skills must use the bundled public NodeExecutionEnv implementation. A missing input means the bridge no longer reaches Pi's filesystem or Pi was incorrectly externalized.",
 	],
 	[
-		"node_modules/@earendil-works/pi-agent-core/dist/harness/tools/edit-diff.js",
+		"node_modules/@earendil-works/pi-durable/dist/tools/edit-diff.js",
 		"src/vault/editDiff.ts reaches this file by relative path because it is not in pi's exports map. A missing input means the path broke — likely a package-manager layout change or a pi rename. See that file's header.",
 	],
 	[
-		"node_modules/@earendil-works/pi-agent-core/dist/harness/session/jsonl/codec.js",
-		"src/session/sessionMutationLine.ts reaches this file by relative path because it is not in pi's exports map. A missing input means the path broke — likely a package-manager layout change or a pi rename. See that file's header.",
+		"node_modules/@earendil-works/pi-durable/dist/session/session.js",
+		"Conversation commits must reach Pi's original durable Session. A missing input means persistence has bypassed the upstream transaction kernel.",
 	],
 ]);
 

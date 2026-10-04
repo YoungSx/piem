@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Entry, JsonlSessionMetadata } from "@earendil-works/pi-agent-core";
+import type { Entry, JsonlSessionMetadata } from "./sessionTypes";
 import { aggregateSessionSearchHits, makeSnippet, projectSessionEntryText, type StoredSessionSearchHit } from "./sessionSearch";
 
 const META = { id: "s1", path: "chats/s1.jsonl", cwd: "piem", createdAt: 0, modifiedAt: 0, storageVersion: 1 } as JsonlSessionMetadata;

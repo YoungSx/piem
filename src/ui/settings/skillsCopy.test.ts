@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { PromptTemplateDiagnostic, SkillDiagnostic } from "@earendil-works/pi-agent-core";
+import type { PromptTemplateDiagnostic, SkillDiagnostic } from "../../skills/piResources";
 import { getT } from "../../i18n";
 import {
 	countSkillProblems,

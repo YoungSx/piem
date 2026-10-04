@@ -1,11 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import {
-	collectEntriesForBranchSummary,
-	generateBranchSummary,
-	MemorySessionRepo,
-	type AgentMessage,
-	type Session,
-} from "@earendil-works/pi-agent-core";
+import { collectEntriesForBranchSummary, generateBranchSummary } from "./piBranchSummary";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
+import { MemorySessionRepo } from "../session/SessionRepository";
+import { type Session } from "../session/PiemSession";
 import type { Api, AssistantMessage, Model, Models, Usage } from "@earendil-works/pi-ai";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 

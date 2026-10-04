@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, chmodSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT, loadSkills, type ExecutionEnv } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { loadSkills } from "./piResources";
+import { type ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { createNodeSkillsEnv } from "./nodeSkillsEnv";
 
 const homes: string[] = [];
@@ -25,7 +27,7 @@ function skill(home: string, path: string, name: string, metadata = ""): string 
 }
 
 afterEach(async () => {
-	for (const env of environments.splice(0)) await env.cleanup();
+	for (const env of environments.splice(0)) await env.cleanup(BACKGROUND_CONTEXT);
 	for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
 });
 
@@ -49,28 +51,27 @@ describe("Pi's filesystem behind the user-skills bridge", () => {
 		symlinkSync(join(home, "elsewhere/linked"), join(home, "skills/linked"));
 		symlinkSync(join(home, "missing"), join(home, "skills/dangling"));
 		const result = await loadSkills(env, "skills", BACKGROUND_CONTEXT);
-		// Pi diagnoses root markdown whose name differs from the containing
-		// folder while still loading it. Preserve that upstream diagnostic.
-		expect(result.diagnostics).toEqual([expect.objectContaining({ code: "invalid_metadata", path: root })]);
+		// Root markdown is a declared skill only when it has a description.
+		expect(result.diagnostics).toEqual([]);
 		expect(result.skills.map((s) => s.name).sort()).toEqual(["linked", "nested", "root"]);
 		for (const [name, path] of [["root", root], ["nested", nested], ["linked", join(home, "skills/linked/SKILL.md")]]) {
 			const loaded = result.skills.find((s) => s.name === name);
 			expect(loaded?.filePath).toBe(path);
 			expect(loaded?.content).toContain(`${name} body`);
 		}
-		expect(await env.canonicalPath(join(home, "skills/linked/SKILL.md"))).toEqual({ ok: true, value: linked });
+		expect(await env.canonicalPath(join(home, "skills/linked/SKILL.md"), BACKGROUND_CONTEXT)).toEqual({ ok: true, value: linked });
 		expect(result.skills.find((s) => s.name === "nested")?.disableModelInvocation).toBe(true);
 	});
 
 	it("keeps Pi's join semantics and resolves paths only when asked", async () => {
 		const { home, env } = fixture();
-		expect(await env.joinPath(["skills", "a.md"])).toEqual({ ok: true, value: join("skills", "a.md") });
-		expect(await env.absolutePath("skills/a.md")).toEqual({ ok: true, value: join(home, "skills/a.md") });
+		expect(await env.joinPath(["skills", "a.md"], BACKGROUND_CONTEXT)).toEqual({ ok: true, value: join("skills", "a.md") });
+		expect(await env.absolutePath("skills/a.md", BACKGROUND_CONTEXT)).toEqual({ ok: true, value: join(home, "skills/a.md") });
 	});
 
 	it("returns missing files as Results and missing roots as an empty load", async () => {
 		const { env } = fixture();
-		const missing = await env.readTextFile("missing.md");
+		const missing = await env.readTextFile("missing.md", BACKGROUND_CONTEXT);
 		expect(missing.ok).toBe(false);
 		if (!missing.ok) expect(missing.error.code).toBe("not_found");
 		expect(await loadSkills(env, "missing", BACKGROUND_CONTEXT)).toEqual({ skills: [], diagnostics: [] });
@@ -92,15 +93,15 @@ describe("Pi's filesystem behind the user-skills bridge", () => {
 	it("refuses shell and temporary files without side effects", async () => {
 		const { home, env } = fixture();
 		const marker = join(home, "shell-ran");
-		const shell = await env.exec(`touch '${marker}'`);
+		const shell = await env.exec(`touch '${marker}'`, undefined, BACKGROUND_CONTEXT);
 		expect(shell.ok).toBe(false);
 		if (!shell.ok) expect(shell.error.code).toBe("shell_unavailable");
 		expect(existsSync(marker)).toBe(false);
-		for (const result of [await env.createTempDir(), await env.createTempFile()]) {
+		for (const result of [await env.createTempDir(undefined, BACKGROUND_CONTEXT), await env.createTempFile(undefined, BACKGROUND_CONTEXT)]) {
 			expect(result.ok).toBe(false);
 			if (!result.ok) expect(result.error.code).toBe("not_supported");
 		}
-		await env.cleanup();
-		await env.cleanup();
+		await env.cleanup(BACKGROUND_CONTEXT);
+		await env.cleanup(BACKGROUND_CONTEXT);
 	});
 });

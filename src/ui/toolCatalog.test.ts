@@ -31,7 +31,7 @@ const MODEL = { id: "test-model", api: "openai-completions", provider: "test", c
  * contributes only its own five.
  */
 function shippedToolIds(): string[] {
-	const app = {} as App;
+	const app = { vault: { adapter: {} } } as App;
 	const settings = { ...DEFAULT_SETTINGS, networkTransport: "requestUrl" as const };
 	const vaultTools = createObsidianTools(app, createVaultHarnessContext(app).env, settings, {
 		getSkills: () => [],

@@ -1,4 +1,6 @@
-import type { ExecutionEnv, Skill } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import type { Skill } from "./piResources";
 import { DEFAULT_SKILLS_DIR, loadVaultSkills } from "../agent/skillLoader";
 import type { FetchFn } from "../net/obsidianFetch";
 import {
@@ -109,7 +111,7 @@ export class SkillManager {
 
 	/** Deletes a skill directory, sidecar included, recursive. */
 	async remove(dirName: string): Promise<void> {
-		const result = await this.env.remove(`/${this.skillsDir}/${dirName}`, { recursive: true });
+		const result = await this.env.remove(`/${this.skillsDir}/${dirName}`, { recursive: true }, BACKGROUND_CONTEXT);
 		if (!result.ok) {
 			throw new Error(result.error.message);
 		}

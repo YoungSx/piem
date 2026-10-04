@@ -1,4 +1,6 @@
-import { BACKGROUND_CONTEXT, type ExecutionEnv, type Skill, type SkillDiagnostic, loadSourcedSkills } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { type ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { type Skill, type SkillDiagnostic, loadSourcedSkills } from "./piResources";
 import { createUserSkillsEnv, nodeSkillsHome } from "./nodeSkillsHost";
 import { normalizeUserSkillsDir } from "./userSkillsDir";
 import { bindSkillResources } from "./skillResources";
@@ -98,7 +100,7 @@ export async function loadUserSkills(
 						if (options.env) return read(options.env);
 						const current = await (options.createEnv ?? createUserSkillsEnv)();
 						if (!current) throw new Error("User skill resources are unavailable on this device.");
-						try { return await read(current); } finally { await current.cleanup(); }
+						try { return await read(current); } finally { await current.cleanup(BACKGROUND_CONTEXT); }
 					});
 				} catch (error) {
 					result.diagnostics.push(loadDiagnostic("read resources for", error, skill.filePath));
@@ -115,7 +117,7 @@ export async function loadUserSkills(
 	} finally {
 		if (env && !options.env) {
 			try {
-				await env.cleanup();
+				await env.cleanup(BACKGROUND_CONTEXT);
 			} catch (error) {
 				// Keep successfully loaded skills even if releasing the env fails.
 				result.diagnostics.push(loadDiagnostic("clean up", error, env.cwd));
@@ -240,7 +242,7 @@ async function probeDir(env: ExecutionEnv, dir: string): Promise<boolean | undef
 		return undefined;
 	}
 	try {
-		const result = await env.exists(dir);
+		const result = await env.exists(dir, BACKGROUND_CONTEXT);
 		return result.ok ? result.value : undefined;
 	} catch {
 		return undefined;

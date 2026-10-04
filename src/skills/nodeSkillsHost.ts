@@ -1,4 +1,4 @@
-import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { Platform } from "obsidian";
 
 /** Obsidian injects a module lookup on desktop; mobile may throw or return nothing. */

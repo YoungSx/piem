@@ -278,7 +278,7 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		const f = await researchFixture({ protocol: "openai-completions", plan: { chat: [{ tool: { name: "context_checkpoint", args: { name: "unsaved-checkpoint" } } }, { text: "The checkpoint could not be saved." }] } }, cleanup);
 		const append = f.memory.append.bind(f.memory);
 		f.memory.append = async (path, value) => {
-			if (value.includes('"fact":"label"') || value.includes('"pi.entry.label"')) throw new Error("Fixture Vault is read only");
+			if (value.includes('"fact":"label"') || value.includes('"pi.entry.label"') || (value.includes('"document.change"') && value.includes('"labels"'))) throw new Error("Fixture Vault is read only");
 			await append(path, value);
 		};
 		await f.service.sendPrompt("Save a checkpoint on a read-only Vault");
@@ -319,29 +319,20 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 			cleanup.push(gate.resolve);
 			const append = f.memory.append.bind(f.memory);
 			let summaryId = "", selectionWrites = 0;
-			interface WireMutation {
-				type?: string;
-				kind?: string;
-				lane?: string;
-				id?: string;
-				leafId?: string;
-				namespace?: string;
-				key?: string;
-				value?: unknown;
-				entry?: { type?: string; id?: string };
-			}
 			f.memory.append = async (file, value) => {
-				const parsed = JSON.parse(value) as WireMutation | WireMutation[];
-				const mutations: WireMutation[] = Array.isArray(parsed) ? parsed : [parsed];
-				for (const mutation of mutations) {
-					const isSummary = mutation.type === "branch_summary" || mutation.entry?.type === "branch_summary";
-					if (isSummary) summaryId = mutation.id ?? mutation.entry?.id ?? "";
-					const isSelection =
-						(mutation.kind === "lane" && mutation.lane === "main" && mutation.leafId === summaryId) ||
-						(mutation.kind === "value" && mutation.namespace === "pi.branch.tip" && mutation.key === "main" && mutation.value === summaryId);
-					if (isSelection) selectionWrites++;
-					if ((stage === "summary" && isSummary) || (stage === "selection" && isSelection)) { entered.resolve(); await gate.promise; }
+				const parsed = JSON.parse(value) as { writes: import("@earendil-works/pi-durable").StorageWrite[] };
+				let isSummary = false, isSelection = false;
+				for (const write of parsed.writes) {
+					if (write.type === "entry" && write.value.kind === "piem.transcript") {
+						const entry = write.value.data as { type?: string; id?: string };
+						if (entry.type === "branch_summary") { summaryId = entry.id!; isSummary = true; }
+					}
+					if (summaryId && write.type === "document.change" && write.content.kind === "delta") {
+						isSelection ||= write.content.ops.some(op => op[0] === "s" && JSON.stringify(op[1]) === '["lanes","main"]' && (op[2] as { leafId?: string })?.leafId === summaryId);
+					}
 				}
+				if (isSelection) selectionWrites++;
+				if ((stage === "summary" && isSummary) || (stage === "selection" && isSelection)) { entered.resolve(); await gate.promise; }
 				await append(file, value);
 			};
 			f.setPlan({ chat: [{ tool: { name: "context_compact", args: { target: "verified-notes", summary: "A handoff stopped during persistence." } } }] });

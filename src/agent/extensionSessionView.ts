@@ -1,4 +1,4 @@
-import type { Entry } from "@earendil-works/pi-agent-core";
+import type { Entry } from "../session/sessionTypes";
 import type { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 
 /** A synchronous Pi read view, refreshed from the existing Vault-backed lane. */

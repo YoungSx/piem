@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { DataAdapter } from "obsidian";
-import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Session } from "../session/PiemSession";
 import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import { navigateExtensionSummary } from "../session/extensionNavigation";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";

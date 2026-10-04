@@ -1,4 +1,6 @@
-import { BACKGROUND_CONTEXT, getOrThrow, withAbortSignal, type ExecutionEnv, type Skill } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
+import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { type Skill } from "./piResources";
 
 export const MAX_SKILL_RESOURCE_BYTES = 1024 * 1024;
 type EnvAccess = <T>(read: (env: ExecutionEnv) => Promise<T>) => Promise<T>;

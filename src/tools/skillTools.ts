@@ -1,4 +1,5 @@
-import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/piResources";
 import { Type } from "typebox";
 import { throwIfAborted } from "./toolResult";
 import { skillContentPage, type SkillContentDetails } from "../skills/skillContent";

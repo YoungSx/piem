@@ -1,5 +1,5 @@
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
-import type { CustomMessage } from "@earendil-works/pi-agent-core";
+import type { CustomMessage } from "./piMessages";
 import { messageReferences } from "./contextReference";
 
 /** One transcript entry, as the exporter reads it. */

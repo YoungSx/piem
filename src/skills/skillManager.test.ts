@@ -1,18 +1,7 @@
 import { textLineReader } from "../vault/textLineReader";
 import { describe, expect, test } from "bun:test";
 
-import {
-	err,
-	ExecutionError,
-	FileError,
-	ok,
-	type ExecutionEnv,
-	type FileInfo,
-	type FileKind,
-	type Result,
-	type ShellExecOptions,
-	type ShellExecResult,
-} from "@earendil-works/pi-agent-core";
+import { err, ExecutionError, FileError, ok, type ExecutionEnv, type FileInfo, type FileKind, type Result, type ShellExecOptions, type ShellExecResult } from "@earendil-works/pi-durable/env";
 
 import {
 	SIDECAR_FILENAME,
@@ -30,6 +19,9 @@ import { SkillManager } from "./skillManager";
  * be a filesystem in any other respect.
  */
 class MemoryFsEnv implements ExecutionEnv {
+	readonly id = "test:MemoryFsEnv";
+	async truncateFile(): Promise<Result<void, FileError>> { return err(new FileError("not_supported", "Unused in this fixture")); }
+	async flushFile(): Promise<Result<void, FileError>> { return err(new FileError("not_supported", "Unused in this fixture")); }
 	readonly cwd = "/vault";
 
 	private readonly files = new Map<string, string>();

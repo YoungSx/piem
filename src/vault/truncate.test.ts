@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-agent-core";
+import { DEFAULT_MAX_BYTES } from "./piTruncate";
 import { sliceTextByLines, truncateToolOutput } from "./truncate";
 
 describe("sliceTextByLines", () => {

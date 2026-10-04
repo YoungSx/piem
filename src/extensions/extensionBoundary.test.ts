@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
-import type { AgentMessage, AgentTurnContext, Entry } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTurnContext } from "@earendil-works/pi-agent-core";
+import type { Entry } from "../session/sessionTypes";
 import { getCurrentSystemPrompt, type AssistantMessage } from "@earendil-works/pi-ai";
 import { prepareExtensionBoundary, type BoundarySnapshot } from "./extensionBoundary";
 import { createExtensionHost } from "./extensionHost";

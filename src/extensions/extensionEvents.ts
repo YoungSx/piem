@@ -1,4 +1,5 @@
-import type { AgentEvent, AgentMessage, Entry } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Entry } from "../session/sessionTypes";
 import type { ExtensionRunner } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/runner.js";
 import type { AgentActivityOutcome, BoundaryContextPreview, SessionBoundaryDraft } from "@earendil-works/pi-coding-agent";
 

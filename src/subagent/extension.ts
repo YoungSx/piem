@@ -1,4 +1,5 @@
-import type { AgentTool, Skill, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentTool, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/piResources";
 import type { Model, Models } from "@earendil-works/pi-ai";
 import type { CompactionSettings } from "../agent/compactionSettings";
 import { createFollowUpSubagentTool, createKillSubagentTool, createListSubagentsTool } from "./controlTools";

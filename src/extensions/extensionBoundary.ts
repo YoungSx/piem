@@ -1,4 +1,7 @@
-import { convertToLlm, createBranchSummaryMessage, createCompactionSummaryMessage, estimateContextTokens, type AgentMessage, type Entry } from "@earendil-works/pi-agent-core";
+import { convertToLlm, createBranchSummaryMessage, createCompactionSummaryMessage } from "../agent/piMessages";
+import { estimateContextTokens } from "../agent/piCompaction";
+import { type AgentMessage } from "@earendil-works/pi-agent-core";
+import { type Entry } from "../session/sessionTypes";
 import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { BoundaryContextPreview, SessionBoundaryDraft, SessionEntry } from "@earendil-works/pi-coding-agent";
 
@@ -51,7 +54,7 @@ export function prepareExtensionBoundary(snapshot: BoundarySnapshot, drafts: Ses
 					// older compaction contributes no summary or virtual retained tail.
 					if (source.type === "compaction" || source.type === "custom") continue;
 					const message = liveMessages.get(source.id) ?? (source.type === "message" ? source.message
-						: source.summary ? createBranchSummaryMessage(source.summary, source.fromId, source.timestamp) : undefined);
+						: source.type === "branch_summary" && source.summary ? createBranchSummaryMessage(source.summary, source.fromId, source.timestamp) : undefined);
 					if (!message || message.role === "system") continue;
 					retainedTail.push(message);
 					retainedMessageOrigins.push(source.id);

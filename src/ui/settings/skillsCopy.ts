@@ -1,4 +1,4 @@
-import type { SkillDiagnostic } from "@earendil-works/pi-agent-core";
+import type { SkillDiagnostic } from "../../skills/piResources";
 import type { Translator } from "../../i18n";
 import type { SkillRow } from "../../skills/skillManager";
 import type { SkillLoadReport } from "../../agent/skillLoader";

@@ -1,4 +1,4 @@
-import type { Entry } from "@earendil-works/pi-agent-core";
+import type { Entry } from "./sessionTypes";
 
 /** What the fs remembered about the last write it made to a path. */
 interface FileFingerprint {

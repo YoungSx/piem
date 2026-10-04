@@ -1,4 +1,5 @@
-import type { JsonlSessionMetadata } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { JsonlSessionMetadata } from "./sessionTypes";
 import type { SessionRepoFileSystem } from "./ObsidianSessionFileSystem";
 
 export function parseSessionHeaderMetadata(line: string, path: string, modifiedAt: number): JsonlSessionMetadata | undefined {
@@ -7,7 +8,7 @@ export function parseSessionHeaderMetadata(line: string, path: string, modifiedA
 		if (typeof parsed !== "object" || parsed === null) return undefined;
 
 		// 0.85.1 format 4 or legacy 0.84 format 4
-		if (parsed.kind === "header" && (parsed.v === 4 || parsed.version === 4)) {
+		if (parsed.kind === "header" && (parsed.v === 5 || parsed.v === 4 || parsed.version === 4)) {
 			if (typeof parsed.id !== "string" || typeof parsed.cwd !== "string") return undefined;
 			const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
 			const storageVersion = typeof parsed.storageVersion === "number" ? parsed.storageVersion : 1;
@@ -65,13 +66,13 @@ export async function readSessionMetadata(
 	const parts = path.slice(prefix.length).split("/");
 	if (parts.length !== 2 || !parts[0] || !parts[1]?.endsWith(".jsonl")) return undefined;
 
-	const file = await fs.fileInfo(path);
+	const file = await fs.fileInfo(path, BACKGROUND_CONTEXT);
 	if (!file.ok) {
 		if (file.error.code === "not_found") return undefined;
 		throw file.error;
 	}
 	if (file.value.kind === "directory") return undefined;
-	const lines = await fs.readTextLines(path, { maxLines: 1 });
+	const lines = await fs.readTextLines(path, { maxLines: 1 }, BACKGROUND_CONTEXT);
 	if (!lines.ok) throw lines.error;
 	const firstLine = lines.value[0];
 	if (!firstLine) return undefined;

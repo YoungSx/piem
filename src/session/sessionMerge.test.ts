@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { DataAdapter } from "obsidian";
-import { JsonlSessionRepo } from "@earendil-works/pi-agent-core";
+import { JsonlSessionRepo } from "./SessionRepository";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 import { ObsidianSessionFileSystem } from "./ObsidianSessionFileSystem";
 import { scanDiskLines } from "./sessionMutationLine";

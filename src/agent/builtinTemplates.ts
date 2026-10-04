@@ -1,4 +1,4 @@
-import type { PromptTemplate } from "@earendil-works/pi-agent-core";
+import type { PromptTemplate } from "../skills/piResources";
 
 /**
  * Prompt templates shipped with the plugin.

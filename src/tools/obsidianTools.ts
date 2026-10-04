@@ -1,10 +1,7 @@
 import type { App } from "obsidian";
-import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
-import {
-	createEditTool,
-	createReadTool,
-	createWriteTool,
-} from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/piResources";
+import { createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-durable/tools";
 import type { VaultExecutionEnv } from "../vault/VaultExecutionEnv";
 import { adaptHarnessTool } from "../vault/harnessAdapter";
 import { withContentLedger } from "../vault/contentLedger";
