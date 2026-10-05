@@ -229,8 +229,14 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     WebKit parse the 2.4 MB and the 3.3 MB bundle in the same 66 ms, because a
  *     string literal is not evaluated until something reads it. So this is a
  *     download bill and nothing else — which is why the tool ships off.
+ *
+ * 17. Durable execution measures 3,605,469 B against the same-lockfile baseline
+ *     of 3,512,454 B (+93,015 B). The metafile attributes 82,628 B to Pi's
+ *     Harness, scheduler and required built-in task registry; the remainder
+ *     is Piem's execution/checkpoint bridge. No provider catalog or platform
+ *     shim was added. The ceiling follows to 3.45 MiB, leaving about 12 KiB.
  */
-const MAX_BUNDLE_BYTES = 3.38 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.45 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

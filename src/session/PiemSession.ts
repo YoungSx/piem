@@ -1,11 +1,12 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createSession, defineDoc, AgentDoc, configure, type ConversationId, type EntryId, type Session as DurableSession, type Storage, type Tx } from "@earendil-works/pi-durable";
-import { uuidv7 } from "@earendil-works/pi-ai";
+import { Harness, createSession, createRegistry, defineDoc, AgentDoc, configure, type ConversationId, type EntryId, type Registry, type Session as DurableSession, type Storage, type Tx } from "@earendil-works/pi-durable";
+import { createModels, uuidv7 } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { BranchScan, Entry, EntryQuery, LaneConfiguration, LogItem, OperationRecord, SessionMetadata } from "./sessionTypes";
 import { DurableVaultStorage } from "./DurableVaultStorage";
 import { appendTranscript, scanTranscript, transcriptEntry } from "./piTranscript";
+import { SessionExecution, snapshotExecution, restoreExecution, type ExecutionSnapshot } from "./SessionExecution";
 
 type Pointer = { seq: number; conversationId: ConversationId };
 type Label = { seq: number; value: string | null };
@@ -26,19 +27,69 @@ const SessionState = defineDoc<State>({
 /** Piem's UUID transcript and branch pointers over Pi's unmodified transaction kernel. */
 export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	readonly idGenerator = { next: uuidv7 };
-	private constructor(readonly metadata: TMetadata, private readonly native: DurableSession, private readonly storage: Storage) {}
+	private readonly executions = new Map<ConversationId, SessionExecution>();
+	private constructor(readonly metadata: TMetadata, private readonly native: DurableSession, private readonly storage: Storage, private readonly registry: Registry,
+		private readonly executionFailures: Set<(error: unknown) => void>) {}
 	get needsRecovery(): boolean { return this.storage instanceof DurableVaultStorage && this.storage.needsRecovery; }
 
-	static async open<T extends SessionMetadata>(storage: Storage, metadata: T, context = BACKGROUND_CONTEXT): Promise<PiemSession<T>> {
-		const native = createSession(storage);
-		await native.commit(async tx => {
-			const state = await tx.doc(SessionState);
-			if (!state.lanes.main) {
-				const root = await tx.createConversation({ ownership: { kind: "ownerless" } });
-				state.lanes.main = { seq: 0, conversationId: root.id };
-			}
+	static async open<T extends SessionMetadata>(storage: Storage, metadata: T, context = BACKGROUND_CONTEXT, options: { readOnly?: boolean } = {}): Promise<PiemSession<T>> {
+		const registry = createRegistry();
+		const executionFailures = new Set<(error: unknown) => void>();
+		// Scheduling stays paused until a caller starts or resumes a run. Model
+		// access remains in pi-agent-core, through Piem's configured transport.
+		const native = options.readOnly ? createSession(storage) : await Harness.open(storage, {
+			models: createModels(), registry,
+			onReport: error => { for (const listener of executionFailures) listener(error); },
 		}, context);
-		return new PiemSession(metadata, native, storage);
+		try {
+			await native.commit(async tx => {
+				const state = await tx.doc(SessionState);
+				if (!state.lanes.main) {
+					const root = await tx.createConversation({ ownership: { kind: "ownerless" } });
+					state.lanes.main = { seq: 0, conversationId: root.id };
+				}
+			}, context);
+		} catch (error) {
+			await native.close(BACKGROUND_CONTEXT).catch(() => undefined);
+			throw error;
+		}
+		return new PiemSession(metadata, native, storage, registry, executionFailures);
+	}
+
+	async execution(lane = "main"): Promise<SessionExecution> {
+		if (!("resume" in this.native)) throw new Error("A conversation reader cannot execute tasks");
+		const conversationId = (await this.state()).lanes[lane]?.conversationId;
+		if (conversationId === undefined) throw new Error(`Unknown lane: ${lane}`);
+		let execution = this.executions.get(conversationId);
+		if (!execution) {
+			execution = new SessionExecution(this.native as Harness, this.registry, conversationId,
+				async (tx, drafts) => {
+					if ((await tx.doc(SessionState)).lanes[lane]?.conversationId !== conversationId) throw new Error("Conversation changed during execution");
+					return this.appendEntriesIn(tx, drafts, lane);
+				},
+				async () => (await this.view(lane).findEntry({ type: "message", order: "newestFirst" }))?.id ?? null,
+				listener => { this.executionFailures.add(listener); return () => { this.executionFailures.delete(listener); }; });
+			this.executions.set(conversationId, execution);
+		}
+		return execution;
+	}
+
+	async snapshotExecutions(): Promise<Record<string, ExecutionSnapshot>> {
+		const result: Record<string, ExecutionSnapshot> = {};
+		for (const [lane, pointer] of Object.entries((await this.state()).lanes)) {
+			const execution = await snapshotExecution(this.native, pointer.conversationId);
+			if (execution) result[lane] = execution;
+		}
+		return result;
+	}
+
+	async restoreExecutions(executions: Record<string, ExecutionSnapshot>): Promise<void> {
+		const state = await this.state();
+		for (const [lane, execution] of Object.entries(executions)) {
+			const pointer = state.lanes[lane];
+			if (!pointer || execution.checkpoint.tip !== (await this.view(lane).findEntry({ type: "message", order: "newestFirst" }))?.id) continue;
+			await restoreExecution(this.native, pointer.conversationId, execution);
+		}
 	}
 
 	async getMetadata(): Promise<TMetadata> { return this.metadata; }
@@ -143,27 +194,28 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 		return (await this.appendEntries([entry], lane))[0]!;
 	}
 	async appendEntries(drafts: Array<{ type: string; [key: string]: unknown }>, lane: string, options?: { expectedTip: string | null; assertCurrent(): void }): Promise<Entry[]> {
-		return this.native.commit(async tx => {
-			const state = await tx.doc(SessionState);
-			let conversation = state.lanes[lane]?.conversationId;
-			const tail = conversation === undefined ? undefined : (await tx.scanEntries({ conversationId: conversation }, 1)).items[0];
-			conversation ??= await this.forkAt(tx, null);
-			let parentId = tail ? transcriptEntry(tail).id : null;
-			options?.assertCurrent();
-			if (options && parentId !== options.expectedTip) throw new Error("Conversation changed before drafts were saved");
-			const result: Entry[] = [];
-			for (const draft of drafts) {
-				const id = typeof draft.id === "string" ? draft.id : uuidv7();
-				if (state.entryIds[id] !== undefined) throw new Error(`Duplicate entry: ${id}`);
-				const entry = JSON.parse(JSON.stringify({ ...draft, id, parentId, seq: ++state.seq, timestamp: draft.timestamp ?? Date.now() })) as Entry;
-				state.entryIds[id] = (await appendTranscript(tx, conversation, entry)).id;
-				result.push(entry);
-				parentId = id;
-			}
-			state.lanes[lane] = { seq: state.seq, conversationId: conversation };
-			options?.assertCurrent();
-			return result;
-		}, BACKGROUND_CONTEXT);
+		return this.native.commit(tx => this.appendEntriesIn(tx, drafts, lane, options), BACKGROUND_CONTEXT);
+	}
+	private async appendEntriesIn(tx: Tx, drafts: Array<{ type: string; [key: string]: unknown }>, lane: string, options?: { expectedTip: string | null; assertCurrent(): void }): Promise<Entry[]> {
+		const state = await tx.doc(SessionState);
+		let conversation = state.lanes[lane]?.conversationId;
+		const tail = conversation === undefined ? undefined : (await tx.scanEntries({ conversationId: conversation }, 1)).items[0];
+		conversation ??= await this.forkAt(tx, null);
+		let parentId = tail ? transcriptEntry(tail).id : null;
+		options?.assertCurrent();
+		if (options && parentId !== options.expectedTip) throw new Error("Conversation changed before drafts were saved");
+		const result: Entry[] = [];
+		for (const draft of drafts) {
+			const id = typeof draft.id === "string" ? draft.id : uuidv7();
+			if (state.entryIds[id] !== undefined) throw new Error(`Duplicate entry: ${id}`);
+			const entry = JSON.parse(JSON.stringify({ ...draft, id, parentId, seq: ++state.seq, timestamp: draft.timestamp ?? Date.now() })) as Entry;
+			state.entryIds[id] = (await appendTranscript(tx, conversation, entry)).id;
+			result.push(entry);
+			parentId = id;
+		}
+		state.lanes[lane] = { seq: state.seq, conversationId: conversation };
+		options?.assertCurrent();
+		return result;
 	}
 	async appendMessage(message: AgentMessage | string, lane = "main"): Promise<string> {
 		const normalized = typeof message === "string" ? { role: "user", content: message, timestamp: Date.now() } : message;

@@ -69,12 +69,26 @@ backups contain the original conversation and may be copied by your vault sync
 or backup service. Older Piem builds cannot read the new format; a downgrade
 requires restoring the corresponding legacy file.
 
+Chat runs are scheduled as custom tasks in Pi's durable Harness, while Pi's
+existing agent loop and extension hooks remain in use. The prompt and task are
+saved together before execution; each completed message is saved with its
+checkpoint. Streaming fragments between completed messages are not checkpoints.
+Opening or searching a conversation does not restart it. **Continue** resumes an
+interrupted run from its saved messages. A tool without a saved result is reported
+as interrupted, not executed again automatically: its effects may already exist.
+Run checkpoints also store the frozen note references, selection and workspace
+context locally, so resuming does not silently target a different note. Vault
+sync and backups may copy these checkpoints along with the conversation.
+Closing or reloading the plugin preserves unfinished runs; **Stop** cancels them.
+
 Sync reconciliation preserves transcript UUIDs and bookmarks, then rebuilds
 Pi's device-local storage IDs. It does not provide a cross-device lock or resume
 unfinished tools automatically. An uncertain partial write blocks the current storage instance; reopening or an
 idle recovery checkpoint backs up the damaged file and rebuilds its confirmed
 entries before accepting new writes. Interrupted file replacements restore their
 saved original on the next open or listing.
+Rebuilding retains an unfinished run only when its checkpoint still matches the
+conversation's last message. Forks copy history without copying running tasks.
 
 ## OpenTelemetry export
 

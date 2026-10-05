@@ -44,6 +44,7 @@ import {
 	type ContextReference,
 } from "./contextReference";
 import { SessionRuntime, type SessionRunState } from "./SessionRuntime";
+import { DurableAgent } from "./DurableAgent";
 import {
 	createObsidianModels,
 	requestDefaults,
@@ -2251,6 +2252,7 @@ export class ObsidianAgentService {
 			if (!(await this.beginRunOperation(rt, last ? [last] : []))) return;
 			await rt.communityHost?.start();
 			await agent.continue();
+			if (rt.activeRunLedger) await this.settleRunLedger(rt, agent.state.messages);
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
@@ -2419,6 +2421,9 @@ export class ObsidianAgentService {
 			if (!(await this.beginRunOperation(rt, last ? [last] : []))) return;
 			await rt.communityHost?.start();
 			await agent.continue();
+			// A final answer can have committed just before the terminal receipt
+			// was lost, so recovery need not emit another agent_end.
+			if (rt.activeRunLedger) await this.settleRunLedger(rt, agent.state.messages);
 		} catch (error) {
 			this.reportDispatchFailure(rt, error, tailBefore);
 		} finally {
@@ -2546,14 +2551,14 @@ export class ObsidianAgentService {
 			rt.extensionPreparing = false;
 			await agent.prompt([...messages, ...extra]);
 		} catch (error) {
-			if (!departed && rt.activeRunLedger === ledger) {
+			if ((!departed || !agent.state.isStreaming) && rt.activeRunLedger === ledger) {
 				await this.endRunOperation(
 					rt,
 					error instanceof Error && error.name === "AbortError"
 						? "aborted"
 						: "failed",
 					{
-						code: "extension_preflight",
+						code: departed ? "execution_failed" : "extension_preflight",
 						message: causeMessage(error),
 					},
 				);
@@ -2826,6 +2831,15 @@ export class ObsidianAgentService {
 			if (await this.laneEndsResumable(rt, lane, activeContext)) {
 				rt.resumableLanes.add(lane);
 			}
+		}
+		// The durable task is authoritative even if the diagnostic ledger write
+		// was lost. An assistant with missing tool results can now resume safely.
+		const session = this.sessionManager.getSessionFor(rt.sessionPath);
+		for (const { lane } of await session.getLanes()) {
+			if (!await (await session.execution(lane)).hasPending()) continue;
+			const last = lane === rt.activeLane ? activeContext.messages.at(-1)
+				: (await this.sessionManager.buildSessionContextFor(rt.sessionPath, lane)).messages.at(-1);
+			if (last?.role !== "assistant" || last.content.some(part => part.type === "toolCall")) rt.resumableLanes.add(lane);
 		}
 	}
 
@@ -5333,7 +5347,9 @@ export class ObsidianAgentService {
 		this.sessionOpenSequence += 1;
 		this.pendingSessionOpen = null;
 		for (const rt of [...this.runtimes.values()]) {
-			rt.agent?.abort();
+			if (rt.agent instanceof DurableAgent) {
+				void rt.agent.suspend().catch(error => this.log.error("Failed to suspend conversation", () => ({ error: causeMessage(error) })));
+			} else rt.agent?.abort();
 			this.removeRuntime(rt);
 		}
 		// Orphaned subagents outlive their parent run otherwise: a run that ends
@@ -6860,7 +6876,7 @@ export class ObsidianAgentService {
 		}
 		this.syncExternalToolsInBackground(rt);
 		const stream = this.resolveStreamFn();
-		const agent: Agent = new Agent({
+		const agent: Agent = new DurableAgent({
 			// The custom endpoint rides the same transport as builtin providers;
 			// only the provider registration differs. Resolved per request rather
 			// than captured here, so an endpoint configured after this agent was
@@ -7055,6 +7071,11 @@ export class ObsidianAgentService {
 			// call serializes its whole batch exactly as before. The subagent
 			// runner keeps its own sequential default.
 			toolExecution: "parallel",
+		}, {
+			open: () => this.sessionManager.getSessionFor(rt.sessionPath).execution(rt.activeLane),
+			capture: () => JSON.parse(JSON.stringify(rt.activeRunContext)) as JsonValue,
+			restore: (metadata) => { rt.activeRunContext = metadata as unknown as FrozenRunContext | null; },
+			admitted: (message, id) => { rt.messageEntryIds.set(message, id); this.acceptPrompt(message); },
 		});
 		rt.agent = agent;
 		rt.unsubscribeAgent = agent.subscribe((event) =>
@@ -7145,7 +7166,7 @@ export class ObsidianAgentService {
 		const memberLevel = (spec.thinkingLevel ??
 			DEFAULT_THINKING_LEVEL) as ThinkingLevel;
 		const stream = this.resolveStreamFn();
-		const agent: Agent = new Agent({
+		const agent: Agent = new DurableAgent({
 			// Same retry wrapper as the focused build: a member turn rides the
 			// same transport policy as every other provider request in the plugin.
 			streamFn: withTurnRetry(
@@ -7177,7 +7198,7 @@ export class ObsidianAgentService {
 			}),
 			sessionId: rt.sessionInfo?.id,
 			toolExecution: "parallel",
-		});
+		}, { open: () => this.sessionManager.getSessionFor(rt.sessionPath).execution(rt.activeLane) });
 		rt.agent = agent;
 		rt.unsubscribeAgent = agent.subscribe((event) =>
 			this.handleAgentEvent(rt, event),
@@ -7521,14 +7542,18 @@ export class ObsidianAgentService {
 		}
 	}
 
+	private acceptPrompt(message: AgentMessage): void {
+		const accepted = this.promptAccepted.get(message);
+		this.promptAccepted.delete(message);
+		accepted?.();
+	}
+
 	private async handleAgentEvent(
 		rt: SessionRuntime,
 		event: AgentEvent,
 	): Promise<void> {
 		if (event.type === "message_start") {
-			const accepted = this.promptAccepted.get(event.message);
-			this.promptAccepted.delete(event.message);
-			accepted?.();
+			this.acceptPrompt(event.message);
 		}
 		// Before the awaited extension dispatch, which can yield: pi has already
 		// claimed the streaming state when it emits `agent_start`, so a snapshot
@@ -8538,7 +8563,7 @@ export class ObsidianAgentService {
 		try {
 			rt.messageEntryIds.set(
 				key,
-				await this.sessionManager.appendMessageFor(
+				(rt.agent instanceof DurableAgent ? await rt.agent.persistMessage(message, logged) : undefined) ?? await this.sessionManager.appendMessageFor(
 					rt.sessionPath,
 					logged,
 					rt.activeLane,

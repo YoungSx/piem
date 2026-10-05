@@ -12,11 +12,13 @@
  * properties make it the right seam rather than rewriting the system prompt or
  * pushing a real message:
  *
- * - **Nothing is persisted.** pi calls this on a copy of the transcript and
+ * - **The rendered block is not persisted.** pi calls this on a copy of the transcript and
  *   feeds the result straight to `convertToLlm`; the return value never reaches
  *   `agent.state.messages`. So the block stays out of the session log, out of the
  *   chat panel, and out of the next turn's history. A synthetic user message
- *   would be written to the `.jsonl` and then re-sent forever.
+ *   would be written to the `.jsonl` and then re-sent forever. The durable run
+ *   separately saves its frozen inputs for recovery; the active note body is
+ *   still read afresh and is never part of that checkpoint.
  * - **Prompt caching survives.** Anthropic caching is prefix-based, and the
  *   breakpoints sit on the system block, the last tool, and the last user
  *   message. Appending here makes the block *become* the last user message, so

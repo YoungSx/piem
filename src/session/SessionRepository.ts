@@ -30,8 +30,8 @@ export class VaultSessionRepository {
 		return this.open(metadata, context);
 	}
 
-	async open(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT): Promise<PiemSession<JsonlSessionMetadata>> {
-		return this.withFile(metadata.path, () => this.openFile(metadata, context));
+	async open(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT, options: { readOnly?: boolean } = {}): Promise<PiemSession<JsonlSessionMetadata>> {
+		return this.withFile(metadata.path, () => this.openFile(metadata, context, options));
 	}
 
 	/** Listing must never migrate old conversations or rewrite their timestamps. */
@@ -44,14 +44,14 @@ export class VaultSessionRepository {
 			const storage = await DurableVaultStorage.open(this.fs.adapter, metadata.path);
 			if (first.v === 5) return readPreviousDurableSnapshot(storage);
 			try {
-				const session = await PiemSession.open(storage, metadata);
+				const session = await PiemSession.open(storage, metadata, BACKGROUND_CONTEXT, { readOnly: true });
 				try { return await snapshotSession(session); }
 				finally { await session.close(); }
 			} finally { await storage.close(); }
 		});
 	}
 
-	private async openFile(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT): Promise<PiemSession<JsonlSessionMetadata>> {
+	private async openFile(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT, options: { readOnly?: boolean } = {}): Promise<PiemSession<JsonlSessionMetadata>> {
 		context.abortSignal?.throwIfAborted();
 		await this.recoverFile(metadata.path);
 		const raw = await this.fs.adapter.read(metadata.path);
@@ -64,14 +64,14 @@ export class VaultSessionRepository {
 		try {
 			if (storage.needsRecovery) {
 				const existing = await storage.scanConversations({}, 1, undefined, context);
-				const source = await PiemSession.open(existing.items.length ? storage : new MemoryStorage(), metadata, context);
+				const source = await PiemSession.open(existing.items.length ? storage : new MemoryStorage(), metadata, context, { readOnly: true });
 				const snapshot = await snapshotSession(source);
 				await source.close();
 				await storage.close();
 				await this.replaceFile(metadata, snapshot, raw);
-				return this.openFile(metadata, context);
+				return this.openFile(metadata, context, options);
 			}
-			return await PiemSession.open(storage, metadata, context);
+			return await PiemSession.open(storage, metadata, context, options);
 		}
 		catch (error) { await storage.close(); throw error; }
 	}
@@ -87,7 +87,10 @@ export class VaultSessionRepository {
 		await this.fs.adapter.write(staged, header(metadata));
 		const storage = await DurableVaultStorage.open(this.fs.adapter, staged);
 		const session = await PiemSession.open(storage, metadata);
-		try { await session.restoreLog(snapshot.log, snapshot.lanes, snapshot.legacyValues); }
+		try {
+			await session.restoreLog(snapshot.log, snapshot.lanes, snapshot.legacyValues);
+			await session.restoreExecutions(snapshot.executions ?? {});
+		}
 		finally { await session.close(); }
 		const verified = await PiemSession.open(await DurableVaultStorage.open(this.fs.adapter, staged), metadata);
 		try {
@@ -156,7 +159,7 @@ export class VaultSessionRepository {
 	}
 	async delete(metadata: JsonlSessionMetadata, context = BACKGROUND_CONTEXT): Promise<void> { getOrThrow(await this.fs.remove(metadata.path, undefined, context)); }
 	async fork(source: JsonlSessionMetadata, options: ForkOptions, context = BACKGROUND_CONTEXT): Promise<PiemSession<JsonlSessionMetadata>> {
-		const session = await this.open(source, context);
+		const session = await this.open(source, context, { readOnly: true });
 		try {
 			const snapshot = await snapshotSession(session);
 			const branch = await session.view(options.branch ?? options.lane ?? "main").findEntries();
