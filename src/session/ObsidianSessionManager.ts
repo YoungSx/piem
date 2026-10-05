@@ -18,6 +18,7 @@ import { projectSessionEntryText, type StoredSessionSearchHit } from "./sessionS
 import { readSessionMetadata, SESSION_FORMAT } from "./sessionMetadata";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { projectSession } from "./sessionProjection";
+import { jsonEqual } from "./jsonEqual";
 
 export interface SessionSearchOptions {
 	limit?: number;
@@ -40,6 +41,7 @@ function encodeHeader(header: Record<string, unknown>): string {
 // Backward-compat shim types for pre-0.85.1 API consumers
 export interface OperationStartedRecord {
 	id: string;
+	seq?: number;
 	lane: string;
 	sourceLeafId: string | null;
 	intent: Record<string, unknown>;
@@ -1100,13 +1102,22 @@ export class ObsidianSessionManager {
 		if (!foreign.ok) {
 			return { action: recovered ? "merged" : "skipped" };
 		}
+		// Decide whether this is our own write before observer reads can yield
+		// to another local commit (for example the next run's admission).
+		if (live.session.matchesStoredContent(foreign.value)) return { action: recovered ? "merged" : "skipped" };
 		const localLines = serializeLogLines(await live.session.getLog(), await live.session.getLanes());
 		const foreignSession = await this.repo(this.resolveSessionDir()).open(live.metadata, BACKGROUND_CONTEXT, { readOnly: true });
-		let foreignLines: string[];
+		let result: ReturnType<typeof mergeSessions>;
+		let mergedSnapshot: ReturnType<typeof readLegacySnapshot> | undefined;
+		let executions: Awaited<ReturnType<Session["snapshotExecutions"]>>;
+		let executionsChanged: boolean;
 		try {
-			foreignLines = [foreign.value.split("\n", 1)[0]!, ...serializeLogLines(await foreignSession.getLog(), await foreignSession.getLanes())];
+			const foreignLines = [foreign.value.split("\n", 1)[0]!, ...serializeLogLines(await foreignSession.getLog(), await foreignSession.getLanes())];
+			result = mergeSessions(localLines, foreignLines, live.metadata.id);
+			mergedSnapshot = result.merged === null ? undefined : readLegacySnapshot(result.merged.join(""));
+			executions = mergedSnapshot ? await live.session.mergeExecutions(foreignSession, mergedSnapshot) : {};
+			executionsChanged = !jsonEqual(executions, await foreignSession.snapshotExecutions());
 		} finally { await foreignSession.close(); }
-		const result = mergeSessions(localLines, foreignLines, live.metadata.id);
 
 		if (result.merged === null) {
 			// Quarantine: copy the foreign file as it sits on disk to `conflicts/`
@@ -1118,15 +1129,16 @@ export class ObsidianSessionManager {
 			await this.writeFileStrict(backupPath, foreign.value);
 			return { action: "conflict", backupPath };
 		}
-		if (result.localTail > 0 || result.localFactsChanged) {
-			const snapshot = readLegacySnapshot(result.merged.join(""));
+		if (result.localTail > 0 || result.localFactsChanged || executionsChanged) {
+			const snapshot = mergedSnapshot!;
 			snapshot.legacyValues = await live.session.getLegacyValues();
-			snapshot.executions = await live.session.snapshotExecutions();
+			snapshot.executions = executions;
 			await this.repo(this.resolveSessionDir()).replace(live.metadata, snapshot, foreign.value, false);
-		} else if (result.foreignTail === 0 && !result.factsChanged) {
+		} else if (result.foreignTail === 0 && !result.factsChanged && live.session.matchesStoredContent(foreign.value)) {
 			// Both sides already hold the full union: writing anything would only
 			// churn mtime and invite the sync plugin to arbitrate a file that did
-			// not change. The live instance is also still current, so no rebuild.
+			// not change. Task-only transitions are absent from that projection;
+			// skip only if the complete stored content still matches too.
 			return { action: recovered ? "merged" : "skipped" };
 		}
 		const fresh = await this.repo(this.resolveSessionDir()).open(live.metadata, BACKGROUND_CONTEXT);

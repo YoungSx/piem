@@ -16,6 +16,7 @@ export class DurableAgent extends Agent {
 		capture?(): JsonValue;
 		restore?(metadata: JsonValue): void;
 		admitted?(message: AgentMessage, id: string): void;
+		operationId?(): string | undefined;
 	}) { super(options); }
 
 	override prompt(message: AgentMessage | AgentMessage[]): Promise<void>;
@@ -31,8 +32,10 @@ export class DurableAgent extends Agent {
 	override abort(): void { this.controller?.abort(); super.abort(); }
 	override get signal(): AbortSignal | undefined { return super.signal ?? this.controller?.signal; }
 	async suspend(): Promise<void> {
-		const closing = this.execution?.close();
-		this.abort();
+		// Seal the current host, including an execution still being opened.
+		// Only user Stop writes cancellation; unload preserves its checkpoint.
+		const closing = (this.execution ?? await this.durable.open()).close();
+		super.abort();
 		await closing;
 		await this.waitForIdle();
 	}
@@ -67,12 +70,13 @@ export class DurableAgent extends Agent {
 	}
 
 	private async execute(resume: boolean, messages: AgentMessage[] | undefined, signal: AbortSignal): Promise<void> {
+		this.execution = undefined;
 		this.execution = await this.durable.open();
 		let admitted = false;
 		let started = false;
 		try {
 			await this.execution.run({
-				messages, resume, signal, metadata: this.durable.capture?.() ?? null,
+				messages, resume, signal, metadata: this.durable.capture?.() ?? null, operationId: this.durable.operationId?.(),
 				admitted: ids => {
 					admitted = true;
 					messages?.forEach((message, index) => this.durable.admitted?.(message, ids[index]!));

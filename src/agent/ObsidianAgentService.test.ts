@@ -2184,7 +2184,9 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
 		const queued = service.getSnapshot().queuedPrompts;
 		await service.steerQueuedPrompt(queued[0]?.id ?? "");
 		await run;
-		await waitFor(() => userTexts(service).includes("This one can"));
+		// Admission precedes the response: observe the third run's completion,
+		// not merely its saved prompt, before asserting the full transcript.
+		await waitFor(() => userTexts(service).includes("This one can") && !service.getSnapshot().isStreaming);
 
 		// Separate runs, not one batch: the steered message travelled alone, and
 		// the other left only when the run the steer started had itself finished —
@@ -2478,6 +2480,31 @@ describe("ObsidianAgentService queued prompts (mid-run sends)", () => {
  * raises the continue offer the banner renders.
  */
 describe("ObsidianAgentService run ledger and recovery", () => {
+	it.each([false, true])("does not offer a durably stopped run with an open diagnostic ledger (resumed: %s)", async (resumed) => {
+		const adapter = new MemoryAdapter();
+		const service = createService(adapter);
+		await service.sendPrompt("Initial conversation");
+		const path = service.getActiveSessionPath()!;
+		const manager = (service as unknown as { sessionManager: ObsidianSessionManager }).sessionManager;
+		const message: AgentMessage = { role: "user", content: "Stopped before the ledger drained", timestamp: Date.now() };
+		const operationId = await manager.beginRunOperationFor(path, [message]);
+		if (resumed) {
+			const tip = await manager.getSessionFor(path).appendMessage(message);
+			await manager.getSessionFor(path).restoreExecutions({ main: {
+				input: { promptIds: [tip], tip }, checkpoint: { phase: "execute", tip }, metadata: null, operationId: "older-run",
+			} });
+		}
+		await (await manager.getSessionFor(path).execution()).run({
+			messages: resumed ? undefined : [message], metadata: null, signal: new AbortController().signal, resume: resumed, operationId,
+			drive: async () => ({ status: "aborted" }),
+		});
+		service.dispose();
+		const reopened = createService(adapter);
+		try {
+			await reopened.openSession(path);
+			expect(reopened.getSnapshot().canResumeInterrupted).toBe(false);
+		} finally { reopened.dispose(); }
+	});
 	/** The active session's ledger, read off disk the way a later process would. */
 	async function openOperations(service: ObsidianAgentServiceType): Promise<OperationStartedRecord[]> {
 		return (service as unknown as { sessionManager: ObsidianSessionManager }).sessionManager

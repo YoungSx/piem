@@ -80,6 +80,8 @@ Run checkpoints also store the frozen note references, selection and workspace
 context locally, so resuming does not silently target a different note. Vault
 sync and backups may copy these checkpoints along with the conversation.
 Closing or reloading the plugin preserves unfinished runs; **Stop** cancels them.
+Stop is saved before waiting for the running request to exit. Any final messages
+that arrive during cancellation remain in history without reviving the checkpoint.
 
 Sync reconciliation preserves transcript UUIDs and bookmarks, then rebuilds
 Pi's device-local storage IDs. It does not provide a cross-device lock or resume
@@ -89,6 +91,8 @@ entries before accepting new writes. Interrupted file replacements restore their
 saved original on the next open or listing.
 Rebuilding retains an unfinished run only when its checkpoint still matches the
 conversation's last message. Forks copy history without copying running tasks.
+Terminal outcomes and cancellation receipts survive rebuilding too, so an older
+synced copy cannot revive the same cancelled run.
 
 ## OpenTelemetry export
 

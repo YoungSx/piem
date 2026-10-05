@@ -114,11 +114,19 @@ facts, not piem facts.
 | `smoke-generic-bridge-obsidian.mjs` | Generic bridge contract |
 | `smoke-background-bridge-obsidian.mjs` | Background factory bridge (production copy in test vault) |
 | `smoke-session-obsidian.mjs` | Session store round-trip (desktop only) |
+| `smoke-durable-obsidian.mjs` | Harness tasks: interrupted real writes, plugin reload/recovery, Stop, read-only queries, and Node negative controls through the official phone loader |
 | `smoke-bookmark-obsidian.mjs` | Bookmark adapter |
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` bridge with Node-access negatives |
 | `smoke-typography-obsidian.mjs` | Typography in real render (has `--baseline` instead of mobile) |
 | `smoke-proactive-obsidian.mjs` | Proactive intelligence (use its dedicated `run-smoke-proactive.py`) |
 | `smoke-model-icon-obsidian.mjs` | Composer model-switcher vendor mark: paints, tracks the active model, absent for unknown vendors |
+
+The durable smoke further constrains the plugin-visible `Platform` app flags:
+official phone emulation still reports `isDesktopApp: true`. Its report records
+both the native and constrained flags. Six negative controls must be denied by
+the real scoped plugin loader; only the plugin's platform API view is replaced,
+not its bundle or the host. This exercises a restricted mobile contract on
+desktop Chromium, not iOS WebKit or an Android device.
 
 For DOM-level visual work without Obsidian, use the preview harness instead
 (`bun scripts/preview-visual.mjs` — bun, not node, because the stub uses

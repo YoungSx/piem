@@ -217,6 +217,44 @@ test("an explicit stop settles its task instead of leaving a resumable run", asy
 	} finally { await session.close(); }
 });
 
+test("Stop survives a restart before the request drains and still saves its final message", async () => {
+	const storage = new RecordedStorage();
+	const session = await PiemSession.open(storage, metadata);
+	let ready!: () => void;
+	const reached = new Promise<void>(resolve => { ready = resolve; });
+	let release!: () => void;
+	const draining = new Promise<void>(resolve => { release = resolve; });
+	let marked!: () => void;
+	const cancelled = new Promise<void>(resolve => { marked = resolve; });
+	const commit = storage.commit.bind(storage);
+	storage.commit = async (writes, context) => {
+		const seq = await commit(writes, context);
+		if (writes.some(write => write.type === "task" && write.value.abortRequested)) marked();
+		return seq;
+	};
+	const agent = await makeAgent(session, async () => {
+		ready();
+		await draining;
+		return stream(answer([{ type: "text", text: "Drained response" }]));
+	});
+	const running = agent.prompt("Cancel this request");
+	try {
+		await reached;
+		agent.abort();
+		await cancelled;
+		expect(agent.state.isStreaming).toBe(true);
+		const reopened = await PiemSession.open(storage.crashCopy(), metadata);
+		try { expect(await (await reopened.execution()).hasPending()).toBe(false); }
+		finally { await reopened.close(); }
+		release();
+		await running;
+		const messages = await session.findEntries({ type: "message" });
+		expect(messages).toHaveLength(2);
+		expect(messages[1]).toMatchObject({ message: { role: "assistant", content: [{ type: "text", text: "Drained response" }] } });
+		expect((await storage.scanTasks({}, 10, undefined, BACKGROUND_CONTEXT)).items[0]?.state).toMatchObject({ status: "terminal", outcome: { status: "aborted" } });
+	} finally { release(); await running.catch(() => undefined); await session.close(); }
+});
+
 test("unloading the host preserves its run for recovery", async () => {
 	const storage = new RecordedStorage();
 	const session = await PiemSession.open(storage, metadata);

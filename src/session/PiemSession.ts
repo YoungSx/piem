@@ -1,5 +1,5 @@
 import type { JsonValue } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { Harness, createSession, createRegistry, defineDoc, AgentDoc, configure, type ConversationId, type EntryId, type Registry, type Session as DurableSession, type Storage, type Tx } from "@earendil-works/pi-durable";
 import { createModels, uuidv7 } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -7,6 +7,8 @@ import type { BranchScan, Entry, EntryQuery, LaneConfiguration, LogItem, Operati
 import { DurableVaultStorage } from "./DurableVaultStorage";
 import { appendTranscript, scanTranscript, transcriptEntry } from "./piTranscript";
 import { SessionExecution, snapshotExecution, restoreExecution, type ExecutionSnapshot } from "./SessionExecution";
+import { jsonEqual } from "./jsonEqual";
+import type { SessionSnapshot } from "./sessionSnapshot";
 
 type Pointer = { seq: number; conversationId: ConversationId };
 type Label = { seq: number; value: string | null };
@@ -31,6 +33,9 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	private constructor(readonly metadata: TMetadata, private readonly native: DurableSession, private readonly storage: Storage, private readonly registry: Registry,
 		private readonly executionFailures: Set<(error: unknown) => void>) {}
 	get needsRecovery(): boolean { return this.storage instanceof DurableVaultStorage && this.storage.needsRecovery; }
+	matchesStoredContent(content: string): boolean {
+		return this.storage instanceof DurableVaultStorage && this.storage.matchesContent(content);
+	}
 
 	static async open<T extends SessionMetadata>(storage: Storage, metadata: T, context = BACKGROUND_CONTEXT, options: { readOnly?: boolean } = {}): Promise<PiemSession<T>> {
 		const registry = createRegistry();
@@ -83,13 +88,46 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 		return result;
 	}
 
-	async restoreExecutions(executions: Record<string, ExecutionSnapshot>): Promise<void> {
-		const state = await this.state();
-		for (const [lane, execution] of Object.entries(executions)) {
-			const pointer = state.lanes[lane];
-			if (!pointer || execution.checkpoint.tip !== (await this.view(lane).findEntry({ type: "message", order: "newestFirst" }))?.id) continue;
-			await restoreExecution(this.native, pointer.conversationId, execution);
+	/** A stale peer cannot undo a durable stop or final receipt from either side. */
+	async mergeExecutions(other: PiemSession, merged: SessionSnapshot): Promise<Record<string, ExecutionSnapshot>> {
+		const executions = await this.snapshotExecutions();
+		const entries = new Map(merged.log.flatMap(item => item.kind === "entry" ? [[item.entry.id, item.entry] as const] : []));
+		const tips = new Map(merged.lanes.map(({ lane, leafId }) => {
+			let entry = leafId ? entries.get(leafId) : undefined;
+			while (entry && entry.type !== "message") entry = entry.parentId ? entries.get(entry.parentId) : undefined;
+			return [lane, entry?.id ?? null];
+		}));
+		for (const [lane, foreign] of Object.entries(await other.snapshotExecutions())) {
+			const local = executions[lane];
+			if (!local) { executions[lane] = foreign; continue; }
+			if (!jsonEqual(local.input, foreign.input)) {
+				const localOrder = local.input.tip ? entries.get(local.input.tip)?.seq ?? -1 : -1;
+				const foreignOrder = foreign.input.tip ? entries.get(foreign.input.tip)?.seq ?? -1 : -1;
+				// Transcript position orders distinct prompts; UUIDv7 gives tied
+				// Continue intents a stable winner without reviving an older run.
+				if (foreignOrder > localOrder || foreignOrder === localOrder && (foreign.input.runId ?? "") > (local.input.runId ?? "")) executions[lane] = foreign;
+				continue;
+			}
+			if (local.outcome || local.abortRequested) continue;
+			if (foreign.outcome || foreign.abortRequested) { executions[lane] = foreign; continue; }
+			if (foreign.checkpoint?.tip === tips.get(lane) && !foreign.abortRequested) executions[lane] = foreign;
 		}
+		return executions;
+	}
+
+	async restoreExecutions(executions: Record<string, ExecutionSnapshot>): Promise<void> {
+		if (!("resume" in this.native)) throw new Error("A conversation reader cannot restore tasks");
+		const state = await this.state();
+		const failure = new AbortController();
+		const report = (error: unknown) => { failure.abort(error); };
+		this.executionFailures.add(report);
+		try {
+			for (const [lane, execution] of Object.entries(executions)) {
+				const pointer = state.lanes[lane];
+				if (!pointer || (!execution.outcome && !execution.abortRequested && execution.checkpoint.tip !== (await this.view(lane).findEntry({ type: "message", order: "newestFirst" }))?.id)) continue;
+				await restoreExecution(this.native as Harness, this.registry, pointer.conversationId, execution, withAbortSignal(failure.signal, BACKGROUND_CONTEXT));
+			}
+		} finally { this.executionFailures.delete(report); }
 	}
 
 	async getMetadata(): Promise<TMetadata> { return this.metadata; }

@@ -2835,7 +2835,15 @@ export class ObsidianAgentService {
 		// The durable task is authoritative even if the diagnostic ledger write
 		// was lost. An assistant with missing tool results can now resume safely.
 		const session = this.sessionManager.getSessionFor(rt.sessionPath);
+		const executions = await session.snapshotExecutions();
 		for (const { lane } of await session.getLanes()) {
+			if (executions[lane]?.outcome || executions[lane]?.abortRequested) {
+				// A newer legacy run may follow this receipt. Only the matching
+				// diagnostic operation is superseded by its durable task outcome.
+				const latest = [...(open.get(lane) ?? [])].sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0))[0];
+				if (!latest || executions[lane]?.operationId === latest.id) rt.resumableLanes.delete(lane);
+				continue;
+			}
 			if (!await (await session.execution(lane)).hasPending()) continue;
 			const last = lane === rt.activeLane ? activeContext.messages.at(-1)
 				: (await this.sessionManager.buildSessionContextFor(rt.sessionPath, lane)).messages.at(-1);
@@ -7076,6 +7084,7 @@ export class ObsidianAgentService {
 			capture: () => JSON.parse(JSON.stringify(rt.activeRunContext)) as JsonValue,
 			restore: (metadata) => { rt.activeRunContext = metadata as unknown as FrozenRunContext | null; },
 			admitted: (message, id) => { rt.messageEntryIds.set(message, id); this.acceptPrompt(message); },
+			operationId: () => rt.activeRunLedger?.runId,
 		});
 		rt.agent = agent;
 		rt.unsubscribeAgent = agent.subscribe((event) =>
@@ -7198,7 +7207,10 @@ export class ObsidianAgentService {
 			}),
 			sessionId: rt.sessionInfo?.id,
 			toolExecution: "parallel",
-		}, { open: () => this.sessionManager.getSessionFor(rt.sessionPath).execution(rt.activeLane) });
+		}, {
+			open: () => this.sessionManager.getSessionFor(rt.sessionPath).execution(rt.activeLane),
+			operationId: () => rt.activeRunLedger?.runId,
+		});
 		rt.agent = agent;
 		rt.unsubscribeAgent = agent.subscribe((event) =>
 			this.handleAgentEvent(rt, event),

@@ -1,5 +1,5 @@
 /** Runs inside Obsidian's renderer. Observes the real plugin loader, without editing main.js. */
-export function observePluginNodeAccess(pluginId) {
+export function observePluginNodeAccess(pluginId, strictMobile = false) {
  const originalEval = window.eval;
  const originalError = console.error;
  const report = { evaluations: 0, requests: [], controls: [], consoleErrors: [] };
@@ -31,7 +31,12 @@ export function observePluginNodeAccess(pluginId) {
     finally { report.requests.push({ id, provided: value != null }); }
     if (id === 'obsidian') {
      const p = value.Platform;
-     report.platform = { isMobile: p.isMobile, isDesktop: p.isDesktop, isMobileApp: p.isMobileApp, isDesktopApp: p.isDesktopApp };
+     report.nativePlatform = { isMobile: p.isMobile, isDesktop: p.isDesktop, isMobileApp: p.isMobileApp, isDesktopApp: p.isDesktopApp };
+     // Official emulation changes layout/loader policy but retains desktop-app
+     // identity. Limit only the plugin's API view; the real host stays intact.
+     const platform = strictMobile ? { ...p, isMobile: true, isDesktop: false, isMobileApp: true, isDesktopApp: false, isAndroidApp: true, isIosApp: false } : p;
+     report.platform = { isMobile: platform.isMobile, isDesktop: platform.isDesktop, isMobileApp: platform.isMobileApp, isDesktopApp: platform.isDesktopApp };
+     if (strictMobile) return { ...value, Platform: platform };
     }
     return value;
    }, module, exports);
