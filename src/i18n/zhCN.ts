@@ -9,6 +9,17 @@ import type { DeepPartial, EnCopy } from "./en";
  */
 
 export const zhCN: DeepPartial<EnCopy> = {
+	nativeChat: {
+		openOriginal: "打开原聊天",
+		previewRequired: "这个聊天需要预发布版本，已保存内容未改动。",
+		imagesUnavailable: "请在原聊天中添加图片。",
+		title: "预览聊天",
+		disclosure: "内置笔记工具；扩展和团队请使用原聊天。",
+		newChat: "新聊天", history: "聊天记录", resume: "继续", reopen: "重新打开聊天",
+		retrying: "正在重试请求…", compacting: "正在整理聊天…",
+		referencesUnavailable: "请在原聊天中发送笔记引用。",
+	},
+
 	view: {
 		tabTitle: "Piem 对话",
 		panelCrashed: "对话面板遇到了意外错误。",

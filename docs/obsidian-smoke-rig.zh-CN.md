@@ -91,6 +91,7 @@ proactive smoke；新场景一律用管家。
 | `smoke-session-obsidian.mjs` | 会话存储往返（仅桌面） |
 | `smoke-durable-obsidian.mjs` | Harness 任务：真实写入后中断、插件重载与恢复、停止、只读查询，以及官方手机加载器的 Node 访问负对照 |
 | `smoke-native-adapters-obsidian.mjs` | 先验证成品 durable 链，再通过独立测试插件验证原生模型/工具/存储适配；覆盖真实 Vault 写入、恢复副本、持久化片段和事件积压 |
+| `smoke-native-chat-obsidian.mjs` | 真实成品界面里的原生聊天（预览构建）：官方 `submit` → `GenerationTask` → `ToolTask`、真实写入后中断、只读重开、继续、停止，以及路由永不改写原生文件 |
 | `smoke-bookmark-obsidian.mjs` | 书签适配器 |
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` 桥含 Node 访问负对照 |
 | `smoke-typography-obsidian.mjs` | 真实渲染下的排版（用 `--baseline`，无手机档） |
@@ -102,6 +103,14 @@ native-adapters smoke 会把 `scripts/native-adapters-fixture.ts` 构建成一�
 已切换原生执行。报告包含追加次数/字节、并发追加数、整个 renderer 的采样堆内存，
 以及积压超过 100 批事件后的快照恢复。这些是小样本观测，不是设备基准，也不是
 生产 UI 延迟测量。
+
+native-chat smoke 是唯一需要非默认构建的一个：`PIEM_NATIVE_CHAT_PREVIEW=1 npm
+run build`，体积门禁对应 `node scripts/check-bundle.mjs --native-preview`。这个
+开关才会注册新建聊天命令、让成品视图挂载原生会话；拿普通构建跑这个脚本，聊天
+根本打不开，看着像 smoke 失败，其实是少了开关。这里没有测试插件——断言驱动的是
+真实 `main.js`、真实聊天视图和真实输入框——所以通过意味着预览开关下的生产界面
+可用，仅限预览轨道。`--expect-mobile` 套用与下面 durable smoke 相同的受限手机
+契约。
 
 durable smoke 还会限制插件可见的 `Platform` 应用标志，因为官方手机模拟仍
 报告 `isDesktopApp: true`。报告同时保留原始与受限标志。6 个负对照必须被真实
