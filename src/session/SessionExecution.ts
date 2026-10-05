@@ -1,6 +1,7 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { uuidv7 } from "@earendil-works/pi-ai";
 import {
 	defineDoc, defineTask, type ConversationId, type Harness, type Registry, type Session,
 	type TaskId, type TaskOutcome, type TaskRuntime, type Tx,
@@ -8,17 +9,20 @@ import {
 import { sanitizeMessageForLog } from "../vault/image";
 import type { Entry } from "./sessionTypes";
 
-type Input = { promptIds: string[]; tip: string | null };
+type Input = { runId?: string; promptIds: string[]; tip: string | null };
 type Checkpoint = { phase: "execute"; tip: string | null };
 type Runtime = TaskRuntime<Input, Checkpoint, null, object>;
-export type ExecutionSnapshot = { input: Input; checkpoint: Checkpoint; metadata: JsonValue };
+export type ExecutionSnapshot = { input: Input; metadata: JsonValue; operationId?: string } & (
+	{ checkpoint: Checkpoint; abortRequested?: boolean; outcome?: never }
+	| { outcome: TaskOutcome<null>; checkpoint?: never; abortRequested?: never }
+);
 // The frozen context is written once, not copied into every task transition.
 const RunContext = defineDoc<{ value: JsonValue }>({
 	kind: "piem.run-context", version: 1, scope: "task", initial: () => ({ value: null }),
 });
-const ExecutionDoc = defineDoc<{ taskId: TaskId<null> | null }>({
+const ExecutionDoc = defineDoc<{ taskId: TaskId<null> | null; operationId: string | null }>({
 	kind: "piem.execution", version: 1, scope: "conversation", history: "latest", fork: "initial",
-	initial: () => ({ taskId: null }),
+	initial: () => ({ taskId: null, operationId: null }),
 });
 
 /** Portable checkpoints use transcript UUIDs; Pi's numeric task IDs are rebuilt. */
@@ -26,22 +30,39 @@ export async function snapshotExecution(session: Session, conversationId: Conver
 	const pointer = await session.snapshot(ExecutionDoc, conversationId, BACKGROUND_CONTEXT);
 	if (pointer?.taskId == null) return undefined;
 	const task = await session.commit(tx => tx.task(pointer.taskId!), BACKGROUND_CONTEXT);
-	if (!task || task.abortRequested || task.state.status === "terminal" || task.state.status === "completing") return undefined;
+	if (!task) return undefined;
 	const context = await session.snapshot(RunContext, task.id, BACKGROUND_CONTEXT);
-	return { input: task.input as Input, checkpoint: task.state.checkpoint as Checkpoint, metadata: context?.value ?? null };
+	const base = { input: task.input as Input, metadata: context?.value ?? null, ...(pointer.operationId ? { operationId: pointer.operationId } : {}) };
+	return task.state.status === "terminal" || task.state.status === "completing"
+		? { ...base, outcome: task.state.outcome as TaskOutcome<null> }
+		: { ...base, checkpoint: task.state.checkpoint as Checkpoint, ...(task.abortRequested ? { abortRequested: true } : {}) };
 }
 
-export async function restoreExecution(session: Session, conversationId: ConversationId, snapshot: ExecutionSnapshot): Promise<void> {
+export async function restoreExecution(session: Harness, registry: Registry, conversationId: ConversationId, snapshot: ExecutionSnapshot, context = BACKGROUND_CONTEXT): Promise<void> {
+	const outcome = snapshot.outcome ?? (snapshot.abortRequested ? { status: "aborted" as const } : undefined);
 	const placeholder = defineTask<Input, Checkpoint, null>({
-		name: `piem.run.${conversationId}`, version: 1, initial: () => snapshot.checkpoint,
-		phases: { execute: async () => { throw new Error("Execution host is not attached"); } },
+		name: `piem.run.${conversationId}`, version: 1, initial: () => snapshot.checkpoint ?? { phase: "execute", tip: snapshot.input.tip },
+		phases: { execute: async (_task, runtime, context) => {
+			if (!outcome) throw new Error("Execution host is not attached");
+			await runtime.commit(() => ({ status: "terminal", outcome }), context);
+		} },
 		abort: async () => { throw new Error("Execution host is not attached"); },
 	});
-	await session.commit(async tx => {
+	const taskId = await session.commit(async tx => {
 		const pointer = await tx.doc(ExecutionDoc, conversationId);
 		pointer.taskId = await tx.createTask(placeholder, snapshot.input, { ownership: { kind: "conversation" }, conversationId });
+		pointer.operationId = snapshot.operationId ?? null;
 		(await tx.doc(RunContext, pointer.taskId)).value = snapshot.metadata;
-	}, BACKGROUND_CONTEXT);
+		return pointer.taskId;
+	}, context);
+	if (outcome) {
+		// Rebuild receipts through the public scheduler. The only attached
+		// handler records an outcome; no model or tool code is installed.
+		const name = placeholder.definition.name;
+		registry.install({ name, tasks: [placeholder] });
+		try { await session.waitForTask(taskId, context); }
+		finally { registry.uninstall({ name }); }
+	}
 }
 
 /** One conversation's durable run; Pi owns reservation, cancellation and recovery. */
@@ -67,7 +88,7 @@ export class SessionExecution {
 
 	async hasPending(): Promise<boolean> {
 		const snapshot = await snapshotExecution(this.harness, this.conversationId);
-		return !!snapshot && snapshot.checkpoint.tip === await this.lastMessageId();
+		return !!snapshot?.checkpoint && !snapshot.abortRequested && snapshot.checkpoint.tip === await this.lastMessageId();
 	}
 
 	/** Closing the host preserves pending checkpoints; it is not a user abort. */
@@ -80,10 +101,19 @@ export class SessionExecution {
 		const runtime = this.runtime;
 		if (!runtime) return undefined;
 		let id: string | undefined;
-		await runtime.commit(async (tx) => {
-			id = (await this.append(tx, [{ type: "message", message: logged }]))[0]!.id;
-			return { status: "running", checkpoint: { phase: "execute", tip: id } };
-		}, BACKGROUND_CONTEXT);
+		try {
+			await runtime.commit(async (tx) => {
+				id = (await this.append(tx, [{ type: "message", message: logged }]))[0]!.id;
+				return { status: "running", checkpoint: { phase: "execute", tip: id } };
+			}, BACKGROUND_CONTEXT);
+		} catch (error) {
+			// Pi fences a cancelled run's runtime immediately. Its draining
+			// messages still belong in history, but must not revive a checkpoint.
+			await this.harness.commit(async tx => {
+				if (!(await tx.task(runtime.taskId))?.abortRequested) throw error;
+				id = (await this.append(tx, [{ type: "message", message: logged }]))[0]!.id;
+			}, BACKGROUND_CONTEXT);
+		}
 		this.saved.set(message, id!);
 		return id;
 	}
@@ -97,6 +127,7 @@ export class SessionExecution {
 		metadata: JsonValue;
 		signal: AbortSignal;
 		resume: boolean;
+		operationId?: string;
 		admitted?(ids: readonly string[]): void;
 		drive(recovered: boolean, metadata: JsonValue, signal: AbortSignal): Promise<TaskOutcome<null>>;
 	}): Promise<void> {
@@ -133,6 +164,9 @@ export class SessionExecution {
 			let taskId: TaskId<null>;
 			if (recovered) {
 				taskId = pending.id;
+				await this.harness.commit(async tx => {
+					(await tx.doc(ExecutionDoc, this.conversationId)).operationId = options.operationId ?? null;
+				}, BACKGROUND_CONTEXT);
 			} else {
 				// A fresh prompt supersedes the previous interrupted intent. With its
 				// code detached, Pi settles it as orphaned without replaying anything.
@@ -143,10 +177,11 @@ export class SessionExecution {
 				const admitted = await this.harness.commit(async tx => {
 					const pointer = await tx.doc(ExecutionDoc, this.conversationId);
 					const entries = await this.append(tx, messages.map(message => ({ type: "message", message: sanitizeMessageForLog(message) })));
-					const id = await tx.createTask(definition, { promptIds: entries.map(entry => entry.id), tip: entries.at(-1)?.id ?? previousTip }, {
+					const id = await tx.createTask(definition, { runId: uuidv7(), promptIds: entries.map(entry => entry.id), tip: entries.at(-1)?.id ?? previousTip }, {
 						ownership: { kind: "conversation" }, conversationId: this.conversationId,
 					});
 					pointer.taskId = id;
+					pointer.operationId = options.operationId ?? null;
 					(await tx.doc(RunContext, id)).value = options.metadata;
 					return { id, entries };
 				}, BACKGROUND_CONTEXT);
@@ -156,9 +191,8 @@ export class SessionExecution {
 			}
 			this.registry.install({ name, tasks: [definition] });
 			cancel = () => {
-				// A running Agent drains its abort events and stores the final
-				// checkpoint. Before it starts, cancellation belongs to the scheduler.
-				if (this.runtime) return;
+				// Persist cancellation before waiting for the Agent to drain, so a
+				// reload during a slow request cannot resurrect the cancelled run.
 				aborting = this.harness.abortTask(taskId, BACKGROUND_CONTEXT);
 				void aborting.catch(() => undefined);
 			};

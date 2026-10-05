@@ -28,6 +28,10 @@ export class DurableVaultStorage extends MemoryStorage {
 	private queue: Promise<unknown> = Promise.resolve();
 	private readonly digest = sha256.create();
 	get needsRecovery(): boolean { return this.poisoned; }
+	/** Compare an already-read sync snapshot without another disk read. */
+	matchesContent(content: string): boolean {
+		return equalDigest(sha256(new TextEncoder().encode(content)), this.digest.clone().digest());
+	}
 	private constructor(private readonly adapter: StorageAdapter, readonly path: string) { super(); }
 
 	static async open(adapter: StorageAdapter, path: string): Promise<DurableVaultStorage> {

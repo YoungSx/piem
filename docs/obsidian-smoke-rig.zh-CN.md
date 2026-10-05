@@ -89,10 +89,16 @@ proactive smoke；新场景一律用管家。
 | `smoke-generic-bridge-obsidian.mjs` | 通用桥契约 |
 | `smoke-background-bridge-obsidian.mjs` | 后台工厂桥（测试 vault 用生产包副本） |
 | `smoke-session-obsidian.mjs` | 会话存储往返（仅桌面） |
+| `smoke-durable-obsidian.mjs` | Harness 任务：真实写入后中断、插件重载与恢复、停止、只读查询，以及官方手机加载器的 Node 访问负对照 |
 | `smoke-bookmark-obsidian.mjs` | 书签适配器 |
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` 桥含 Node 访问负对照 |
 | `smoke-typography-obsidian.mjs` | 真实渲染下的排版（用 `--baseline`，无手机档） |
 | `smoke-proactive-obsidian.mjs` | 主动智能（用专属的 `run-smoke-proactive.py`） |
+
+durable smoke 还会限制插件可见的 `Platform` 应用标志，因为官方手机模拟仍
+报告 `isDesktopApp: true`。报告同时保留原始与受限标志。6 个负对照必须被真实
+的插件专用加载器拒绝；只替换插件看到的平台 API，不修改产物或宿主。
+它验证的是桌面 Chromium 上的受限移动端契约，不是 iOS WebKit 或 Android 真机。
 
 不需要 Obsidian 的 DOM 级视觉验证用预览 harness（`bun
 scripts/preview-visual.mjs`——必须 bun 不是 node，stub 用了参数属性；snap

@@ -126,17 +126,17 @@ def evaluate(port, expression):
         "if(!target)throw new Error('no page target');"
         "const ws=new WebSocket(target.webSocketDebuggerUrl);"
         "await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});"
-        "const reply=await new Promise((resolve,reject)=>{const id=1;"
+        "let timer;const reply=await new Promise((resolve,reject)=>{const id=1;"
         "ws.addEventListener('message',event=>{const m=JSON.parse(event.data);"
         "if(m.id===id){m.error?reject(new Error(JSON.stringify(m.error))):resolve(m.result);}},{once:false});"
         "ws.send(JSON.stringify({id,method:'Runtime.evaluate',params:{expression:%s,awaitPromise:true,returnByValue:true}}));"
-        "setTimeout(()=>reject(new Error('cdp timeout')),25000);});"
-        "ws.close();console.log(JSON.stringify(reply.result));"
+        "timer=setTimeout(()=>reject(new Error('cdp timeout')),25000);}).finally(()=>clearTimeout(timer));"
+        "ws.close();if(reply.exceptionDetails)throw new Error(JSON.stringify(reply.exceptionDetails));console.log(JSON.stringify(reply.result));"
     ) % (port, json.dumps(expression))
     out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=35)
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip()[-500:])
-    return json.loads(out.stdout.splitlines()[-1])
+    return json.loads(out.stdout.splitlines()[-1]).get("value")
 
 
 def cdp_domain_command(port, method, params="{}"):
