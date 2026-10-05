@@ -7,6 +7,7 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...globals.browser,
+				__PIEM_NATIVE_CHAT_PREVIEW__: "readonly",
 				// Electron's safeStorage (API-key encryption) hands back Buffers,
 				// so the desktop path references the Node global inside this
 				// browser-globals config.

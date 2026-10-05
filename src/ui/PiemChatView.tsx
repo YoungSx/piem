@@ -1,5 +1,6 @@
-import { ItemView, Scope, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Scope, type WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import React from "react";
 import { VIEW_TYPE_PIEM_CHAT } from "../constants";
 import { BRAND_ICON_ID } from "../brandIcon";
@@ -14,6 +15,19 @@ import { watchWindowFocus } from "./windowFocusWatch";
 import type { DraftStore } from "../session/DraftStore";
 import { getT } from "../i18n";
 import type { AskUserBroker } from "../tools/askUserBroker";
+import type { NativeChatManager } from "../session/NativeChatManager";
+import type { NativeChatSession } from "../session/NativeChatSession";
+import type { PiemSettings } from "../settings";
+import { NativeChatApp } from "./NativeChatApp";
+
+export interface NativeChatRoute {
+	manager: NativeChatManager;
+	getSettings: () => PiemSettings;
+	newChat: () => Promise<void>;
+	originalChat: () => Promise<void>;
+	openHistory: () => void;
+	openSettings: () => void;
+}
 
 export class PiemChatView extends ItemView {
 	private readonly service: ObsidianAgentService;
@@ -36,6 +50,10 @@ export class PiemChatView extends ItemView {
 	 */
 	private readonly askUserBroker: AskUserBroker | undefined;
 	private root: Root | null = null;
+	private nativePath?: string;
+	private nativeSession?: NativeChatSession;
+	private routeError?: string;
+	private routeRevision = 0;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -43,6 +61,7 @@ export class PiemChatView extends ItemView {
 		draftStore?: DraftStore,
 		openSubagents?: (subagentId?: string) => void,
 		askUserBroker?: AskUserBroker,
+		private readonly native?: NativeChatRoute,
 	) {
 		super(leaf);
 		this.service = service;
@@ -63,7 +82,7 @@ export class PiemChatView extends ItemView {
 		// delete events keep pinned paths truthful when the file explorer changes them.
 		for (const ref of watchActiveNote(
 			this.app,
-			(path) => this.service.setActiveNotePath(path),
+			(path) => { if (!this.nativePath) this.service.setActiveNotePath(path); },
 			(oldPath, newPath) => this.service.renameContextPath(oldPath, newPath),
 			(path) => this.service.forgetContextPath(path),
 		)) {
@@ -83,8 +102,8 @@ export class PiemChatView extends ItemView {
 		this.register(
 			watchSessionFile(
 				this.app,
-				() => this.service.getActiveSessionPath(),
-				() => void this.service.syncExternalSessionChange(),
+				() => this.nativePath ?? this.service.getActiveSessionPath(),
+				() => void this.syncRoute(),
 			),
 		);
 		// Seeds the name comparison the same way the note path is seeded: the events
@@ -105,7 +124,52 @@ export class PiemChatView extends ItemView {
 		// follows the leaf when Obsidian migrates it between windows; reading the
 		// window once at construction (or off `activeWindow`, which is whichever
 		// window is focused *now*) is what goes stale.
-		this.register(watchWindowFocus(this.contentEl, () => void this.service.syncExternalSessionDrift()));
+		this.register(watchWindowFocus(this.contentEl, () => void this.syncRoute()));
+	}
+
+	private async syncRoute(): Promise<void> {
+		if (this.nativePath) {
+			if (this.nativeSession && !this.nativeSession.getSnapshot().closed) {
+				try { await this.nativeSession.checkExternalChange(); } catch { /* The host publishes the storage failure. */ }
+			}
+		} else await this.service.syncExternalSessionDrift();
+	}
+
+	getState(): Record<string, unknown> { return this.nativePath ? { nativePath: this.nativePath } : {}; }
+
+	private beginRoute(): number {
+		this.nativeSession = undefined;
+		this.routeError = undefined;
+		this.inputController.setSubmitHandler(null);
+		this.inputController.setFocusHandler(null);
+		this.inputController.setPrefillHandler(null);
+		// Unmount the previous form before any asynchronous file open can yield.
+		if (this.root) flushSync(() => this.render());
+		return ++this.routeRevision;
+	}
+
+	async setState(state: unknown, result: ViewStateResult): Promise<void> {
+		const path = state && typeof state === "object" && "nativePath" in state ? state.nativePath : undefined;
+		this.nativePath = typeof path === "string" ? path : undefined;
+		const revision = this.beginRoute();
+		if (this.nativePath) {
+			try {
+				if (!(typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__) || !this.native) throw new Error(getT(this.service.getSnapshot().language).t("nativeChat.previewRequired"));
+				const session = await this.native.manager.open(this.nativePath);
+				if (revision !== this.routeRevision) return;
+				this.nativeSession = session;
+			} catch (error) { if (revision === this.routeRevision) this.routeError = error instanceof Error ? error.message : String(error); }
+		} else this.service.setActiveNotePath(resolveWorkingNotePath(this.app));
+		if (revision !== this.routeRevision) return;
+		this.render();
+		await super.setState(state, result);
+	}
+
+	async showNative(path: string): Promise<void> {
+		await this.leaf.setViewState({ type: VIEW_TYPE_PIEM_CHAT, active: true, state: { nativePath: path } });
+	}
+	async showLegacy(): Promise<void> {
+		if (this.nativePath) await this.leaf.setViewState({ type: VIEW_TYPE_PIEM_CHAT, active: true, state: {} });
 	}
 
 	getViewType(): string {
@@ -127,6 +191,7 @@ export class PiemChatView extends ItemView {
 	 */
 	refreshHeader(): void {
 		(this as unknown as { updateHeader?: () => void }).updateHeader?.();
+		if (this.nativePath) this.render();
 	}
 
 	getIcon(): string {
@@ -153,6 +218,12 @@ export class PiemChatView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("piem-chat-view");
 		this.root = createRoot(this.contentEl);
+		this.render();
+	}
+
+	private render(): void {
+		if (!this.root) return;
+		const native = (typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__) && this.native;
 		// One bad throw anywhere in the tree would otherwise unmount the root and
 		// leave a blank panel for the rest of the Obsidian session. The boundary
 		// turns that into a message plus a remount; what it caught goes to the
@@ -165,19 +236,36 @@ export class PiemChatView extends ItemView {
 				getLanguage={() => this.service.getSnapshot().language}
 				onError={(error) => console.error("piem: chat panel render failed", error)}
 			>
-				<ChatApp
+				{this.nativePath ? ((typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__) && native && this.nativeSession ? <NativeChatApp
+					key={`${this.nativePath}:${this.routeRevision}`} session={this.nativeSession} app={this.app} component={this}
+					getSettings={native.getSettings} inputController={this.inputController} draftStore={this.draftStore}
+					onNewSession={native.newChat} onOpenOriginal={native.originalChat} onOpenHistory={native.openHistory} onOpenSettings={native.openSettings}
+					onReopen={async () => {
+						const path = this.nativePath;
+						if (!path) return;
+						const revision = this.beginRoute();
+						try {
+							const session = await native.manager.reopen(path);
+							if (revision !== this.routeRevision) return;
+							this.nativeSession = session;
+						} catch (error) { if (revision === this.routeRevision) this.routeError = String(error); }
+						if (revision === this.routeRevision) this.render();
+					}}
+				/> : <div className="piem-chat"><div role={this.routeError ? "alert" : "status"}>{this.routeError ?? getT(this.service.getSnapshot().language).t("chatStatus.opening")}</div></div>) : <ChatApp
 					service={this.service}
 					inputController={this.inputController}
 					component={this}
 					draftStore={this.draftStore}
 					onOpenSubagents={this.openSubagents}
 					askUserBroker={this.askUserBroker}
-				/>
+					onNewSession={native ? () => void native.newChat() : undefined}
+				/>}
 			</PanelErrorBoundary>,
 		);
 	}
 
 	async onClose(): Promise<void> {
+		this.routeRevision++;
 		this.inputController.setSubmitHandler(null);
 		this.inputController.setFocusHandler(null);
 		this.inputController.setPrefillHandler(null);

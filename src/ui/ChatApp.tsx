@@ -48,6 +48,7 @@ import { MAX_CONTEXT_REFERENCES, mergeContextReferences, promptReferences, refer
 const TODO_EXCLUDE: readonly string[] = [TODO_WIDGET_KEY];
 
 interface ChatAppProps {
+	onNewSession?: () => void;
 	service: ObsidianAgentService;
 	inputController?: ChatInputController;
 	/** Parent Obsidian component owning rendered Markdown child components. */
@@ -77,7 +78,7 @@ interface ChatAppProps {
 	askUserBroker?: AskUserBroker;
 }
 
-export function ChatApp({ service, inputController, component, draftStore, onOpenSubagents, askUserBroker }: ChatAppProps): React.JSX.Element {
+export function ChatApp({ service, inputController, component, draftStore, onOpenSubagents, askUserBroker, onNewSession }: ChatAppProps): React.JSX.Element {
 	const [snapshot, setSnapshot] = useState<ChatSnapshot>(() => service.getSnapshot());
 	// Keyed by session: a half-written question belongs to the chat it was typed
 	// in, not to whatever is on screen when the reader comes back.
@@ -953,7 +954,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					snapshot={snapshot}
 					sessions={sessions}
 					onOpenSession={(path) => void service.openSession(path)}
-					onNewSession={() => void service.newSession()}
+					onNewSession={onNewSession ?? (() => void service.newSession())}
 					onRenameSession={(name) => void service.renameSession(name)}
 					onDeleteSession={(path) => {
 						// Deleting the focused chat empties the composer with it: the

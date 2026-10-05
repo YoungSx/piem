@@ -15,6 +15,8 @@ import { AttachmentCard } from "./AttachmentCard";
 import { projectComposerDraft, syncComposerEditor, withComposerText } from "./composerDraft";
 
 interface ChatComposerProps {
+	/** Whether this conversation accepts another prompt while running. */
+	canQueue?: boolean;
 	input: string;
 	references?: React.ReactNode;
 	readOnly?: boolean;
@@ -166,6 +168,7 @@ interface ChatComposerProps {
  * shortcut vanished exactly while a beginner was watching that spot.
  */
 export function ChatComposer({
+	canQueue = true,
 	input,
 	references,
 	readOnly = false,
@@ -671,7 +674,7 @@ export function ChatComposer({
 								setCompletionOpen(true);
 							}} /> : null}
 						{contextGauge}
-						{isStreaming && input.trim() ? (
+						{canQueue && isStreaming && input.trim() ? (
 							/*
 							 * The mouse half of mid-run queueing. The single turn slot has
 							 * become Stop, so this quiet text button keeps the draft's

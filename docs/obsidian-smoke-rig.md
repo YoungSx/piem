@@ -116,6 +116,7 @@ facts, not piem facts.
 | `smoke-session-obsidian.mjs` | Session store round-trip (desktop only) |
 | `smoke-durable-obsidian.mjs` | Harness tasks: interrupted real writes, plugin reload/recovery, Stop, read-only queries, and Node negative controls through the official phone loader |
 | `smoke-native-adapters-obsidian.mjs` | Production durable smoke followed by native model/tool/storage adapters in a separate test plugin; real Vault writes, recovery copies, committed partials and event backpressure |
+| `smoke-native-chat-obsidian.mjs` | Native chat in the real shipped UI (preview build): official `submit` → `GenerationTask` → `ToolTask`, interrupted real write, read-only reopen, Continue, Stop, and routing that never rewrites a native file |
 | `smoke-bookmark-obsidian.mjs` | Bookmark adapter |
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` bridge with Node-access negatives |
 | `smoke-typography-obsidian.mjs` | Typography in real render (has `--baseline` instead of mobile) |
@@ -130,6 +131,17 @@ not mean the production chat has switched to native execution. The report record
 append counts/bytes, concurrent appends, sampled whole-renderer heap usage, and
 snapshot recovery after withholding more than 100 event batches. These are small
 fixture observations, not a device benchmark or a measurement of production UI lag.
+
+The native-chat smoke is the only one that needs a non-default build:
+`PIEM_NATIVE_CHAT_PREVIEW=1 npm run build`, size-gated with
+`node scripts/check-bundle.mjs --native-preview`. That flag is what registers the
+new-chat command and lets the shipped view mount a native session; point the
+script at an ordinary build and the chat never opens, which reads as a smoke
+failure rather than a missing flag. There is no fixture plugin here — the
+assertions drive the real `main.js`, the real chat view and the real composer —
+so a pass covers the production UI behind the preview flag, on the preview track
+only. `--expect-mobile` applies the same constrained phone contract as the
+durable smoke below.
 
 The durable smoke further constrains the plugin-visible `Platform` app flags:
 official phone emulation still reports `isDesktopApp: true`. Its report records

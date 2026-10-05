@@ -23,7 +23,7 @@ import { readFileSync, statSync } from "node:fs";
 import process from "node:process";
 import esbuild from "esbuild";
 
-const BUNDLE = process.argv[2] ?? "main.js";
+const BUNDLE = process.argv.slice(2).find(argument => argument !== "--native-preview") ?? "main.js";
 
 /** Module breakdown esbuild wrote beside the bundle. */
 const METAFILE = `${BUNDLE}.meta.json`;
@@ -236,7 +236,10 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     is Piem's execution/checkpoint bridge. No provider catalog or platform
  *     shim was added. The ceiling follows to 3.45 MiB, leaving about 12 KiB.
  */
-const MAX_BUNDLE_BYTES = 3.45 * 1024 * 1024;
+// The opt-in product preview adds the native host and UI (3,635,978 B measured).
+// Stable builds retain their budget and must not contain the preview executor.
+const nativePreview = process.argv.includes("--native-preview");
+const MAX_BUNDLE_BYTES = (nativePreview ? 3.48 : 3.45) * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
@@ -556,6 +559,12 @@ if (!/module\.exports\b/.test(source)) {
 // import checks above still apply; a production build always writes one.
 const bundleInputs = readBundleInputs();
 if (bundleInputs) {
+	const nativeHost = Object.entries(bundleInputs).some(([input, contribution]) => input.endsWith("src/session/NativeChatSession.ts") && contribution.bytesInOutput > 0);
+	if (nativeHost !== nativePreview) failures.push({
+		name: "native preview build profile mismatch",
+		why: "Stable builds must exclude the native execution host; use PIEM_NATIVE_CHAT_PREVIEW=1 and --native-preview to build and check the preview together.",
+		at: "-",
+	});
 	for (const input of Object.keys(bundleInputs)) {
 		if (/\.md$/.test(input) && /(?:^|\/)skills\//.test(input)) failures.push({
 			name: `bundled skill Markdown: ${input}`,

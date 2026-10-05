@@ -71,12 +71,15 @@ import {
 import { AskUserBroker } from "./tools/askUserBroker";
 import { AskUserModal } from "./ui/AskUserModal";
 import { isChatPanelVisible } from "./ui/panelVisibility";
+import { NativeChatManager } from "./session/NativeChatManager";
+import { openPluginSettings } from "./ui/pluginSettings";
 
 export default class PiemPlugin extends Plugin {
 	// Fresh defaults until `onload` loads persisted data; `normalizeSettings` deep-copies
 	// so the shared DEFAULT_SETTINGS object is never mutated in place.
 	settings: PiemSettings = normalizeSettings(null);
 	private agentService: ObsidianAgentService | null = null;
+	private nativeChats?: NativeChatManager;
 	private bookmarkDialogs?: BookmarkDialogs;
 	private builtinSkillInstaller?: BuiltinSkillInstaller;
 	/** Open post-update dialog, if any; closed by `onunload`. */
@@ -450,6 +453,10 @@ export default class PiemPlugin extends Plugin {
 			void this.draftStore?.clear(sessionId);
 		};
 
+		if ((typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__)) {
+			this.nativeChats = new NativeChatManager(this.app, () => this.settings,
+				this.requireCredentialStore(), this.requireSecretEnvironment().keychain());
+		}
 		this.registerView(
 			VIEW_TYPE_PIEM_CHAT,
 			(leaf) =>
@@ -459,6 +466,14 @@ export default class PiemPlugin extends Plugin {
 					this.draftStore ?? undefined,
 					(subagentId) => void this.activateSubagentView(subagentId),
 					askUserBroker,
+					(typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__) && this.nativeChats ? {
+						manager: this.nativeChats,
+						getSettings: () => this.settings,
+						newChat: () => this.startNewChat(),
+						originalChat: () => this.startOriginalChat(),
+						openHistory: () => void this.openSessionSearch(),
+						openSettings: () => { openPluginSettings(this.app); },
+					} : undefined,
 				),
 		);
 		this.registerView(VIEW_TYPE_PIEM_LOGS, (leaf) => this.createLogView(leaf));
@@ -705,6 +720,8 @@ export default class PiemPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		void this.nativeChats?.close().catch(error => console.error("piem: native chat shutdown failed", error));
+		this.nativeChats = undefined;
 		// Closed rather than dropped: a reader who disables the plugin with the
 		// dialog open would otherwise be left clicking "Got it" against an
 		// unloaded plugin, whose `onDismiss` writes `data.json` through a logger
@@ -740,7 +757,7 @@ export default class PiemPlugin extends Plugin {
 
 	/** Chat logs stored in the folder now in effect. Zero before the first chat. */
 	async countStoredSessions(): Promise<number> {
-		return (await this.sessionManager?.countStoredSessions()) ?? 0;
+		return ((await this.sessionManager?.countStoredSessions()) ?? 0) + ((await this.nativeChats?.list())?.length ?? 0);
 	}
 
 	/**
@@ -876,8 +893,25 @@ export default class PiemPlugin extends Plugin {
 	}
 
 	private async startNewChat(): Promise<void> {
+		try {
+			await this.activateChatView();
+			if ((typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__) && this.nativeChats) {
+				const session = await this.nativeChats.create();
+				await this.findChatView()?.showNative(session.path);
+				this.findChatView()?.focusInput();
+				return;
+			}
+			await this.startOriginalChat();
+		} catch (error) {
+			new Notice(String(error));
+		}
+	}
+
+	private async startOriginalChat(): Promise<void> {
 		await this.activateChatView();
+		await this.requireAgentService().initialize();
 		await this.requireAgentService().newSession();
+		await this.findChatView()?.showLegacy();
 		this.findChatView()?.focusInput();
 	}
 
@@ -918,6 +952,8 @@ export default class PiemPlugin extends Plugin {
 			service,
 			async () => {
 				await this.activateChatView();
+				// Selection/reference commands keep their existing extension/context contract.
+				await this.findChatView()?.showLegacy();
 				return this.findChatView();
 			},
 			this.t(),
@@ -942,16 +978,26 @@ export default class PiemPlugin extends Plugin {
 		await this.activateChatView();
 		const t = this.t();
 		const sessions = await service.listSessions();
+		const nativeSessions = (typeof __PIEM_NATIVE_CHAT_PREVIEW__ !== "undefined" && __PIEM_NATIVE_CHAT_PREVIEW__) ? await this.nativeChats?.list() ?? [] : [];
+		const nativePaths = new Set(nativeSessions.map(session => session.path));
 		openSessionPicker(
 			this.app,
-			sessions,
+			[...sessions, ...nativeSessions.map(session => ({ ...session,
+				createdAt: new Date(session.createdAt).toISOString(), updatedAt: new Date(session.modifiedAt).toISOString(),
+			}))].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
 			{
-				onOpen: (path) => void service.openSession(path),
+				onOpen: (path) => void this.openChatPath(path, nativePaths.has(path)),
 				onDelete: (session) =>
 					openSessionDeleteConfirm(
 						this.app,
 						session,
-						() => void service.deleteSession(session.path),
+						() => void (async () => {
+							if (nativePaths.has(session.path) && this.nativeChats) {
+								await this.nativeChats.delete(session.path);
+								await this.draftStore?.clear(session.id);
+								if (this.findChatView()?.getState().nativePath === session.path) await this.findChatView()?.showLegacy();
+							} else await service.deleteSession(session.path);
+						})().catch(error => new Notice(String(error))),
 						t,
 					),
 				searchSessions: (text, options) => service.searchSessions(text, options),
@@ -959,6 +1005,13 @@ export default class PiemPlugin extends Plugin {
 			t,
 			service.getSessionRunStates(),
 		);
+	}
+
+	private async openChatPath(path: string, native: boolean): Promise<void> {
+		try {
+			if (native) await this.findChatView()?.showNative(path);
+			else { await this.requireAgentService().initialize(); await this.requireAgentService().openSession(path); await this.findChatView()?.showLegacy(); }
+		} catch (error) { new Notice(String(error)); }
 	}
 
 	private findChatView(): PiemChatView | null {

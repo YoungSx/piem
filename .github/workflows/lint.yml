@@ -58,3 +58,13 @@ jobs:
 
             - name: Lint
               run: npm run lint
+
+            - name: Build native chat preview
+              run: npm run build
+              env:
+                  PIEM_NATIVE_CHAT_PREVIEW: "1"
+
+            - name: Check preview bundle and loader
+              run: |
+                  npm run check:bundle -- --native-preview
+                  bun test src/bundleLoad.test.ts

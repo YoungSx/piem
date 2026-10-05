@@ -12,6 +12,17 @@
  */
 
 export const en = {
+	nativeChat: {
+		openOriginal: "Open original chat",
+		previewRequired: "This chat needs the preview build. Your saved conversation is unchanged.",
+		imagesUnavailable: "Open an original chat to attach images.",
+		title: "Preview chat",
+		disclosure: "Built-in note tools. Use your original chats for extensions and teams.",
+		newChat: "New chat", history: "Chat history", resume: "Continue", reopen: "Reopen chat",
+		retrying: "Retrying the request…", compacting: "Tidying the conversation…",
+		referencesUnavailable: "Open an original chat to send note references.",
+	},
+
 	/** Chat panel tab title shown in the workspace tab strip. */
 	view: {
 		tabTitle: "Piem chat",
