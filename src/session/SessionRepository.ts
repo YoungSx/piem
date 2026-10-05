@@ -7,7 +7,7 @@ import { normalizeFolderPath } from "../vault/path";
 import { DurableVaultStorage } from "./DurableVaultStorage";
 import { PiemSession } from "./PiemSession";
 import { jsonEqual } from "./jsonEqual";
-import { parseSessionHeaderMetadata, SESSION_FORMAT } from "./sessionMetadata";
+import { assertLegacySessionHeader, parseSessionHeaderMetadata, SESSION_FORMAT } from "./sessionMetadata";
 import { readLegacySnapshot, readPreviousDurableSnapshot, snapshotSession, type SessionSnapshot } from "./sessionSnapshot";
 import type { ForkOptions, JsonlSessionMetadata, SessionCreateOptions, SessionMetadata } from "./sessionTypes";
 
@@ -40,6 +40,7 @@ export class VaultSessionRepository {
 			await this.recoverFile(metadata.path);
 			const raw = await this.fs.adapter.read(metadata.path);
 			const first = JSON.parse(raw.split("\n", 1)[0]!) as { v?: unknown };
+			assertLegacySessionHeader(first);
 			if (first.v !== SESSION_FORMAT && first.v !== 5) return readLegacySnapshot(raw);
 			const storage = await DurableVaultStorage.open(this.fs.adapter, metadata.path);
 			if (first.v === 5) return readPreviousDurableSnapshot(storage);
@@ -56,6 +57,7 @@ export class VaultSessionRepository {
 		await this.recoverFile(metadata.path);
 		const raw = await this.fs.adapter.read(metadata.path);
 		const first = JSON.parse(raw.split("\n", 1)[0]!) as { v?: unknown };
+		assertLegacySessionHeader(first);
 		if (first.v !== SESSION_FORMAT) {
 			const snapshot = first.v === 5 ? await readPreviousDurableSnapshot(await DurableVaultStorage.open(this.fs.adapter, metadata.path)) : readLegacySnapshot(raw);
 			await this.replaceFile(metadata, snapshot, raw);
@@ -83,6 +85,10 @@ export class VaultSessionRepository {
 
 	private async replaceFile(metadata: JsonlSessionMetadata, snapshot: SessionSnapshot, original?: string, keepBackup = original !== undefined): Promise<void> {
 		const path = metadata.path;
+		if (await this.fs.adapter.exists(path)) {
+			const raw = await this.fs.adapter.read(path);
+			assertLegacySessionHeader(JSON.parse(raw.split("\n", 1)[0]!));
+		}
 		const staged = `${path}.migrating.tmp`;
 		await this.fs.adapter.write(staged, header(metadata));
 		const storage = await DurableVaultStorage.open(this.fs.adapter, staged);

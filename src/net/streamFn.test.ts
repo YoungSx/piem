@@ -190,6 +190,33 @@ describe("createObsidianStreamFn", () => {
  * replaces is the exact failure this pins.
  */
 describe("withRequestDefaults", () => {
+	it("routes raw complete through the configured transport and credential", async () => {
+		const row = keyRow();
+		let authorization: string | undefined;
+		requestUrlMock.mockImplementation(async (params: unknown) => {
+			const request = params as { url: string; headers: Record<string, string>; body: string };
+			expect(request.url).toBe(`${row.baseUrl}/chat/completions`);
+			expect(JSON.parse(request.body)).toMatchObject({ model: "qwen3-32b", prompt_cache_retention: "24h" });
+			authorization = request.headers.authorization;
+			return { status: 200, headers: { "content-type": "text/event-stream" }, arrayBuffer: new TextEncoder().encode(sseBody("Raw answer")).buffer as ArrayBuffer };
+		});
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row] });
+		const models = withRequestDefaults(bundle, () => row.apiKey, () => "long", () => 0);
+		const answer = await models.complete(keyRowModel(row), { messages: [{ role: "user", content: "Hello", timestamp: 1 }] });
+		expect(answer.stopReason).toBe("stop");
+		expect(authorization).toBe(`Bearer ${row.apiKey}`);
+		expect(answer.content).toContainEqual({ type: "text", text: "Raw answer" });
+	});
+
+	it("preserves the Models class methods and their receiver", async () => {
+		const row = keyRow();
+		const bundle = createObsidianModels({ transport: "requestUrl", providers: [row] });
+		const models = withRequestDefaults(bundle, () => row.apiKey, () => "none", () => 0);
+		expect(models.getProvider(row.id)).toBe(bundle.models.getProvider(row.id));
+		expect(models.getModel(row.id, "unknown")).toBeUndefined();
+		expect((await models.getAuth(row.id, { apiKey: row.apiKey }))?.auth.apiKey).toBe(row.apiKey);
+	});
+
 	it("applies the retention getter to compaction's completeSimple, per call", async () => {
 		const row = keyRow();
 		const captured = captureRequest();

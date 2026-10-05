@@ -5,7 +5,7 @@ import { StorageRejected, type Seq, type StorageWrite } from "@earendil-works/pi
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { DataAdapter } from "obsidian";
 import { normalizeFolderPath } from "../vault/path";
-import { SESSION_FORMAT } from "./sessionMetadata";
+import { NATIVE_SESSION_FORMAT, SESSION_FORMAT } from "./sessionMetadata";
 import { parseDurableWrites, validateDurableReferences } from "./durableCommit";
 
 type StorageAdapter = Pick<DataAdapter, "read" | "write" | "append" | "stat">;
@@ -27,6 +27,8 @@ export class DurableVaultStorage extends MemoryStorage {
 	private poisoned = false;
 	private queue: Promise<unknown> = Promise.resolve();
 	private readonly digest = sha256.create();
+	private sessionFormat = SESSION_FORMAT;
+	get format(): number { return this.sessionFormat; }
 	get needsRecovery(): boolean { return this.poisoned; }
 	/** Compare an already-read sync snapshot without another disk read. */
 	matchesContent(content: string): boolean {
@@ -42,7 +44,8 @@ export class DurableVaultStorage extends MemoryStorage {
 		if (!sameFile(before, after)) throw new SessionChangedError(storage.path);
 		const lines = content.split("\n");
 		const header = JSON.parse(lines.shift() ?? "") as { kind?: unknown; v?: unknown };
-		if (header.kind !== "header" || header.v !== 5 && header.v !== SESSION_FORMAT) throw new Error("Expected a Piem durable session header");
+		if (header.kind !== "header" || header.v !== 5 && header.v !== SESSION_FORMAT && header.v !== NATIVE_SESSION_FORMAT) throw new Error("Expected a Piem durable session header");
+		storage.sessionFormat = header.v;
 		let previousSeq = 0;
 		for (const [index, line] of lines.entries()) {
 			if (line === "" && index === lines.length - 1) continue;

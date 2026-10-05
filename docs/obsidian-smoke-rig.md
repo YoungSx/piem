@@ -115,11 +115,21 @@ facts, not piem facts.
 | `smoke-background-bridge-obsidian.mjs` | Background factory bridge (production copy in test vault) |
 | `smoke-session-obsidian.mjs` | Session store round-trip (desktop only) |
 | `smoke-durable-obsidian.mjs` | Harness tasks: interrupted real writes, plugin reload/recovery, Stop, read-only queries, and Node negative controls through the official phone loader |
+| `smoke-native-adapters-obsidian.mjs` | Production durable smoke followed by native model/tool/storage adapters in a separate test plugin; real Vault writes, recovery copies, committed partials and event backpressure |
 | `smoke-bookmark-obsidian.mjs` | Bookmark adapter |
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` bridge with Node-access negatives |
 | `smoke-typography-obsidian.mjs` | Typography in real render (has `--baseline` instead of mobile) |
 | `smoke-proactive-obsidian.mjs` | Proactive intelligence (use its dedicated `run-smoke-proactive.py`) |
 | `smoke-model-icon-obsidian.mjs` | Composer model-switcher vendor mark: paints, tracks the active model, absent for unknown vendors |
+
+The native-adapters smoke builds `scripts/native-adapters-fixture.ts` into a
+disposable plugin and loads it through Obsidian's official plugin loader. It uses
+the original Pi write tool directly and bridges the installed Piem metadata tool.
+Production and fixture hashes are recorded separately: passing this fixture does
+not mean the production chat has switched to native execution. The report records
+append counts/bytes, concurrent appends, sampled whole-renderer heap usage, and
+snapshot recovery after withholding more than 100 event batches. These are small
+fixture observations, not a device benchmark or a measurement of production UI lag.
 
 The durable smoke further constrains the plugin-visible `Platform` app flags:
 official phone emulation still reports `isDesktopApp: true`. Its report records

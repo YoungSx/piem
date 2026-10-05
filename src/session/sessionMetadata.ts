@@ -3,6 +3,19 @@ import type { JsonlSessionMetadata } from "./sessionTypes";
 import type { SessionRepoFileSystem } from "./ObsidianSessionFileSystem";
 
 export const SESSION_FORMAT = 6;
+/** Native Harness files never enter the legacy transcript/single-task importer. */
+export const NATIVE_SESSION_FORMAT = 7;
+
+export function assertLegacySessionFormat(version: unknown): void {
+	if (version === NATIVE_SESSION_FORMAT) throw new Error("Native Harness sessions require the native reader; legacy snapshots cannot preserve their task graph");
+	if (version !== 5 && version !== SESSION_FORMAT) throw new Error("Unsupported durable session format");
+}
+
+/** Unknown/newer formats must never fall through to the legacy importer. */
+export function assertLegacySessionHeader(value: unknown): void {
+	if (value && typeof value === "object" && "v" in value && value.v === NATIVE_SESSION_FORMAT) assertLegacySessionFormat(value.v);
+	if (!parseSessionHeaderMetadata(JSON.stringify(value), "", 0)) throw new Error("Unsupported or invalid legacy session header");
+}
 
 export function parseSessionHeaderMetadata(line: string, path: string, modifiedAt: number): JsonlSessionMetadata | undefined {
 	try {
@@ -10,7 +23,8 @@ export function parseSessionHeaderMetadata(line: string, path: string, modifiedA
 		if (typeof parsed !== "object" || parsed === null) return undefined;
 
 		// 0.85.1 format 4 or legacy 0.84 format 4
-		if (parsed.kind === "header" && (parsed.v === SESSION_FORMAT || parsed.v === 5 || parsed.v === 4 || parsed.version === 4)) {
+		if (parsed.kind === "header" && (parsed.version === undefined || parsed.version === 4 && (parsed.v === undefined || parsed.v === 4))
+			&& (parsed.v === SESSION_FORMAT || parsed.v === 5 || parsed.v === 4 || parsed.v === undefined && parsed.version === 4)) {
 			if (typeof parsed.id !== "string" || typeof parsed.cwd !== "string") return undefined;
 			const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
 			const storageVersion = typeof parsed.storageVersion === "number" ? parsed.storageVersion : 1;
@@ -27,7 +41,7 @@ export function parseSessionHeaderMetadata(line: string, path: string, modifiedA
 		}
 
 		// legacy v3
-		if (parsed.type === "session" && parsed.version === 3) {
+		if (parsed.type === "session" && parsed.version === 3 && parsed.v === undefined && parsed.kind === undefined) {
 			if (typeof parsed.id !== "string" || typeof parsed.cwd !== "string" || typeof parsed.timestamp !== "string") return undefined;
 			const createdAt = Date.parse(parsed.timestamp);
 			return {

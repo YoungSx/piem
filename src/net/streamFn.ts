@@ -4,10 +4,8 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { createModels, createProvider } from "@earendil-works/pi-ai";
 import type {
-	Api,
 	CacheRetention,
 	CredentialStore,
-	Model,
 	Models,
 	Provider,
 	ProviderAuth,
@@ -25,6 +23,7 @@ import {
 	type NetworkTransport,
 } from "./obsidianFetch";
 import { describeProviderConfig, type ProviderConfig, type WireProtocol } from "../modelConfig";
+import { delegateModels } from "./delegateModels";
 
 /**
  * Provider plumbing for the agent.
@@ -227,8 +226,9 @@ export function requestDefaults(
  * cache retention.
  *
  * Compaction calls `models.completeSimple` internally and accepts none of the
- * three, so the only way to reach it is to bake them into the `Models` instance
- * itself. Both the key and the retention are read per call rather than captured,
+ * three. Native Harness generation and deferred requests also use this view,
+ * including cancellation, so they must carry the same transport and credentials.
+ * Both the key and the retention are read per call rather than captured,
  * so a settings change takes effect without rebuilding anything — and a reader
  * who turns retention down does not keep paying for hour-long cache writes on
  * summaries until the plugin reloads.
@@ -240,14 +240,22 @@ export function withRequestDefaults(
 	getMaxRetries: () => number,
 ): Models {
 	const { models, fetch: fetchImpl } = bundle;
-	const applyDefaults = (model: Model<Api>) => ({
-		apiKey: getApiKey(model.provider),
+	const applyDefaults = (provider: string) => ({
+		apiKey: getApiKey(provider),
 		...requestDefaults(fetchImpl, getCacheRetention(), getMaxRetries()),
 	});
 	return {
-		...models,
-		streamSimple: (model, context, streamOptions) => models.streamSimple(model, context, { ...streamOptions, ...applyDefaults(model) }),
-		completeSimple: (model, context, streamOptions) => models.completeSimple(model, context, { ...streamOptions, ...applyDefaults(model) }),
+		...delegateModels(() => models),
+		// Object.assign retains the API-specific generic options intersection.
+		stream: (model, context, streamOptions) => models.stream(model, context, Object.assign({}, streamOptions, applyDefaults(model.provider))),
+		complete: (model, context, streamOptions) => models.complete(model, context, Object.assign({}, streamOptions, applyDefaults(model.provider))),
+		generateImages: (model, context, streamOptions) => models.generateImages(model, context, { ...streamOptions, ...applyDefaults(model.provider) }),
+		classify: (model, context, streamOptions) => models.classify(model, context, { ...streamOptions, ...applyDefaults(model.provider) }),
+		streamSimple: (model, context, streamOptions) => models.streamSimple(model, context, { ...streamOptions, ...applyDefaults(model.provider) }),
+		completeSimple: (model, context, streamOptions) => models.completeSimple(model, context, { ...streamOptions, ...applyDefaults(model.provider) }),
+		streamDeferred: (model, handle, streamOptions) => models.streamDeferred(model, handle, { ...streamOptions, ...applyDefaults(model.provider) }),
+		fetchDeferred: (model, handle, streamOptions) => models.fetchDeferred(model, handle, { ...streamOptions, ...applyDefaults(model.provider) }),
+		cancelDeferred: (model, handle, streamOptions) => models.cancelDeferred(model, handle, { ...streamOptions, ...applyDefaults(model.provider) }),
 	};
 }
 

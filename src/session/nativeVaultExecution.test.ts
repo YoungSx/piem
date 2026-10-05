@@ -6,7 +6,7 @@ import { createRegistry, defineExtension, defineTool, Harness, type StorageWrite
 import { Type } from "typebox";
 import { MemoryAdapter } from "../testUtils/memoryAdapter";
 import { DurableVaultStorage } from "./DurableVaultStorage";
-import { SESSION_FORMAT } from "./sessionMetadata";
+import { nativeSessionHeader } from "./nativeSessionData";
 
 const path = "Piem/chats/native.jsonl";
 
@@ -20,7 +20,7 @@ class ObservedAdapter extends MemoryAdapter {
 
 async function fixture() {
 	const adapter = new ObservedAdapter();
-	await adapter.write(path, `${JSON.stringify({ kind: "header", v: SESSION_FORMAT, id: "native" })}\n`);
+	await adapter.write(path, nativeSessionHeader({ id: "native", cwd: "vault", createdAt: 1, storageVersion: 1 }));
 	const storage = await DurableVaultStorage.open(adapter, path);
 	const faux = fauxProvider({ tokensPerSecond: Infinity });
 	const models = createModels();

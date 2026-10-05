@@ -9,6 +9,7 @@ import { appendTranscript, scanTranscript, transcriptEntry } from "./piTranscrip
 import { SessionExecution, snapshotExecution, restoreExecution, type ExecutionSnapshot } from "./SessionExecution";
 import { jsonEqual } from "./jsonEqual";
 import type { SessionSnapshot } from "./sessionSnapshot";
+import { assertLegacySessionFormat } from "./sessionMetadata";
 
 type Pointer = { seq: number; conversationId: ConversationId };
 type Label = { seq: number; value: string | null };
@@ -38,6 +39,7 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	}
 
 	static async open<T extends SessionMetadata>(storage: Storage, metadata: T, context = BACKGROUND_CONTEXT, options: { readOnly?: boolean } = {}): Promise<PiemSession<T>> {
+		if (storage instanceof DurableVaultStorage) assertLegacySessionFormat(storage.format);
 		const registry = createRegistry();
 		const executionFailures = new Set<(error: unknown) => void>();
 		// Scheduling stays paused until a caller starts or resumes a run. Model
