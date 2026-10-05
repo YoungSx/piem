@@ -14,7 +14,7 @@
  * caller declines and tests spend, the same arrangement `metadataWait` uses.
  */
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { Window } from "happy-dom";
 import { installDom, mountLinkUpdateModal } from "../testUtils/dom";
 import type { App } from "obsidian";
@@ -87,22 +87,49 @@ describe("runGuardedRename", () => {
 		const doc = installDom();
 		const modal = mountLinkUpdateModal(doc);
 		const escape = recordEscape(doc);
-		// Up for 30ms, answered and gone, up again for 30ms — each continuous
-		// stretch is far under the 80ms grace, so no dismissal may fire even
-		// though the total time the guard runs is longer than the grace.
-		setTimeout(() => modal.remove(), 30);
-		setTimeout(() => doc.body.appendChild(modal), 60);
-		setTimeout(() => modal.remove(), 120);
-
-		const outcome = await runGuardedRename(
-			stubApp(),
-			() => new Promise<void>((resolve) => setTimeout(resolve, 150)),
-			undefined,
-			{ graceMs: 80, pollIntervalMs: 5 },
-		);
-
-		expect(outcome).toEqual({ modal: "answered" });
-		expect(escape()).toEqual([]);
+		// Drive every observation explicitly: wall-clock timers can remove and
+		// reinsert the modal before a delayed poll ever observes the gap.
+		let now = 0;
+		const pending: Array<() => void> = [];
+		const clock = spyOn(Date, "now").mockImplementation(() => now);
+		const timers: { setTimeout(handler: () => void, timeout?: number): number } = window;
+		const timer = spyOn(timers, "setTimeout").mockImplementation((callback) => {
+			pending.push(callback);
+			return 0;
+		});
+		let settle!: () => void;
+		const rename = new Promise<void>((resolve) => { settle = resolve; });
+		const running = runGuardedRename(stubApp(), () => rename, undefined, { graceMs: 80, pollIntervalMs: 5 });
+		async function poll(at: number): Promise<void> {
+			now = at;
+			const callback = pending.shift();
+			if (!callback) throw new Error("Expected a pending modal poll");
+			callback();
+			await Promise.resolve();
+		}
+		try {
+			modal.remove();
+			await poll(30); // The watcher must actually observe the gap.
+			doc.body.appendChild(modal);
+			await poll(60);
+			await poll(90); // Past the original grace, inside the restarted one.
+			await poll(119);
+			modal.remove();
+			await poll(120);
+			settle();
+			await Promise.resolve();
+			await poll(150);
+			expect(await running).toEqual({ modal: "answered" });
+			expect(escape()).toEqual([]);
+		} finally {
+			settle();
+			await Promise.resolve();
+			for (const callback of pending.splice(0)) callback();
+			try { await running; } finally {
+				timer.mockRestore();
+				clock.mockRestore();
+			}
+		}
 	});
 
 	it("rejects with the rename's own error", async () => {
