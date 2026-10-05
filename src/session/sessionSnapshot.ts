@@ -2,6 +2,7 @@ import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Storage } from "@earendil-works/pi-durable";
 import type { PiemSession } from "./PiemSession";
+import type { ExecutionSnapshot } from "./SessionExecution";
 import type { LogItem, OperationRecord } from "./sessionTypes";
 import { normalizeLegacyJsonlContent } from "./ObsidianSessionFileSystem";
 import { parseMutationFromObject, scanDiskLines } from "./sessionMutationLine";
@@ -10,9 +11,10 @@ export interface SessionSnapshot {
 	log: LogItem[];
 	lanes: Array<{ lane: string; leafId: string | null }>;
 	legacyValues: Record<string, JsonValue>;
+	executions?: Record<string, ExecutionSnapshot>;
 }
 export async function snapshotSession(session: PiemSession): Promise<SessionSnapshot> {
-	return { log: await session.getLog(), lanes: await session.getLanes(), legacyValues: await session.getLegacyValues() };
+	return { log: await session.getLog(), lanes: await session.getLanes(), legacyValues: await session.getLegacyValues(), executions: await session.snapshotExecutions() };
 }
 
 /** One-time import of the earlier durable wrapper; no legacy tree is used at runtime. */

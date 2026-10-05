@@ -698,7 +698,7 @@ export class ObsidianSessionManager {
 		if (!metadata) {
 			return undefined;
 		}
-		const previous = await this.repo(this.resolveSessionDir()).open(metadata);
+		const previous = await this.repo(this.resolveSessionDir()).open(metadata, BACKGROUND_CONTEXT, { readOnly: true });
 		try {
 			const config = await previous.getConfiguration("main");
 			if (config?.thinkingLevel) {
@@ -1047,7 +1047,7 @@ export class ObsidianSessionManager {
 		if (!path) {
 			return undefined;
 		}
-		const fresh = await this.repo(this.resolveSessionDir()).open(this.hydrated.get(path)!.metadata);
+		const fresh = await this.repo(this.resolveSessionDir()).open(this.hydrated.get(path)!.metadata, BACKGROUND_CONTEXT, { readOnly: true });
 		try { return (await fresh.getName())?.trim() || undefined; }
 		finally { await fresh.close(); }
 	}
@@ -1101,7 +1101,7 @@ export class ObsidianSessionManager {
 			return { action: recovered ? "merged" : "skipped" };
 		}
 		const localLines = serializeLogLines(await live.session.getLog(), await live.session.getLanes());
-		const foreignSession = await this.repo(this.resolveSessionDir()).open(live.metadata);
+		const foreignSession = await this.repo(this.resolveSessionDir()).open(live.metadata, BACKGROUND_CONTEXT, { readOnly: true });
 		let foreignLines: string[];
 		try {
 			foreignLines = [foreign.value.split("\n", 1)[0]!, ...serializeLogLines(await foreignSession.getLog(), await foreignSession.getLanes())];
@@ -1121,6 +1121,7 @@ export class ObsidianSessionManager {
 		if (result.localTail > 0 || result.localFactsChanged) {
 			const snapshot = readLegacySnapshot(result.merged.join(""));
 			snapshot.legacyValues = await live.session.getLegacyValues();
+			snapshot.executions = await live.session.snapshotExecutions();
 			await this.repo(this.resolveSessionDir()).replace(live.metadata, snapshot, foreign.value, false);
 		} else if (result.foreignTail === 0 && !result.factsChanged) {
 			// Both sides already hold the full union: writing anything would only
@@ -1187,7 +1188,7 @@ export class ObsidianSessionManager {
 				return;
 			}
 			try {
-				yield await repo.open(metadata);
+				yield await repo.open(metadata, BACKGROUND_CONTEXT, { readOnly: true });
 			} catch {
 				// A corrupt log must not make every healthy chat unsearchable.
 			}
@@ -1214,7 +1215,7 @@ export class ObsidianSessionManager {
 			return null;
 		}
 		try {
-			return await this.repo(this.resolveSessionDir()).open(metadata);
+			return await this.repo(this.resolveSessionDir()).open(metadata, BACKGROUND_CONTEXT, { readOnly: true });
 		} catch {
 			return null;
 		}

@@ -1216,18 +1216,15 @@ describe("ObsidianAgentService", () => {
 		await service.sendPrompt("Second conversation");
 
 		const snapshot = service.getSnapshot();
-		expect(snapshot.errorMessage).toBeUndefined();
-		// Neither channel: nothing the next send can erase.
+		expect(snapshot.errorMessage).toContain("Disk full");
+		// The run stops at the failed checkpoint; the affected reply stays marked.
 		expect(snapshot.noticeMessage).toBeUndefined();
 		const last = snapshot.messages.at(-1);
 		expect(last?.role).toBe("assistant");
 		expect(snapshot.unpersistedMessages).toContain(last as object);
 	});
 
-	it("marks every message of a run the log refused, not only the first", async () => {
-		// The realistic cause is a log the host cannot write at all, so stopping at
-		// the first failure would mark one message and leave the rest of the run
-		// silently unrecorded.
+	it("refuses a run whose prompt cannot be durably admitted", async () => {
 		const adapter = new MemoryAdapter();
 		const service = createService(adapter);
 		await service.sendPrompt("First conversation");
@@ -1241,9 +1238,10 @@ describe("ObsidianAgentService", () => {
 
 		await service.sendPrompt("Second conversation");
 
-		const marked = service.getSnapshot().unpersistedMessages ?? [];
-		// Both halves of the turn the log refused: the question and the reply.
-		expect(marked.length).toBeGreaterThanOrEqual(2);
+		const snapshot = service.getSnapshot();
+		expect(snapshot.errorMessage).toContain("Disk full");
+		expect(snapshot.messages.filter(message => message.role === "user")).toHaveLength(1);
+		expect(snapshot.messages.filter(message => message.role === "assistant")).toHaveLength(1);
 	});
 
 	it("reports context fill against the model's window, heuristic before any usage", async () => {
@@ -1580,12 +1578,12 @@ describe("ObsidianAgentService", () => {
 
 		await service.sendPrompt("Rewrite this note");
 
-		// The in-memory assertion elsewhere could pass while the block still reached
-		// the file. A path recorded here would be replayed into a future
-		// conversation, long after it went stale.
+		// The transient block never enters the model transcript. Only the run's
+		// frozen inputs are saved in its task checkpoint for crash recovery.
 		const content = await adapter.read(service.getSnapshot().session?.path ?? "");
 		expect(content).not.toContain("<context>");
-		expect(content).not.toContain("Notes/today.md");
+		expect(content).toContain("Notes/today.md");
+		expect(JSON.stringify(await storedEntries(adapter, service.getSnapshot().session!.path))).not.toContain("Notes/today.md");
 	});
 
 	it("keeps the injected block out of the compaction summary", async () => {
