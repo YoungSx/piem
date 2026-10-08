@@ -20,7 +20,7 @@ jobs:
                   # Pinned so CI and local runs agree. An unpinned setup-bun
                   # installs the newest release, which is how a mock-ordering
                   # bug reached CI while every local run stayed green.
-                  bun-version: 1.4.0
+                  bun-version: 1.4.2
             - run: bun install --frozen-lockfile
 
             # Build first: the bundle gates below assert on main.js, and

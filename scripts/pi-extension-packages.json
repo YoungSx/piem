@@ -1,9 +1,9 @@
 {
 	"@earendil-works/pi-coding-agent": {
-		"version": "1.0.2",
+		"version": "1.1.0",
 		"virtualRoot": "/pi",
 		"files": {
-			"dist/config.js": "1cb67c079000a6ec800601e9774f7c23bcce6f8064c62251b97bd0232b8601d1",
+			"dist/config.js": "b53418ca3bc54b70e18ccb192eb471696f5211c5aa2e80d68fe6fe3851ff23ae",
 			"dist/core/event-bus.js": "f96a9a13071b2832955608387bf2482bcaf5310ce667f32f85a0d5bca44f08e3",
 			"dist/core/exec.js": "6aed92abe5273445a9bddcd92d4178264d0a23890b54b175a0efc73b20cdf53f",
 			"dist/core/extensions/loader.js": "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
@@ -13,16 +13,16 @@
 			"dist/core/source-info.js": "67562eea112e99f4a7880913143730bd90e3655381c0f353e3dd18c5e9f1ef07",
 			"dist/core/timings.js": "9bec37f6fcacd80ca07ad7bafdc6aec91821f691698aa9d81dcdd2d7d5b08531",
 			"dist/core/tools/tool-definition-wrapper.js": "02fe785c52294d14216605d40d5592ac2accd1a3125891523e2a6c87feb5810c",
-			"dist/modes/interactive/theme/theme.js": "a7b93b9cc50d9f44c2a728c8df5de67dc41efead57d1554e0ff32b73bb358cf4",
+			"dist/modes/interactive/theme/theme.js": "3fe13a2a0e06ffdbed1354b1f5c53a1207d2273bbf2d4917e4f8d1a2bf200a81",
 			"dist/utils/child-process.js": "cfc7b3361e42b61ee75aecc2b436ff7462f7e4431b4b646da7166f3c5706c9b8",
 			"dist/utils/fs-watch.js": "63dd709b28ea300f7200d236154f21ccc31a174a6052ca46a9be8064e2bd44e3",
 			"dist/utils/paths.js": "d5d48c2b2b2442c7e72aee6e98a79d828a52dce9526b152288186834c1dcf4a5",
 			"dist/utils/text.js": "e5520be5740ddb7d67ebd09ef33ea2aee2e360925593ad3a7842b6534304a0f3",
 			"examples/extensions/bookmark.ts": "a71d9449d415ad75c9f3d0d13afde129b9bea2d695b889566db17ecfca256d79",
 			"dist/core/tools/truncate.js": "24c5350761b487c154f950acf56a995dc1acdeac0c5d0f096efdaac71c8c231e",
-			"dist/core/mcp-servers.js": "ef845623605c0554e0eb33e0b11abf3a7e76db319342b1ca79aa7401d2460062",
-			"dist/core/system-prompt.js": "83aa42fae07830d5a73431935af3390ec397d8333269d75cfe49c1afbc55369c",
-			"dist/core/skills.js": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c",
+			"dist/core/mcp-servers.js": "b099709521b4c4aa118704762b807247ebccfc0ba4962f3a06055b17bb72d3ea",
+			"dist/core/system-prompt.js": "ab02924fa078eef81addcf39bc0e43d3663f06d627cb42ead403662a004a9e5c",
+			"dist/core/skills.js": "0e20ec500ed9783d5b01b5399e6600134fc3fdd10e6dc46c9113bc01565c9aa5",
 			"dist/core/messages.js": "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6",
 			"dist/core/prompt-templates.js": "f378bb43f6a5ee8e7a2e1b53fe8d91a6e0504d96d3a724a97a58c3bd9b647555",
 			"dist/utils/frontmatter.js": "3e1a0e99ecc419748d87202a342dd315160764cf8588551cefcf780208165da5",
@@ -41,14 +41,14 @@
 		"virtualRoot": "/extensions/pi-assistant-provenance"
 	},
 	"pi-model-switch": {
-		"version": "0.2.0",
+		"version": "0.3.0",
 		"files": {
-			"index.ts": "88c5ca0434d369dc172e415510715845bcccff7eeb6e1747603d42a52b1c7674"
+			"index.ts": "4a1484334bd49fd60f700b3fec0560da600dbf9db1aba3bcc8db2599644dbd13"
 		},
 		"virtualRoot": "/extensions/pi-model-switch"
 	},
 	"pi-invisible-continue": {
-		"version": "0.3.11",
+		"version": "0.3.16",
 		"files": {
 			"continue.ts": "840726e68cfb992152ec83a828b86aa1bd35ab24b094a542b5281d4b85a5a0f1",
 			"src/index.ts": "6cf6ce6812b020efd1e156eaf9515b762d7f8f98da8ea8e49309ee64fcfbfd4d"
@@ -57,14 +57,23 @@
 	},
 	"pi-web-search": {
 		"entry": "src/index.ts",
-		"version": "1.5.0",
+		"version": "1.6.0",
 		"virtualRoot": "/extensions/pi-web-search",
 		"files": {
-			"src/api.ts": "df6a50a240ebe0260b67d94a2b2f8e8a5954993d066e7e772ea1f222582eae73",
-			"src/index.ts": "6379abbbb445d6a5cbaf29ea716904af2b4fbdca413affaa40ff64db19af08f1",
-			"src/url_context.ts": "efb9bd8d1ac10609e549fb066e6fb0e23cbb57abf140f0897cc5a36ad5ba3ae7",
-			"src/utils.ts": "aaf5bd302ddd68d6278f39488a9861aebc7d50bead507efe2efc7e174504e628",
-			"src/web_search.ts": "9ee3384bc7bfaa8a08bebbdb9adeadd0a7b3e75f52fbd3ebb79caa6d261aebae"
+			"src/api.ts": "8624bbb87af6c846b08d915d88f48755fdf0ccf9c37eb08d1324769227d3d21f",
+			"src/format.ts": "687d3768a82b3cfebdae38dd144cf9608eb195fc454c223b3c44f90225989e28",
+			"src/index.ts": "53bf8c2105a630ef8f48951f456739b46d18e49458be05406bcff7fb8fcd8252",
+			"src/providers/anthropic.ts": "fbba214c4a59410b8abf65e6cf831d652fd6637a2c8fb333b48fe0d8278d2bf6",
+			"src/providers/auth.ts": "b5310fb81e5aa8914d8920814bb8514fb6dc5763018f2daa7ea1673596e79165",
+			"src/providers/config.ts": "d0792779529ed0aeed3ce7ee38e09de38eb37f3974834010f791776064082fba",
+			"src/providers/google.ts": "296c758a9aa097af432a2592337446c5e72bcde4c59e623b9a340a044ac2266a",
+			"src/providers/openai.ts": "611344cc00929f5a33e24fbdc7a65129b1f8ae6b47f8f23f78faa64ba8dcf11c",
+			"src/providers/results.ts": "7a4db43a8d90315df32201d7c2af6e7e127b31d83ed40c30929f601e2b6c588b",
+			"src/providers/sse.ts": "29c38c5f99bf33be97194de080811679745d98d4b768f7c88054754f55a2fbd8",
+			"src/providers/types.ts": "eff4cef43763c5a44432d566bfaf04aa3ed28027f4fafd88699677948a289346",
+			"src/url_context.ts": "9fbc0d6ce1947e932e03a26c29469969f10e52e10eb8d805493e6cbe001cd0af",
+			"src/utils.ts": "090033d1c4f774d88feabe12cbedc835b9c91b426629d114a9878bb75e6d914d",
+			"src/web_search.ts": "1b4bb1392e3f89fbe768886d0f1140bb0072cfa65663a1fec425e314ad2958d4"
 		}
 	},
 	"pi-clarify": {
@@ -88,30 +97,30 @@
 	},
 	"@juicesharp/rpiv-todo": {
 		"entry": "index.ts",
-		"version": "2.9.0",
+		"version": "2.12.0",
 		"virtualRoot": "/extensions/@juicesharp/rpiv-todo",
 		"files": {
 			"index.ts": "509904d71a601ba2e2694c3f0fda1f014553eaafde1515ddd99dab8bb123d85a",
 			"config.ts": "3fe24b3d3b128cabcbafc80a41f72b20907fd0edbdd84c8c57c391e27ffd76db",
 			"todo-overlay.ts": "bcc44d001ff08cc4c42d019163d78214edc9df2f3ba9219080f01f13ad8520e3",
-			"todo.ts": "44b06d99f4c7a82419447f1388e644e1e571efc6e64d0482f3d7bfb9f0c5b886",
+			"todo.ts": "ae4b00e934d896ed73f15097758d31a34989b2512cc93cf86a47906c0ce58d27",
 			"tool/response-envelope.ts": "69aa3f344092c7ab735588d6b71abbc3d3f132517a42e874a057361c9277dad3",
-			"tool/types.ts": "5f2f68579b5f563e115a7b25b52f59fbc1ceebbaacb3739b134f7a3368454572",
+			"tool/types.ts": "3bff6cf87cdd86d66ae75e9fe596e539cc8a918b50dd381c1312218f2d12497a",
 			"tool/sanitize.ts": "eea928b89bc7b1768e75f3123acb881e984fe1604435e6e2cd7b576a6006616c",
 			"state/invariants.ts": "fbbafd0194a8f3dda36a85e974a485590246f6246477b533089f36fa715150c6",
-			"state/store.ts": "6f00fc447bf79c3c56cedd80b2862ff2da24c450874cda3aa2d64b6084de4fe2",
+			"state/store.ts": "65dcadb64b7aa6c2ebb2ff6ae85d70112af88fab045302f1820bf23b14770c1b",
 			"state/i18n-bridge.ts": "b84a2076629ed7c4a123f714ce250e6988bd2d92ff0fbf5d19bb4812a13d3f2d",
 			"state/replay.ts": "222eacd01e0ce983e2d7dd5597f31111c6344ef290908ba09f0fe9f556f8a5c0",
 			"state/task-graph.ts": "8bf3ec428bd4796b32dea5ee5c15a2930818fb0fccda0c6ee60b777cf426075b",
 			"state/state.ts": "f4eba088903593409555c7305c1aa8da627520a3905caf3e81f7bd7eff708717",
-			"state/selectors.ts": "9548b044bea7cdceeaceb3664e779a966fe901f7f1485c6cc2bc22281e76ded6",
-			"state/state-reducer.ts": "cd7d03b0f167920b76a72069f5b5f40ecc524bf4c4f6dd8909469f711d273dd0",
-			"view/format.ts": "444cf33f80cb03c54ab57a78fc7d47d5c1632ffd53cade92c511eca6006ae2b6"
+			"state/selectors.ts": "8d39f82bc7e49abcf9480e24f00590bd3609ddec323cd25a98ae3efb9e1584ba",
+			"state/state-reducer.ts": "7a68da0f7415f759f9b69fe09d8f08c24b179809d8d4393a32da7723416eb261",
+			"view/format.ts": "86e6055085c0a74adb86699333ebd998487713b804ef760baf0c1995f8ab1ed4"
 		},
 		"dependencies": {
 			"@juicesharp/rpiv-config": {
 				"entry": "index.ts",
-				"version": "2.10.0",
+				"version": "2.12.0",
 				"files": {
 					"index.ts": "e28cca50596e6017e9d6800710851f6910f70589a54b58edc936c66bad4224bf",
 					"config.ts": "fdd8de5c565c1c06c51f71276f3675aac7717abc2e124e4edf732487f688a75f"
@@ -121,15 +130,15 @@
 	},
 	"pi-otel": {
 		"entry": "src/index.ts",
-		"version": "0.2.0",
+		"version": "0.5.0",
 		"virtualRoot": "/extensions/pi-otel",
 		"files": {
-			"package.json": "3a77f63508d23686eecccccfd63ad306f6824c8537f0f2d95c01579ebc898f46",
-			"src/config.ts": "7b2ec1e162757b2370aee9c7bb8ebea5580d4be8230115f65402f54c4aea1b5c",
+			"package.json": "c69d54bb908071984feb10291e96a00657363c50a41a0ab39d6f9cabc7161e60",
+			"src/config.ts": "ee5e061e3d21d9a049fa3e769db077cf80080ae62fb509a0723d686405f8445a",
 			"src/failure.ts": "47dc6cc0fbed47e1df86ff1177bd7b5be3631bb14342942a5dae49e5cf755861",
-			"src/index.ts": "caba4a1e8fa47ccad8e8c89b232b2189c783a0ca403dc3c769d3b9421a4085c0",
+			"src/index.ts": "a3ef5cb761da75a1f4f7604be0e0c0fc5e14a5f168503510c66a40f28cef210e",
 			"src/sanitize.ts": "9a90eacde5f193d88b3072075dc074024eca1944c586ecb070f9db8e3a715c22",
-			"src/telemetry.ts": "17448e7db1163800655613de653e3bff746c9d86d873c3a39252c44a4fcfa2fd"
+			"src/telemetry.ts": "0feebb3c835a56a62e9a547cbf39269520f221e447e7c5e9685b82c4a5007924"
 		},
 		"dependencies": {
 			"@opentelemetry/api": {
@@ -640,7 +649,7 @@
 							},
 							"@opentelemetry/sdk-metrics": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/sdk-metrics",
 								"files": {
 									"build/esm/InstrumentDescriptor.js": "da88a552a0cbf5a9d14f478702cbd56e696a066b74f2813d30a291f7516fc71a",
@@ -649,15 +658,15 @@
 									"build/esm/MeterProvider.js": "80e632877802df470789e45fd26a38e2e6f9c5d168609827a101d1e999c56791",
 									"build/esm/ObservableResult.js": "ad50414a31d1606b7c52f1d54624ed6e05a5eb56070a815a154cd540b8b86839",
 									"build/esm/aggregator/Drop.js": "972f9d8d09f075b23c3a41505f50b4724c4c28c5efe48659133cf45fe3767814",
-									"build/esm/aggregator/ExponentialHistogram.js": "3d8822399781f6bf5ca40d3d846606cc0e8e015ace4203f72bad2ae332d13d33",
+									"build/esm/aggregator/ExponentialHistogram.js": "1f3cb5b5c1e75c9224d9c761f7ceea24ee1f991f3edba373986d3a96b5c9d396",
 									"build/esm/aggregator/Histogram.js": "56aebf2cbac44d260626f1e31f337b066876bd4c09e427a49c5e1b3eb8d5e73d",
 									"build/esm/aggregator/LastValue.js": "e1b2be0d3cda7387e93f9aa9f0e5dffa68b76b4a604ccdf5fc168cdd43c4de1f",
 									"build/esm/aggregator/Sum.js": "ee682818822aa45b8ee5f8df6cf2d4eed93a6278961192eafc6124ff96e7acad",
 									"build/esm/aggregator/exponential-histogram/Buckets.js": "cfd21ece43021a7790e197fff4de7aef2ba3db75418cb4c599b5b52baeb71e33",
-									"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "e1d98930d3136e714364a0450c574f73ffc6e5d1e9c7649ef06f3c0f9cbff0b3",
-									"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "53da63ee77dd87018da1c6e53d3ebd9aac0edd5455c8031cf8af30db2741f9e0",
+									"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "26fa75adc46fbdd3f2e060e2c81cdc3bf3227394b31b9932a1311417b2f36bf2",
+									"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "10be9484322b48cf8a8ddbb7f5d493243864d4a1042c63a293648f761832aa70",
 									"build/esm/aggregator/exponential-histogram/mapping/getMapping.js": "636dba51bfc0e3868d3f7dd3bd8b1e9d09e06b0ce58571f267b075b46b161a00",
-									"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "d02795b7a34723392afc6d540df87a865026de3a9886e48aa562603b4d204973",
+									"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "93abff2236d6fce27b83bbb75d2dbcd81e2985df634aaf7520accda6a055696c",
 									"build/esm/aggregator/exponential-histogram/mapping/types.js": "b3cc04d9b8ccca273b7f28f02180a745a91075616fd12ea5267ae0ac55ee556f",
 									"build/esm/aggregator/exponential-histogram/util.js": "1efdb8141bbae71a5552ca7edcd86a7f58b1a67edd3e80c5a815fcc6068d4fc2",
 									"build/esm/aggregator/index.js": "a5384acad67e68a7d21760b5dabbc2151bd6b9a8ea307e02ddd51cede0e90a36",
@@ -686,7 +695,7 @@
 									"build/esm/state/SyncMetricStorage.js": "37324ca2e3a2d640870d4ce395fda6dc812ad6966042d56f535dea3a2a74f068",
 									"build/esm/state/TemporalMetricProcessor.js": "0335f50291912cbf75fc2248593573010c29b1905cec3ad0524f45dc1df820dd",
 									"build/esm/utils.js": "4576e945940728f772607d9d4ca6006c46331e464c65b98d9ff83ea5f0ba4c7c",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
 									"build/esm/view/Aggregation.js": "129c150326ff81760f3282a19b941084780ea252080d0b6242ef971f8ba31a94",
 									"build/esm/view/AggregationOption.js": "2b5c122684fcd5efc1f72b2672fe15b8e2162dfc2e77a0a1ef53cc6e586ec539",
 									"build/esm/view/AttributesProcessor.js": "d84cfef5827f50221e50ff368a86324f10f7c540c084a48b13426722d7cf58fa",
@@ -696,7 +705,7 @@
 									"build/esm/view/RegistrationConflicts.js": "d059263eb80285c03ba5b8bd8f42cc6939c8f852c4966c0fc8f13c5ba65a79fd",
 									"build/esm/view/View.js": "f8205885c713d579d4c35960769f8f1a3b9499d310228594cc2da76556bcd2f8",
 									"build/esm/view/ViewRegistry.js": "c124e22c321a6b90adde59a1177a49b0d595929f9e3fab0a628989a78dd2840d",
-									"package.json": "c0ae211b2db6f6f6f1517f61a06c4f83f750d621f33271010ab828321b98233b"
+									"package.json": "0d475e7ef1441f3e6377436387d1d0d6f9d57f7b72e7f31beeaaf5c8cb2d73de"
 								},
 								"dependencies": {
 									"@opentelemetry/api": {
@@ -753,7 +762,7 @@
 									},
 									"@opentelemetry/core": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/core",
 										"files": {
 											"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -786,8 +795,8 @@
 											"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 											"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 											"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-											"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-											"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+											"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+											"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 										},
 										"browser": {
 											"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -866,7 +875,7 @@
 									},
 									"@opentelemetry/resources": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/resources",
 										"files": {
 											"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -882,7 +891,7 @@
 											"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 											"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 											"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-											"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+											"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 										},
 										"browser": {
 											"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -942,7 +951,7 @@
 											},
 											"@opentelemetry/core": {
 												"entry": "build/esm/index.js",
-												"version": "2.10.0",
+												"version": "2.12.0",
 												"virtualRoot": "/extensions/@opentelemetry/core",
 												"files": {
 													"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -975,8 +984,8 @@
 													"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 													"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 													"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-													"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-													"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+													"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+													"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 												},
 												"browser": {
 													"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -1685,7 +1694,7 @@
 							},
 							"@opentelemetry/sdk-metrics": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/sdk-metrics",
 								"files": {
 									"build/esm/InstrumentDescriptor.js": "da88a552a0cbf5a9d14f478702cbd56e696a066b74f2813d30a291f7516fc71a",
@@ -1694,15 +1703,15 @@
 									"build/esm/MeterProvider.js": "80e632877802df470789e45fd26a38e2e6f9c5d168609827a101d1e999c56791",
 									"build/esm/ObservableResult.js": "ad50414a31d1606b7c52f1d54624ed6e05a5eb56070a815a154cd540b8b86839",
 									"build/esm/aggregator/Drop.js": "972f9d8d09f075b23c3a41505f50b4724c4c28c5efe48659133cf45fe3767814",
-									"build/esm/aggregator/ExponentialHistogram.js": "3d8822399781f6bf5ca40d3d846606cc0e8e015ace4203f72bad2ae332d13d33",
+									"build/esm/aggregator/ExponentialHistogram.js": "1f3cb5b5c1e75c9224d9c761f7ceea24ee1f991f3edba373986d3a96b5c9d396",
 									"build/esm/aggregator/Histogram.js": "56aebf2cbac44d260626f1e31f337b066876bd4c09e427a49c5e1b3eb8d5e73d",
 									"build/esm/aggregator/LastValue.js": "e1b2be0d3cda7387e93f9aa9f0e5dffa68b76b4a604ccdf5fc168cdd43c4de1f",
 									"build/esm/aggregator/Sum.js": "ee682818822aa45b8ee5f8df6cf2d4eed93a6278961192eafc6124ff96e7acad",
 									"build/esm/aggregator/exponential-histogram/Buckets.js": "cfd21ece43021a7790e197fff4de7aef2ba3db75418cb4c599b5b52baeb71e33",
-									"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "e1d98930d3136e714364a0450c574f73ffc6e5d1e9c7649ef06f3c0f9cbff0b3",
-									"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "53da63ee77dd87018da1c6e53d3ebd9aac0edd5455c8031cf8af30db2741f9e0",
+									"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "26fa75adc46fbdd3f2e060e2c81cdc3bf3227394b31b9932a1311417b2f36bf2",
+									"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "10be9484322b48cf8a8ddbb7f5d493243864d4a1042c63a293648f761832aa70",
 									"build/esm/aggregator/exponential-histogram/mapping/getMapping.js": "636dba51bfc0e3868d3f7dd3bd8b1e9d09e06b0ce58571f267b075b46b161a00",
-									"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "d02795b7a34723392afc6d540df87a865026de3a9886e48aa562603b4d204973",
+									"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "93abff2236d6fce27b83bbb75d2dbcd81e2985df634aaf7520accda6a055696c",
 									"build/esm/aggregator/exponential-histogram/mapping/types.js": "b3cc04d9b8ccca273b7f28f02180a745a91075616fd12ea5267ae0ac55ee556f",
 									"build/esm/aggregator/exponential-histogram/util.js": "1efdb8141bbae71a5552ca7edcd86a7f58b1a67edd3e80c5a815fcc6068d4fc2",
 									"build/esm/aggregator/index.js": "a5384acad67e68a7d21760b5dabbc2151bd6b9a8ea307e02ddd51cede0e90a36",
@@ -1731,7 +1740,7 @@
 									"build/esm/state/SyncMetricStorage.js": "37324ca2e3a2d640870d4ce395fda6dc812ad6966042d56f535dea3a2a74f068",
 									"build/esm/state/TemporalMetricProcessor.js": "0335f50291912cbf75fc2248593573010c29b1905cec3ad0524f45dc1df820dd",
 									"build/esm/utils.js": "4576e945940728f772607d9d4ca6006c46331e464c65b98d9ff83ea5f0ba4c7c",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
 									"build/esm/view/Aggregation.js": "129c150326ff81760f3282a19b941084780ea252080d0b6242ef971f8ba31a94",
 									"build/esm/view/AggregationOption.js": "2b5c122684fcd5efc1f72b2672fe15b8e2162dfc2e77a0a1ef53cc6e586ec539",
 									"build/esm/view/AttributesProcessor.js": "d84cfef5827f50221e50ff368a86324f10f7c540c084a48b13426722d7cf58fa",
@@ -1741,7 +1750,7 @@
 									"build/esm/view/RegistrationConflicts.js": "d059263eb80285c03ba5b8bd8f42cc6939c8f852c4966c0fc8f13c5ba65a79fd",
 									"build/esm/view/View.js": "f8205885c713d579d4c35960769f8f1a3b9499d310228594cc2da76556bcd2f8",
 									"build/esm/view/ViewRegistry.js": "c124e22c321a6b90adde59a1177a49b0d595929f9e3fab0a628989a78dd2840d",
-									"package.json": "c0ae211b2db6f6f6f1517f61a06c4f83f750d621f33271010ab828321b98233b"
+									"package.json": "0d475e7ef1441f3e6377436387d1d0d6f9d57f7b72e7f31beeaaf5c8cb2d73de"
 								},
 								"dependencies": {
 									"@opentelemetry/api": {
@@ -1798,7 +1807,7 @@
 									},
 									"@opentelemetry/core": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/core",
 										"files": {
 											"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -1831,8 +1840,8 @@
 											"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 											"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 											"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-											"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-											"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+											"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+											"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 										},
 										"browser": {
 											"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -1911,7 +1920,7 @@
 									},
 									"@opentelemetry/resources": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/resources",
 										"files": {
 											"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -1927,7 +1936,7 @@
 											"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 											"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 											"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-											"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+											"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 										},
 										"browser": {
 											"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -1987,7 +1996,7 @@
 											},
 											"@opentelemetry/core": {
 												"entry": "build/esm/index.js",
-												"version": "2.10.0",
+												"version": "2.12.0",
 												"virtualRoot": "/extensions/@opentelemetry/core",
 												"files": {
 													"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -2020,8 +2029,8 @@
 													"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 													"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 													"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-													"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-													"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+													"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+													"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 												},
 												"browser": {
 													"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -2123,7 +2132,7 @@
 					},
 					"@opentelemetry/sdk-metrics": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/sdk-metrics",
 						"files": {
 							"build/esm/InstrumentDescriptor.js": "da88a552a0cbf5a9d14f478702cbd56e696a066b74f2813d30a291f7516fc71a",
@@ -2132,15 +2141,15 @@
 							"build/esm/MeterProvider.js": "80e632877802df470789e45fd26a38e2e6f9c5d168609827a101d1e999c56791",
 							"build/esm/ObservableResult.js": "ad50414a31d1606b7c52f1d54624ed6e05a5eb56070a815a154cd540b8b86839",
 							"build/esm/aggregator/Drop.js": "972f9d8d09f075b23c3a41505f50b4724c4c28c5efe48659133cf45fe3767814",
-							"build/esm/aggregator/ExponentialHistogram.js": "3d8822399781f6bf5ca40d3d846606cc0e8e015ace4203f72bad2ae332d13d33",
+							"build/esm/aggregator/ExponentialHistogram.js": "1f3cb5b5c1e75c9224d9c761f7ceea24ee1f991f3edba373986d3a96b5c9d396",
 							"build/esm/aggregator/Histogram.js": "56aebf2cbac44d260626f1e31f337b066876bd4c09e427a49c5e1b3eb8d5e73d",
 							"build/esm/aggregator/LastValue.js": "e1b2be0d3cda7387e93f9aa9f0e5dffa68b76b4a604ccdf5fc168cdd43c4de1f",
 							"build/esm/aggregator/Sum.js": "ee682818822aa45b8ee5f8df6cf2d4eed93a6278961192eafc6124ff96e7acad",
 							"build/esm/aggregator/exponential-histogram/Buckets.js": "cfd21ece43021a7790e197fff4de7aef2ba3db75418cb4c599b5b52baeb71e33",
-							"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "e1d98930d3136e714364a0450c574f73ffc6e5d1e9c7649ef06f3c0f9cbff0b3",
-							"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "53da63ee77dd87018da1c6e53d3ebd9aac0edd5455c8031cf8af30db2741f9e0",
+							"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "26fa75adc46fbdd3f2e060e2c81cdc3bf3227394b31b9932a1311417b2f36bf2",
+							"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "10be9484322b48cf8a8ddbb7f5d493243864d4a1042c63a293648f761832aa70",
 							"build/esm/aggregator/exponential-histogram/mapping/getMapping.js": "636dba51bfc0e3868d3f7dd3bd8b1e9d09e06b0ce58571f267b075b46b161a00",
-							"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "d02795b7a34723392afc6d540df87a865026de3a9886e48aa562603b4d204973",
+							"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "93abff2236d6fce27b83bbb75d2dbcd81e2985df634aaf7520accda6a055696c",
 							"build/esm/aggregator/exponential-histogram/mapping/types.js": "b3cc04d9b8ccca273b7f28f02180a745a91075616fd12ea5267ae0ac55ee556f",
 							"build/esm/aggregator/exponential-histogram/util.js": "1efdb8141bbae71a5552ca7edcd86a7f58b1a67edd3e80c5a815fcc6068d4fc2",
 							"build/esm/aggregator/index.js": "a5384acad67e68a7d21760b5dabbc2151bd6b9a8ea307e02ddd51cede0e90a36",
@@ -2169,7 +2178,7 @@
 							"build/esm/state/SyncMetricStorage.js": "37324ca2e3a2d640870d4ce395fda6dc812ad6966042d56f535dea3a2a74f068",
 							"build/esm/state/TemporalMetricProcessor.js": "0335f50291912cbf75fc2248593573010c29b1905cec3ad0524f45dc1df820dd",
 							"build/esm/utils.js": "4576e945940728f772607d9d4ca6006c46331e464c65b98d9ff83ea5f0ba4c7c",
-							"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
+							"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
 							"build/esm/view/Aggregation.js": "129c150326ff81760f3282a19b941084780ea252080d0b6242ef971f8ba31a94",
 							"build/esm/view/AggregationOption.js": "2b5c122684fcd5efc1f72b2672fe15b8e2162dfc2e77a0a1ef53cc6e586ec539",
 							"build/esm/view/AttributesProcessor.js": "d84cfef5827f50221e50ff368a86324f10f7c540c084a48b13426722d7cf58fa",
@@ -2179,7 +2188,7 @@
 							"build/esm/view/RegistrationConflicts.js": "d059263eb80285c03ba5b8bd8f42cc6939c8f852c4966c0fc8f13c5ba65a79fd",
 							"build/esm/view/View.js": "f8205885c713d579d4c35960769f8f1a3b9499d310228594cc2da76556bcd2f8",
 							"build/esm/view/ViewRegistry.js": "c124e22c321a6b90adde59a1177a49b0d595929f9e3fab0a628989a78dd2840d",
-							"package.json": "c0ae211b2db6f6f6f1517f61a06c4f83f750d621f33271010ab828321b98233b"
+							"package.json": "0d475e7ef1441f3e6377436387d1d0d6f9d57f7b72e7f31beeaaf5c8cb2d73de"
 						},
 						"dependencies": {
 							"@opentelemetry/api": {
@@ -2236,7 +2245,7 @@
 							},
 							"@opentelemetry/core": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/core",
 								"files": {
 									"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -2269,8 +2278,8 @@
 									"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 									"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 									"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-									"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+									"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 								},
 								"browser": {
 									"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -2349,7 +2358,7 @@
 							},
 							"@opentelemetry/resources": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/resources",
 								"files": {
 									"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -2365,7 +2374,7 @@
 									"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 									"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 									"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-									"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+									"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 								},
 								"browser": {
 									"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -2425,7 +2434,7 @@
 									},
 									"@opentelemetry/core": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/core",
 										"files": {
 											"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -2458,8 +2467,8 @@
 											"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 											"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 											"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-											"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-											"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+											"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+											"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 										},
 										"browser": {
 											"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -2999,7 +3008,7 @@
 							},
 							"@opentelemetry/sdk-metrics": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/sdk-metrics",
 								"files": {
 									"build/esm/InstrumentDescriptor.js": "da88a552a0cbf5a9d14f478702cbd56e696a066b74f2813d30a291f7516fc71a",
@@ -3008,15 +3017,15 @@
 									"build/esm/MeterProvider.js": "80e632877802df470789e45fd26a38e2e6f9c5d168609827a101d1e999c56791",
 									"build/esm/ObservableResult.js": "ad50414a31d1606b7c52f1d54624ed6e05a5eb56070a815a154cd540b8b86839",
 									"build/esm/aggregator/Drop.js": "972f9d8d09f075b23c3a41505f50b4724c4c28c5efe48659133cf45fe3767814",
-									"build/esm/aggregator/ExponentialHistogram.js": "3d8822399781f6bf5ca40d3d846606cc0e8e015ace4203f72bad2ae332d13d33",
+									"build/esm/aggregator/ExponentialHistogram.js": "1f3cb5b5c1e75c9224d9c761f7ceea24ee1f991f3edba373986d3a96b5c9d396",
 									"build/esm/aggregator/Histogram.js": "56aebf2cbac44d260626f1e31f337b066876bd4c09e427a49c5e1b3eb8d5e73d",
 									"build/esm/aggregator/LastValue.js": "e1b2be0d3cda7387e93f9aa9f0e5dffa68b76b4a604ccdf5fc168cdd43c4de1f",
 									"build/esm/aggregator/Sum.js": "ee682818822aa45b8ee5f8df6cf2d4eed93a6278961192eafc6124ff96e7acad",
 									"build/esm/aggregator/exponential-histogram/Buckets.js": "cfd21ece43021a7790e197fff4de7aef2ba3db75418cb4c599b5b52baeb71e33",
-									"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "e1d98930d3136e714364a0450c574f73ffc6e5d1e9c7649ef06f3c0f9cbff0b3",
-									"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "53da63ee77dd87018da1c6e53d3ebd9aac0edd5455c8031cf8af30db2741f9e0",
+									"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "26fa75adc46fbdd3f2e060e2c81cdc3bf3227394b31b9932a1311417b2f36bf2",
+									"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "10be9484322b48cf8a8ddbb7f5d493243864d4a1042c63a293648f761832aa70",
 									"build/esm/aggregator/exponential-histogram/mapping/getMapping.js": "636dba51bfc0e3868d3f7dd3bd8b1e9d09e06b0ce58571f267b075b46b161a00",
-									"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "d02795b7a34723392afc6d540df87a865026de3a9886e48aa562603b4d204973",
+									"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "93abff2236d6fce27b83bbb75d2dbcd81e2985df634aaf7520accda6a055696c",
 									"build/esm/aggregator/exponential-histogram/mapping/types.js": "b3cc04d9b8ccca273b7f28f02180a745a91075616fd12ea5267ae0ac55ee556f",
 									"build/esm/aggregator/exponential-histogram/util.js": "1efdb8141bbae71a5552ca7edcd86a7f58b1a67edd3e80c5a815fcc6068d4fc2",
 									"build/esm/aggregator/index.js": "a5384acad67e68a7d21760b5dabbc2151bd6b9a8ea307e02ddd51cede0e90a36",
@@ -3045,7 +3054,7 @@
 									"build/esm/state/SyncMetricStorage.js": "37324ca2e3a2d640870d4ce395fda6dc812ad6966042d56f535dea3a2a74f068",
 									"build/esm/state/TemporalMetricProcessor.js": "0335f50291912cbf75fc2248593573010c29b1905cec3ad0524f45dc1df820dd",
 									"build/esm/utils.js": "4576e945940728f772607d9d4ca6006c46331e464c65b98d9ff83ea5f0ba4c7c",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
 									"build/esm/view/Aggregation.js": "129c150326ff81760f3282a19b941084780ea252080d0b6242ef971f8ba31a94",
 									"build/esm/view/AggregationOption.js": "2b5c122684fcd5efc1f72b2672fe15b8e2162dfc2e77a0a1ef53cc6e586ec539",
 									"build/esm/view/AttributesProcessor.js": "d84cfef5827f50221e50ff368a86324f10f7c540c084a48b13426722d7cf58fa",
@@ -3055,7 +3064,7 @@
 									"build/esm/view/RegistrationConflicts.js": "d059263eb80285c03ba5b8bd8f42cc6939c8f852c4966c0fc8f13c5ba65a79fd",
 									"build/esm/view/View.js": "f8205885c713d579d4c35960769f8f1a3b9499d310228594cc2da76556bcd2f8",
 									"build/esm/view/ViewRegistry.js": "c124e22c321a6b90adde59a1177a49b0d595929f9e3fab0a628989a78dd2840d",
-									"package.json": "c0ae211b2db6f6f6f1517f61a06c4f83f750d621f33271010ab828321b98233b"
+									"package.json": "0d475e7ef1441f3e6377436387d1d0d6f9d57f7b72e7f31beeaaf5c8cb2d73de"
 								},
 								"dependencies": {
 									"@opentelemetry/api": {
@@ -3112,7 +3121,7 @@
 									},
 									"@opentelemetry/core": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/core",
 										"files": {
 											"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -3145,8 +3154,8 @@
 											"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 											"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 											"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-											"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-											"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+											"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+											"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 										},
 										"browser": {
 											"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -3225,7 +3234,7 @@
 									},
 									"@opentelemetry/resources": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/resources",
 										"files": {
 											"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -3241,7 +3250,7 @@
 											"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 											"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 											"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-											"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+											"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 										},
 										"browser": {
 											"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -3301,7 +3310,7 @@
 											},
 											"@opentelemetry/core": {
 												"entry": "build/esm/index.js",
-												"version": "2.10.0",
+												"version": "2.12.0",
 												"virtualRoot": "/extensions/@opentelemetry/core",
 												"files": {
 													"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -3334,8 +3343,8 @@
 													"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 													"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 													"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-													"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-													"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+													"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+													"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 												},
 												"browser": {
 													"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -3439,7 +3448,7 @@
 			},
 			"@opentelemetry/resources": {
 				"entry": "build/esm/index.js",
-				"version": "2.10.0",
+				"version": "2.12.0",
 				"virtualRoot": "/extensions/@opentelemetry/resources",
 				"files": {
 					"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -3455,7 +3464,7 @@
 					"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 					"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 					"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-					"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+					"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 				},
 				"browser": {
 					"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -3515,7 +3524,7 @@
 					},
 					"@opentelemetry/core": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/core",
 						"files": {
 							"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -3548,8 +3557,8 @@
 							"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 							"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 							"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-							"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-							"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+							"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+							"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 						},
 						"browser": {
 							"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -3859,7 +3868,7 @@
 					},
 					"@opentelemetry/resources": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/resources",
 						"files": {
 							"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -3875,7 +3884,7 @@
 							"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 							"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 							"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-							"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+							"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 						},
 						"browser": {
 							"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -3935,7 +3944,7 @@
 							},
 							"@opentelemetry/core": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/core",
 								"files": {
 									"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -3968,8 +3977,8 @@
 									"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 									"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 									"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-									"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+									"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 								},
 								"browser": {
 									"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -4086,7 +4095,7 @@
 			},
 			"@opentelemetry/sdk-metrics": {
 				"entry": "build/esm/index.js",
-				"version": "2.10.0",
+				"version": "2.12.0",
 				"virtualRoot": "/extensions/@opentelemetry/sdk-metrics",
 				"files": {
 					"build/esm/InstrumentDescriptor.js": "da88a552a0cbf5a9d14f478702cbd56e696a066b74f2813d30a291f7516fc71a",
@@ -4095,15 +4104,15 @@
 					"build/esm/MeterProvider.js": "80e632877802df470789e45fd26a38e2e6f9c5d168609827a101d1e999c56791",
 					"build/esm/ObservableResult.js": "ad50414a31d1606b7c52f1d54624ed6e05a5eb56070a815a154cd540b8b86839",
 					"build/esm/aggregator/Drop.js": "972f9d8d09f075b23c3a41505f50b4724c4c28c5efe48659133cf45fe3767814",
-					"build/esm/aggregator/ExponentialHistogram.js": "3d8822399781f6bf5ca40d3d846606cc0e8e015ace4203f72bad2ae332d13d33",
+					"build/esm/aggregator/ExponentialHistogram.js": "1f3cb5b5c1e75c9224d9c761f7ceea24ee1f991f3edba373986d3a96b5c9d396",
 					"build/esm/aggregator/Histogram.js": "56aebf2cbac44d260626f1e31f337b066876bd4c09e427a49c5e1b3eb8d5e73d",
 					"build/esm/aggregator/LastValue.js": "e1b2be0d3cda7387e93f9aa9f0e5dffa68b76b4a604ccdf5fc168cdd43c4de1f",
 					"build/esm/aggregator/Sum.js": "ee682818822aa45b8ee5f8df6cf2d4eed93a6278961192eafc6124ff96e7acad",
 					"build/esm/aggregator/exponential-histogram/Buckets.js": "cfd21ece43021a7790e197fff4de7aef2ba3db75418cb4c599b5b52baeb71e33",
-					"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "e1d98930d3136e714364a0450c574f73ffc6e5d1e9c7649ef06f3c0f9cbff0b3",
-					"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "53da63ee77dd87018da1c6e53d3ebd9aac0edd5455c8031cf8af30db2741f9e0",
+					"build/esm/aggregator/exponential-histogram/mapping/ExponentMapping.js": "26fa75adc46fbdd3f2e060e2c81cdc3bf3227394b31b9932a1311417b2f36bf2",
+					"build/esm/aggregator/exponential-histogram/mapping/LogarithmMapping.js": "10be9484322b48cf8a8ddbb7f5d493243864d4a1042c63a293648f761832aa70",
 					"build/esm/aggregator/exponential-histogram/mapping/getMapping.js": "636dba51bfc0e3868d3f7dd3bd8b1e9d09e06b0ce58571f267b075b46b161a00",
-					"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "d02795b7a34723392afc6d540df87a865026de3a9886e48aa562603b4d204973",
+					"build/esm/aggregator/exponential-histogram/mapping/ieee754.js": "93abff2236d6fce27b83bbb75d2dbcd81e2985df634aaf7520accda6a055696c",
 					"build/esm/aggregator/exponential-histogram/mapping/types.js": "b3cc04d9b8ccca273b7f28f02180a745a91075616fd12ea5267ae0ac55ee556f",
 					"build/esm/aggregator/exponential-histogram/util.js": "1efdb8141bbae71a5552ca7edcd86a7f58b1a67edd3e80c5a815fcc6068d4fc2",
 					"build/esm/aggregator/index.js": "a5384acad67e68a7d21760b5dabbc2151bd6b9a8ea307e02ddd51cede0e90a36",
@@ -4132,7 +4141,7 @@
 					"build/esm/state/SyncMetricStorage.js": "37324ca2e3a2d640870d4ce395fda6dc812ad6966042d56f535dea3a2a74f068",
 					"build/esm/state/TemporalMetricProcessor.js": "0335f50291912cbf75fc2248593573010c29b1905cec3ad0524f45dc1df820dd",
 					"build/esm/utils.js": "4576e945940728f772607d9d4ca6006c46331e464c65b98d9ff83ea5f0ba4c7c",
-					"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
+					"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
 					"build/esm/view/Aggregation.js": "129c150326ff81760f3282a19b941084780ea252080d0b6242ef971f8ba31a94",
 					"build/esm/view/AggregationOption.js": "2b5c122684fcd5efc1f72b2672fe15b8e2162dfc2e77a0a1ef53cc6e586ec539",
 					"build/esm/view/AttributesProcessor.js": "d84cfef5827f50221e50ff368a86324f10f7c540c084a48b13426722d7cf58fa",
@@ -4142,7 +4151,7 @@
 					"build/esm/view/RegistrationConflicts.js": "d059263eb80285c03ba5b8bd8f42cc6939c8f852c4966c0fc8f13c5ba65a79fd",
 					"build/esm/view/View.js": "f8205885c713d579d4c35960769f8f1a3b9499d310228594cc2da76556bcd2f8",
 					"build/esm/view/ViewRegistry.js": "c124e22c321a6b90adde59a1177a49b0d595929f9e3fab0a628989a78dd2840d",
-					"package.json": "c0ae211b2db6f6f6f1517f61a06c4f83f750d621f33271010ab828321b98233b"
+					"package.json": "0d475e7ef1441f3e6377436387d1d0d6f9d57f7b72e7f31beeaaf5c8cb2d73de"
 				},
 				"dependencies": {
 					"@opentelemetry/api": {
@@ -4199,7 +4208,7 @@
 					},
 					"@opentelemetry/core": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/core",
 						"files": {
 							"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -4232,8 +4241,8 @@
 							"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 							"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 							"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-							"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-							"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+							"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+							"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 						},
 						"browser": {
 							"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -4312,7 +4321,7 @@
 					},
 					"@opentelemetry/resources": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/resources",
 						"files": {
 							"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -4328,7 +4337,7 @@
 							"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 							"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 							"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-							"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+							"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 						},
 						"browser": {
 							"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -4388,7 +4397,7 @@
 							},
 							"@opentelemetry/core": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/core",
 								"files": {
 									"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -4421,8 +4430,8 @@
 									"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 									"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 									"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-									"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+									"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 								},
 								"browser": {
 									"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -4522,7 +4531,7 @@
 			},
 			"@opentelemetry/sdk-trace-base": {
 				"entry": "build/esm/index-shim.js",
-				"version": "2.10.0",
+				"version": "2.12.0",
 				"virtualRoot": "/extensions/@opentelemetry/sdk-trace-base",
 				"files": {
 					"build/esm/BasicTracerProvider-shim.js": "5ab21d668b144aadd2b830c8495f3c6ad611c1b0fdead4f59f0547d12c28ff89",
@@ -4531,7 +4540,7 @@
 					"build/esm/config.js": "21b7216405abd1ec33c3144e11e2e64b849e56d3142a783631c08de48cdd5e46",
 					"build/esm/index-shim.js": "9f4ce00897962f5009118210d40bf784896b4a2e234202cc3095d7a3e9c0e267",
 					"build/esm/utility.js": "510d90ed2410406e49af321ba4015307b6b9944e933a26444f36c810f548f3e0",
-					"package.json": "2a8d45b3e3e1c5d78af766c2d4ede1d92674204b01d60bd8a9e1549194cf4c9e"
+					"package.json": "851ee290c23f3bf57023acc94d0820926c702b41bc7805fa4e729a4a54eddbf9"
 				},
 				"dependencies": {
 					"@opentelemetry/api": {
@@ -4588,7 +4597,7 @@
 					},
 					"@opentelemetry/core": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/core",
 						"files": {
 							"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -4621,8 +4630,8 @@
 							"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 							"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 							"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-							"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-							"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+							"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+							"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 						},
 						"browser": {
 							"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -4701,7 +4710,7 @@
 					},
 					"@opentelemetry/sdk-trace": {
 						"entry": "build/esm/index.js",
-						"version": "2.10.0",
+						"version": "2.12.0",
 						"virtualRoot": "/extensions/@opentelemetry/sdk-trace",
 						"files": {
 							"build/esm/MultiSpanProcessor.js": "a56cbe23e766ffbbcbd57ba1b512e42e5f9ab714254cd42511c47d9f6a05cac4",
@@ -4709,7 +4718,7 @@
 							"build/esm/Span.js": "e08a57e0f7f2436a2a4544ec1bde641bc871606029aa122d00dbee148fbc809e",
 							"build/esm/Tracer.js": "84ba86ea6fb8a13565ae278b4d8f07ca62c9324dc22b5f143011d12e9c446f98",
 							"build/esm/TracerMetrics.js": "1c3de2f6a0b1c5e26baa40d52d456fcc5079ce9852f9df9c2a1c88eac77d59cc",
-							"build/esm/TracerProvider.js": "8e3d695a5d146d6a7e6b3c25ee6dd69fcc8e00aa414a8ea00f79ffeb6b65ffe4",
+							"build/esm/TracerProvider.js": "c984aec5197dd8d31dbd26e839d143fcf03cc108ab97f3ad8b9d796c67414160",
 							"build/esm/enums.js": "01c7515e5aaa9fcd49c7ca848ea8cb99fa17bdee421253762b50136d6d68f0a9",
 							"build/esm/export/BatchSpanProcessorBase.js": "d1dc4b9da2390e193aa82367f3cc10f6179caa352825337174bfed65db804c2b",
 							"build/esm/export/ConsoleSpanExporter.js": "ae39dfbd582b75a29faf3bdecdd5207478ed3db30ac8a4f2e2a003a7dd4b8c69",
@@ -4717,7 +4726,7 @@
 							"build/esm/export/NoopSpanProcessor.js": "fcdd16b83e6d11efb518fb6012e7face80f24550534fa920028a0406fce460e6",
 							"build/esm/export/SimpleSpanProcessor.js": "1f44ed7782e7ea7e3cca110910eb44effb062708c291adb72895b0e386338d48",
 							"build/esm/export/SpanProcessorMetrics.js": "0f3b53ba6a5f8055342ac9b8243592b9df6e4befe8909b89902a1d5c26d18bee",
-							"build/esm/index.js": "4836d2e99ecd6776b9125cdfdd31f067707c9106dab8468c4eadc276594edcea",
+							"build/esm/index.js": "8471f18b9c128e25749f3c9d5b58534c8e2bbcca7fe7b0739747c89e7404cc1b",
 							"build/esm/inspect.js": "1dd1ac31e098036201b922f51ef87b1acc40c6ea7a4fde790252dcccc67458cc",
 							"build/esm/platform/browser/RandomIdGenerator.js": "9da8e8e3cec56f3c354012dd3c9493fe0287627796988f9a2b6560bbb3496a4b",
 							"build/esm/platform/browser/export/BatchSpanProcessor.js": "7433ff64e700c749c1b5ab327ad81eb2f2b25b16d276f22e6178f26b1a828dc4",
@@ -4728,8 +4737,9 @@
 							"build/esm/sampler/ParentBasedSampler.js": "c5eb1779abd6156b570c5ad894806bf181dbcdd0256fafec00bb49438735d95b",
 							"build/esm/sampler/TraceIdRatioBasedSampler.js": "fdd45bdaac5618e9aa9e4bed505c5d930a22aab992c2137a171b3dcc1b5f1655",
 							"build/esm/semconv.js": "b3ba65819414bbb8155c17503aa0649db68e0cd0afb6fa1c8b904dfd43230b8d",
-							"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-							"package.json": "3a58145249958b4674e8f4f9a3a075595c69fd1b3621fd6441748272a1c8df13"
+							"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+							"package.json": "f47196b2adce76d30b2e93dbdf597dc63b44570b091d45d1199713edc5e40fdb",
+							"build/esm/StackContextManager.js": "896bc99e66bab4ab4bba37edce059fdc8d415b312b47d0ae24e23b8185a049c0"
 						},
 						"browser": {
 							"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -4789,7 +4799,7 @@
 							},
 							"@opentelemetry/core": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/core",
 								"files": {
 									"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -4822,8 +4832,8 @@
 									"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 									"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 									"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-									"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-									"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+									"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+									"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 								},
 								"browser": {
 									"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -4902,7 +4912,7 @@
 							},
 							"@opentelemetry/resources": {
 								"entry": "build/esm/index.js",
-								"version": "2.10.0",
+								"version": "2.12.0",
 								"virtualRoot": "/extensions/@opentelemetry/resources",
 								"files": {
 									"build/esm/ResourceImpl.js": "5d88d589851dbb0d82501daca08c18f06c34e4ebf6516f7d8b8872f5c81d3331",
@@ -4918,7 +4928,7 @@
 									"build/esm/detectors/platform/browser/index.js": "13679d8e613d138626b8c1bbadee80aec9298798393e94b4425480e50bb83a91",
 									"build/esm/index.js": "6d0c274277b272349da86b7801c096cf4a8fcecf2b02cf256d79eecd16417c1a",
 									"build/esm/utils.js": "2a26d3df1a2e11b06301023e3f652138aa2ae2fb211bf4fc4e5d359f2ff05d9d",
-									"package.json": "30d019fbf03c5d1c297d5b437b27ffd51cf3477fc651e0c8e92089d3bab8ff78"
+									"package.json": "182d1ff82ae1be7086fb29c23edb974fae11d9ff4d3ed502a8140f03359ca52d"
 								},
 								"browser": {
 									"./build/esm/detectors/platform/index.js": "./build/esm/detectors/platform/browser/index.js"
@@ -4978,7 +4988,7 @@
 									},
 									"@opentelemetry/core": {
 										"entry": "build/esm/index.js",
-										"version": "2.10.0",
+										"version": "2.12.0",
 										"virtualRoot": "/extensions/@opentelemetry/core",
 										"files": {
 											"build/esm/ExportResult.js": "dd96f9d61e2ef181feec70f32c7face4c0499cc9c37f91ef1fb8fb231f8ebd50",
@@ -5011,8 +5021,8 @@
 											"build/esm/utils/promise.js": "1417147f8afece54399327b42a314497b295ecf32a9bc1264bddab87eff9e473",
 											"build/esm/utils/timeout.js": "b9b5c87c2cdda539fe9b588a40a2f8c4a6848d2424ea66eab7c2d189fa87f6da",
 											"build/esm/utils/url.js": "51b6367237a4180ad8d62654ead1f7e527839fcd2ae166fdce0dca13809ad764",
-											"build/esm/version.js": "249820b0066834e15d80e91e79f65ae8f50f38ae55cb44c8e62cc990a7f210b8",
-											"package.json": "f53d38feaf18af003eae9185c5b535da3b79d3a1ff30393f327fd7efc4ab90c7"
+											"build/esm/version.js": "6331f9273843845cb987e9ec8afad248a3f4175d1123cf6655bdb8bcd173ce50",
+											"package.json": "67bac2c98aeb831621d0dbe50dff0b644d42abce65ea7e072746adfb1f7cad35"
 										},
 										"browser": {
 											"./build/esm/platform/index.js": "./build/esm/platform/browser/index.js"
@@ -5133,16 +5143,16 @@
 	},
 	"@geminixiang/pi-agent-team": {
 		"entry": "src/extension.ts",
-		"version": "0.3.0",
+		"version": "0.4.0",
 		"virtualRoot": "/extensions/@geminixiang/pi-agent-team",
 		"files": {
-			"src/domain.ts": "6335b8904708ce70ed8dd1558cea8392a6e581a0c1552dc39aab6d242cd101a8",
-			"src/extension.ts": "4a94379ef311bb56805459c74c05968f662756300ccdf599cd520ceae6b225d0",
+			"src/domain.ts": "363831c575572682b62f3b570f526f7e2e7b84d590a34cbc77c456c3bf82bf3b",
+			"src/extension.ts": "629ee93b74859a159f4d152faf33cd3918ee32af7f42208df166c6f352312326",
 			"src/index.ts": "241c24d1eecadcab16fc27b4cd4f3ac01f9ab69738ad1472ad9d69fa695fe0c5",
 			"src/member-colors.ts": "9d8c4d3d510bf6022d92b3b752795fd1d5e5332e4236f93bfb0c07532a523bd5",
-			"src/pi-agent.ts": "33cc6829cc92f6283292302d522519a40cc244619cc79cc372cd315e4171f4b5",
-			"src/run-manager.ts": "a839adaf0f04ffdda411fb2e9f70e37103843c49655cf80ae5d688617807cad6",
-			"src/runtime.ts": "9bf59d7786defeeada3894156feb1bbc2add618a9692e22747302d5c1e419096",
+			"src/pi-agent.ts": "178af13226c6ea0043bec462e4368d5be3ecf49ca610a21bfd5588ae04f67aa7",
+			"src/run-manager.ts": "e373ded5698bd12373d5b2135164bbd6a4371c4ffd0b1d5af8b8030630706e7d",
+			"src/runtime.ts": "e25668effaea3158e8c7a0163431d72f1ea2da85f6c8f5cebec41bbd49db90e3",
 			"src/team-chat-view.ts": "18032a8fb97705de456c00521d2b26c825d7f9f1d77bdcc8aabc8aac540a107e",
 			"src/team-roster-widget.ts": "a1898196d96d986292d89216a33850cbe2a3f2f01d2e4607426e9c5538acf1df",
 			"src/turn-state.ts": "c41b0bbcb0ebae8e951241921016cec122ffb20c8295a5112af6be213c9a75ae"

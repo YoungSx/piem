@@ -50,6 +50,8 @@ export interface ExtensionPlatform {
 	readdirSync(path: string): string[];
 	/** Mode bits have no namespaced equivalent; the visible stub fails best-effort callers only. */
 	chmodSync(path: string, mode: unknown): void;
+	statSync(path: string): never;
+	renameSync(source: string, destination: string): never;
 	Text: new (...args: unknown[]) => object;
 	BorderedLoader: new (...args: unknown[]) => object;
 	/** Member session construction for the agent-team bridge; always resolvable, visibly fails without a host. */
@@ -298,6 +300,8 @@ export function createExtensionPlatform(callbacks: ExtensionPlatformCallbacks) {
 		getEnvApiKey: () => undefined,
 		getAgentDir: () => EXTENSION_CONFIG_ROOT,
 		...configView(undefined),
+		statSync: () => unavailable("fs.statSync"),
+		renameSync: () => unavailable("fs.renameSync"),
 		Text: UnsupportedTerminal,
 		BorderedLoader: UnsupportedTerminal,
 		createMemberSession: spec => callbacks.createMemberSession

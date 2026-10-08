@@ -60,6 +60,26 @@ async function makeHost(factory: ExtensionFactory, callbacks: Partial<ExtensionH
 }
 
 describe("native extension host", () => {
+	it("retains status updates before a panel attaches and while it is closed", async () => {
+		let context!: ExtensionContext;
+		const host = await makeHost(pi => {
+			pi.on("session_start", (_event, ctx) => { context = ctx; ctx.ui.setStatus("cache", "warm"); });
+		});
+		try {
+			await host.start();
+			const first = nativeUI();
+			host.attachUI(first.adapter);
+			expect(first.statuses.get("cache")).toBe("warm");
+			host.attachUI(undefined);
+			context.ui.setStatus("cache", undefined);
+			context.ui.setStatus("next", "ready");
+			const second = nativeUI();
+			host.attachUI(second.adapter);
+			expect([...second.statuses]).toEqual([["next", "ready"]]);
+		} finally { host.dispose(); }
+		expect(() => context.ui.setStatus("stale", "value")).toThrow();
+	});
+
 	it("starts once when invoked, reports actual UI availability, and replays surfaces on a new panel", async () => {
 		let context!: ExtensionContext;
 		const seen: string[] = [];
@@ -304,7 +324,7 @@ describe("native extension host", () => {
 				return event.message.role === "user" ? { message: { ...event.message, content: "replaced again" } } : undefined;
 			});
 			pi.on("turn_start", event => { events.push(`turn-${event.turnIndex}`); });
-			pi.on("agent_settled", () => { events.push("settled"); });
+			pi.on("agent_settled", event => { events.push(event.aborted ? "aborted" : "settled"); });
 		});
 		try {
 			const changed = await host.beforeAgentStart("hello", undefined, "system");
@@ -319,6 +339,8 @@ describe("native extension host", () => {
 			await host.emitAgentEvent({ type: "turn_start" });
 			await host.settled();
 			expect(events).toEqual(["turn-0", "turn-1", "settled"]);
+			await host.settled(true);
+			expect(events.at(-1)).toBe("aborted");
 		} finally { host.dispose(); }
 	});
 

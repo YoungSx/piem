@@ -21,7 +21,7 @@ jobs:
               # Same pin as the test workflow so the released bundle is built by
               # the toolchain the tests were run against.
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.2
             - run: bun install --frozen-lockfile
 
             # No stamping here any more. `scripts/release.mjs` commits the bump to

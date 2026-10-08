@@ -2182,7 +2182,7 @@ export class ObsidianAgentService {
 				await this.resumeRuntime(rt);
 				return;
 			}
-			await rt.communityHost?.settled();
+			await rt.communityHost?.settled(outcome === "aborted" || rt.stopEpoch !== epoch);
 		} catch (error) {
 			if (
 				rt.stopEpoch === epoch &&

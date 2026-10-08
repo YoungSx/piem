@@ -235,8 +235,14 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     Harness, scheduler and required built-in task registry; the remainder
  *     is Piem's execution/checkpoint bridge. No provider catalog or platform
  *     shim was added. The ceiling follows to 3.45 MiB, leaving about 12 KiB.
+ *
+ * 18. The dependency refresh adds about 49 KiB over the clean 3,609,339 B
+ *     baseline: Pi durable's binary reader/line scanner contributes 24 KiB,
+ *     OTel 13 KiB and MCP client 6 KiB. TypeBox is deduplicated and no provider
+ *     catalog or SDK returns. React stays on 18 because 19 trips the script
+ *     creation guard below. The ceiling follows to 3.50 MiB.
  */
-const MAX_BUNDLE_BYTES = 3.45 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.50 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

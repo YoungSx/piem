@@ -50,6 +50,12 @@ export function piExtensionsPlugin(root = process.cwd(), resourceSnapshot = fals
 	return {
 		name: "pi-static-extensions",
 		setup(build) {
+			// Electron exposes process but cannot import node:* from an eval-loaded
+			// plugin. Provider metadata uses the same explicit, empty environment.
+			build.onLoad({ filter: /[/\\]pi-ai[/\\]dist[/\\](?:env-api-keys|utils[/\\]provider-env)\.js$/ }, async args => ({
+				contents: `import process from ${JSON.stringify(path.join(bridge, "process.ts"))};\n${await readFile(args.path, "utf8")}`,
+				loader: "js", resolveDir: path.dirname(args.path), watchFiles: [args.path],
+			}));
 			// Every Models instance belongs to Obsidian; never fall back to Node
 			// environment probing through an opaque import in an eval-loaded bundle.
 			build.onResolve({ filter: /^\.\/auth\/context\.js$/ }, args => args.importer === path.join(root, "node_modules/@earendil-works/pi-ai/dist/models.js")

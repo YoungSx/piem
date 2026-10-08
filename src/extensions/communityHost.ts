@@ -39,6 +39,7 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { createExtensionHost, type ExtensionHost } from "./extensionHost";
 import { createExtensionPlatform, type BackgroundExtensionPlatform, type ExtensionPlatformCallbacks } from "./extensionPlatform";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { configureOtelPlatform } from "./otelPlatform";
 import { createAgentTeam, createClarify, createContext, createOtel, createRpivTodo, createScheduler, createWebSearch, invisibleContinue, modelSwitch, provenance } from "./communityFactories.mjs";
 
 export interface CommunityCallbacks extends Omit<ExtensionHostCallbacks, "sendMessage" | "sendUserMessage"> {
@@ -144,8 +145,9 @@ export class CommunityHost {
 			// one extension's config view would be the wrong owner.
 			{ id: "@geminixiang/pi-agent-team", factory: createAgentTeam(scoped("@geminixiang/pi-agent-team")) },
 			{ id: "pi-otel", createFactory: platform => {
-				Object.assign(platform.process.env, this.otelDisabled ? {} : callbacks.otelEnvironment?.() ?? {});
-				return createOtel(platform);
+				const environment = this.otelDisabled ? undefined : { ...callbacks.otelEnvironment?.() };
+				return environment?.OTEL_EXPORTER_OTLP_ENDPOINT
+					? createOtel(configureOtelPlatform(platform, environment)) : () => {};
 			} },
 		];
 		// A host-owned blocklist (the Extensions tab) drops entries before load;
@@ -404,9 +406,9 @@ export class CommunityHost {
 		this.assertActive();
 		return this.host.toolResult(event);
 	}
-	settled(): Promise<void> {
+	settled(aborted = false): Promise<void> {
 		if (!this.host.hasHandlers("agent_settled")) return Promise.resolve();
-		return this.host.settled();
+		return this.host.settled(aborted);
 	}
 	cancelInvocation(): void { this.host.cancel(); }
 	async closed(): Promise<void> { await this.closing; await this.host.closed(); await this.callbacks.session?.settled(); }

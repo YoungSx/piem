@@ -236,6 +236,13 @@ Piem 没有复制或移植它的源码；它也不是 npm 上的同名包。它�
 
 ## 开发内置技能
 
+构建使用 TypeScript 7 的 `tsc`。`typescript` 包名指向微软的
+`@typescript/typescript6` 兼容包，供 ESLint 和扩展编译脚本调用旧版编译器 API；
+`@typescript/native` 提供新版编译器，两个可执行文件不会重名。请按
+[官方迁移指南](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0)
+保留这两个别名。React 保持最新的 18.x 版本：React 19 客户端包包含动态创建
+脚本的代码，会触发针对 Obsidian 插件市场扫描器设置的 `check:bundle` 门禁。
+
 仓库中的 `skills/<名字>/SKILL.md` 是内容的唯一来源。新增带 `name` 和
 `description` 文件头的合法目录，构建就会自动发现，无需往 TypeScript 登记。
 Markdown 引用和模板会保留相对路径，随技能一起分发。构建会拒绝缺失元信息、

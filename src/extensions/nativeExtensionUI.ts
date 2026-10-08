@@ -35,7 +35,8 @@ export function createNativeExtensionUI(
 		input: (title, placeholder, opts) => dialog((ui, signal) => ui.input(title, placeholder, { ...opts, signal }), opts?.signal),
 		editor: (title, prefill) => dialog((ui, signal) => ui.editor(title, prefill, signal)),
 		setStatus: (key, text) => {
-			adapter().setStatus(key, text);
+			lifetime.assertActive();
+			getAdapter()?.setStatus(key, text);
 			if (text === undefined) statuses.delete(key); else statuses.set(key, text);
 		},
 		setWidget: (key, content, options) => {

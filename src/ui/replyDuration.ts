@@ -1,5 +1,4 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { formatElapsed } from "./chatStatus";
 
 /**
@@ -18,21 +17,7 @@ import { formatElapsed } from "./chatStatus";
 export const REPLY_DURATION_VISIBLE_AFTER_MS = 5000;
 
 /**
- * An assistant message this plugin stamped with how long it took to generate.
- *
- * pi's `AssistantMessage` carries the moment streaming *started* (`timestamp`,
- * set when the provider builds the output) but never the moment it stopped,
- * so the service records the gap itself at `message_end`. The field rides the
- * message into the session JSONL — `appendMessage` serializes the whole
- * object — so a reply reopened next week still knows how long it took, and a
- * session written before this existed simply reads back without the field.
- */
-export interface ReplyTimedAssistantMessage extends AssistantMessage {
-	durationMs?: number;
-}
-
-/**
- * Records a reply's generation duration at the moment it settled.
+ * Records a reply's generation duration when Pi has not already supplied it.
  *
  * Called from the service's `message_end` handler with `Date.now()`; the
  * delta against the message's own start time is the honest measurement. User
@@ -46,11 +31,10 @@ export function stampReplyEnd(message: AgentMessage, endedAt: number): void {
 	if (message.role !== "assistant") {
 		return;
 	}
-	const timed = message as ReplyTimedAssistantMessage;
-	if (timed.durationMs !== undefined) {
+	if (message.durationMs !== undefined) {
 		return;
 	}
-	timed.durationMs = Math.max(0, endedAt - timed.timestamp);
+	message.durationMs = Math.max(0, endedAt - message.timestamp);
 }
 
 /** The recorded generation duration of a reply, or `null` when none was recorded. */
@@ -58,7 +42,7 @@ export function replyDurationMs(message: AgentMessage): number | null {
 	if (message.role !== "assistant") {
 		return null;
 	}
-	const durationMs = (message as ReplyTimedAssistantMessage).durationMs;
+	const durationMs = message.durationMs;
 	return typeof durationMs === "number" && durationMs >= 0 ? durationMs : null;
 }
 
