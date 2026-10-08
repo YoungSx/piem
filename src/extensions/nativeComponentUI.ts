@@ -1,7 +1,7 @@
 import type { ExtensionUIContext, ExtensionWidgetOptions } from "@earendil-works/pi-coding-agent";
 import type { ExtensionUIAdapter } from "./extensionUI";
 import type { ExtensionLifetime, ExtensionScope } from "./extensionLifetime";
-import type { CompatComponent } from "./compat/componentTree";
+import { hasNativeContent, type CompatComponent } from "./compat/componentTree";
 import type { CompatTui } from "./compat/componentRuntime";
 import { createKeybindings, type CompatKeybindings } from "./compat/keys";
 import { theme, type CompatTheme } from "./compat/theme";
@@ -57,7 +57,17 @@ export function createNativeComponentUI(
 			const component = lifetime.withScope(widget.scope, () => widget.factory(surface.tui, theme));
 			surface.install(component);
 			if (widgets.get(key) !== widget) { dispose(surface); return; }
-			setComponent(key, surface, widget.options);
+			let visible: boolean | undefined;
+			const publish = (): void => {
+				if (widgets.get(key) !== widget) return;
+				const next = hasNativeContent(surface.getSnapshot());
+				if (next === visible) return;
+				visible = next;
+				setComponent(key, next ? surface : undefined, widget.options);
+			};
+			// Keep the renderer alive so an empty widget can publish content again.
+			surface.subscribe(publish);
+			publish();
 		} catch (error) { if (widgets.get(key) === widget) remove(key); else dispose(surface); throw error; }
 	};
 	let headerWidget: { factory: HeaderFactory; scope: ExtensionScope; surface?: NativeComponentSurface } | undefined;

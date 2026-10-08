@@ -50,6 +50,12 @@ export function plainTextNode(lines: readonly string[]): NativeComponentNode {
 	return { kind: "text", text: plainText(lines.join("\n"), true), paddingX: 0, paddingY: 0 };
 }
 
+/** Empty renders occupy no panel; native controls still render their own empty states. */
+export function hasNativeContent(node: NativeComponentNode): boolean {
+	if (node.kind === "container") return node.children.some(hasNativeContent);
+	return node.kind !== "text" || plainText(node.text).trim().length > 0;
+}
+
 export function renderNativeComponent(component: CompatComponent, width: number): NativeComponentNode {
 	const lines = component.render(width);
 	return readNativeTree(lines) ?? plainTextNode(lines);
