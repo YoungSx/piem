@@ -4,7 +4,7 @@ import { stubWindowTimers } from "../testUtils/windowStub";
 import { createExtensionHost, type ExtensionHostCallbacks } from "./extensionHost";
 import type { ExtensionShortcutAction, ExtensionUIAdapter, NativeExtensionSurface } from "./extensionUI";
 import type { CompatComponent, NativeComponentNode } from "./compat/componentTree";
-import { Text } from "./compat/components";
+import { Container, Text } from "./compat/components";
 import { BorderedLoader } from "./compat/loader";
 import { SelectList } from "./compat/selectList";
 import { getSelectListTheme } from "./compat/theme";
@@ -63,6 +63,51 @@ async function host(factory: (pi: Parameters<ExtensionFactory>[0]) => unknown, c
 }
 
 describe("native component host lifecycle", () => {
+	it.each(["empty lines", "styled spacers", "empty container"] as const)("keeps a widget rendering %s live without leaving an empty panel", async shape => {
+		let visible = false;
+		let refresh!: () => void;
+		let mounted = 0;
+		let disposed = 0;
+		const instance = await host(pi => pi.on("session_start", (_event, ctx) => {
+			ctx.ui.setWidget("changing", (tui, theme) => {
+				mounted++;
+				refresh = () => tui.requestRender();
+				return {
+					render: width => visible ? ["Live content"] : shape === "empty container"
+						? new Container().render(width) : shape === "styled spacers" ? [theme.fg("dim", "  "), ""] : [],
+					invalidate: () => {},
+					dispose: () => { disposed++; },
+				};
+			});
+		}));
+		const first = adapter(); const second = adapter(); instance.attachUI(first.ui);
+		try {
+			await instance.start();
+			expect(first.widgets.has("changing")).toBe(false);
+			visible = true; refresh(); await drain();
+			const surface = first.widgets.get("changing")!;
+			expect(surface.getSnapshot()).toMatchObject({ kind: "text", text: "Live content" });
+			visible = false; refresh(); await drain();
+			expect(first.widgets.has("changing")).toBe(false);
+			expect(disposed).toBe(0);
+			visible = true; refresh(); await drain();
+			expect(first.widgets.get("changing") === surface).toBe(true);
+			expect(mounted).toBe(1);
+
+			visible = false; refresh(); await drain();
+			const retiredRefresh = refresh;
+			instance.attachUI(second.ui);
+			expect(disposed).toBe(1);
+			expect(second.widgets.has("changing")).toBe(false);
+			visible = true; retiredRefresh(); await drain();
+			expect(second.widgets.has("changing")).toBe(false);
+			refresh(); await drain();
+			expect(second.widgets.get("changing")?.getSnapshot()).toMatchObject({ kind: "text", text: "Live content" });
+			expect(first.widgets.size).toBe(0);
+		} finally { instance.dispose(); }
+		expect(disposed).toBe(2);
+	});
+
 	it("retires every widget and runtime even when a component cleanup throws", async () => {
 		let context!: ExtensionContext;
 		let cleaned = 0;

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { installObsidianStub } from "../testUtils/obsidianStub";
 import type { App, DataAdapter, Component } from "obsidian";
-import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ObsidianAgentService as ObsidianAgentServiceType } from "../agent/ObsidianAgentService";
@@ -471,6 +471,90 @@ describe("ChatApp × real service (issue #168)", () => {
 			unsubscribe();
 		}
 	}, 15_000);
+
+	it.each(["completed", "in_progress"] as const)("keeps the todo panel consistent across turns with a %s task", async status => {
+		const subject = "Keep this task across turns";
+		const nextPrompt = "Follow up without changing todos";
+		const nextSubject = "The next task";
+		const gate = gatedStreamFn();
+		let todoStep = 0;
+		let nextCreated = false;
+		const streamFn: StreamFn = (model, context, options) => {
+			if (!contextText(context).includes("Create a todo task")) return textReply(model, CHIPS_JSON);
+			let args: ToolCall["arguments"];
+			if (contextText(context).includes("Create the next task")) {
+				if (nextCreated) return textReply(model, "Created another task.");
+				nextCreated = true;
+				args = { action: "create", subject: nextSubject };
+			} else {
+				if (contextText(context).includes(nextPrompt)) return gate.streamFn(model, context, options);
+				if (todoStep >= 2) return textReply(model, "Updated the task.");
+				args = todoStep++ === 0 ? { action: "create", subject } : { action: "update", id: 1, status };
+			}
+			const stream = createAssistantMessageEventStream();
+			const message: AssistantMessage = {
+				...assistantMessage(model, ""),
+				content: [{ type: "toolCall", id: nextCreated ? "todo-next" : `todo-${todoStep}`, name: "todo", arguments: args }],
+				stopReason: "toolUse",
+			};
+			stream.push({ type: "done", reason: "toolUse", message });
+			stream.end(message);
+			return stream;
+		};
+		const { service } = await mountPanel({ streamFn, prompts: [] });
+		await flushRender(() => service.getSnapshot().session !== undefined);
+		expect(await service.sendPrompt("Create a todo task")).toBe(true);
+		expect(service.getSnapshot().isStreaming).toBe(false);
+		const card = () => document.querySelector(".piem-todo-card");
+		const entry = () => document.querySelector<HTMLButtonElement>(".piem-chat__extension-entry-button");
+		await flushRender(() => card()?.textContent?.includes(subject) === true);
+		expect(entry()?.textContent).toContain(status === "completed" ? "1/1" : "0/1");
+		const toggle = async () => {
+			entry()!.click();
+			await flushRender();
+			const action = Array.from(document.querySelectorAll<HTMLButtonElement>(".piem-chat__extension-entry-action"))
+				.find(button => /todo/i.test(button.textContent ?? ""));
+			if (action) { action.click(); await flushRender(); }
+		};
+		expect(card()?.textContent).toContain(subject);
+
+		const editor = document.querySelector("textarea")!;
+		const domWindow = window as unknown as { HTMLTextAreaElement: { prototype: HTMLTextAreaElement } };
+		expect(Reflect.set(domWindow.HTMLTextAreaElement.prototype, "value", nextPrompt, editor)).toBe(true);
+		editor.dispatchEvent(new Event("input", { bubbles: true }));
+		await flushRender();
+		document.querySelector<HTMLButtonElement>(".piem-chat__send-button")!.click();
+		try {
+			await gate.arrived;
+			await flushRender();
+			expect(service.getSnapshot().isStreaming).toBe(true);
+			// rpiv-todo hides previously displayed completed rows on agent_start.
+			// An empty render must remove both the card and its now-useless entry.
+			if (status === "completed") {
+				expect({ card: card() !== null, entry: entry() !== null }).toEqual({ card: false, entry: false });
+			} else {
+				expect(card()?.textContent).toContain(subject);
+				await toggle();
+				expect(card() === null).toBe(true);
+				await toggle();
+				expect(card()?.textContent).toContain(subject);
+			}
+		} finally {
+			gate.release();
+			await flushRender(() => !service.getSnapshot().isStreaming);
+		}
+		// Hiding completed rows is presentation only; /todos still reads them.
+		expect(await service.runExtensionCommand("todos")).toBe(true);
+		expect(service.getSnapshot().noticeMessage).toContain(subject);
+		expect(await service.sendPrompt("Create the next task")).toBe(true);
+		await flushRender(() => card()?.textContent?.includes(nextSubject) === true);
+		expect(entry()?.textContent).toContain(status === "completed" ? "0/1" : "0/2");
+		await toggle();
+		expect(card() === null).toBe(true);
+		await toggle();
+		expect(card()?.textContent).toContain(nextSubject);
+		expect(crashes).toHaveLength(0);
+	});
 
 	it("carries extension text through the live editor and keeps drafts in their own conversations", async () => {
 		const uiBySession = new Map<string, ExtensionUIContext>();
