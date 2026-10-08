@@ -1,6 +1,6 @@
 # 依赖升级后的真实 Obsidian smoke（2026-10-08）
 
-功能验证取得 **17 组、34 次通过结果，共 1132 个检查点**，包含 15 组正式产物验证与 2 组测试专用桥接契约。**自动组合冷启动尚不能报全绿**：`obsidian-rig.py --smoke smoke-codemode-obsidian.mjs` 多次在 MCP 握手处超时；按 rig 已支持的分离启动方式，在独立虚拟桌面里执行同一脚本，桌面 34 项、手机模式 39 项通过。该启动差异的根因未确认，没有加盲目重试或扩大超时掩盖它。
+功能验证取得 **17 组、34 次通过结果，共 1132 个检查点**，包含 15 组正式产物验证与 2 组测试专用桥接契约。首次记录时 **自动组合冷启动不能报全绿**：`obsidian-rig.py --smoke smoke-codemode-obsidian.mjs` 多次在 MCP 握手处超时；按 rig 已支持的分离启动方式，在独立虚拟桌面里执行同一脚本，桌面 34 项、手机模式 39 项通过。**该启动差异的根因此后已确认并修复**，仍然没有用盲目重试或扩大超时掩盖它：浏览器进程启动后约 25 秒才读完持久化 cookie 存储，在此之前 `URLRequestHttpJob::Start` 把每个带 cookie 的请求挂在该加载之后——Obsidian `requestUrl`（MCP 挂载走的通道）正在其中，15 秒的握手预算必然用尽。rig 现在在交接前等一次带 cookie 的 `requestUrl` 探针落地，组合冷启动桌面与手机模式均通过；摘掉该门禁的对照立刻复现原始超时。根因证据与复现方法见[真机 smoke 台](../docs/obsidian-smoke-rig.zh-CN.md)第 12 条。
 
 ## 环境与产物
 
@@ -13,7 +13,7 @@
 
 ## 覆盖与结果
 
-下表只列最终功能验证；早期失败记录保留在证据目录，MCP 自动冷启动限制见首段。两个契约用例的测试专用构建不计为正式发布产物验证。
+下表只列最终功能验证；早期失败记录保留在证据目录，MCP 自动冷启动当时的限制与此后的根因修复见首段。两个契约用例的测试专用构建不计为正式发布产物验证。
 
 | 功能 | 桌面 | 官方手机模式 |
 | --- | --- | --- |
@@ -48,6 +48,6 @@
 - [汇总 JSON](/home/ubuntu/piem-dependency-smoke-20261008/summary-final.json) 包含所有报告路径、计数和未闭环项。
 - [桌面恢复截图](/home/ubuntu/piem-dependency-smoke-20261008/final-production/durable/durable-desktop.png)、[手机恢复截图](/home/ubuntu/piem-dependency-smoke-20261008/final-production/durable/durable-mobile.png)。
 - [桌面 Codemode 报告](/home/ubuntu/piem-dependency-smoke-20261008/mcp-manual-cold/desktop.json)、[手机 Codemode 报告](/home/ubuntu/piem-dependency-smoke-20261008/mcp-manual-cold/mobile.json)。
-- 自动冷启动失败证据保留于 `/home/ubuntu/piem-dependency-smoke-20261008/final-codemode-desktop/codemode`，不能用后续独立运行的通过结果覆盖这一限制。
+- 自动冷启动失败证据保留于 `/home/ubuntu/piem-dependency-smoke-20261008/final-codemode-desktop/codemode`。这一限制不是被后续独立运行的通过结果覆盖的，而是由根因确认后的 rig 门禁解除：带门禁的组合冷启动桌面与手机模式均通过，只摘掉两处门禁调用的对照仍复现 `Connecting to "smoke" timed out after 15s` 与 `Timed out: MCP handshake and mount`。
 
 复现普通用例：先 `npm run build`，再执行 `python3 scripts/obsidian-rig.py "$PWD" <新的临时目录> <空闲CDP端口> --skip-build --smoke scripts/smoke-durable-obsidian.mjs`；可用 `--mobile-only` 单独跑官方手机模式。独立运行用例时省略 `--smoke`，等 rig 提示就绪，再在另一个终端运行相应 `node scripts/smoke-…-obsidian.mjs <端口> <同一临时目录>`。

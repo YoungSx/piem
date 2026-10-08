@@ -77,6 +77,32 @@ proactive smoke；新场景一律用管家。
     bundleLoad 测试都是假红。
 11. **台目录是一次性的，机器是共享的。** 动手杀既有端口/显示上的东西之前，
     先确认没有别的会话在飞：对插件版本号、PID、文件时间戳。
+12. **启动后约 25s 内 `requestUrl` 根本发不出包。** 主进程的持久 cookie 存储
+    还没加载完，`URLRequestHttpJob` 把每个会带 cookie 的请求都排在那次加载
+    后面。它是定时器而不是 I/O：两次运行只差 5ms，`--password-store=basic`
+    毫无影响——这是 Chromium best-effort 任务围栏的特征，SQLite cookie 存储
+    的加载就排在围栏后面。NetLog 看得很清楚：加载在 +23ms 开始，Obsidian 自
+    己的两个更新检查请求在 +22ms 和 +25ms 到来、各触发一次 key load，+6294ms
+    发出的探针触发第三次，存储加载与三次 key load 在 +25053ms 一起完成——那
+    一刻每个被挂住的请求才越过 `COMPUTED_PRIVACY_MODE`，也正是 profile 里的
+    `Cookies` 文件第一次被写的时刻。三个请求本身随后在 5–166ms 内陆续结束
+    （+25058、+25097、+25219）；有意义的是那个共同的解挂瞬间。比这更早去连
+    MCP，就会看到 `requestUrl` 挂过
+    `CONNECT_TIMEOUT_MS`，报出一个与插件无关的握手超时——这正是组合冷启动
+    失败、而几分钟后手工跑同一脚本却通过的原因。管家现在会先对 loopback 上
+    的 CDP 端点发一个带 cookie 的 `requestUrl`，等它**拿到 HTTP 状态码**再把
+    台子交出去——落地不算信号：Chromium 有一部分请求会在进入 cookie 阶段之前
+    就被拒（能撞上的是受限端口名单，而 CDP 端口是你自己传的），这种探针会在
+    毫秒级失败而围栏仍然立着，所以探针失败是致命错误而不是一行告警。再遇到
+    同类现象不要用重试或放大超时「修」它，两者都只是遮住它。另外，渲染端
+    `fetch` 在这里当不了对照：跨源且不带凭据时它不发 cookie，整段窗口里都是
+    毫秒级返回。
+13. **全新 vault 会弹「信任作者」模态框，而它会把应用按在受限模式里。**
+    `enablePluginAndSave` 会强行加载插件，于是 `agentService` 出现、看着很
+    健康——但模态框还立着时 vault 仍未受信，聊天视图渲染的是「连接模型以
+    开始」的空状态，播种的设置也到不了它那里（模型切换器冻在内置回退上）。
+    管家在每轮 unlock 轮询里幂等地点掉那个「信任作者」按钮。回归时的标志：
+    `getSnapshot()` 正确，但挂载出来的视图卡在默认模型上。
 
 ## Smoke 清单
 
@@ -94,6 +120,7 @@ proactive smoke；新场景一律用管家。
 | `smoke-rpiv-todo-obsidian.mjs` | `@juicesharp/rpiv-todo` 桥含 Node 访问负对照 |
 | `smoke-typography-obsidian.mjs` | 真实渲染下的排版（用 `--baseline`，无手机档） |
 | `smoke-proactive-obsidian.mjs` | 主动智能（用专属的 `run-smoke-proactive.py`） |
+| `smoke-model-icon-obsidian.mjs` | composer 模型切换器的厂商标记：会画出来、跟随当前模型、未知厂商时不出现 |
 
 durable smoke 还会限制插件可见的 `Platform` 应用标志，因为官方手机模拟仍
 报告 `isDesktopApp: true`。报告同时保留原始与受限标志。6 个负对照必须被真实

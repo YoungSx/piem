@@ -176,6 +176,72 @@ def wait_until(port, expression, timeout, label, interval=0.5):
     raise RuntimeError(f"timed out waiting for {label} ({timeout}s); last error: {last_error}")
 
 
+def start_network_probe(port):
+    """Fire one cookie-bearing `requestUrl` so the rig can wait for the browser
+    process's network stack to become serviceable.
+
+    For a fixed ~25.3s after launch, the browser process will not finish
+    loading its persistent cookie store — the signature of Chromium's
+    best-effort task fence, which `SQLitePersistentCookieStore`'s load sits
+    behind. `URLRequestHttpJob` queues every request that sends cookies on that
+    load, so they all unblock at the same instant the fence lifts regardless of
+    when each was issued. Measured off a NetLog: the load begins at +23ms,
+    Obsidian's own two update-check requests arrive at +22ms and +25ms and each
+    triggers a key load, a probe issued at +6294ms triggers a third, and the
+    store load plus all three key loads complete together at +25053ms — where
+    each stalled request resumes past `COMPUTED_PRIVACY_MODE`, and where the
+    profile's `Cookies` file is first written. The requests then finish 5-166ms
+    later. Two runs agreed to 5ms, and `--password-store=basic` made no
+    difference, so it is a timer, not I/O and not the keyring.
+
+    A renderer `fetch` cannot be used as the signal: cross-origin without
+    credentials it sends no cookies, skips the cookie step, and returns in
+    milliseconds throughout the window. The probe has to go through
+    `requestUrl` itself.
+
+    Without this gate a smoke that connects MCP early sees `requestUrl` hang
+    past `CONNECT_TIMEOUT_MS` and reports a handshake timeout that has nothing
+    to do with the plugin. The fix is to wait for the precondition, not to
+    retry the smoke or widen its budget.
+
+    The request targets the CDP HTTP endpoint already listening on loopback, so
+    the gate needs no fixture and no outbound network. It is fired here and
+    awaited in `finish_network_probe` so the wait overlaps the gates between.
+    """
+    evaluate(port, """(() => {
+      window.__piemRigNet = { done: false };
+      window.requestUrl({ url: "http://127.0.0.1:%d/json/version", throw: false }).then(
+        response => { window.__piemRigNet = { done: true, status: response.status }; },
+        error => { window.__piemRigNet = { done: true, error: String((error && error.message) || error).slice(0, 200) }; },
+      );
+      return true;
+    })()""" % port)
+
+
+def finish_network_probe(port):
+    # 60s, because the fence alone accounts for ~25s from launch and the probe
+    # is fired part-way into that window.
+    wait_until(port, "window.__piemRigNet?.done === true", 60, "cookie-backed requestUrl path")
+    probe = evaluate(port, "window.__piemRigNet") or {}
+    if "status" not in probe:
+        # Settling is not the signal; answering is. Chromium rejects some
+        # requests inside `URLRequestHttpJob::Start` ahead of
+        # `AddCookieHeaderAndStart` — a port on its restricted list being the
+        # one reachable here, since the CDP port is whatever the caller passed
+        # — and such a request fails in milliseconds with the fence still
+        # standing. Clearing the gate on that would reinstate the false green
+        # it exists to prevent, so it is fatal.
+        raise RuntimeError(
+            f"gate probe failed instead of answering, so the cookie-store fence "
+            f"was never observed to lift: {probe}; if this is ERR_UNSAFE_PORT, "
+            f"rerun on a CDP port outside Chromium's restricted list"
+        )
+    if probe["status"] != 200:
+        # A status — any status — means the request reached the cookie phase,
+        # which is the whole precondition, so a non-200 is only reported.
+        print(f"Network gate cleared, but the probe returned {probe['status']}: {probe}")
+
+
 def find_runtime(root, explicit, download):
     if explicit:
         runtime = Path(explicit)
@@ -402,7 +468,9 @@ def main():
     time.sleep(3)
     unlock_plugin(args.port)
     set_focus_emulation(args.port, True)
+    start_network_probe(args.port)
     wait_until(args.port, "app.plugins.plugins.piem.agentSkillLoad().builtin.install.status === 'ready'", 30, "matching built-in skills")
+    finish_network_probe(args.port)
     evaluate(args.port, "(async () => { await app.plugins.plugins.piem.agentService.initialize(); return true; })()")
 
     results = {"desktop": None, "mobile": None}
