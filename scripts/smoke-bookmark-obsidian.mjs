@@ -66,7 +66,7 @@ async function runSmoke(root, expectMobile, observeNodeAccess) {
   dismiss();
   await wait(()=>!document.querySelector('.piem-bookmark-text'));
   originalAppend=app.vault.adapter.append;
-  app.vault.adapter.append=async function(path,data,...rest){if(path===a.path&&data.includes('"fact":"label"'))throw new Error('Smoke disk full');return originalAppend.call(this,path,data,...rest);};
+  app.vault.adapter.append=async function(path,data,...rest){if(path===a.path)throw new Error('Smoke disk full');return originalAppend.call(this,path,data,...rest);};
   command('bookmark-reply');await wait(()=>input());type('失败后重试');button().click();await wait(()=>document.querySelector('.modal [role=alert]')?.textContent.includes('Smoke disk full'));
   record('write failure stays editable',input().value==='失败后重试'&&!button().disabled);
   app.vault.adapter.append=originalAppend;originalAppend=undefined;button().click();await wait(()=>!input());
@@ -95,7 +95,7 @@ async function runSmoke(root, expectMobile, observeNodeAccess) {
   let release,entered;
   const gate=new Promise(r=>release=r),start=new Promise(r=>entered=r);
   originalAppend=app.vault.adapter.append;
-  app.vault.adapter.append=async function(path,data,...rest){if(path===b.path&&data.includes('"fact":"label"')){entered();await gate;}return originalAppend.call(this,path,data,...rest);};
+  app.vault.adapter.append=async function(path,data,...rest){if(path===b.path){entered();await gate;}return originalAppend.call(this,path,data,...rest);};
   const saving=s.runBookmark(b.path,'bookmark','即将删除');const rejected=saving.catch(()=>undefined);await start;
   const deleting=s.deleteSession(b.path);release();await rejected;await deleting;
   app.vault.adapter.append=originalAppend;originalAppend=undefined;

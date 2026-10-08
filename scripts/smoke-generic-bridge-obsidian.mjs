@@ -206,7 +206,7 @@ try {
 		s.check("native keyboard choice reaches draft",s.record.selection==='organize');
 		s.check("picker disposed after selection",s.record.pickerDisposals===1);
 		s.check("selection never auto-sends",s.service.getSnapshot().messages.length===0);
-		await s.wait(()=>!s.action('Choose a bridge item').disabled);
+		await s.wait(()=>s.action('Choose a bridge item')?.disabled === false);
 		await s.open('Choose a bridge item');
 		await s.wait(()=>s.modal()?.querySelector('[role=option]'));
 		s.modal().querySelector('[role=option]').click();
@@ -234,7 +234,7 @@ try {
 	`);
 	if (!mode) {
 		await step(`
-			await s.wait(()=>!s.action('Choose a bridge item').disabled);
+			await s.wait(()=>s.action('Choose a bridge item')?.disabled === false);
 			await s.wait(()=>!s.modal());
 			s.textarea().focus();
 			const before=s.record.pickerDisposals;
@@ -250,7 +250,7 @@ try {
 	}
 	await step(`
 		s.report.stage='switch conversation';
-		await s.wait(()=>!s.action('Choose a bridge item').disabled);
+		await s.wait(()=>s.action('Choose a bridge item')?.disabled === false);
 		s.check('local prompt establishes a conversation',await s.service.sendPrompt('GENERIC_SESSION_MARKER'));
 		const old=s.record.context;
 		const before=s.record.widgetDisposals??0;

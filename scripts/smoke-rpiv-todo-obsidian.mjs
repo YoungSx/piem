@@ -48,7 +48,7 @@ async function runSmoke(root, endpoint, expectMobile, observeNodeAccess) {
 		window.__piemTodoHoldResolve = () => { delete window.__piemTodoHoldResolve; resolve(); };
 		setTimeout(() => { if (window.__piemTodoHoldResolve) window.__piemTodoHoldResolve(); }, 30000);
 	});
-	const surfaces = () => document.querySelector(".piem-chat__extension-surfaces");
+	const surfaces = () => document.querySelector(".piem-todo-card");
 	const overlayText = () => surfaces()?.textContent ?? "";
 	// A brand-new session's panel adapter attaches asynchronously; the first
 	// command can land in the detached window and answer "requires interactive
@@ -87,7 +87,7 @@ async function runSmoke(root, endpoint, expectMobile, observeNodeAccess) {
 		// Turn 1: the scripted provider answers with the original todo tool.
 		record("create turn completes", await service.sendPrompt(`请创建一个待办任务：${SUBJECT}。`));
 		await wait(() => overlayText().includes(SUBJECT));
-		record("overlay widget mounts above editor", surfaces()?.querySelector(".piem-native-extension__text") !== null);
+		record("todo card renders the original component widget", surfaces()?.querySelector(".piem-native-extension__text") != null);
 		record("no chat error after tool run", !service.getSnapshot().errorMessage);
 		// Visual evidence while the overlay is on screen.
 		report.stage = "overlay mounted";

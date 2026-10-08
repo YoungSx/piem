@@ -6,6 +6,7 @@ import { builtinModules } from "node:module";
 import { piExtensionsPlugin } from "./pi-extensions.mjs";
 import { nativeExtensionFixturePlugin } from "./native-extension-fixture.mjs";
 import { builtinSkillsPlugin } from "./builtin-skills.mjs";
+import { codemodeRuntimePlugin } from "./codemode-runtime.mjs";
 
 /**
  * Test-only smoke bundle for scripts/smoke-generic-bridge-obsidian.mjs.
@@ -33,7 +34,7 @@ const result = await esbuild.build({
 		openai: path.resolve("src/net/shims/openaiSdk.ts"),
 		"@anthropic-ai/sdk": path.resolve("src/net/shims/anthropicSdk.ts"),
 	},
-	plugins: [piExtensionsPlugin(), nativeExtensionFixturePlugin(), builtinSkillsPlugin(process.cwd(), false)],
+	plugins: [piExtensionsPlugin(), nativeExtensionFixturePlugin(), builtinSkillsPlugin(process.cwd(), false), codemodeRuntimePlugin()],
 	loader: { ".png": "dataurl" },
 	bundle: true,
 	external: ["node:*", "obsidian", "electron",
