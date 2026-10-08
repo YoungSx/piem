@@ -13,9 +13,10 @@ if (!port || !directory || (mode !== undefined && mode !== "--expect-mobile") ||
 	throw new Error("Usage: node scripts/smoke-codemode-obsidian.mjs <CDP-port> <rig-root> [--expect-mobile]");
 }
 const mobile = mode === "--expect-mobile";
-const state = { requests: [], writes: [], probes: 0 };
+const state = { requests: [], mcp: [], http: [], writes: [], probes: 0 };
 const timers = new Set();
 const fixture = createServer(async (req, res) => {
+	state.http.push({ method: req.method, url: req.url });
 	res.setHeader("Access-Control-Allow-Origin", "*");
 	res.setHeader("Access-Control-Allow-Headers", "*");
 	res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -28,6 +29,7 @@ const fixture = createServer(async (req, res) => {
 		for await (const chunk of req) raw += chunk;
 		const body = JSON.parse(raw);
 		if (req.url === "/mcp") {
+			state.mcp.push({ method: body.method, id: body.id });
 			if (body.id === undefined) { res.writeHead(202).end(); return; }
 			let result;
 			if (body.method === "initialize") result = { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "smoke", version: "1.0.0" } };
@@ -66,7 +68,7 @@ await new Promise(resolve => fixture.listen(0, "127.0.0.1", resolve));
 const endpoint = `http://127.0.0.1:${fixture.address().port}`;
 
 async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
-	const report = { passed: false, checks: [], errors: [] };
+	const report = { passed: false, checks: [], errors: [], fixtureEndpoint: endpoint };
 	const check = (name, ok) => { if (!ok) throw new Error(name); report.checks.push(name); };
 	const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 	const wait = async (test, label) => {
@@ -159,8 +161,9 @@ async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
 		check("strings are returned as text", text(await run('text("one"); return "two"')) === "one\ntwo");
 		const oversized = text(await run('// @options: {"max_output_tokens":20}\ntext("a".repeat(80)); return "z".repeat(80)'));
 		check("return value shares the output budget", oversized.includes("truncated output") && oversized.includes("a".repeat(40)) && oversized.includes("z".repeat(40)) && !oversized.includes("z".repeat(41)));
-		const image = await run('// @options: {"max_output_tokens":1}\nimage("data:image/png;base64,aGVsbG8="); return "x".repeat(200)');
-		check("output truncation preserves images", image.content.some(item => item.type === "image" && item.data === "aGVsbG8="));
+		const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII=";
+		const image = await run(`// @options: {"max_output_tokens":1}\nimage("data:image/png;base64,${png}"); return "x".repeat(200)`);
+		check("output truncation preserves images", image.content.some(item => item.type === "image" && item.data === png));
 		const thrown = await run('\n\nthrow new Error("smoke boom")');
 		check("error stack keeps script line numbers", thrown.isError && /codemode\.js:3/.test(text(thrown)));
 		const missing = await run('await tools.read({path:"missing-smoke-note.md"})');
@@ -196,7 +199,10 @@ async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
 		}
 		check("no unhandled renderer errors", report.errors.length === 0);
 		report.passed = true;
-	} catch (error) { report.failure = String(error.stack ?? error); }
+	} catch (error) {
+		report.failure = String(error.stack ?? error);
+		report.mcpStates = app.plugins.plugins.piem?.mcpManager.getServerStates();
+	}
 	finally {
 		if (audit) report.nodeAudit = audit.report;
 		for (const worker of workers) worker.terminate();
@@ -228,6 +234,7 @@ try {
 		ws.addEventListener("message", listener);
 		ws.send(JSON.stringify({ id, method, params }));
 	});
+	await call(0, "Emulation.setFocusEmulationEnabled", { enabled: true });
 	const reply = await Promise.race([
 		call(1, "Runtime.evaluate", { expression: `(${runSmoke})(${JSON.stringify(directory)},${mobile},${JSON.stringify(endpoint)},(${observePluginNodeAccess}))`, awaitPromise: true, returnByValue: true }),
 		new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("Smoke CDP timeout")), 180000); }),

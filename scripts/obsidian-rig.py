@@ -33,8 +33,8 @@ Teardown kills the process groups and reaps strays via /proc. Never use
 `pkill -f` on this rig: the pattern matches your own shell's command line and
 the kill lands on you (exit 144, output lost).
 """
-import argparse, ctypes, glob, json, os, signal, socket, subprocess, sys, tarfile, time, urllib.request
-from pathlib import Path
+import argparse, ctypes, glob, hashlib, json, os, signal, socket, subprocess, sys, tarfile, time, urllib.request
+from pathlib import Path, PurePosixPath
 
 OBSIDIAN_VERSION = "1.13.7"
 OBSIDIAN_URL = (
@@ -232,6 +232,26 @@ def deploy_plugin(worktree, vault, data_seed):
         (plugin_dir / name).write_bytes((worktree / name).read_bytes())
     (vault / ".obsidian" / "community-plugins.json").write_text(json.dumps(["piem"]))
     data = json.loads(Path(data_seed).read_text()) if data_seed else {}
+    # Network smokes supply their own loopback server after startup.
+    data.setdefault("mcpServers", [{"id": "builtin-exa", "name": "Exa", "url": "https://mcp.exa.ai/mcp", "token": "", "secretRef": "", "enabled": False}])
+    # An unpublished build cannot download its new skill digest from an older
+    # release with the same manifest version. Install its actual bundled files.
+    resource = (worktree / "dist" / "builtin-skills.json").read_bytes()
+    package = json.loads(resource)
+    if package["version"] != json.loads((worktree / "manifest.json").read_text())["version"]:
+        raise RuntimeError("Built-in skill package is stale; rebuild before smoke.")
+    files = {}
+    for entry in package["files"]:
+        relative = PurePosixPath(entry["path"])
+        if relative.is_absolute() or ".." in relative.parts or "\\" in entry["path"]:
+            raise RuntimeError("Invalid built-in skill resource path.")
+        target = vault / "Piem" / "builtin-skills" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = entry["content"].encode("utf-8")
+        target.write_bytes(content)
+        files[entry["path"]] = hashlib.sha256(content).hexdigest()
+    data["builtinSkillState"] = {"schema": 1, "version": package["version"],
+        "digest": hashlib.sha256(resource).hexdigest(), "complete": True, "files": files, "removed": []}
     (plugin_dir / "data.json").write_text(json.dumps(data, indent=2))
 
 
@@ -347,12 +367,15 @@ def main():
     parser.add_argument("root", type=Path, help="disposable rig directory (vault/, profile/, logs/)")
     parser.add_argument("port", type=int, help="CDP port for Obsidian")
     parser.add_argument("--smoke", type=Path, default=None, help="smoke-*-obsidian.mjs to run (default: hold for manual driving)")
+    parser.add_argument("--mobile-only", action="store_true", help="run only in official phone emulation, including scripts without a mobile flag")
     parser.add_argument("--display", default=":114", help="Xvfb display")
     parser.add_argument("--obsidian", default=None, help="Obsidian binary override")
     parser.add_argument("--download", action="store_true", help="fetch the pinned aarch64 build when no runtime is found")
     parser.add_argument("--skip-build", action="store_true", help="deploy the existing main.js instead of building")
     parser.add_argument("--data", default=None, help="seed the vault plugin data.json from this file")
     args = parser.parse_args()
+    if args.mobile_only and args.smoke is None:
+        parser.error("--mobile-only requires --smoke")
 
     # Piped runs (background shells) would otherwise block-buffer every status
     # line and hide progress behind the next flush.
@@ -379,6 +402,8 @@ def main():
     time.sleep(3)
     unlock_plugin(args.port)
     set_focus_emulation(args.port, True)
+    wait_until(args.port, "app.plugins.plugins.piem.agentSkillLoad().builtin.install.status === 'ready'", 30, "matching built-in skills")
+    evaluate(args.port, "(async () => { await app.plugins.plugins.piem.agentService.initialize(); return true; })()")
 
     results = {"desktop": None, "mobile": None}
     if args.smoke is None:
@@ -395,11 +420,12 @@ def main():
             pass
     else:
         supports_mobile = "--expect-mobile" in args.smoke.read_text()
-        print(f"Running desktop pass: {args.smoke.name}")
-        results["desktop"] = run_smoke_script(args.smoke, args.port, root, mobile=False)
-        print(f"Desktop result: {results['desktop'].get('passed', False)}")
+        if not args.mobile_only:
+            print(f"Running desktop pass: {args.smoke.name}")
+            results["desktop"] = run_smoke_script(args.smoke, args.port, root, mobile=False)
+            print(f"Desktop result: {results['desktop'].get('passed', False)}")
 
-        if supports_mobile and results["desktop"].get("passed") and not stopping:
+        if (args.mobile_only or (supports_mobile and results["desktop"].get("passed"))) and not stopping:
             print("Switching to mobile emulation...")
             evaluate(args.port, "app.emulateMobile(true)")
             wait_until(args.port, "app.isMobile === true", 30, "mobile mode")
@@ -410,7 +436,7 @@ def main():
             # emulateMobile triggers a reload; the plugin re-attaches asynchronously.
             wait_until(args.port, "!!window.app?.plugins?.plugins?.piem?.agentService", 60, "plugin after mobile reload")
             print(f"Running mobile pass: {args.smoke.name}")
-            results["mobile"] = run_smoke_script(args.smoke, args.port, root, mobile=True)
+            results["mobile"] = run_smoke_script(args.smoke, args.port, root, mobile=supports_mobile)
             print(f"Mobile result: {results['mobile'].get('passed', False)}")
 
     summary = {
@@ -430,6 +456,8 @@ def main():
             {k: (v.get("passed") if isinstance(v, dict) else v) for k, v in results.items() if v},
             indent=2, ensure_ascii=False,
         ))
+        if args.mobile_only:
+            return 0 if results["mobile"] and results["mobile"].get("passed") else 1
         return 0 if results["desktop"] and results["desktop"].get("passed") and (
             results["mobile"] is None or results["mobile"].get("passed")
         ) else 1

@@ -42,9 +42,9 @@ async function prepare(root) {
 		restores.push(() => original === null ? element.removeAttribute("style") : element.setAttribute("style", original));
 	};
 	const wasLight = document.body.classList.contains("theme-light"), wasDark = document.body.classList.contains("theme-dark");
-	const language = plugin.settings.language;
+	const language = plugin.settings.language, traceExpand = plugin.settings.traceExpand;
 	rememberStyle(document.body);
-	restores.push(() => { document.body.classList.toggle("theme-light", wasLight); document.body.classList.toggle("theme-dark", wasDark); plugin.settings.language = language; });
+	restores.push(() => { document.body.classList.toggle("theme-light", wasLight); document.body.classList.toggle("theme-dark", wasDark); plugin.settings.language = language; plugin.settings.traceExpand = traceExpand; });
 	window.addEventListener("error", onError); window.addEventListener("unhandledrejection", onError);
 	const cleanup = () => cleanupTask ??= (async () => {
 		closed = true;
@@ -64,7 +64,7 @@ async function prepare(root) {
 		}
 		window.removeEventListener("error", onError); window.removeEventListener("unhandledrejection", onError);
 		delete window.__piemTypographySmoke;
-		return { errors, timers: timers.size, frames: frames.size, fixtureRuntimeReleased: !path || !service.runtimes.has(path), settingsRestored: plugin.settings.language === language, sessionRestored: !oldPath || service.getActiveSessionPath() === oldPath };
+		return { errors, timers: timers.size, frames: frames.size, fixtureRuntimeReleased: !path || !service.runtimes.has(path), settingsRestored: plugin.settings.language === language && plugin.settings.traceExpand === traceExpand, sessionRestored: !oldPath || service.getActiveSessionPath() === oldPath };
 	})();
 	const deadline = window.setTimeout(() => { void cleanup().catch(error => errors.push(String(error))); }, 120000);
 	window.__piemTypographySmoke = { cleanup, errors };
@@ -72,6 +72,8 @@ async function prepare(root) {
 		await service.initialize(); if (closed) throw new Error("Typography smoke cancelled.");
 		oldPath = service.getActiveSessionPath(); initialRuntimes = new Set(service.runtimes.keys());
 		plugin.settings.language = "zh-cn";
+		// Measure individual trace boundaries instead of the default folded group.
+		plugin.settings.traceExpand = "expanded";
 		const note = `Piem-typography-${Date.now()}`, missing = `${note}-missing`;
 		await app.vault.create(`${note}.md`, "# 排版验证资料\n\n这是可删除的排版样例笔记，不含用户资料。\n");
 		await wait(() => app.metadataCache.getFirstLinkpathDest(note, "") !== null);
