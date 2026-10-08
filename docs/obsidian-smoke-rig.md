@@ -93,7 +93,35 @@ facts, not piem facts.
     killing anything on a pre-existing port/display, check whether another
     session is flying it: compare the plugin version reported in-app, PIDs,
     and file timestamps first.
-12. **A fresh vault raises the "trust author" modal, and it holds the app in
+12. **`requestUrl` cannot reach the network for the first ~25s after launch**,
+    because the browser process has not finished loading its persistent cookie
+    store and `URLRequestHttpJob` queues every request that sends cookies
+    behind that load. It is a fixed timer, not I/O: two runs agreed to 5ms and
+    `--password-store=basic` changed nothing — the signature of Chromium's
+    best-effort task fence, which the SQLite cookie store's load sits behind.
+    A NetLog shows the load beginning at +23ms, Obsidian's own two update-check
+    requests arriving at +22ms and +25ms and each triggering a key load, a probe
+    fired at +6294ms triggering a third, and the store load plus all three key
+    loads completing together at +25053ms — the instant each stalled request
+    resumes past `COMPUTED_PRIVACY_MODE`, and the instant the profile's
+    `Cookies` file is first written. The three requests themselves then finish
+    5–166ms later (+25058, +25097, +25219); the shared instant is the unblock,
+    which is the point. Anything that
+    connects MCP earlier than that sees `requestUrl` hang past
+    `CONNECT_TIMEOUT_MS` and reports a handshake timeout with no plugin cause —
+    which is precisely why combined cold start failed while the same script
+    passed by hand minutes later. The manager now fires one cookie-bearing
+    `requestUrl` at the CDP endpoint on loopback and waits for an HTTP *status*
+    before handing the rig over — settling is not the signal, because Chromium
+    rejects some requests ahead of the cookie phase (a port on its restricted
+    list is the reachable case, the CDP port being whatever you passed) and such
+    a probe fails in milliseconds with the fence still standing, so a failed
+    probe is fatal rather than a warning. Do not "fix" a recurrence with a retry
+    or a wider timeout; both hide it. Note also that a renderer `fetch` is
+    useless as a control here: cross-origin and credential-less it sends no
+    cookies, skips the cookie step, and returns in milliseconds throughout the
+    window.
+13. **A fresh vault raises the "trust author" modal, and it holds the app in
     restricted mode.** `enablePluginAndSave` force-loads the plugin, so
     `agentService` appears and looks healthy — but while the modal stands the
     vault stays untrusted, the chat view renders its "Connect a model to
