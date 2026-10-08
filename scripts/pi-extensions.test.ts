@@ -7,11 +7,32 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import vm from "node:vm";
+import { loadPluginBundle } from "../src/testUtils/pluginLoader";
 
 const root = process.cwd();
 const pkg = path.join(root, "node_modules/@earendil-works/pi-coding-agent");
 
 describe("static official extension bundle", () => {
+	it("keeps Anthropic environment metadata inert in an Electron renderer", async () => {
+		const directory = mkdtempSync(path.join(tmpdir(), "piem-provider-env-"));
+		const outfile = path.join(directory, "main.js");
+		try {
+			await build({
+				stdin: { contents: 'export { ANTHROPIC_FEDERATION_RULE_ID_ENV } from "./node_modules/@earendil-works/pi-ai/dist/env-api-keys.js"; export { getProviderEnvValue } from "./node_modules/@earendil-works/pi-ai/dist/utils/provider-env.js";', resolveDir: root },
+				bundle: true, outfile, metafile: true, format: "cjs", plugins: [piExtensionsPlugin(root)], logLevel: "silent",
+			});
+			const imports: string[] = [];
+			const api = loadPluginBundle({ bundlePath: outfile, modules: {}, onDynamicImport: name => imports.push(name) }) as {
+				ANTHROPIC_FEDERATION_RULE_ID_ENV: string;
+				getProviderEnvValue(name: string, env?: Record<string, string>): string | undefined;
+			};
+			expect(api.ANTHROPIC_FEDERATION_RULE_ID_ENV).toBe("ANTHROPIC_FEDERATION_RULE_ID");
+			expect(api.getProviderEnvValue("PATH")).toBeUndefined();
+			expect(api.getProviderEnvValue("ANTHROPIC_FEDERATION_RULE_ID", { ANTHROPIC_FEDERATION_RULE_ID: "explicit" })).toBe("explicit");
+			expect(imports).toEqual([]);
+		} finally { rmSync(directory, { recursive: true, force: true }); }
+	});
+
 	it("runs the original command with browser globals and zero Node imports", async () => {
 		const built = await build({
 			stdin: { contents: 'export { createOfficialBookmark } from "./src/extensions/officialBookmark";', resolveDir: root, loader: "ts" },
@@ -65,7 +86,7 @@ describe("static official extension bundle", () => {
 	});
 	it("the integration pin remains explicit and carries the official factory unchanged", () => {
 		const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies: Record<string, string> };
-		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("1.0.2");
+		expect(packageJson.dependencies["@earendil-works/pi-coding-agent"]).toBe("1.1.0");
 		expect(readFileSync("src/extensions/bookmarkFactory.mjs", "utf8")).toContain("examples/extensions/bookmark.ts");
 	});
 });
@@ -83,7 +104,7 @@ describe("audited community graph", () => {
 		const model = { provider: "test", id: "alpha", name: "Alpha" };
 		const unavailable = () => { throw new Error("This command must stay offline."); };
 		const host = await api.CommunityHost.create({
-			getEntries: () => [], getModel: () => model, getModels: () => [model], isIdle: () => true, notify: () => {},
+			getEntries: () => [], getModel: () => model, getModels: () => [model], getThinkingLevel: () => "off", isIdle: () => true, notify: () => {},
 			prepare: async () => {}, deliver: unavailable,
 			platform: { fetch: unavailable, complete: unavailable, onError: unavailable },
 		});
@@ -116,7 +137,7 @@ function collectRegistrations(factory: ProbeFactory) {
 	const tools = new Map<string, ProbeTool>();
 	const commands = new Map<string, ProbeCommand>();
 	const handlers = new Map<string, ProbeHandler>();
-	factory({ registerTool: (tool: ProbeTool) => tools.set(tool.name, tool), registerCommand: (name: string, command: ProbeCommand) => commands.set(name, command), on: (event: string, handler: ProbeHandler) => handlers.set(event, handler) });
+	factory({ getThinkingLevel: () => "off", registerTool: (tool: ProbeTool) => tools.set(tool.name, tool), registerCommand: (name: string, command: ProbeCommand) => commands.set(name, command), on: (event: string, handler: ProbeHandler) => handlers.set(event, handler) });
 	return { tools, commands, handlers };
 }
 

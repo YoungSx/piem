@@ -4,6 +4,7 @@ import { err, ExecutionError, FileError, ok, type ExecutionEnv, type FileInfo, t
 import { getParentPath, normalizeVaultPath } from "./path";
 import { trashOrDelete } from "./trash";
 import { textLineReader } from "./textLineReader";
+import { openSnapshotBinaryReader, openSnapshotDirReader } from "./snapshotReaders";
 import { fileSystemIdentity } from "./fileSystemIdentity";
 import { resolve } from "pathe";
 
@@ -41,6 +42,18 @@ import { resolve } from "pathe";
 export class VaultExecutionEnv implements ExecutionEnv {
 	readonly cwd = "/";
 	readonly id: string;
+
+	openBinaryReader(path: string, options?: { noFollow?: boolean }, context?: Context): ReturnType<ExecutionEnv["openBinaryReader"]> {
+		return openSnapshotBinaryReader(this, path, options, context);
+	}
+
+	openDirReader(path: string, context?: Context): ReturnType<ExecutionEnv["openDirReader"]> {
+		return openSnapshotDirReader(this, path, context);
+	}
+
+	async watch(): ReturnType<ExecutionEnv["watch"]> {
+		return err(new FileError("not_supported", "Vault changes are managed by Obsidian event subscriptions"));
+	}
 
 	private readonly app: App;
 

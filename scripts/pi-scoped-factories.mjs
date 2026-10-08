@@ -100,23 +100,24 @@ export async function buildScopedFactory(root, name, audit) {
 	const bridge = path.join(root, "src/extensions/node");
 	const compatibility = path.join(root, "src/extensions/compat");
 	const truncate = path.join(root, "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/truncate.js");
+	const models = path.join(root, "node_modules/@earendil-works/pi-ai/dist/models.js");
 	const pureModules = new Map(["path", "util", "os", "url", "crypto", "buffer"].map(module => [module, path.join(bridge, `${module}.ts`)]));
 	const tui = path.join(compatibility, "piTui.ts");
 	const codingAgent = path.join(compatibility, "piCodingAgent.ts");
 	const globals = path.join(root, "src/extensions/extensionGlobals.ts");
-	const pureImports = new Set(["typebox", "typebox/value", ...pureModules.values(), path.join(compatibility, "piAI.ts"), tui, codingAgent, truncate, globals]);
+	const pureImports = new Set(["typebox", "typebox/value", ...pureModules.values(), path.join(compatibility, "piAI.ts"), tui, codingAgent, truncate, models, globals]);
 	const platformExport = names => `export { ${names.join(", ")} } from ${JSON.stringify(PLATFORM)};`;
 	const namespaceModule = names => `import { ${names.join(", ")} } from ${JSON.stringify(PLATFORM)}; export { ${names.join(", ")} }; export default { ${names.join(", ")} };`;
 	const timers = ["setTimeout", "clearTimeout", "setInterval", "clearInterval"];
 	const modules = new Map([
 		[GLOBALS, globalsModule(PLATFORM, pureModules.get("buffer"), globals)],
-		["fs", namespaceModule(["readFileSync", "existsSync", "mkdirSync", "writeFileSync", "unlinkSync", "readdirSync", "chmodSync"])],
+		["fs", namespaceModule(["readFileSync", "existsSync", "mkdirSync", "writeFileSync", "unlinkSync", "readdirSync", "chmodSync", "statSync", "renameSync"])],
 		["timers", namespaceModule(timers)],
 		["timers/promises", `import { timersPromises } from ${JSON.stringify(PLATFORM)}; export const setTimeout = timersPromises.setTimeout; export default timersPromises;`],
 		["process", `import { process } from ${JSON.stringify(PLATFORM)}; export default process; export const { env, pid, cwd, platform, arch, versions, argv, exit } = process;`],
 	]);
 	for (const scope of ["@earendil-works", "@mariozechner"]) {
-		for (const suffix of ["", "/compat"]) modules.set(`${scope}/pi-ai${suffix}`, `export { Type } from "typebox"; export { StringEnum } from ${JSON.stringify(path.join(compatibility, "piAI.ts"))}; ${platformExport(["complete", "getEnvApiKey"])}`);
+		for (const suffix of ["", "/compat"]) modules.set(`${scope}/pi-ai${suffix}`, `export { Type } from "typebox"; export { StringEnum } from ${JSON.stringify(path.join(compatibility, "piAI.ts"))}; export { clampThinkingLevel } from ${JSON.stringify(models)}; ${platformExport(["complete", "getEnvApiKey"])}`);
 		modules.set(`${scope}/pi-coding-agent`, `export { DynamicBorder, theme, getSelectListTheme, CONFIG_DIR_NAME } from ${JSON.stringify(codingAgent)}; ${platformExport(["getAgentDir", "BorderedLoader"])} export { truncateHead, truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from ${JSON.stringify(truncate)};`);
 		modules.set(`${scope}/pi-tui`, `export { Container, Markdown, SelectList, Key, matchesKey, parseKey, getKeybindings, visibleWidth, truncateToWidth, wrapTextWithAnsi } from ${JSON.stringify(tui)}; ${platformExport(["Text"])}`);
 	}

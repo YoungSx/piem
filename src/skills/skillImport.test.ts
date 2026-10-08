@@ -221,6 +221,9 @@ class MemoryEnv implements ExecutionEnv {
 	readonly id = "test:MemoryEnv";
 	async truncateFile(): Promise<Result<void, FileError>> { return err(new FileError("not_supported", "Unused in this fixture")); }
 	async flushFile(): Promise<Result<void, FileError>> { return err(new FileError("not_supported", "Unused in this fixture")); }
+	async openBinaryReader(): ReturnType<ExecutionEnv["openBinaryReader"]> { return err(new FileError("not_supported", "Unused in this fixture")); }
+	async openDirReader(): ReturnType<ExecutionEnv["openDirReader"]> { return err(new FileError("not_supported", "Unused in this fixture")); }
+	async watch(): ReturnType<ExecutionEnv["watch"]> { return err(new FileError("not_supported", "Unused in this fixture")); }
 	readonly cwd = "/vault";
 
 	private readonly files = new Map<string, string>();

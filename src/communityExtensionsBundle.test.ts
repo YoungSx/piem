@@ -81,7 +81,8 @@ async function fixture(options: { memory?: MemoryAdapter; settings?: PiemSetting
 describe("shipped community extensions in a permanently Node-free mobile realm", () => {
 	it("switches the next real protocol request, persists the choice, and annotates model handoff", async () => {
 		const f = await fixture({ handler: (body, index) => response(body, index === 1 ? { name: "switch_model", arguments: { action: "switch", search: "beta" } } : undefined) });
-		expect(await f.service.sendPrompt("Use Beta to finish this task")).toBe(true);
+		const accepted = await f.service.sendPrompt("Use Beta to finish this task");
+		expect({ accepted, error: f.service.getSnapshot().errorMessage }).toEqual({ accepted: true, error: undefined });
 		expect(f.requests.map(request => request.model)).toEqual(["alpha", "beta"]);
 		expect(f.requests[0]!.tools.some(tool => tool.function.name === "switch_model")).toBe(true);
 		expect(f.plugin.settings.activeModelId).toBe("b");

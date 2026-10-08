@@ -1,6 +1,6 @@
 ---
 name: pi-agent-team
-description: Operate pi-agent-team to start, observe, control, and continue agent teams. Use when delegating to multiple agents, choosing foreground or detached execution, interacting with team members, or continuing a settled team.
+description: Use to start, observe, control, or continue pi-agent-team sessions.
 ---
 
 # Pi Agent Team

@@ -5,6 +5,7 @@ import { normalizeVaultPath } from "../vault/path";
 import { parseMutationLine, SessionLogRepairNet, type SessionDriftEvent } from "./sessionMutationLine";
 import { textLineReader } from "../vault/textLineReader";
 import { fileSystemIdentity } from "../vault/fileSystemIdentity";
+import { openSnapshotBinaryReader, openSnapshotDirReader } from "../vault/snapshotReaders";
 
 function signalFrom(contextOrSignal?: Context | AbortSignal): AbortSignal | undefined {
 	if (!contextOrSignal) return undefined;
@@ -209,6 +210,18 @@ export type SessionRepoFileSystem = FileSystem;
 export class ObsidianSessionFileSystem implements SessionRepoFileSystem {
 	readonly cwd = "";
 	readonly id: string;
+
+	openBinaryReader(path: string, options?: { noFollow?: boolean }, context?: Context): ReturnType<FileSystem["openBinaryReader"]> {
+		return openSnapshotBinaryReader(this, path, options, context);
+	}
+
+	openDirReader(path: string, context?: Context): ReturnType<FileSystem["openDirReader"]> {
+		return openSnapshotDirReader(this, path, context);
+	}
+
+	async watch(): ReturnType<FileSystem["watch"]> {
+		return err(new FileError("not_supported", "Obsidian adapters do not expose filesystem watchers"));
+	}
 
 	async truncateFile(path: string, size: number, context?: Context): Promise<Result<void, FileError>> {
 		if (!Number.isSafeInteger(size) || size < 0) return err(new FileError("invalid", "Invalid file size", path));

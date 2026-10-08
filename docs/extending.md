@@ -285,6 +285,14 @@ See [third-party notices](../THIRD_PARTY_NOTICES.md) for attribution.
 
 ## Developing built-in skills
 
+The build uses TypeScript 7's `tsc`. The `typescript` package name resolves to
+Microsoft's `@typescript/typescript6` compatibility package for ESLint and the
+extension compiler API; `@typescript/native` supplies the new compiler without
+an executable-name conflict. Keep both aliases as described in the
+[official migration guide](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0).
+React stays on the latest 18.x release: React 19's client bundle includes dynamic
+script creation that `check:bundle` rejects for Obsidian's marketplace scanner.
+
 The repository's `skills/<name>/SKILL.md` is the source of truth. Add a valid
 folder with `name` and `description` frontmatter; the build discovers it without
 a TypeScript registration. Markdown references and templates travel with their

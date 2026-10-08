@@ -848,10 +848,10 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				// per token. The service awaits this before persisting message_end.
 				await invoke(scope => agentEvents.emit(event, () => scope.assertActive()), refresh && event.type !== "message_update" && event.type !== "tool_execution_update");
 			},
-			settled: async (): Promise<void> => {
+			settled: async (aborted = false): Promise<void> => {
 				await start();
 				if (!runner.hasHandlers("agent_settled")) return;
-				await invoke(async () => { await runner.emit({ type: "agent_settled" }); });
+				await invoke(async () => { await runner.emit({ type: "agent_settled", aborted }); });
 			},
 			cancel,
 			closed: (): Promise<void> => closing,

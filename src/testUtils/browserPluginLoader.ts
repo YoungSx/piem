@@ -16,7 +16,7 @@ export function loadBrowserPluginBundle(options: {
 	const browser: Record<string, unknown> = {
 		console, URL, URLSearchParams, TextEncoder, TextDecoder, AbortController, AbortSignal,
 		Request, Response, Headers, FormData, Blob, File, ReadableStream, WritableStream,
-		TransformStream, DOMException, crypto, structuredClone, atob, btoa,
+		TransformStream, DOMException, crypto, performance, structuredClone, atob, btoa,
 		setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask,
 	};
 	// DOM APIs are supplied by installDom in UI tests. No Node global is copied.

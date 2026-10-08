@@ -143,6 +143,7 @@ async function round(host: CommunityHost) {
 	await host.finishTurn({ message, toolResults: [], context: { messages: [message], tools: [] }, newMessages: [message] });
 	await host.emitAgentEvent({ type: "turn_end", message, toolResults: [] });
 	await host.emitAgentEvent({ type: "agent_end", messages: [message] });
+	await host.settled();
 }
 
 async function until(check: () => boolean) {
@@ -167,6 +168,7 @@ describe("original OTel in the default community host", () => {
 		expect(f.timers.size).toBe(0);
 		expect(f.listenerCount).toBe(0);
 		expect(f.errors).toEqual([]); expect(f.warnings).toEqual([]);
+		expect(f.notices.some(notice => /bootstrap|global Pi settings/.test(notice))).toBe(false);
 	});
 
 	it("exports three signals for separate chats and retires the old generation after Stop", async () => {
@@ -193,9 +195,12 @@ describe("original OTel in the default community host", () => {
 			const content = current.receipts.map(receipt => receipt.body).join("\n");
 			expect(content).toContain(own); expect(content).not.toContain(other);
 			expect(content).toContain("pi.session.shutdown");
+			expect(content).toContain("pi.agent.settled");
 			expect(content).not.toContain("private prompt"); expect(content).not.toContain("private note contents");
+			expect(content).not.toContain("private reply"); expect(content).not.toContain("private system");
 		}
 		expect(f.errors).toEqual([]); expect(f.warnings).toEqual([]);
+		expect(f.notices.some(notice => /bootstrap|global Pi settings/.test(notice))).toBe(false);
 	});
 
 	it("discards queued telemetry on opt-out while existing commands and future turns keep working", async () => {
