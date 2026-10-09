@@ -42,54 +42,49 @@ export class SettingButtonStub {
 	text: string | undefined;
 	destructive = false;
 	onClickHandler: (() => unknown) | undefined;
-	private elRef: HTMLButtonElement | undefined;
+	readonly buttonEl: HTMLButtonElement;
 
-	constructor(private readonly parent: HTMLElement) {}
+	constructor(private readonly parent: HTMLElement) {
+		// Like Obsidian's ButtonComponent, the <button> is created immediately
+		// upon addButton so builder failures leave the element visible in tests.
+		this.buttonEl = this.parent.ownerDocument.createElement("button");
+		this.parent.appendChild(this.buttonEl);
+	}
 
 	setButtonText(text: string): this {
 		this.text = text;
-		this.render().textContent = text;
+		this.buttonEl.textContent = text;
 		return this;
 	}
 
 	setDestructive(): this {
 		this.destructive = true;
-		this.render().classList.add("mod-destructive");
+		this.buttonEl.classList.add("mod-destructive");
 		return this;
 	}
 
 	/** CTA styling, as Obsidian's `setCta` does: the `mod-cta` class. */
 	setCta(): this {
-		this.render().classList.add("mod-cta");
+		this.buttonEl.classList.add("mod-cta");
 		return this;
 	}
 
 	onClick(handler: () => unknown): this {
 		this.onClickHandler = handler;
-		this.render().addEventListener("click", () => {
+		this.buttonEl.addEventListener("click", () => {
 			void handler();
 		});
 		return this;
 	}
 
 	setDisabled(disabled: boolean): this {
-		this.render().disabled = disabled;
+		this.buttonEl.disabled = disabled;
 		return this;
-	}
-
-	// A button element is only created on first use: an `addButton` whose builder
-	// never configures anything produces no dead `<button>` in the DOM.
-	private render(): HTMLButtonElement {
-		if (!this.elRef) {
-			this.elRef = this.parent.ownerDocument.createElement("button");
-			this.parent.appendChild(this.elRef);
-		}
-		return this.elRef;
 	}
 
 	/** Programmatic click for tests; goes through the same listener a real click would. */
 	click(): void {
-		this.render().click();
+		this.buttonEl.click();
 	}
 }
 
