@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { flushRender, installDom } from "../testUtils/dom";
 import { installObsidianStub, lastMenu, resetMenus, setTooltipMock } from "../testUtils/obsidianStub";
 import type { ModelTarget } from "./modelSwitcherCopy";
+import type { CodemodeSessionMode } from "../codemode/mode";
 
 installObsidianStub();
 const document = installDom();
@@ -16,6 +17,9 @@ const sonnet = { id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic", icon: 
 interface RenderOptions {
 	target?: Partial<ModelTarget>;
 	onSelect?: (modelId: string) => void;
+	/** The vault-wide codemode answer the group checks. Defaults to the shipped one. */
+	toolMode?: CodemodeSessionMode;
+	onSelectToolMode?: (mode: CodemodeSessionMode) => void;
 	/** Omitted means the host cannot reach settings, as on a stubbed App. */
 	onOpenSettings?: () => void;
 }
@@ -29,6 +33,8 @@ async function renderSwitcher(options: RenderOptions = {}): Promise<HTMLElement>
 		<ModelSwitcher
 			target={target(options.target)}
 			onSelect={options.onSelect ?? (() => undefined)}
+			toolMode={options.toolMode ?? "on"}
+			onSelectToolMode={options.onSelectToolMode ?? (() => undefined)}
 			onOpenSettings={options.onOpenSettings}
 		/>,
 	);
@@ -112,20 +118,26 @@ describe("ModelSwitcher menu", () => {
 	it("lists every configured model, in the order settings stores them", async () => {
 		const host = await renderSwitcher();
 
-		expect((await openMenu(host)).titles()).toEqual(["Opus 5 · OpenRouter", "Sonnet 5 · Anthropic"]);
+		expect((await openMenu(host)).titles()).toEqual(["Tool mode", "Off", "Both", "Scripts only · Beta (recommended)", "Opus 5 · OpenRouter", "Sonnet 5 · Anthropic"]);
 	});
 
 	it("carries each model's mark on its row, so the menu reads like the composer face", async () => {
 		const host = await renderSwitcher();
 
-		expect((await openMenu(host)).items.map((item) => item.icon)).toEqual([opus.icon, sonnet.icon]);
+		const menu = await openMenu(host);
+		// The group's rows carry no icon; the models' marks are what the test is
+		// about, and they still lead the rows that have one.
+		expect(menu.items.filter((item) => item.icon).map((item) => item.icon)).toEqual([opus.icon, sonnet.icon]);
 	});
 
 	it("marks the active row with a check, since its label deliberately does not say so", async () => {
 		const host = await renderSwitcher();
 
 		const items = (await openMenu(host)).items;
-		expect(items.map((item) => item.checked)).toEqual([true, false]);
+		// Group first: heading and the separator carry no check, Off unchecked,
+		// Both checked (the shipped mode), Only unchecked; then the models, Opus
+		// active.
+		expect(items.map((item) => item.checked)).toEqual([undefined, false, true, false, undefined, true, false]);
 	});
 
 	it("routes a selection to the host by model id, not by label", async () => {
@@ -141,21 +153,19 @@ describe("ModelSwitcher menu", () => {
 		const host = await renderSwitcher({ onOpenSettings: () => undefined });
 
 		const menu = await openMenu(host);
-		expect(menu.titles()).toEqual(["Opus 5 · OpenRouter", "Sonnet 5 · Anthropic", "Manage models…"]);
+		expect(menu.titles()).toEqual(["Tool mode", "Off", "Both", "Scripts only · Beta (recommended)", "Opus 5 · OpenRouter", "Sonnet 5 · Anthropic", "Manage models…"]);
 		expect(menu.items.some((item) => item.separator)).toBe(true);
 	});
 
 	it("says the list is empty rather than opening an empty popover", async () => {
-		// The one state where the switcher has nothing to switch between. A menu
-		// holding only an action would read as a list that failed to load.
+		// The one state where the switcher has nothing to switch between. The
+		// group still leads, and the label under it keeps "Manage models" from
+		// reading as a list that failed to load.
 		const host = await renderSwitcher({ target: { modelChoices: [], activeModelId: undefined }, onOpenSettings: () => undefined });
 
 		const menu = await openMenu(host);
-		expect(menu.titles()).toEqual(["No models configured", "Manage models…"]);
-		expect(menu.items[0]?.isLabel).toBe(true);
-		// No rule against the menu's own top edge: the label and the door are one
-		// block, not two.
-		expect(menu.items.some((item) => item.separator)).toBe(false);
+		expect(menu.titles()).toEqual(["Tool mode", "Off", "Both", "Scripts only · Beta (recommended)", "No models configured", "Manage models…"]);
+		expect(menu.items[5]?.isLabel).toBe(true);
 	});
 
 	it("routes the settings row to the host callback", async () => {
@@ -165,6 +175,41 @@ describe("ModelSwitcher menu", () => {
 		(await openMenu(host)).click("Manage models…");
 
 		expect(opened).toBe(1);
+	});
+
+	describe("tool-mode group", () => {
+		it("leads the menu with a heading that is a label, not an action", async () => {
+			const host = await renderSwitcher();
+
+			const menu = await openMenu(host);
+			expect(menu.items[0]?.title).toBe("Tool mode");
+			expect(menu.items[0]?.isLabel).toBe(true);
+		});
+
+		it("checks the mode that is in force, whatever it is", async () => {
+			const host = await renderSwitcher({ toolMode: "only" });
+
+			const menu = await openMenu(host);
+			expect(menu.items.find((item) => item.title === "Scripts only · Beta (recommended)")?.checked).toBe(true);
+			expect(menu.items.find((item) => item.title === "Both")?.checked).toBe(false);
+		});
+
+		it("routes a mode choice to the host by mode, not by label", async () => {
+			const chosen: string[] = [];
+			const host = await renderSwitcher({ onSelectToolMode: (mode) => chosen.push(mode) });
+
+			(await openMenu(host)).click("Off");
+
+			expect(chosen).toEqual(["off"]);
+		});
+
+		it("separates the group from the models, so the two lists read as two", async () => {
+			const host = await renderSwitcher();
+
+			const menu = await openMenu(host);
+			// The separator right after the group's third option.
+			expect(menu.items[4]?.separator).toBe(true);
+		});
 	});
 
 	/*
@@ -216,16 +261,11 @@ describe("ModelSwitcher availability", () => {
 		expect(button(host).getAttribute("aria-label")).toBe("Switch model · Opus 5 · OpenRouter");
 	});
 
-	it("disables itself when there is nothing to pick and nowhere to go", async () => {
-		// No configured models and no route to settings: the menu would open with a
-		// single dead line in it, which reads as a bug rather than as a state.
+	it("stays live even with nothing to pick and nowhere to go, since the tool-mode group is always there", async () => {
+		// The dead state this button used to grey out for. The group above the
+		// models is a live control in every state, so disabling would hide the
+		// one thing the popover can still do.
 		const host = await renderSwitcher({ target: { modelChoices: [], activeModelId: undefined } });
-
-		expect(button(host).disabled).toBe(true);
-	});
-
-	it("stays live with no models when settings are reachable, since that is the fix", async () => {
-		const host = await renderSwitcher({ target: { modelChoices: [], activeModelId: undefined }, onOpenSettings: () => undefined });
 
 		expect(button(host).disabled).toBe(false);
 	});

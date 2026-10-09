@@ -94,35 +94,54 @@ describe("normalizeSettings with disabledSkills", () => {
 	});
 });
 
-describe("normalizeSettings with codemodeEnabled", () => {
-	it("ships off: an absent field means the sandbox is not offered", () => {
-		expect(DEFAULT_SETTINGS.codemodeEnabled).toBe(false);
-		expect(normalizeSettings({}).codemodeEnabled).toBe(false);
-		expect(normalizeSettings(undefined).codemodeEnabled).toBe(false);
+describe("normalizeSettings with codemodeMode", () => {
+	it("ships on: the additive mode is the default a fresh vault gets", () => {
+		expect(DEFAULT_SETTINGS.codemodeMode).toBe("on");
+		expect(normalizeSettings({}).codemodeMode).toBe("on");
+		expect(normalizeSettings(undefined).codemodeMode).toBe("on");
 	});
 
-	it("stays on once the user turned it on", () => {
-		expect(normalizeSettings({ codemodeEnabled: true }).codemodeEnabled).toBe(true);
-	});
-
-	// Only an explicit `true` counts, so a hand-edited data.json cannot quietly
-	// hand the agent a tool that runs model-written code.
-	it("treats anything but a literal true as off", () => {
-		for (const value of ["true", 1, 0, {}, [], null] as never[]) {
-			expect(normalizeSettings({ codemodeEnabled: value }).codemodeEnabled).toBe(false);
-		}
+	it("keeps each of the three modes a stored file may carry", () => {
+		expect(normalizeSettings({ codemodeMode: "off" }).codemodeMode).toBe("off");
+		expect(normalizeSettings({ codemodeMode: "on" }).codemodeMode).toBe("on");
+		expect(normalizeSettings({ codemodeMode: "only" }).codemodeMode).toBe("only");
 	});
 
 	it("round-trips: a normalized value survives a second pass", () => {
-		expect(normalizeSettings(normalizeSettings({ codemodeEnabled: true })).codemodeEnabled).toBe(true);
-		expect(normalizeSettings(normalizeSettings({ codemodeEnabled: false })).codemodeEnabled).toBe(false);
+		for (const mode of ["off", "on", "only"] as const) {
+			expect(normalizeSettings(normalizeSettings({ codemodeMode: mode })).codemodeMode).toBe(mode);
+		}
 	});
 
-	// The two orchestration switches are independent: turning codemode on does not
-	// imply wanting the fixed workflow engine, and vice versa.
+	// A corrupted or hand-edited value degrades to the default rather than
+	// throwing, the same repair every other enum-typed setting gets.
+	it("treats an unknown value as no opinion, not as a mode", () => {
+		for (const value of ["true", 1, null, "both", ""] as never[]) {
+			expect(normalizeSettings({ codemodeMode: value }).codemodeMode).toBe("on");
+		}
+	});
+
+	it("migrates the legacy switch once: on keeps codemode, everything else takes the new default", () => {
+		// The pre-merge schema split one decision across two fields. A vault that
+		// had codemode on keeps a live mode; a stored `false` — which cannot
+		// distinguish "never asked" from "deliberately off" — moves to the
+		// shipped default, deliberately.
+		expect(normalizeSettings({ codemodeEnabled: true } as never).codemodeMode).toBe("on");
+		expect(normalizeSettings({ codemodeEnabled: false } as never).codemodeMode).toBe("on");
+		expect(normalizeSettings({ codemodeEnabled: "true" } as never).codemodeMode).toBe("on");
+	});
+
+	// The stored tri-state outranks the legacy pair, so the migration never
+	// overruns a later deliberate choice.
+	it("lets a stored tri-state outrank the legacy switch", () => {
+		expect(normalizeSettings({ codemodeMode: "off", codemodeEnabled: true } as never).codemodeMode).toBe("off");
+	});
+
+	// The two orchestration settings are independent: codemode does not imply
+	// wanting the fixed workflow engine, and vice versa.
 	it("does not follow the workflow switch", () => {
-		expect(normalizeSettings({ codemodeEnabled: true }).workflowEnabled).toBe(false);
-		expect(normalizeSettings({ workflowEnabled: true }).codemodeEnabled).toBe(false);
+		expect(normalizeSettings({ codemodeMode: "only" }).workflowEnabled).toBe(false);
+		expect(normalizeSettings({ workflowEnabled: true }).codemodeMode).toBe("on");
 	});
 });
 

@@ -1100,6 +1100,8 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 							target={snapshot}
 							onSelect={(modelId) => void service.setActiveModel(modelId)}
 							onOpenSettings={canOpenSettings ? () => openPluginSettings(app) : undefined}
+							toolMode={snapshot.codemodeMode}
+							onSelectToolMode={(mode) => void service.setCodemodeMode(mode)}
 						/>
 					}
 					thinkingSelector={

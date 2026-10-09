@@ -2,6 +2,7 @@ import React from "react";
 import { Menu } from "obsidian";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
 import { activeModelName, modelChoiceLabel, modelSwitcherTitle, type ModelTarget } from "./modelSwitcherCopy";
+import type { CodemodeSessionMode } from "../codemode/mode";
 import { useT } from "./TranslatorContext";
 
 interface ModelSwitcherProps {
@@ -9,6 +10,10 @@ interface ModelSwitcherProps {
 	target: ModelTarget;
 	/** Switches to a configured model by its `ModelConfig.id`. */
 	onSelect: (modelId: string) => void;
+	/** The vault-wide `codemode` answer, checked on its row in the group above the models. */
+	toolMode: CodemodeSessionMode;
+	/** Sets the vault-wide `codemode` answer. One writer: `setCodemodeMode`. */
+	onSelectToolMode: (mode: CodemodeSessionMode) => void;
 	/**
 	 * Opens the plugin's settings tab. Absent when the host cannot reach it, in
 	 * which case the menu drops the item — the same treatment {@link ChatHeader}
@@ -42,13 +47,16 @@ interface ModelSwitcherProps {
  * remaining turns onto a different model halfway through. The face shows the
  * chosen model (the intent); the title notes when it is still pending, keyed off
  * the gap between the settings target and {@link ModelTarget.runningModelId}.
+ *
+ * "Tool mode" sits above the models. It is the same decision as the Extensions
+ * tab's dropdown and `/codemode`, on the control a user already has open — and
+ * it is why the button no longer greys out when no model is configured: the
+ * group makes the popover live in every state, so the one dead line that
+ * justified disabling is gone.
  */
-export function ModelSwitcher({ target, onSelect, onOpenSettings }: ModelSwitcherProps): React.JSX.Element {
+export function ModelSwitcher({ target, onSelect, toolMode, onSelectToolMode, onOpenSettings }: ModelSwitcherProps): React.JSX.Element {
 	const t = useT();
 	const choices = target.modelChoices;
-	// Nothing to pick and nowhere to go: the menu would open as a popover with one
-	// dead line in it, which reads as a bug rather than as a state.
-	const isEmpty = choices.length === 0 && !onOpenSettings;
 
 	/**
 	 * The menu.
@@ -61,6 +69,16 @@ export function ModelSwitcher({ target, onSelect, onOpenSettings }: ModelSwitche
 	 */
 	const openMenu = (event: React.MouseEvent<HTMLButtonElement>): void => {
 		const menu = new Menu();
+		// The tool-mode group reads the same `toolMode.*` copy the Extensions
+		// tab's dropdown does, so the two surfaces name the three answers
+		// identically — one vocabulary, checked on the row that is in force.
+		menu.addItem((item) => item.setTitle(t.t("toolMode.heading")).setIsLabel(true));
+		for (const mode of ["off", "on", "only"] as const) {
+			menu.addItem((item) =>
+				item.setTitle(t.t(`toolMode.${mode}`)).setChecked(mode === toolMode).onClick(() => onSelectToolMode(mode)),
+			);
+		}
+		menu.addSeparator();
 		if (choices.length === 0) {
 			menu.addItem((item) => item.setTitle(t.t("modelSwitcher.noModels")).setIsLabel(true));
 		}
@@ -101,7 +119,6 @@ export function ModelSwitcher({ target, onSelect, onOpenSettings }: ModelSwitche
 			icon="chevrons-up-down"
 			label={modelSwitcherTitle(target, t)}
 			className="piem-chat__model-switcher"
-			disabled={isEmpty}
 			hasPopup="menu"
 			onClick={openMenu}
 		>

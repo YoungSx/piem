@@ -63,14 +63,16 @@ describe("isControlKey", () => {
 		expect(isControlKey("")).toBe(false);
 	});
 
-	it("admits the three orchestration keys the Extensions tab binds", () => {
+	it("admits the orchestration keys the Extensions tab binds", () => {
 		// Each of these renders as a plain row on the Extensions page, so the
-		// only thing standing between the toggle and the vault is membership
-		// here. All three were absent once; the panel showed switches that
-		// reset themselves to off on reopen.
+		// only thing standing between the control and the vault is membership
+		// here. All of these were absent once; the panel showed controls that
+		// reset themselves on reopen.
 		expect(isControlKey("workflowEnabled")).toBe(true);
-		expect(isControlKey("codemodeEnabled")).toBe(true);
 		expect(isControlKey("codemodeMode")).toBe(true);
+		// The pre-merge enable switch. It is not a setting any more, so admitting
+		// it here would let a stale row render and drop every change.
+		expect(isControlKey("codemodeEnabled")).toBe(false);
 	});
 });
 
@@ -168,23 +170,22 @@ describe("writeControlValue", () => {
 		expect(stored.cacheRetention).toBe("none");
 	});
 
-	it("writes the two codemode fields and the workflow switch, refusing values that are not theirs", () => {
-		const stored = settings({ workflowEnabled: false, codemodeEnabled: false, codemodeMode: "on" });
+	it("writes the codemode tri-state and the workflow switch, refusing values that are not theirs", () => {
+		const stored = settings({ workflowEnabled: false, codemodeMode: "on" });
 
 		expect(writeControlValue(stored, "workflowEnabled", true)).toBe(true);
 		expect(stored.workflowEnabled).toBe(true);
 		expect(writeControlValue(stored, "workflowEnabled", "on")).toBe(false);
 
-		expect(writeControlValue(stored, "codemodeEnabled", true)).toBe(true);
-		expect(stored.codemodeEnabled).toBe(true);
-		expect(writeControlValue(stored, "codemodeEnabled", "only")).toBe(false);
-		expect(stored.codemodeEnabled).toBe(true);
-
+		// All three modes are live values now: `off` is the switch's old
+		// answer folded into the one field, so the dropdown stores it.
+		expect(writeControlValue(stored, "codemodeMode", "off")).toBe(true);
+		expect(stored.codemodeMode).toBe("off");
 		expect(writeControlValue(stored, "codemodeMode", "only")).toBe(true);
 		expect(stored.codemodeMode).toBe("only");
-		// `off` is not a mode: it is the enabled switch's answer, and a dropdown
-		// that could store it would let the two fields contradict each other.
-		expect(writeControlValue(stored, "codemodeMode", "off")).toBe(false);
+		// A stray string is refused rather than stored: the menu and `/codemode`
+		// read the field back assuming it names a mode.
+		expect(writeControlValue(stored, "codemodeMode", "both")).toBe(false);
 		expect(stored.codemodeMode).toBe("only");
 	});
 

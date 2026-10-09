@@ -16,6 +16,7 @@ import {
 	type ProviderConfig,
 } from "./modelConfig";
 import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compactionSettings";
+import { isCodemodeSessionMode, type CodemodeSessionMode } from "./codemode/mode";
 
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
 import { ensureBuiltinMcpServer, normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
@@ -265,35 +266,15 @@ export interface PiemSettings {
 	 */
 	workflowEnabled?: boolean;
 	/**
-	 * The `codemode` tool: a QuickJS sandbox where a script the model writes calls
-	 * the vault's tools, and only the script's own output comes back.
+	 * What `codemode` is doing, vault-wide: absent (`"off"`), additive (`"on"`,
+	 * the default), or the only path (`"only"`). See {@link CodemodeSessionMode}.
 	 *
-	 * Off by default, for two reasons that are not the same reason. It costs
-	 * 369 KB of gzip on every plugin update for anyone who will never call it, and
-	 * — more to the point — a model that has the tool offered reaches for it when
-	 * a direct call would have done, so turning it on changes behaviour for every
-	 * conversation, not only the ones that ask for it.
-	 *
-	 * Only an explicit `true` counts on load, like every other opt-in here.
+	 * One field where there used to be two — an enable switch plus a mode. The
+	 * pair had a state neither half could express alone, and every surface
+	 * (model menu, settings page, `/codemode`) had to know how to merge them;
+	 * the tri-state says it once.
 	 */
-	codemodeEnabled?: boolean;
-	/**
-	 * How `codemode` presents the rest of the tool set: `"on"` or `"only"`.
-	 *
-	 * pi's own default is `"on"`, and the two mean different things rather than
-	 * being degrees of the same thing:
-	 *
-	 * - `"on"` — additive. Every tool stays declared to the model and each one gains
-	 *   a line showing how to call it from a script; `codemode` itself carries no
-	 *   catalog. The model may reach for either path.
-	 * - `"only"` — the sandbox is the path. The direct tools are withheld from the
-	 *   model and the whole catalog moves into `codemode`'s description, so a model
-	 *   cannot skip the sandbox. Cheaper per request than shipping both.
-	 *
-	 * `"on"` is the default because it is additive and reversible: a vault that tries
-	 * codemode and finds it worse turns it off without having lost anything.
-	 */
-	codemodeMode?: CodemodeMode;
+	codemodeMode?: CodemodeSessionMode;
 }
 
 /**
@@ -303,10 +284,8 @@ export interface PiemSettings {
  */
 export const DEFAULT_DISABLED_EXTENSIONS = ["@vincentff/pi-scheduler"];
 
-/** How `codemode` presents the other tools. See {@link PiemSettings.codemodeMode}. */
-export type CodemodeMode = "on" | "only";
-
-export const DEFAULT_CODEMODE_MODE: CodemodeMode = "on";
+/** The vault-wide `codemode` answer a settings file without the field gets. */
+export const DEFAULT_CODEMODE_MODE: CodemodeSessionMode = "on";
 
 export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	models: [],
@@ -329,7 +308,6 @@ export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	logLevel: DEFAULT_LOG_LEVEL,
 	shareDiagnostics: true,
 	workflowEnabled: false,
-	codemodeEnabled: false,
 	codemodeMode: DEFAULT_CODEMODE_MODE,
 	mcpServers: [],
 };
@@ -467,8 +445,7 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		mcpServers: ensureBuiltinMcpServer(normalizeMcpServers(data?.mcpServers)),
 		shareDiagnostics: data?.shareDiagnostics !== false,
 		workflowEnabled: data?.workflowEnabled === true,
-		codemodeEnabled: data?.codemodeEnabled === true,
-		codemodeMode: data?.codemodeMode === "only" ? "only" : DEFAULT_CODEMODE_MODE,
+		codemodeMode: readCodemodeMode(data),
 	};
 	// Omitted rather than stored as `false`, so "absent" keeps meaning "expanded"
 	// and a vault written before the field existed stays byte-identical on load.
@@ -506,6 +483,24 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 	const extensionConfig = normalizeExtensionConfig(data?.extensionConfig);
 	if (extensionConfig) settings.extensionConfig = extensionConfig;
 	return settings;
+}
+
+/**
+ * Reads the vault-wide `codemode` answer out of a possibly-legacy settings file.
+ *
+ * A valid stored tri-state wins outright. A file written before the merge carries
+ * the old pair instead — an enable switch and a two-valued mode — and migrates
+ * once: `true` keeps a live codemode (the old mode's ceiling was `only`, which
+ * the menu reaches in one click), anything else — including the old default,
+ * `false` — moves to the new default. That last step is deliberate: a stored
+ * `false` cannot distinguish "never offered an opinion" from "deliberately
+ * turned off", and the product decision is that codemode ships on. After the
+ * first save the tri-state is authoritative, so this never runs again.
+ */
+function readCodemodeMode(data: Partial<PiemSettings> | null | undefined): CodemodeSessionMode {
+	if (isCodemodeSessionMode(data?.codemodeMode)) return data.codemodeMode;
+	const legacy = data as { codemodeEnabled?: unknown } | null | undefined;
+	return legacy?.codemodeEnabled === true ? "on" : DEFAULT_CODEMODE_MODE;
 }
 
 export function getProviderModels(provider: string): Model<string>[] {

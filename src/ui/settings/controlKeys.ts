@@ -6,6 +6,7 @@ import { isCacheRetentionSetting } from "../../net/cacheRetention";
 import { isTraceExpandSetting } from "../traceExpand";
 import type { NetworkTransport } from "../../net/obsidianFetch";
 import { isPromptQueueStrategy } from "../../agent/queueStrategy";
+import { isCodemodeSessionMode } from "../../codemode/mode";
 import type { SettingsPanelSettings } from "./panelHost";
 
 /**
@@ -60,7 +61,6 @@ const CONTROL_KEYS = [
 	"activeModelId",
 	"shareDiagnostics",
 	"workflowEnabled",
-	"codemodeEnabled",
 	"codemodeMode",
 ] as const satisfies readonly (keyof SettingsPanelSettings)[];
 
@@ -151,12 +151,8 @@ export function writeControlValue(settings: SettingsPanelSettings, key: ControlK
 			if (typeof value !== "boolean") return false;
 			settings.workflowEnabled = value;
 			return true;
-		case "codemodeEnabled":
-			if (typeof value !== "boolean") return false;
-			settings.codemodeEnabled = value;
-			return true;
 		case "codemodeMode":
-			if (value !== "on" && value !== "only") return false;
+			if (!isCodemodeSessionMode(value)) return false;
 			settings.codemodeMode = value;
 			return true;
 		default:

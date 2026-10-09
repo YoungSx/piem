@@ -228,8 +228,9 @@ report you have already read and put away is still one it can collect.
 
 `codemode` batches tool calls in a JavaScript sandbox. Use `/codemode on` to keep
 both direct and scripted calls, `/codemode only` to route calls through scripts,
-and `/codemode off` to remove the script tool. These commands update the vault
-setting. Scripts discover tool names and parameter declarations through
+and `/codemode off` to remove the script tool. Every vault starts on `on` (both
+paths side by side); the model menu's "Tool mode" group and the settings page
+write the same setting these commands do. Scripts discover tool names and parameter declarations through
 `ALL_TOOLS`, then call `await tools[name](args)`.
 
 The sandbox uses Pi's QuickJS prelude, source parser and declaration renderer,

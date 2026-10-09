@@ -191,7 +191,8 @@ Piem 下的，不是你下的。
 
 `codemode` 在 JavaScript 沙箱中批量调用工具。`/codemode on` 保留直接调用与脚本
 两种方式，`/codemode only` 要求通过脚本调用，`/codemode off` 移除脚本工具。
-这些命令修改同一份仓库设置。脚本通过 `ALL_TOOLS` 查询工具名称与参数声明，再用
+每个仓库默认停在 `on`（两种方式并存）；模型菜单的「工具模式」分组与设置页
+写入的也是这同一份设置。脚本通过 `ALL_TOOLS` 查询工具名称与参数声明，再用
 `await tools[name](args)` 调用。
 
 沙箱复用 Pi 的 QuickJS 内部脚本、源码解析器与声明生成器，通过浏览器 Worker

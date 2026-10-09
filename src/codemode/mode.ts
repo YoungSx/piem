@@ -22,6 +22,15 @@ export type CodemodeDirective =
 	 *  believing a mode they did not ask for. */
 	| { kind: "unknown"; argument: string };
 
+/**
+ * Whether a stored or DOM-sourced value names a mode. The settings reader and
+ * the settings page both validate with this rather than restating the three
+ * words, so a mode added here is accepted everywhere at once.
+ */
+export function isCodemodeSessionMode(value: unknown): value is CodemodeSessionMode {
+	return value === "off" || value === "on" || value === "only";
+}
+
 const ARGUMENTS: Record<string, CodemodeSessionMode> = {
 	on: "on",
 	both: "on",

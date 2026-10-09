@@ -52,6 +52,20 @@ export const en = {
 		couldNotOpenSubagents: "Could not open the subagent panel.",
 	},
 
+	/**
+	 * The "Tool mode" group at the top of the model menu, shared with the
+	 * Extensions tab's dropdown so the two surfaces say it the same way.
+	 *
+	 * `only` carries the beta note and the recommendation inline: a menu row has
+	 * no description slot, so the one string is the whole disclosure.
+	 */
+	toolMode: {
+		heading: "Tool mode",
+		off: "Off",
+		on: "Both",
+		only: "Scripts only · Beta (recommended)",
+	},
+
 	/** Chat panel — header, banner, composer, message list, and trace rows. */
 	extensions: {
 		clarifyCurrentModel: "Draft rewriting follows the current conversation model.",
@@ -65,12 +79,7 @@ export const en = {
 		included: "Built-in Pi extensions",
 		description: "These integrations ship with Piem and load into every chat by default. Web search and draft rewriting send data to the current provider and may cost extra.",
 		applyNote: "Turning one off or on takes effect in your next chat, or after the next Stop.",
-		codemodeName: "Codemode sandbox",
-		codemodeMode: "How tools are presented",
-		codemodeModeDesc: "On: every tool stays callable directly, and each one gains a line showing it can also be used inside a script. Only: the script is the only path — the direct tools are withheld from the model and their declarations move into the codemode description, which is cheaper but leaves the model one way to work.",
-		codemodeModeOn: "Both (recommended)",
-		codemodeModeOnly: "Scripts only",
-		codemodeDesc: "Adds codemode: the agent can write a JavaScript script that calls your tools, with only the script's own output coming back to the conversation. Off by default because it adds about 370 KB to every plugin update and changes how the agent approaches multi-step work. Applies to the current chat and every chat after it. The composer's /codemode command writes this same switch.",
+		codemodeDesc: "How the agent reaches your tools. Both: every tool stays callable directly, and each one gains a line showing it can also be used inside a script. Scripts only: the script becomes the only path — the direct tools are withheld from the model and their declarations move into the codemode description, which is cheaper per request. Off removes the script tool. Adds about 370 KB to every plugin update and changes how the agent approaches multi-step work, so it ships on Both rather than at either extreme. Applies to the current chat and every chat after it; the model menu and the composer's /codemode command write this same setting.",
 		workflowName: "Workflow engine",
 		workflowDesc: "Adds run_workflow, for running a scripted sequence of agent steps in one go. Off by default since codemode covers the same ground; turn it on to get the fixed, repeatable version back.",
 		catalog: {

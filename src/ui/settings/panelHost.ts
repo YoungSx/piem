@@ -18,6 +18,7 @@ import type { LanguageSetting, Translator } from "../../i18n";
 import type { ConversationLanguageSetting } from "../../agent/conversationLanguage";
 import type { SendShortcut } from "../keyboard";
 import type { SecretStorageState } from "./secretStorageCopy";
+import type { CodemodeSessionMode } from "../../codemode/mode";
 
 /**
  * What the settings tab needs from the plugin, and what it stores.
@@ -254,10 +255,8 @@ export interface SettingsPanelSettings {
 	shareDiagnostics?: boolean;
 	/** Whether the `run_workflow` tool is offered; off unless the user turned it on. */
 	workflowEnabled?: boolean;
-	/** Whether the `codemode` tool is offered; off unless the user turned it on. */
-	codemodeEnabled?: boolean;
-	/** How `codemode` presents the other tools. See {@link CodemodeMode}. */
-	codemodeMode?: "on" | "only";
+	/** The vault-wide `codemode` answer; see {@link PiemSettings.codemodeMode}. */
+	codemodeMode?: CodemodeSessionMode;
 	logLevel: LogLevelSetting;
 }
 

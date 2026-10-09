@@ -154,11 +154,12 @@ describe("buildSettingDefinitions", () => {
 			for (const item of (page as { items: unknown[] }).items as Array<Record<string, unknown>>) visit(item);
 		}
 		expect([...keys].sort()).toEqual([...keys].filter(isControlKey).sort());
-		// The three the drift was found on, pinned by name so removing one fails
-		// here rather than in a user's settings window.
-		expect(keys.has("codemodeEnabled")).toBe(true);
+		// The ones the drift was found on, pinned by name so removing one fails
+		// here rather than in a user's settings window. `codemodeEnabled` is
+		// deliberately absent: the pre-merge switch is not a setting any more.
 		expect(keys.has("codemodeMode")).toBe(true);
 		expect(keys.has("workflowEnabled")).toBe(true);
+		expect(keys.has("codemodeEnabled")).toBe(false);
 	});
 
 	it("declares every page's rows inline, so none is drawn outside the index", () => {
