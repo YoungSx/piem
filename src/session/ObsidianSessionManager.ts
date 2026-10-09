@@ -681,42 +681,50 @@ export class ObsidianSessionManager {
 		return (await session.appendEntry({ type: "thinking_level_change", id: session.idGenerator.next(), thinkingLevel }, lane)).id;
 	}
 
-	/**
-	 * The thinking level the most recent stored session ended on, for seeding a
-	 * brand-new conversation. Read through a throwaway session the same way
-	 * {@link readActiveSessionName} does: the live session object is never
-	 * touched, so an in-flight append cannot be disturbed. Undefined when no
-	 * session exists yet or the newest one predates level entries (pi's context
-	 * builder already defaults those to `"off"`, so `undefined` here only means
-	 * "nothing to inherit").
-	 */
-	async readLastSessionThinkingLevel(): Promise<ThinkingLevel | undefined> {
-		const sessions = await this.listSessions();
-		const newest = sessions[0];
-		if (!newest) {
-			return undefined;
-		}
-		const metadata = await this.findMetadata(newest.path);
-		if (!metadata) {
-			return undefined;
-		}
-		const previous = await this.repo(this.resolveSessionDir()).open(metadata, BACKGROUND_CONTEXT, { readOnly: true });
+	/** Reads a seed without focusing or changing the source, including unsent sheets. */
+	async readThinkingLevelFor(path: string, lane = "main"): Promise<ThinkingLevel | undefined> {
 		try {
-			const config = await previous.getConfiguration("main");
-			if (config?.thinkingLevel) {
-				return config.thinkingLevel;
+			const live = this.hydrated.get(path)?.session;
+			if (live) {
+				return await this.readLevelFromSession(live, lane);
 			}
-			const entries = await previous.findEntriesOnBranch({ order: "newestFirst" });
-			for (const e of entries) {
-				const rec = e as unknown as Record<string, unknown>;
-				if (rec.type === "thinking_level_change" && typeof rec.thinkingLevel === "string") {
-					return rec.thinkingLevel as ThinkingLevel;
-				}
+			const metadata = await this.findMetadata(path);
+			if (!metadata) {
+				return undefined;
 			}
+			const previous = await this.repo(this.resolveSessionDir()).open(metadata, BACKGROUND_CONTEXT, { readOnly: true });
+			try {
+				return await this.readLevelFromSession(previous, lane);
+			} finally {
+				await previous.close(BACKGROUND_CONTEXT);
+			}
+		} catch (error) {
+			this.log?.warn("Failed to read thinking level for candidate session", () => ({ path, error: String(error) }));
 			return undefined;
-		} finally {
-			await previous.close(BACKGROUND_CONTEXT);
 		}
+	}
+
+	private async readLevelFromSession(session: PiSession, lane: string): Promise<ThinkingLevel | undefined> {
+		const config = await session.getConfiguration(lane);
+		if (config?.thinkingLevel) {
+			return config.thinkingLevel;
+		}
+		const entries = await session.view(lane).findEntriesOnBranch({ order: "newestFirst" });
+		for (const e of entries) {
+			const rec = e as unknown as Record<string, unknown>;
+			if (rec.type === "thinking_level_change" && typeof rec.thinkingLevel === "string") {
+				return rec.thinkingLevel as ThinkingLevel;
+			}
+		}
+		return undefined;
+	}
+
+	async readLastSessionThinkingLevel(): Promise<ThinkingLevel | undefined> {
+		const candidate = await this.resolveResumeCandidate();
+		if (!candidate) {
+			return undefined;
+		}
+		return this.readThinkingLevelFor(candidate.path);
 	}
 
 	async appendCompaction(result: PersistedCompactResult, lane = "main"): Promise<string> {
