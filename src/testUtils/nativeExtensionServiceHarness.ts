@@ -7,7 +7,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { MemoryAdapter } from "./memoryAdapter";
 import { withRunawayGuard } from "./runawayGuard";
 import { ObsidianAgentService } from "../agent/ObsidianAgentService";
-import { ObsidianSessionManager } from "../session/ObsidianSessionManager";
+import { ObsidianSessionManager, type LastOpenedSessionStore } from "../session/ObsidianSessionManager";
 import { DEFAULT_SETTINGS } from "../settings";
 
 /**
@@ -16,9 +16,9 @@ import { DEFAULT_SETTINGS } from "../settings";
  * non-reasoning model correctly records as "off" and would make a test that
  * asserts "medium" pass only by accident.
  */
-export function harness(factory: ExtensionFactory, options: { reasoning?: boolean } = {}) {
+export function harness(factory: ExtensionFactory, options: { reasoning?: boolean; lastOpened?: LastOpenedSessionStore } = {}) {
 	const adapter = new MemoryAdapter() as unknown as DataAdapter;
-	const sessions = new ObsidianSessionManager(adapter, "Piem/sessions", "obsidian-vault:Bridge test");
+	const sessions = new ObsidianSessionManager(adapter, "Piem/sessions", "obsidian-vault:Bridge test", undefined, options.lastOpened);
 	const settings = {
 		...DEFAULT_SETTINGS,
 		providers: [{ id: "bridge-provider", name: "Test gateway", baseUrl: "https://bridge.test/v1",

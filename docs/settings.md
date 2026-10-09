@@ -72,6 +72,13 @@ since one that ignores it simply bills the cheaper way.
 
 Behavior on top, storage underneath.
 
+New chats inherit the thinking level from the conversation you leave. After a
+restart, they inherit it from this device's last opened chat, falling back to the
+most recently saved chat if that record is unavailable. The level is adjusted to
+what the selected model supports; a model without reasoning uses **off**. With no
+previous chat, the starting preference is **off**. Changes still pending on a
+running conversation are inherited only after they take effect.
+
 Two things happen here without a switch, and both are worth knowing about. The
 note you have open is injected into **every** turn — its path and its body — so
 you never have to say "the note I'm looking at". And when the context window

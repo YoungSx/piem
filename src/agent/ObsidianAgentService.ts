@@ -3852,30 +3852,25 @@ export class ObsidianAgentService {
 			// global setting: the user tuned it there and a fresh chat should not
 			// start from a value they never chose. Clamped to the model the new
 			// session will run on, since the previous one may have run another.
-			const inherited = await this.sessionManager.readLastSessionThinkingLevel();
+			const source = previous?.sessionPath ?? (await this.sessionManager.resolveResumeCandidate())?.path;
+			const inherited = source
+				? await this.sessionManager.readThinkingLevelFor(source, previous?.activeLane)
+				: undefined;
 			if (
 				this.disposed ||
 				this.current() !== previous ||
 				this.sessionOpenSequence !== sequence
 			)
 				return;
-			const seed = clampThinkingLevel(
-				getSelectedModel(this.getSettings()),
-				inherited ?? DEFAULT_THINKING_LEVEL,
-			);
+			const defaults = this.getSessionDefaults(inherited);
 			// The sheet is held in memory only: the first message is what makes a
 			// session durable (`beginRunOperation` materializes it), so a sheet
 			// the user merely looked at leaves no file, no history row, and no
 			// last-opened record behind. Its seed configuration lives in the
 			// sheet's memory as real facts, so context readers see the same shape
 			// on a sheet as on a stored chat.
-			const seedModel = getSelectedModel(this.getSettings());
 			const info = await this.sessionManager.createBlankSession(
-				{
-					provider: seedModel.provider,
-					modelId: seedModel.id,
-					thinkingLevel: seed,
-				},
+				defaults,
 				false,
 			);
 			if (
@@ -3900,7 +3895,7 @@ export class ObsidianAgentService {
 			// a fresh runtime starts clean (the old `contextRefs.reset()`), while the
 			// workspace's active note is left alone because it describes the workspace.
 			try {
-				await this.replaceAgent(rt, [], seed);
+				await this.replaceAgent(rt, [], defaults.thinkingLevel);
 			} catch (error) {
 				this.removeRuntime(rt);
 				await this.sessionManager.deleteSession(info.path);
@@ -5851,7 +5846,6 @@ export class ObsidianAgentService {
 	private async initializeAgent(): Promise<void> {
 		await this.reloadCommandsSafely();
 		if (this.disposed) return;
-		const defaults = this.getSessionDefaults();
 		// The chat this device would return to, resolved as a summary — neither
 		// hydrated nor focused, and the last-opened record untouched — so the two
 		// branches below can decide what to do with it without either one having
@@ -5879,7 +5873,11 @@ export class ObsidianAgentService {
 		// banner instead — returning is one click, starting fresh is the default.
 		// The blank sheet writes no last-opened record, so the record survives for
 		// the offer to point at and for the next cold start to suggest again.
-		const info = await this.sessionManager.createBlankSession(defaults);
+		const inherited = candidate
+			? await this.sessionManager.readThinkingLevelFor(candidate.path)
+			: undefined;
+		if (this.disposed) return;
+		const info = await this.sessionManager.createBlankSession(this.getSessionDefaults(inherited));
 		if (this.disposed) return;
 		this.startupBlankPath = info.path;
 		// Only a chat with something in it is worth returning to: a durable but
@@ -8685,11 +8683,12 @@ export class ObsidianAgentService {
 		);
 	}
 
-	private getSessionDefaults(): SessionDefaults {
+	private getSessionDefaults(thinkingLevel: ThinkingLevel = DEFAULT_THINKING_LEVEL) {
 		const model = getSelectedModel(this.getSettings());
 		return {
 			provider: model.provider,
 			modelId: model.id,
+			thinkingLevel: clampThinkingLevel(model, thinkingLevel),
 		};
 	}
 
