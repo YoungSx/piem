@@ -24,7 +24,7 @@
 
 import type { OAuthAuth } from "@earendil-works/pi-ai";
 import type { FetchFn } from "../net/obsidianFetch";
-import { createDeviceCodeOAuth, type DeviceCodeDeps, type DeviceCodeFlow } from "./deviceCode";
+import { createDeviceCodeOAuth, type DeviceCodeFlow } from "./deviceCode";
 import { createManualCodeOAuth, type ManualCodeFlow } from "./pkce";
 
 /**
