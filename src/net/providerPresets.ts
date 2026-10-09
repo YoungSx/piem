@@ -83,17 +83,10 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
 	// Subscription sign-ins first: they need no key at all, so a user who has one
 	// should not have to read past sixteen key-taking rows to find it.
 	{
-		id: "openai-codex",
-		name: "OpenAI (ChatGPT Plus/Pro)",
-		baseUrl: "https://api.openai.com/v1",
-		protocol: "openai-responses",
-		oauthFlow: "openai-codex",
-	},
-	{
 		id: "github-copilot",
 		name: "GitHub Copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		protocol: "openai-responses",
+		protocol: "openai-completions",
 		oauthFlow: "github-copilot",
 	},
 	{
@@ -219,72 +212,43 @@ function canonicalBaseUrl(baseUrl: string): string | undefined {
 	return `${parsed.protocol}//${parsed.host.toLowerCase()}${path}${parsed.search}`;
 }
 
-/** The three fields that decide which preset a row is. */
-export type ProviderPresetKey = Pick<ProviderConfig, "baseUrl" | "protocol" | "oauthFlow">;
-
 /**
- * The preset a draft currently matches, or undefined for a hand-typed endpoint.
+ * Finds the preset matching a saved or draft provider row.
  *
- * All three fields have to agree, and each for its own reason. An OpenRouter URL
- * switched to Anthropic Messages is no longer the OpenRouter preset, and
- * reporting it as one would let the dropdown claim a configuration the form is
- * not holding. The sign-in joined them because it is the only thing separating
- * two rows that are otherwise identical: xAI serves the same host and protocol
- * to an API key and to a Grok subscription, so without it the dropdown would
- * pick whichever of the two comes first in the table and quietly relabel the
- * other.
- *
- * That is the whole job of this function — the dropdown opens on its answer, so
- * an edited row shows which preset it came from, and a hand-typed one shows
- * "Custom".
+ * Matches on the trio: protocol, base URL, and auth method. Matching on the URL
+ * alone would falsely mark an API key row as the subscription row for providers
+ * that use the same endpoint for both (e.g. xAI).
  */
-export function matchProviderPreset(key: ProviderPresetKey): ProviderPreset | undefined {
-	const canonical = canonicalBaseUrl(key.baseUrl);
-	if (canonical === undefined) {
+export function matchProviderPreset(provider: {
+	baseUrl: string;
+	protocol: WireProtocol;
+	oauthFlow?: string;
+}): ProviderPreset | undefined {
+	const targetUrl = canonicalBaseUrl(provider.baseUrl);
+	if (!targetUrl) {
 		return undefined;
 	}
+	const targetFlow = provider.oauthFlow || undefined;
 	return PROVIDER_PRESETS.find(
 		(preset) =>
-			preset.protocol === key.protocol &&
-			(preset.oauthFlow ?? "") === (key.oauthFlow ?? "") &&
-			canonicalBaseUrl(preset.baseUrl) === canonical,
+			preset.protocol === provider.protocol &&
+			preset.oauthFlow === targetFlow &&
+			canonicalBaseUrl(preset.baseUrl) === targetUrl,
 	);
 }
 
-/**
- * A draft with one preset applied: name, URL and protocol are the preset's.
- *
- * All three unconditionally, because a preset does not merely pre-fill them — it
- * owns them. The form hides those rows while a preset is selected, since there is
- * nothing to decide: an edited OpenRouter URL is not OpenRouter, and a row named
- * something else that points at Anthropic is a label that lies. So there is no
- * "the user's own value" here to protect. Someone who does want to name or steer
- * the endpoint themselves picks Custom, which reveals the three rows still
- * holding whatever the preset left in them.
- *
- * The credential is deliberately untouched. It is almost certainly wrong for the
- * new endpoint, but clearing a just-pasted key on a stray dropdown change costs
- * more than the stale key does — the connection test says so immediately, and the
- * field is right there. A subscription preset makes that harmless rather than
- * merely cheap: the provider it produces advertises no api-key auth at all, so a
- * leftover key cannot be sent, and switching back reveals the field still holding
- * it.
- */
+/** Looks a preset up by its dropdown option value. */
+export function findProviderPreset(id: string): ProviderPreset | undefined {
+	return PROVIDER_PRESETS.find((preset) => preset.id === id);
+}
+
+/** Fills preset defaults into a draft row while keeping its identity intact. */
 export function applyProviderPreset(draft: ProviderConfig, preset: ProviderPreset): ProviderConfig {
 	return {
 		...draft,
 		name: preset.name,
 		baseUrl: preset.baseUrl,
 		protocol: preset.protocol,
-		// Written unconditionally in both directions, including back to `""`.
-		// Leaving a stale sign-in behind when someone switches from a subscription
-		// preset to a key-taking one would produce a row that ignores the key they
-		// are about to paste — the same class of lie as a stale base URL.
 		oauthFlow: preset.oauthFlow ?? "",
 	};
-}
-
-/** Looks a preset up by dropdown value; undefined for {@link CUSTOM_PRESET_ID}. */
-export function findProviderPreset(id: string): ProviderPreset | undefined {
-	return id === CUSTOM_PRESET_ID ? undefined : PROVIDER_PRESETS.find((preset) => preset.id === id);
 }
