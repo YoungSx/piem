@@ -202,7 +202,7 @@ Synchronizing simultaneous edits to the same label follows the existing session
 merge rule: the arriving file wins. Sync is not a cross-device transaction.
 
 Bookmarks work offline. Seven community extensions are also bundled and active
-by default. Diagnostic sharing has an off switch in **Extensions**:
+by default. Diagnostic sharing has an off switch in **General**:
 
 | Extension | What it does | How to use it |
 | --- | --- | --- |
@@ -212,7 +212,7 @@ by default. Diagnostic sharing has an off switch in **Extensions**:
 | `pi-web-search` | Searches with the current provider and returns source links | Ask the agent to use `web_search` |
 | `pi-clarify` | Rewrites a rough request into an editable draft | `/clarify <idea>`, or **Piem: Rewrite a draft before sending** |
 | `pi-context` | Saves checkpoints, inspects the timeline and continues from a summary branch | Ask the agent to use `context_checkpoint`, `context_timeline` or `context_compact` |
-| [`b1tank/pi-otel`](https://github.com/b1tank/pi-otel) | Shares error reports and performance data with Piem's maintainers | On by default; turn off **Share error reports and performance data** in **Extensions** to stop |
+| [`b1tank/pi-otel`](https://github.com/b1tank/pi-otel) | Shares error reports and performance data with Piem's maintainers | On by default; turn off **Share error reports and performance data** in **General** to stop |
 
 Switching is limited to unambiguous configured models with API keys. It changes the
 next model request in that conversation and saves the default choice. The newly

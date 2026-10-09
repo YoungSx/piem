@@ -137,66 +137,6 @@ describe("normalizeSettings with codemodeMode", () => {
 		expect(normalizeSettings({ codemodeMode: "off", codemodeEnabled: true } as never).codemodeMode).toBe("off");
 	});
 
-	// The two orchestration settings are independent: codemode does not imply
-	// wanting the fixed workflow engine, and vice versa.
-	it("does not follow the workflow switch", () => {
-		expect(normalizeSettings({ codemodeMode: "only" }).workflowEnabled).toBe(false);
-		expect(normalizeSettings({ workflowEnabled: true }).codemodeMode).toBe("on");
-	});
-});
-
-describe("normalizeSettings with workflowEnabled", () => {
-	it("ships off: an absent field means the workflow tool is not offered", () => {
-		expect(DEFAULT_SETTINGS.workflowEnabled).toBe(false);
-		expect(normalizeSettings({}).workflowEnabled).toBe(false);
-		expect(normalizeSettings(undefined).workflowEnabled).toBe(false);
-	});
-
-	it("stays on once the user turned it on", () => {
-		expect(normalizeSettings({ workflowEnabled: true }).workflowEnabled).toBe(true);
-	});
-
-	// A hand-edited data.json can hold anything; only an explicit true counts, so
-	// a corrupt value cannot silently hand the agent a second orchestration tool.
-	it("treats anything but a literal true as off", () => {
-		for (const value of ["true", 1, 0, {}, [], null] as never[]) {
-			expect(normalizeSettings({ workflowEnabled: value }).workflowEnabled).toBe(false);
-		}
-	});
-
-	it("round-trips: a normalized value survives a second pass", () => {
-		const once = normalizeSettings({ workflowEnabled: true });
-		expect(normalizeSettings(once).workflowEnabled).toBe(true);
-		const off = normalizeSettings({ workflowEnabled: false });
-		expect(normalizeSettings(off).workflowEnabled).toBe(false);
-	});
-});
-
-describe("normalizeSettings with workflowEnabled", () => {
-	it("ships off: an absent field means the workflow tool is not offered", () => {
-		expect(DEFAULT_SETTINGS.workflowEnabled).toBe(false);
-		expect(normalizeSettings({}).workflowEnabled).toBe(false);
-		expect(normalizeSettings(undefined).workflowEnabled).toBe(false);
-	});
-
-	it("stays on once the user turned it on", () => {
-		expect(normalizeSettings({ workflowEnabled: true }).workflowEnabled).toBe(true);
-	});
-
-	// A hand-edited data.json can hold anything; only an explicit true counts, so
-	// a corrupt value cannot silently hand the agent a second orchestration tool.
-	it("treats anything but a literal true as off", () => {
-		for (const value of ["true", 1, 0, {}, [], null] as never[]) {
-			expect(normalizeSettings({ workflowEnabled: value }).workflowEnabled).toBe(false);
-		}
-	});
-
-	it("round-trips: a normalized value survives a second pass", () => {
-		const once = normalizeSettings({ workflowEnabled: true });
-		expect(normalizeSettings(once).workflowEnabled).toBe(true);
-		const off = normalizeSettings({ workflowEnabled: false });
-		expect(normalizeSettings(off).workflowEnabled).toBe(false);
-	});
 });
 
 describe("normalizeSettings with disabledExtensions", () => {

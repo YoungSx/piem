@@ -68,7 +68,7 @@ describe("isControlKey", () => {
 		// only thing standing between the control and the vault is membership
 		// here. All of these were absent once; the panel showed controls that
 		// reset themselves on reopen.
-		expect(isControlKey("workflowEnabled")).toBe(true);
+		expect(isControlKey("workflowEnabled")).toBe(false);
 		expect(isControlKey("codemodeMode")).toBe(true);
 		// The pre-merge enable switch. It is not a setting any more, so admitting
 		// it here would let a stale row render and drop every change.
@@ -170,12 +170,8 @@ describe("writeControlValue", () => {
 		expect(stored.cacheRetention).toBe("none");
 	});
 
-	it("writes the codemode tri-state and the workflow switch, refusing values that are not theirs", () => {
-		const stored = settings({ workflowEnabled: false, codemodeMode: "on" });
-
-		expect(writeControlValue(stored, "workflowEnabled", true)).toBe(true);
-		expect(stored.workflowEnabled).toBe(true);
-		expect(writeControlValue(stored, "workflowEnabled", "on")).toBe(false);
+	it("writes the codemode tri-state, refusing values that are not theirs", () => {
+		const stored = settings({ codemodeMode: "on" });
 
 		// All three modes are live values now: `off` is the switch's old
 		// answer folded into the one field, so the dropdown stores it.

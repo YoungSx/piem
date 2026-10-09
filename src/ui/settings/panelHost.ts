@@ -253,8 +253,6 @@ export interface SettingsPanelSettings {
 	disabledExtensions: string[];
 	mcpServers: McpServerConfig[];
 	shareDiagnostics?: boolean;
-	/** Whether the `run_workflow` tool is offered; off unless the user turned it on. */
-	workflowEnabled?: boolean;
 	/** The vault-wide `codemode` answer; see {@link PiemSettings.codemodeMode}. */
 	codemodeMode?: CodemodeSessionMode;
 	logLevel: LogLevelSetting;

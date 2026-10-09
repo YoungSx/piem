@@ -1096,50 +1096,6 @@ describe("agent-team member sessions through the service", () => {
 	}, 30_000);
 });
 
-describe("run_workflow ships off unless the user asked for it", () => {
-	/**
-	 * The top-level tool names the current settings produce.
-	 *
-	 * Read off the agent rather than `buildTools`, which is private: the mounted
-	 * tool list is what the model is actually offered, so a test that read the
-	 * private method could pass while the agent was assembled from something else.
-	 */
-	async function toolNames(settings: PiemSettings): Promise<string[]> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			// One prompt drives construction; the turn ends on the throw, which is
-			// after the tool set is fixed.
-			await service.sendPrompt("seed").catch(() => undefined);
-			const agent = (service as unknown as {
-				agent?: { state: { tools: Array<{ name: string }> } };
-			}).agent;
-			return (agent?.state.tools ?? []).map(tool => tool.name);
-		} finally {
-			service.dispose();
-		}
-	}
-
-	it("offers no run_workflow on a vault that never turned it on", async () => {
-		expect(await toolNames(defaultTestSettings())).not.toContain("run_workflow");
-	}, 30_000);
-
-	it("offers run_workflow once the setting is on", async () => {
-		const settings = { ...defaultTestSettings(), workflowEnabled: true };
-		expect(await toolNames(settings)).toContain("run_workflow");
-	}, 30_000);
-
-	// The rest of the tool set is what the tests above would silently lose if the
-	// gate took the wrong slice: `read` proves the vault tools survive it.
-	it("leaves the rest of the tool set alone", async () => {
-		expect(await toolNames(defaultTestSettings())).toContain("read");
-	}, 30_000);
-});
-
 describe("codemode ships on, in the additive mode", () => {
 	async function names(settings: PiemSettings): Promise<string[]> {
 		const adapter = asDataAdapter(new MemoryAdapter());
@@ -1167,68 +1123,12 @@ describe("codemode ships on, in the additive mode", () => {
 		expect(await names({ ...defaultTestSettings(), codemodeMode: "off" })).not.toContain("codemode");
 	}, 30_000);
 
-	// The mode is independent of the workflow switch: a reader who wants the
-	// scriptable sandbox has not asked for the fixed engine, and the other way
-	// round. One field driving both would make them impossible to separate.
-	it("does not follow the workflow switch", async () => {
-		const shipped = await names(defaultTestSettings());
-		expect(shipped).toContain("codemode");
-		expect(shipped).not.toContain("run_workflow");
-		const workflows = await names({ ...defaultTestSettings(), workflowEnabled: true });
-		expect(workflows).toContain("run_workflow");
-		expect(workflows).toContain("codemode");
-	}, 30_000);
-
 	// Nothing else moves in the default mode: the sandbox is offered *alongside*
 	// the direct tools, not instead of them, so every tool the vault had stays.
 	it("leaves the rest of the tool set alone", async () => {
 		const mounted = await names(defaultTestSettings());
 		expect(mounted).toContain("read");
 		expect(mounted).toContain("codemode");
-	}, 30_000);
-});
-
-describe("run_workflow ships off unless the user asked for it", () => {
-	/**
-	 * The top-level tool names the current settings produce.
-	 *
-	 * Read off the agent rather than `buildTools`, which is private: the mounted
-	 * tool list is what the model is actually offered, so a test that read the
-	 * private method could pass while the agent was assembled from something else.
-	 */
-	async function toolNames(settings: PiemSettings): Promise<string[]> {
-		const adapter = asDataAdapter(new MemoryAdapter());
-		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
-			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
-				streamFn: (() => { throw new Error("this test never reaches the provider"); }) as unknown as StreamFn,
-				loadUserSkills: NO_USER_SKILLS,
-			});
-		try {
-			// One prompt drives construction; the turn ends on the throw, which is
-			// after the tool set is fixed.
-			await service.sendPrompt("seed").catch(() => undefined);
-			const agent = (service as unknown as {
-				agent?: { state: { tools: Array<{ name: string }> } };
-			}).agent;
-			return (agent?.state.tools ?? []).map(tool => tool.name);
-		} finally {
-			service.dispose();
-		}
-	}
-
-	it("offers no run_workflow on a vault that never turned it on", async () => {
-		expect(await toolNames(defaultTestSettings())).not.toContain("run_workflow");
-	}, 30_000);
-
-	it("offers run_workflow once the setting is on", async () => {
-		const settings = { ...defaultTestSettings(), workflowEnabled: true };
-		expect(await toolNames(settings)).toContain("run_workflow");
-	}, 30_000);
-
-	// The rest of the tool set is what the tests above would silently lose if the
-	// gate took the wrong slice: `read` proves the vault tools survive it.
-	it("leaves the rest of the tool set alone", async () => {
-		expect(await toolNames(defaultTestSettings())).toContain("read");
 	}, 30_000);
 });
 

@@ -81,8 +81,6 @@ export const en = {
 		description: "These integrations ship with Piem and load into every chat by default. Web search and draft rewriting send data to the current provider and may cost extra.",
 		applyNote: "Turning one off or on takes effect in your next chat, or after the next Stop.",
 		codemodeDesc: "How the assistant dispatches and runs tools in chat (powered by Code Mode). Automated orchestration: tool declarations become code APIs, and the assistant writes code in the background to chain multi-step tools without bloating conversation context, saving roundtrips and tokens. Hybrid: model-native tool calling and Code Mode orchestration coexist, chosen dynamically by task complexity. Native tools: turns off Code Mode and uses standard single-step tool calling, confirming each step with the model for maximum compatibility. Applies to current and subsequent chats; synced with the /codemode slash command.",
-		workflowName: "Workflow engine",
-		workflowDesc: "Adds run_workflow, for running a scripted sequence of agent steps in one go. Off by default since codemode covers the same ground; turn it on to get the fixed, repeatable version back.",
 		catalog: {
 			webSearchName: "Web search",
 			webSearchDesc: "Lets the agent search the web through the current provider. Queries and any supplied URLs go to that provider and may cost extra.",
@@ -1272,7 +1270,7 @@ export const en = {
 		cacheRetentionNone: "Off (for endpoints without cache support)",
 		whatLeavesVault: "Data leaving this vault",
 		whatLeavesVaultDesc:
-			"Prompts, notes and tool results go to the selected model provider. MCP tools and web requests reach their named services. Error reports and performance data go to Piem's maintainers by default; turn sharing off under Extensions. Content capture is off, but error messages may include note text.",
+			"Prompts, notes and tool results go to the selected model provider. MCP tools and web requests reach their named services. Error reports and performance data go to Piem's maintainers by default; turn sharing off under General. Content capture is off, but error messages may include note text.",
 		chatLogsInVault:
 			"Chat logs are files in your vault, so they sync and back up with your notes. They hold the conversation and whatever note text was read while answering it.",
 		apiKeysHeading: "API keys",
