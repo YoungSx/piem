@@ -241,8 +241,11 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     OTel 13 KiB and MCP client 6 KiB. TypeBox is deduplicated and no provider
  *     catalog or SDK returns. React stays on 18 because 19 trips the script
  *     creation guard below. The ceiling follows to 3.50 MiB.
+ * 19. Provider OAuth device-code flows (OpenAI Codex, GitHub Copilot, Meta AI)
+ *     and mobile sign-in affordances measured 3,669,984 B. The ceiling follows
+ *     to 3.52 MiB. No provider SDKs or dynamic network libraries were added.
  */
-const MAX_BUNDLE_BYTES = 3.50 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.52 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
