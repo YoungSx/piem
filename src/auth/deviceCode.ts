@@ -59,6 +59,14 @@ export interface DeviceCodeFlow {
 	deviceCodeFields?: Readonly<Record<string, string>>;
 	/** Lifetime to assume when a token response omits `expires_in`. */
 	defaultTokenLifetimeSeconds: number;
+	/** Flavor of the device authorization flow. Standard RFC 8628, OpenAI Codex, Meta, or GitHub Copilot. */
+	flavor?: "rfc8628" | "openai-codex" | "meta" | "github-copilot";
+	/** Fixed verification URL when not returned in response (e.g. OpenAI Codex). */
+	verificationUri?: string;
+	/** Dedicated polling endpoint when separate from tokenUrl (e.g. OpenAI Codex). */
+	pollUrl?: string;
+	/** Callback redirect URI when exchanging code (e.g. OpenAI Codex). */
+	redirectUri?: string;
 	/**
 	 * How a live access token authenticates an ordinary model request.
 	 *
@@ -119,7 +127,7 @@ export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
-/** A form POST that came back, whatever its status. */
+/** A form or json POST that came back, whatever its status. */
 interface FormResponse {
 	ok: boolean;
 	status: number;
@@ -139,11 +147,43 @@ async function postForm(
 	url: string,
 	fields: Readonly<Record<string, string>>,
 	signal: AbortSignal,
+	extraHeaders?: Readonly<Record<string, string>>,
 ): Promise<FormResponse> {
 	const response = await fetchImpl(url, {
 		method: "POST",
-		headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+		headers: {
+			Accept: "application/json",
+			"Content-Type": "application/x-www-form-urlencoded",
+			...(extraHeaders ?? {}),
+		},
 		body: new URLSearchParams(fields).toString(),
+		signal,
+	});
+	let body: Record<string, unknown> = {};
+	try {
+		const parsed: unknown = await response.json();
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			body = parsed as Record<string, unknown>;
+		}
+	} catch {
+		// Left as `{}`. See the doc comment.
+	}
+	return { ok: response.ok, status: response.status, body };
+}
+
+/**
+ * Posts a JSON-encoded body and reads a JSON object back.
+ */
+async function postJson(
+	fetchImpl: FetchFn,
+	url: string,
+	tbodyObj: Record<string, unknown>,
+	signal: AbortSignal,
+): Promise<FormResponse> {
+	const response = await fetchImpl(url, {
+		method: "POST",
+		headers: { Accept: "application/json", "Content-Type": "application/json" },
+		body: JSON.stringify(tbodyObj),
 		signal,
 	});
 	let body: Record<string, unknown> = {};
@@ -160,7 +200,12 @@ async function postForm(
 
 /** The provider's own error text when it has one, for a message worth reading. */
 function describeFailure(flow: DeviceCodeFlow, action: string, response: FormResponse): Error {
-	const error = typeof response.body.error === "string" ? response.body.error : undefined;
+	let error: string | undefined = typeof response.body.error === "string" ? response.body.error : undefined;
+	if (!error && typeof response.body.error === "object" && response.body.error !== null) {
+		const code = (response.body.error as Record<string, unknown>).code;
+		const msg = (response.body.error as Record<string, unknown>).message;
+		error = [code, msg].filter(Boolean).map(String).join(": ");
+	}
 	const description = typeof response.body.error_description === "string" ? response.body.error_description : undefined;
 	const detail = [error, description].filter(Boolean).join(": ");
 	return new Error(`${flow.name} ${action} failed (HTTP ${response.status})${detail ? `: ${detail}` : ""}`);
@@ -174,6 +219,119 @@ function readString(body: Record<string, unknown>, field: string): string | unde
 function readPositiveNumber(body: Record<string, unknown>, field: string): number | undefined {
 	const value = body[field];
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Extracts the OpenAI ChatGPT account ID from a JWT access token if present. */
+function extractOpenAIAccountId(token: string): string | undefined {
+	try {
+		const parts = token.split(".");
+		const payloadPart = parts[1];
+		if (parts.length !== 3 || !payloadPart) {
+			return undefined;
+		}
+		const payload = JSON.parse(atob(payloadPart.replace(/-/g, "+").replace(/_/g, "/"))) as unknown;
+		const accountId =
+			typeof payload === "object" && payload !== null && "https://api.openai.com/auth" in payload
+				? (
+						(payload as Record<string, unknown>)["https://api.openai.com/auth"] as
+							| Record<string, unknown>
+							| undefined
+					)?.chatgpt_account_id
+				: undefined;
+		return typeof accountId === "string" && accountId.length > 0 ? accountId : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+const COPILOT_DEVICE_HEADERS: Readonly<Record<string, string>> = {
+	"User-Agent": "GitHubCopilotChat/0.35.0",
+};
+
+const COPILOT_INTERNAL_HEADERS: Readonly<Record<string, string>> = {
+	"User-Agent": "GitHubCopilotChat/0.35.0",
+	"Editor-Version": "vscode/1.107.0",
+	"Editor-Plugin-Version": "copilot-chat/0.35.0",
+	"Copilot-Integration-Id": "vscode-chat",
+};
+
+/** Exchanges an identity token from Meta for a 24-hour Model API key. */
+async function mintMetaApiKey(
+	fetchImpl: FetchFn,
+	identityToken: string,
+	signal: AbortSignal,
+): Promise<string> {
+	const response = await fetchImpl("https://api.meta.ai/muse-code/key", {
+		method: "POST",
+		headers: {
+			Accept: "application/json",
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${identityToken}`,
+			"x-api-version": "1.0.0",
+		},
+		body: "{}",
+		signal,
+	});
+	if (response.status === 401 || response.status === 403) {
+		throw new Error("Meta session expired. Sign in again.");
+	}
+	let body: Record<string, unknown> = {};
+	try {
+		const parsed: unknown = await response.json();
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			body = parsed as Record<string, unknown>;
+		}
+	} catch {
+		// Left as `{}`
+	}
+	if (!response.ok) {
+		const err = readString(body, "error") ?? readString(body, "message");
+		throw new Error(`Meta API key mint failed (HTTP ${response.status})${err ? `: ${err}` : ""}`);
+	}
+	const apiKey = readString(body, "api_key");
+	if (!apiKey) {
+		throw new Error("Meta did not issue an API key.");
+	}
+	return apiKey;
+}
+
+/** Exchanges a GitHub user access token for a Copilot internal bearer token. */
+async function exchangeCopilotToken(
+	fetchImpl: FetchFn,
+	githubAccessToken: string,
+	signal: AbortSignal,
+): Promise<{ token: string; expiresAtSeconds: number }> {
+	const response = await fetchImpl("https://api.github.com/copilot_internal/v2/token", {
+		method: "GET",
+		headers: {
+			Accept: "application/json",
+			Authorization: `Bearer ${githubAccessToken}`,
+			...COPILOT_INTERNAL_HEADERS,
+		},
+		signal,
+	});
+	if (response.status === 401 || response.status === 403) {
+		throw new Error("GitHub Copilot token exchange unauthorized. Check your subscription.");
+	}
+	let body: Record<string, unknown> = {};
+	try {
+		const parsed: unknown = await response.json();
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			body = parsed as Record<string, unknown>;
+		}
+	} catch {
+		// Left as `{}`
+	}
+	if (!response.ok) {
+		const err = readString(body, "message") ?? readString(body, "error");
+		throw new Error(`GitHub Copilot token exchange failed (HTTP ${response.status})${err ? `: ${err}` : ""}`);
+	}
+	const token = readString(body, "token");
+	const expiresAt = readPositiveNumber(body, "expires_at");
+	if (!token || !expiresAt) {
+		throw new Error("GitHub Copilot did not return a valid token response.");
+	}
+	return { token, expiresAtSeconds: expiresAt };
 }
 
 /**
@@ -211,11 +369,37 @@ export async function requestDeviceAuthorization(
 	deps: DeviceCodeDeps,
 	signal: AbortSignal,
 ): Promise<DeviceAuthorization> {
+	if (flow.flavor === "openai-codex") {
+		const response = await postJson(
+			deps.fetch,
+			flow.deviceCodeUrl,
+			{ client_id: flow.clientId },
+			signal,
+		);
+		if (!response.ok) {
+			throw describeFailure(flow, "device authorization", response);
+		}
+		const deviceCode = readString(response.body, "device_auth_id");
+		const userCode = readString(response.body, "user_code");
+		const verificationUri = flow.verificationUri ?? "https://auth.openai.com/codex/device";
+		if (!deviceCode || !userCode) {
+			throw new Error(`${flow.name} returned an unusable device authorization response.`);
+		}
+		return {
+			deviceCode,
+			userCode,
+			verificationUri,
+			intervalSeconds: readPositiveNumber(response.body, "interval") ?? DEFAULT_POLL_INTERVAL_SECONDS,
+			expiresInSeconds: readPositiveNumber(response.body, "expires_in") ?? DEFAULT_DEVICE_CODE_LIFETIME_SECONDS,
+		};
+	}
+	const extraHeaders = flow.flavor === "github-copilot" ? COPILOT_DEVICE_HEADERS : undefined;
 	const response = await postForm(
 		deps.fetch,
 		flow.deviceCodeUrl,
 		{ client_id: flow.clientId, ...flow.deviceCodeFields },
 		signal,
+		extraHeaders,
 	);
 	if (!response.ok) {
 		throw describeFailure(flow, "device authorization", response);
@@ -259,12 +443,22 @@ function credentialFromTokenBody(
 	now: number,
 ): OAuthCredential {
 	const access = readString(body, "access_token");
-	const refresh = readString(body, "refresh_token") ?? previousRefresh;
+	const refresh =
+		flow.flavor === "meta" || flow.flavor === "github-copilot"
+			? (readString(body, "refresh_token") ?? access ?? previousRefresh)
+			: (readString(body, "refresh_token") ?? previousRefresh);
 	if (!access || !refresh) {
 		throw new Error(`${flow.name} returned a token response without the fields needed to stay signed in.`);
 	}
 	const lifetime = readPositiveNumber(body, "expires_in") ?? flow.defaultTokenLifetimeSeconds;
-	return { type: "oauth", access, refresh, expires: now + lifetime * 1000 };
+	const accountId = flow.flavor === "openai-codex" ? extractOpenAIAccountId(access) : undefined;
+	return {
+		type: "oauth",
+		access,
+		refresh,
+		expires: now + lifetime * 1000,
+		...(accountId ? { accountId } : {}),
+	};
 }
 
 /** What one poll of the token endpoint concluded. */
@@ -341,28 +535,92 @@ export async function pollDeviceAuthorization(
 	}
 	while (now() < deadline) {
 		signal.throwIfAborted();
-		const response = await postForm(
-			deps.fetch,
-			flow.tokenUrl,
-			{
-				client_id: flow.clientId,
-				device_code: device.deviceCode,
-				grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-			},
-			signal,
-		);
-		const outcome = readPollOutcome(flow, response, now());
-		if (outcome.status === "complete") {
-			return outcome.credential;
-		}
-		if (outcome.status === "failed") {
-			throw new Error(outcome.message);
-		}
-		if (outcome.status === "slow_down") {
-			intervalMs =
-				outcome.intervalSeconds !== undefined
-					? Math.max(MIN_POLL_INTERVAL_MS, Math.floor(outcome.intervalSeconds * 1000))
-					: Math.max(MIN_POLL_INTERVAL_MS, intervalMs + SLOW_DOWN_INCREMENT_MS);
+		if (flow.flavor === "openai-codex") {
+			const pollUrl = flow.pollUrl ?? "https://auth.openai.com/api/accounts/deviceauth/token";
+			const response = await postJson(
+				deps.fetch,
+				pollUrl,
+				{
+					device_auth_id: device.deviceCode,
+					user_code: device.userCode,
+				},
+				signal,
+			);
+			const errObj = response.body.error;
+			const errCode = (errObj && typeof errObj === "object" ? (errObj as Record<string, unknown>).code : undefined) ?? errObj;
+			if (!response.ok && (errCode === "deviceauth_authorization_pending" || response.status === 403 || response.status === 404)) {
+				// Authorization still pending on OpenAI
+			} else if (errCode === "slow_down") {
+				intervalMs += SLOW_DOWN_INCREMENT_MS;
+			} else if (response.ok) {
+				const authCode = readString(response.body, "authorization_code");
+				const codeVerifier = readString(response.body, "code_verifier");
+				if (!authCode || !codeVerifier) {
+					throw new Error(`${flow.name} token response missing authorization_code or code_verifier.`);
+				}
+				const exchangeRes = await postForm(
+					deps.fetch,
+					flow.tokenUrl,
+					{
+						grant_type: "authorization_code",
+						client_id: flow.clientId,
+						code: authCode,
+						code_verifier: codeVerifier,
+						redirect_uri: flow.redirectUri ?? "https://auth.openai.com/deviceauth/callback",
+					},
+					signal,
+				);
+				if (!exchangeRes.ok) {
+					throw describeFailure(flow, "authorization code exchange", exchangeRes);
+				}
+				return credentialFromTokenBody(flow, exchangeRes.body, undefined, now());
+			} else {
+				throw describeFailure(flow, "device authorization poll", response);
+			}
+		} else {
+			const extraHeaders = flow.flavor === "github-copilot" ? COPILOT_DEVICE_HEADERS : undefined;
+			const response = await postForm(
+				deps.fetch,
+				flow.tokenUrl,
+				{
+					client_id: flow.clientId,
+					device_code: device.deviceCode,
+					grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+				},
+				signal,
+				extraHeaders,
+			);
+			const outcome = readPollOutcome(flow, response, now());
+			if (outcome.status === "complete") {
+				if (flow.flavor === "meta") {
+					const apiKey = await mintMetaApiKey(deps.fetch, outcome.credential.access, signal);
+					return {
+						type: "oauth",
+						access: apiKey,
+						refresh: outcome.credential.access,
+						expires: now() + 24 * 60 * 60 * 1000,
+					};
+				}
+				if (flow.flavor === "github-copilot") {
+					const copilot = await exchangeCopilotToken(deps.fetch, outcome.credential.access, signal);
+					return {
+						type: "oauth",
+						access: copilot.token,
+						refresh: outcome.credential.access,
+						expires: copilot.expiresAtSeconds * 1000 - 5 * 60 * 1000,
+					};
+				}
+				return outcome.credential;
+			}
+			if (outcome.status === "failed") {
+				throw new Error(outcome.message);
+			}
+			if (outcome.status === "slow_down") {
+				intervalMs =
+					outcome.intervalSeconds !== undefined
+						? Math.max(MIN_POLL_INTERVAL_MS, Math.floor(outcome.intervalSeconds * 1000))
+						: Math.max(MIN_POLL_INTERVAL_MS, intervalMs + SLOW_DOWN_INCREMENT_MS);
+			}
 		}
 		if (!(await waitOrStop())) {
 			break;
@@ -398,6 +656,24 @@ export function createDeviceCodeOAuth(flow: DeviceCodeFlow, deps: DeviceCodeDeps
 			return pollDeviceAuthorization(flow, deps, device, interaction.signal);
 		},
 		async refresh(credential: OAuthCredential, signal: AbortSignal): Promise<OAuthCredential> {
+			if (flow.flavor === "meta") {
+				const apiKey = await mintMetaApiKey(deps.fetch, credential.refresh, signal);
+				return {
+					type: "oauth",
+					access: apiKey,
+					refresh: credential.refresh,
+					expires: Date.now() + 24 * 60 * 60 * 1000,
+				};
+			}
+			if (flow.flavor === "github-copilot") {
+				const copilot = await exchangeCopilotToken(deps.fetch, credential.refresh, signal);
+				return {
+					type: "oauth",
+					access: copilot.token,
+					refresh: credential.refresh,
+					expires: copilot.expiresAtSeconds * 1000 - 5 * 60 * 1000,
+				};
+			}
 			const response = await postForm(
 				deps.fetch,
 				flow.tokenUrl,

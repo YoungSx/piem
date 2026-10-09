@@ -17,17 +17,9 @@
  *   user finishes sign-in in whatever browser they have, and pastes the code
  *   back (`pkce.ts`).
  *
- * GitHub Copilot is in neither table rather than a third one: its long-lived
- * credential is a GitHub OAuth token that every refresh exchanges for a
- * short-lived Copilot token, its request endpoint is parsed back out of that
- * token per credential, and pi's api layers reach for Copilot-specific headers
- * keyed on the literal provider id `github-copilot`. None of that fits a table
- * entry, and shipping it inside a commit would mean shipping it unverified.
- *
- * What makes a flow eligible for either table is the same question: the whole
- * exchange has to be plain HTTPS against endpoints the plugin can reach, with
- * no local callback server and no `node:` builtin. The paste flows qualify
- * precisely because the callback server is left out of them.
+ * Both tables use plain HTTPS against endpoints the plugin can reach via
+ * Obsidian's `requestUrl`, with no local callback server and no `node:` builtin,
+ * making them fully operational on mobile (iOS/Android) and desktop.
  */
 
 import type { OAuthAuth } from "@earendil-works/pi-ai";
@@ -42,7 +34,7 @@ import { createManualCodeOAuth, type ManualCodeFlow } from "./pkce";
  * every row that named it. They match pi's own provider ids so the two can be
  * read side by side.
  */
-export type DeviceCodeFlowId = "xai" | "kimi-coding";
+export type DeviceCodeFlowId = "openai-codex" | "github-copilot" | "meta" | "xai" | "kimi-coding";
 
 /** Stable identifiers for the pasted-code sign-ins, same compatibility surface. */
 export type ManualCodeFlowId = "anthropic" | "openrouter";
@@ -60,6 +52,48 @@ export type OAuthFlowId = DeviceCodeFlowId | ManualCodeFlowId;
  * not assumed — see `oauthFlows.test.ts`.
  */
 export const DEVICE_CODE_FLOWS: Readonly<Record<DeviceCodeFlowId, DeviceCodeFlow>> = {
+	"openai-codex": {
+		name: "OpenAI (ChatGPT Plus/Pro)",
+		loginLabel: "Sign in with ChatGPT Plus/Pro",
+		clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
+		deviceCodeUrl: "https://auth.openai.com/api/accounts/deviceauth/usercode",
+		tokenUrl: "https://auth.openai.com/oauth/token",
+		defaultTokenLifetimeSeconds: 3600,
+		flavor: "openai-codex",
+		verificationUri: "https://auth.openai.com/codex/device",
+		pollUrl: "https://auth.openai.com/api/accounts/deviceauth/token",
+		redirectUri: "https://auth.openai.com/deviceauth/callback",
+		toAuth: (accessToken) => ({ apiKey: accessToken }),
+	},
+	"github-copilot": {
+		name: "GitHub Copilot",
+		loginLabel: "Sign in with GitHub Copilot",
+		clientId: "Iv1.b507a08c87ecfe98",
+		deviceCodeUrl: "https://github.com/login/device/code",
+		tokenUrl: "https://github.com/login/oauth/access_token",
+		deviceCodeFields: {
+			scope: "read:user",
+		},
+		defaultTokenLifetimeSeconds: 1800,
+		flavor: "github-copilot",
+		toAuth: (accessToken) => ({
+			apiKey: accessToken,
+			headers: {
+				"Editor-Version": "vscode/1.107.0",
+				"Copilot-Integration-Id": "vscode-chat",
+			},
+		}),
+	},
+	meta: {
+		name: "Meta (Muse subscription)",
+		loginLabel: "Sign in with Meta",
+		clientId: "1031625952748946",
+		deviceCodeUrl: "https://auth.meta.com/oidc/device/authorization/",
+		tokenUrl: "https://auth.meta.com/oidc/device/token/",
+		defaultTokenLifetimeSeconds: 86400,
+		flavor: "meta",
+		toAuth: (accessToken) => ({ apiKey: accessToken }),
+	},
 	xai: {
 		name: "xAI (Grok/X subscription)",
 		loginLabel: "Sign in with SuperGrok or X Premium",
@@ -155,7 +189,15 @@ export const MANUAL_CODE_FLOWS: Readonly<Record<ManualCodeFlowId, ManualCodeFlow
  * is a decision, not an accident of object literal order, and because the
  * project's membership idiom is a readonly array (see `isWireProtocol`).
  */
-export const OAUTH_FLOW_IDS: readonly OAuthFlowId[] = ["xai", "kimi-coding", "anthropic", "openrouter"];
+export const OAUTH_FLOW_IDS: readonly OAuthFlowId[] = [
+	"openai-codex",
+	"github-copilot",
+	"meta",
+	"xai",
+	"kimi-coding",
+	"anthropic",
+	"openrouter",
+];
 
 /** Whether a persisted value names a sign-in this build still performs. */
 export function isOAuthFlowId(value: unknown): value is OAuthFlowId {

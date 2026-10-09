@@ -132,7 +132,14 @@ function base64UrlEncode(bytes: Uint8Array): string {
  * still understands.
  */
 export function parseAuthorizationInput(input: string): { code: string | undefined; state: string | undefined } {
-	const value = input.trim();
+	let value = input.trim();
+	if (
+		(value.startsWith('"') && value.endsWith('"')) ||
+		(value.startsWith("'") && value.endsWith("'")) ||
+		(value.startsWith("<") && value.endsWith(">"))
+	) {
+		value = value.slice(1, -1).trim();
+	}
 	if (!value) {
 		return { code: undefined, state: undefined };
 	}

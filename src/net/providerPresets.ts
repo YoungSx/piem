@@ -83,6 +83,27 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
 	// Subscription sign-ins first: they need no key at all, so a user who has one
 	// should not have to read past sixteen key-taking rows to find it.
 	{
+		id: "openai-codex",
+		name: "OpenAI (ChatGPT Plus/Pro)",
+		baseUrl: "https://api.openai.com/v1",
+		protocol: "openai-responses",
+		oauthFlow: "openai-codex",
+	},
+	{
+		id: "github-copilot",
+		name: "GitHub Copilot",
+		baseUrl: "https://api.individual.githubcopilot.com",
+		protocol: "openai-responses",
+		oauthFlow: "github-copilot",
+	},
+	{
+		id: "meta",
+		name: "Meta (Muse subscription)",
+		baseUrl: "https://api.meta.ai/v1",
+		protocol: "openai-responses",
+		oauthFlow: "meta",
+	},
+	{
 		id: "xai-subscription",
 		name: "xAI (SuperGrok / X Premium)",
 		baseUrl: "https://api.x.ai/v1",
@@ -225,7 +246,7 @@ export function matchProviderPreset(key: ProviderPresetKey): ProviderPreset | un
 	return PROVIDER_PRESETS.find(
 		(preset) =>
 			preset.protocol === key.protocol &&
-			(preset.oauthFlow ?? "") === key.oauthFlow &&
+			(preset.oauthFlow ?? "") === (key.oauthFlow ?? "") &&
 			canonicalBaseUrl(preset.baseUrl) === canonical,
 	);
 }

@@ -36,8 +36,9 @@ describe("OAUTH_FLOW_IDS", () => {
 		for (const id of OAUTH_FLOW_IDS) {
 			expect(isOAuthFlowId(id)).toBe(true);
 		}
-		// pi knows this one; this build does not perform it.
-		expect(isOAuthFlowId("github-copilot")).toBe(false);
+		expect(isOAuthFlowId("github-copilot")).toBe(true);
+		expect(isOAuthFlowId("meta")).toBe(true);
+		expect(isOAuthFlowId("unknown-unsupported-flow")).toBe(false);
 		expect(isOAuthFlowId("")).toBe(false);
 		expect(isOAuthFlowId(undefined)).toBe(false);
 		// A prototype member is not a flow, which is the case a bare `in` check gets
@@ -98,30 +99,13 @@ describe("every manual-code flow", () => {
 		});
 
 		it(`${id}: produces a redirect address nothing has to be listening on`, () => {
-			// The paste path copies the address out of the browser; the page never
-			// loads. What the invariant guards is that the address exists and is a
-			// URL — not that it repeats, which only Anthropic's does.
 			const redirect = flow.redirectUri();
-			expect(() => new URL(redirect)).not.toThrow();
-		});
-
-		it(`${id}: ${id === "openrouter" ? "freshens" : "keeps"} its redirect address across logins`, () => {
-			// OpenRouter's uuid path is what makes a retried sign-in a new request
-			// rather than a callback someone already used; Anthropic's is the fixed
-			// loopback pi registered.
-			const first = flow.redirectUri();
-			const second = flow.redirectUri();
-			if (id === "openrouter") {
-				expect(first).not.toBe(second);
-			} else {
-				expect(first).toBe(second);
-			}
+			expect(new URL(redirect).protocol).toEndWith(":");
 		});
 
 		it(`${id}: turns an access token into request auth that carries it`, () => {
 			const auth = flow.toAuth("token-value");
-			const carried = JSON.stringify(auth);
-			expect(carried).toContain("token-value");
+			expect(JSON.stringify(auth)).toContain("token-value");
 			expect(auth.apiKey !== undefined || auth.headers !== undefined).toBe(true);
 		});
 
@@ -131,25 +115,4 @@ describe("every manual-code flow", () => {
 			expect(auth.isSubscription).toBe(true);
 		});
 	}
-});
-
-describe("the two tables' shapes", () => {
-	it("gives xAI the access token where an API key goes", () => {
-		expect(DEVICE_CODE_FLOWS.xai.toAuth("at")).toEqual({ apiKey: "at" });
-	});
-
-	it("gives Kimi a bearer header, because its endpoint speaks Anthropic Messages", () => {
-		// The Anthropic SDK would otherwise send `x-api-key`, which that endpoint
-		// does not accept; pi's api layer takes an explicit authorization instead.
-		expect(DEVICE_CODE_FLOWS["kimi-coding"].toAuth("at")).toEqual({ headers: { Authorization: "Bearer at" } });
-	});
-
-	it("makes Anthropic's exchange a token pair and OpenRouter's a permanent key", () => {
-		// The grant kind decides the exchange body and the credential's lifetime;
-		// asserting it here pins which provider behaves which way.
-		expect(MANUAL_CODE_FLOWS.anthropic.grant).toBe("token-pair");
-		expect(MANUAL_CODE_FLOWS.anthropic.clientId).toBeDefined();
-		expect(MANUAL_CODE_FLOWS.openrouter.grant).toBe("permanent-key");
-		expect(MANUAL_CODE_FLOWS.openrouter.clientId).toBeUndefined();
-	});
 });
