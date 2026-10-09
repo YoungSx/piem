@@ -329,6 +329,7 @@ function snapshot(overrides: Partial<ChatSnapshot> = {}): ChatSnapshot {
 		isStreaming: false,
 		pendingToolCalls: [],
 		provider: "deepseek",
+		codemodeMode: "on",
 		modelId: "deepseek-v4-pro",
 		runningModelId: "deepseek-v4-pro",
 		thinkingLevel: "high",

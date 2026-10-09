@@ -135,18 +135,28 @@ describe("extensionsDefinitions", () => {
 		await settle();
 	});
 
-	it.each(["en", "zh-cn"] as const)("offers the codemode switch, off by default, in %s", async language => {
+	it.each(["en", "zh-cn"] as const)("offers the codemode tri-state, on by default, in %s", async language => {
 		const t = getT(language);
 		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
-		const row = definitions.find(item => "control" in item && item.control?.key === "codemodeEnabled");
+		const row = definitions.find(item => "control" in item && item.control?.key === "codemodeMode");
 		expect(row).toBeDefined();
-		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Codemode toggle missing");
-		expect(row.name).toBe(t.t("extensions.codemodeName"));
+		if (!row || !("control" in row) || row.control?.type !== "dropdown") throw new Error("Codemode dropdown missing");
+		// The row is one decision now, and it is the same one the model menu's
+		// group offers: the heading and the three option labels come from the
+		// shared `toolMode.*` copy rather than a settings-only vocabulary.
+		expect(row.name).toBe(t.t("toolMode.heading"));
 		expect(row.desc).toBe(t.t("extensions.codemodeDesc"));
-		// Off by default, and the copy says why rather than selling it: the bill is
-		// the download and the behaviour change, and a reader deciding needs both.
-		expect(row.control.defaultValue).toBe(false);
+		expect(row.control.defaultValue).toBe("on");
+		expect(row.control.options).toEqual({
+			off: t.t("toolMode.off"),
+			on: t.t("toolMode.on"),
+			only: t.t("toolMode.only"),
+		});
+		// The copy says the cost rather than selling it: the bill is the
+		// download and the behaviour change, and a reader deciding needs both.
 		expect(row.desc).toMatch(/370 KB/);
+		// The old enable switch is not a row any more: one field, one control.
+		expect(definitions.some(item => "control" in item && item.control?.key === "codemodeEnabled")).toBe(false);
 		await settle();
 	});
 

@@ -4,6 +4,7 @@ import type { App, Component } from "obsidian";
 import { flushRender, installDom } from "../testUtils/dom";
 import { installObsidianStub, lastMenu, platformMock, resetMenus } from "../testUtils/obsidianStub";
 import type { ChatSnapshot, ObsidianAgentService } from "../agent/ObsidianAgentService";
+import type { CodemodeSessionMode } from "../codemode/mode";
 import { lastAssistantText, type SuggestionScope } from "../agent/quickActionSuggestionRequest";
 import type { QuickAction } from "./quickActionSuggestions";
 import type { DraftContent, DraftStore } from "../session/DraftStore";
@@ -301,6 +302,13 @@ class FakeAgentService {
 
 	async setActiveModel(modelId: string): Promise<void> {
 		this.switchedModels.push(modelId);
+	}
+
+	/** Codemode answers the menu's tool-mode group asked for, same purpose. */
+	readonly setCodemodeModes: string[] = [];
+
+	async setCodemodeMode(mode: CodemodeSessionMode): Promise<void> {
+		this.setCodemodeModes.push(mode);
 	}
 
 	private notify(): void {
@@ -971,6 +979,19 @@ describe("ChatApp model switcher", () => {
 		lastMenu().click("Sonnet 5 · Anthropic");
 
 		expect(mounted.service.switchedModels).toEqual(["m-sonnet"]);
+	});
+
+	it("hands a tool-mode choice to the service, not just to the menu", async () => {
+		// The group's rows are the same tri-state the settings page and /codemode
+		// write; a menu that checked its own rows but reached no writer would
+		// look alive and change nothing.
+		mounted = await mountChat();
+
+		mounted.host.querySelector<HTMLButtonElement>(".piem-chat__model-switcher")?.click();
+		await flushRender();
+		lastMenu().click("Scripts only · Beta (recommended)");
+
+		expect(mounted.service.setCodemodeModes).toEqual(["only"]);
 	});
 });
 
@@ -2074,6 +2095,7 @@ function baseSnapshot(): ChatSnapshot {
 			{ id: "m-sonnet", name: "Sonnet 5", provider: "Anthropic", icon: "piem-vendor-anthropic" },
 		],
 		activeModelId: "m-opus",
+		codemodeMode: "on",
 		// A session is needed for the draft store to be keyed at all; the store-less
 		// tests do not read it.
 		session: sessionInfo(),

@@ -1140,7 +1140,7 @@ describe("run_workflow ships off unless the user asked for it", () => {
 	}, 30_000);
 });
 
-describe("codemode ships off unless the user asked for it", () => {
+describe("codemode ships on, in the additive mode", () => {
 	async function names(settings: PiemSettings): Promise<string[]> {
 		const adapter = asDataAdapter(new MemoryAdapter());
 		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
@@ -1159,26 +1159,30 @@ describe("codemode ships off unless the user asked for it", () => {
 		}
 	}
 
-	it("offers no codemode on a vault that never turned it on", async () => {
-		expect(await names(defaultTestSettings())).not.toContain("codemode");
+	it("offers codemode on a fresh vault: the additive mode is the shipped default", async () => {
+		expect(await names(defaultTestSettings())).toContain("codemode");
 	}, 30_000);
 
-	it("offers codemode once the setting is on", async () => {
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).toContain("codemode");
+	it("offers nothing codemode-shaped once the mode is off", async () => {
+		expect(await names({ ...defaultTestSettings(), codemodeMode: "off" })).not.toContain("codemode");
 	}, 30_000);
 
-	// The switch is independent of the workflow one: a reader who wants the
+	// The mode is independent of the workflow switch: a reader who wants the
 	// scriptable sandbox has not asked for the fixed engine, and the other way
-	// round. One toggle driving both would make them impossible to separate.
+	// round. One field driving both would make them impossible to separate.
 	it("does not follow the workflow switch", async () => {
-		expect(await names({ ...defaultTestSettings(), workflowEnabled: true })).not.toContain("codemode");
-		expect(await names({ ...defaultTestSettings(), codemodeEnabled: true })).not.toContain("run_workflow");
+		const shipped = await names(defaultTestSettings());
+		expect(shipped).toContain("codemode");
+		expect(shipped).not.toContain("run_workflow");
+		const workflows = await names({ ...defaultTestSettings(), workflowEnabled: true });
+		expect(workflows).toContain("run_workflow");
+		expect(workflows).toContain("codemode");
 	}, 30_000);
 
-	// Nothing else moves: the sandbox is offered *alongside* the direct tools, not
-	// instead of them, so a vault that turns it on keeps every tool it had.
+	// Nothing else moves in the default mode: the sandbox is offered *alongside*
+	// the direct tools, not instead of them, so every tool the vault had stays.
 	it("leaves the rest of the tool set alone", async () => {
-		const mounted = await names({ ...defaultTestSettings(), codemodeEnabled: true });
+		const mounted = await names(defaultTestSettings());
 		expect(mounted).toContain("read");
 		expect(mounted).toContain("codemode");
 	}, 30_000);
@@ -1310,7 +1314,7 @@ describe("codemode's mode decides what the model is offered", () => {
 		}
 	}
 
-	const withMode = (mode: "on" | "only") => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: mode });
+	const withMode = (mode: CodemodeSessionMode) => ({ ...defaultTestSettings(), codemodeMode: mode });
 
 	it("on withholds nothing", async () => {
 		const names = (await mounted(withMode("on"))).map((tool) => tool.name);
@@ -1340,7 +1344,7 @@ describe("codemode's mode decides what the model is offered", () => {
 	}, 30_000);
 
 	it("adds no sample when codemode is off, whatever the mode says", async () => {
-		const read = (await mounted({ ...defaultTestSettings(), codemodeEnabled: false, codemodeMode: "on" }))
+		const read = (await mounted({ ...defaultTestSettings(), codemodeMode: "off" }))
 			.find((tool) => tool.name === "read");
 		expect(read?.description).not.toMatch(/codemode tool declaration/);
 	}, 30_000);
@@ -1361,7 +1365,7 @@ describe("codemode's mode decides what the model is offered", () => {
 it("codemode only sends one callable tool and script-only guidance to the provider", async () => {
 	const adapter = asDataAdapter(new MemoryAdapter());
 	const contexts: Context[] = [];
-	const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" as const };
+	const settings = { ...defaultTestSettings(), codemodeMode: "only" as const };
 	const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
 		new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 			streamFn: (model, context) => {
@@ -1399,7 +1403,7 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 		// could do nothing.
 		const adapter = asDataAdapter(new MemoryAdapter());
 		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
+			() => ({ ...defaultTestSettings(), codemodeMode: "only" }) as PiemSettings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
@@ -1421,7 +1425,7 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 	it("`on` reports the same catalog through the tools' own descriptions", async () => {
 		const adapter = asDataAdapter(new MemoryAdapter());
 		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" }) as PiemSettings,
+			() => ({ ...defaultTestSettings(), codemodeMode: "on" }) as PiemSettings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
@@ -1447,7 +1451,7 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 			execute: async () => ({ content: [{ type: "text" as const, text: "probe-ok" }], details: undefined }),
 		};
 		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
+			() => ({ ...defaultTestSettings(), codemodeMode: "only" }) as PiemSettings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
@@ -1485,7 +1489,7 @@ describe("codemode `only` does not withhold the catalog from the sandbox itself"
 			execute: async () => ({ content: [{ type: "text" as const, text: "probe-ok" }], details: undefined }),
 		};
 		const service = new ObsidianAgentService(createFakeApp(adapter),
-			() => ({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" }) as PiemSettings,
+			() => ({ ...defaultTestSettings(), codemodeMode: "only" }) as PiemSettings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
 				loadUserSkills: NO_USER_SKILLS,
@@ -1573,7 +1577,7 @@ describe("/codemode", () => {
 	}, 30_000);
 
 	it("reports the current mode with no argument, and changes nothing", async () => {
-		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" as const });
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeMode: "only" as const });
 		try {
 			expect(mounted()).not.toContain("read");
 			await send("/codemode");
@@ -1582,15 +1586,14 @@ describe("/codemode", () => {
 	}, 30_000);
 
 	it("writes the vault setting — the settings page and the command are one switch", async () => {
-		// The command's whole job is to be the composer's handle on the same two
-		// fields the settings page renders. Writing anything else (a session-local
+		// The command's whole job is to be the composer's handle on the same field
+		// the settings page renders. Writing anything else (a session-local
 		// override, an in-memory only answer) is how the two surfaces drift apart.
-		const settings = { ...defaultTestSettings() };
+		const settings: PiemSettings = { ...defaultTestSettings(), codemodeMode: "off" };
 		const { service, send, mounted } = await chat(settings);
 		try {
 			expect(mounted()).not.toContain("codemode");
 			await send("/codemode only");
-			expect(settings.codemodeEnabled).toBe(true);
 			expect(settings.codemodeMode).toBe("only");
 			expect(mounted()).not.toContain("read");
 			expect(mounted()).toContain("codemode");
@@ -1612,31 +1615,31 @@ describe("/codemode", () => {
 	}, 30_000);
 
 	it("turns the tool off by writing the setting off", async () => {
-		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "only" as const };
+		const settings: PiemSettings = { ...defaultTestSettings(), codemodeMode: "only" };
 		const { service, send, mounted } = await chat(settings);
 		try {
 			expect(mounted()).not.toContain("read");
 			await send("/codemode off");
-			expect(settings.codemodeEnabled).toBe(false);
+			expect(settings.codemodeMode).toBe("off");
 			expect(mounted()).toContain("read");
 			expect(mounted()).not.toContain("codemode");
 		} finally { service.dispose(); }
 	}, 30_000);
 
 	it("turns the tool on even when the vault had it off", async () => {
-		const settings = { ...defaultTestSettings() };
+		const settings: PiemSettings = { ...defaultTestSettings(), codemodeMode: "off" };
 		const { service, send, mounted } = await chat(settings);
 		try {
 			expect(mounted()).not.toContain("codemode");
 			await send("/codemode on");
-			expect(settings.codemodeEnabled).toBe(true);
+			expect(settings.codemodeMode).toBe("on");
 			expect(mounted()).toContain("codemode");
 			expect(mounted()).toContain("read");
 		} finally { service.dispose(); }
 	}, 30_000);
 
 	it("treats `vault` as unknown now that there is nothing to hand back", async () => {
-		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const };
+		const settings = { ...defaultTestSettings(), codemodeMode: "on" as const };
 		const { service, send, mounted } = await chat(settings);
 		try {
 			await send("/codemode vault");
@@ -1646,7 +1649,7 @@ describe("/codemode", () => {
 	}, 30_000);
 
 	it("reports an unknown word rather than pretending", async () => {
-		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const });
+		const { service, send, mounted } = await chat({ ...defaultTestSettings(), codemodeMode: "on" as const });
 		try {
 			await send("/codemode maybe");
 			expect(mounted()).toContain("read");
@@ -1656,7 +1659,7 @@ describe("/codemode", () => {
 	it("never reaches the model", async () => {
 		// A command that changed something and then also sent a message would have
 		// the model narrate a change it did not make.
-		const { service, send } = await chat({ ...defaultTestSettings(), codemodeEnabled: true });
+		const { service, send } = await chat({ ...defaultTestSettings() });
 		try {
 			await expect(send("/codemode only")).resolves.toBe(false);
 		} finally { service.dispose(); }
@@ -1667,7 +1670,7 @@ describe("/codemode", () => {
 		// worse, it would reconfigure the agent for nothing.
 		const saves: number[] = [];
 		const adapter = asDataAdapter(new MemoryAdapter());
-		const settings = { ...defaultTestSettings(), codemodeEnabled: true, codemodeMode: "on" as const };
+		const settings = { ...defaultTestSettings(), codemodeMode: "on" as const };
 		const service = new ObsidianAgentService(createFakeApp(adapter), () => settings,
 			new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test"), {
 				streamFn: echoStreamFn(),
@@ -1692,7 +1695,7 @@ describe("codemode session ownership and branch store", () => {
 		const adapter = asDataAdapter(new MemoryAdapter());
 		const sessions = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");
 		let service: ObsidianAgentServiceType;
-		service = new ObsidianAgentService(createFakeApp(adapter), () => ({ ...defaultTestSettings(), codemodeEnabled: true }), sessions,
+		service = new ObsidianAgentService(createFakeApp(adapter), () => ({ ...defaultTestSettings(), codemodeMode: "on" }), sessions,
 			{ streamFn: echoStreamFn(), loadUserSkills: NO_USER_SKILLS, getMountedExternalTools: () => [{
 				name: "owner_probe", label: "Owner", description: "Return the owning conversation", parameters: Type.Object({}),
 				execute: async () => ({ content: [{ type: "text", text: (service as unknown as { toolRuntime: { sessionPath: string } }).toolRuntime.sessionPath }], details: undefined }),

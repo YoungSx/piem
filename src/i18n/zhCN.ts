@@ -47,6 +47,20 @@ export const zhCN: DeepPartial<EnCopy> = {
 		couldNotOpenSubagents: "无法打开子代理面板。",
 	},
 
+	/**
+	 * 模型菜单顶部的「工具模式」分组，与扩展页的下拉共用同一份文案，
+	 * 两处说的必须是同一句话。
+	 *
+	 * `only` 把 beta 说明与推荐写进同一行：菜单行没有描述位，
+	 * 这一个字符串就是全部告知。
+	 */
+	toolMode: {
+		heading: "工具模式",
+		off: "关闭",
+		on: "并存",
+		only: "仅脚本 · Beta（推荐）",
+	},
+
 	extensions: {
 		clarifyCurrentModel: "草稿改写使用当前对话的模型。",
 		clarifyModelMissing: "请选择已配置模型：/clarify model <服务商> <模型>，或 /clarify model reset。",
@@ -59,12 +73,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		included: "内置 Pi 扩展",
 		description: "这些集成随 Piem 一起预装，默认在每段对话中加载。联网搜索和草稿改写会把数据发给当前服务商，可能额外计费。",
 		applyNote: "开关某个扩展会在下一段对话（或下次 Stop 后）生效。",
-		codemodeName: "Codemode 沙箱",
-		codemodeMode: "工具如何呈现",
-		codemodeModeDesc: "「并存」：工具仍可直接调用，每个工具多一行说明它也能在脚本里用。「仅脚本」：脚本是唯一通路——直连工具不再暴露给模型，它们的声明移进 codemode 的描述里，更省，但模型只剩一条路可走。",
-		codemodeModeOn: "并存（推荐）",
-		codemodeModeOnly: "仅脚本",
-		codemodeDesc: "提供 codemode：助手可以写一段 JavaScript 调用你的工具，只有脚本自己的输出会回到对话里。默认关闭——每次插件更新要多下约 370 KB，而且会改变助手处理多步任务的方式。对当前及之后的每段对话生效；输入框的 /codemode 命令写的就是这同一个开关。",
+		codemodeDesc: "助手如何触达你的工具。「并存」：工具仍可直接调用，每个工具多一行说明它也能在脚本里用。「仅脚本」：脚本成为唯一通路——直连工具不再暴露给模型，声明移进 codemode 的描述，每次请求更省。「关闭」移除脚本工具。每次插件更新要多下约 370 KB，且会改变助手处理多步任务的方式，所以默认停在「并存」而不是走任一极端。对当前及之后的每段对话生效；模型菜单与输入框的 /codemode 命令写的就是这同一个设置。",
 		workflowName: "Workflow 引擎",
 		workflowDesc: "提供 run_workflow，用脚本按顺序跑一串固定的 agent 步骤。默认关闭，因为 codemode 已覆盖同样的场景；打开它能拿回那种固定、可重复的版本。",
 		catalog: {

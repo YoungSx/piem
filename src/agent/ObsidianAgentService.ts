@@ -407,6 +407,12 @@ export interface ChatSnapshot {
 	modelChoices: ModelChoice[];
 	/** Which choice requests go out on, absent while the builtin pair serves. */
 	activeModelId?: string;
+	/**
+	 * The vault-wide `codemode` answer, so the model menu's "Tool mode" group
+	 * can check the row that is in force. Resolved here rather than read raw so
+	 * an older settings file without the field still checks "Both".
+	 */
+	codemodeMode: CodemodeSessionMode;
 	session?: ActiveSessionInfo;
 	/** A selected conversation is still being read or prepared; the visible chat stays put. */
 	isOpeningSession?: boolean;
@@ -1238,22 +1244,7 @@ export class ObsidianAgentService {
 			return false;
 		}
 		if (directive.kind === "set") {
-			const settings = this.getSettings();
-			const next = {
-				codemodeEnabled: directive.mode !== "off",
-				codemodeMode: directive.mode === "only" ? "only" : "on",
-			} as const;
-			if (
-				settings.codemodeEnabled === next.codemodeEnabled &&
-				(settings.codemodeMode ?? "on") === next.codemodeMode
-			) {
-				// Already there: an unchanged save would be a no-op with a toast
-				// claiming otherwise.
-			} else {
-				settings.codemodeEnabled = next.codemodeEnabled;
-				settings.codemodeMode = next.codemodeMode;
-				await this.persistSettings();
-			}
+			await this.setCodemodeMode(directive.mode);
 		}
 		const mode = this.resolveCodemodeMode();
 		const key = mode === "off" ? "commands.codemodeOff"
@@ -1266,15 +1257,31 @@ export class ObsidianAgentService {
 	/**
 	 * What `codemode` is doing — one answer, for every conversation.
 	 *
-	 * Read from the settings alone: the settings page and `/codemode` write the
-	 * same two fields, and no conversation carries an opinion of its own, so
-	 * there is nothing to resolve against a runtime.
+	 * Read from the settings alone: the settings page, the model menu and
+	 * `/codemode` all write the same one field, and no conversation carries an
+	 * opinion of its own, so there is nothing to resolve against a runtime.
 	 */
 	private resolveCodemodeMode(): CodemodeSessionMode {
+		return this.getSettings().codemodeMode ?? "on";
+	}
+
+	/**
+	 * Sets the vault-wide `codemode` answer. The one writer: the model menu's
+	 * "Tool mode" group and `/codemode` both land here.
+	 *
+	 * The full reconfigure, not the deferred one: the mode changes what tools
+	 * the next request offers, which is the same mid-run effect `/codemode` has
+	 * always had, and a run in flight keeps the tool set it started with.
+	 */
+	async setCodemodeMode(mode: CodemodeSessionMode): Promise<void> {
 		const settings = this.getSettings();
-		return settings.codemodeEnabled
-			? (settings.codemodeMode ?? "on")
-			: "off";
+		// Already there: an unchanged save would be a no-op with a toast or a
+		// menu check claiming otherwise.
+		if ((settings.codemodeMode ?? "on") === mode) {
+			return;
+		}
+		settings.codemodeMode = mode;
+		await this.persistSettings();
 	}
 
 	/**
@@ -5520,6 +5527,7 @@ export class ObsidianAgentService {
 			extensionContextRequest: rt?.extensionContextRequest ?? 0,
 			retryNotice: rt?.retryNotice ?? undefined,
 			isConfigured: this.hasApiKey(),
+			codemodeMode: this.resolveCodemodeMode(),
 			showAgentDetails: settings.showAgentDetails,
 			traceExpand: settings.traceExpand,
 			mobileComposerCollapsed: settings.mobileComposerCollapsed === true,

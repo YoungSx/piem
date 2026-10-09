@@ -40,6 +40,7 @@ import {
 import { rowAction, type SettingsPanelHost } from "./panelHost";
 import { sectionNote, sectionNoteWithHeadingBadge } from "./sectionNote";
 import { COMMUNITY_EXTENSION_CATALOG } from "./communityExtensionCatalog";
+import { DEFAULT_CODEMODE_MODE } from "../../settings";
 
 /**
  * Records a failed skill action.
@@ -165,7 +166,6 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		communityExtensionsGroup(host),
 		workflowRow(host),
 		codemodeRow(host),
-		codemodeModeRow(host),
 		{
 			name: host.t.t("extensions.shareDiagnostics"),
 			desc: host.t.t("extensions.shareDiagnosticsDesc"),
@@ -197,44 +197,28 @@ function workflowRow(host: SettingsPanelHost): SettingDefinitionItem {
 }
 
 /**
- * The `codemode` switch, off by default, on the same tab and for the same reason
- * as the workflow row: an experimental capability that changes what the model may
- * reach for, which is a decision to make deliberately rather than by default.
+ * The codemode row: one tri-state, not a switch plus a mode.
  *
- * The description says the plain cost — download size, and a script that can make
- * several calls in one turn — rather than selling it. A reader deciding whether to
- * turn it on needs the bill, not the pitch.
+ * The dropdown and the model menu's "Tool mode" group read the same
+ * `toolMode.*` copy, so the two surfaces name the three answers identically.
+ * The description carries the disclosure — download cost and the trade between
+ * the modes — because the row is the one place with room for it.
  */
 function codemodeRow(host: SettingsPanelHost): SettingDefinitionItem {
 	return {
-		name: host.t.t("extensions.codemodeName"),
+		name: host.t.t("toolMode.heading"),
 		desc: host.t.t("extensions.codemodeDesc"),
-		control: { type: "toggle", key: "codemodeEnabled", defaultValue: false },
-	};
-}
-
-/**
- * The mode row, beside the switch because the two are one decision.
- *
- * Not a page of its own: a reader who has not turned codemode on has no use for
- * it, and one who has is already looking at the switch. The copy states the trade
- * rather than the mechanism — `on` leaves every tool callable and adds a line to
- * each, `only` makes the script the only path — because that is what the reader
- * is choosing between.
- */
-function codemodeModeRow(host: SettingsPanelHost): SettingDefinitionItem {
-	return {
-		name: host.t.t("extensions.codemodeMode"),
-		desc: host.t.t("extensions.codemodeModeDesc"),
 		// A record, not a list of pairs: the generic dropdown reads its current
 		// value out of `settings[key]`, and `{value, label}` is a different
 		// control's shape.
 		control: {
 			type: "dropdown",
 			key: "codemodeMode",
+			defaultValue: DEFAULT_CODEMODE_MODE,
 			options: {
-				on: host.t.t("extensions.codemodeModeOn"),
-				only: host.t.t("extensions.codemodeModeOnly"),
+				off: host.t.t("toolMode.off"),
+				on: host.t.t("toolMode.on"),
+				only: host.t.t("toolMode.only"),
 			},
 		},
 	};

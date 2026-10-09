@@ -96,7 +96,7 @@ async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
 			activeModelId: "runtime-smoke",
 			mcpServers: [{ id: "builtin-exa", name: "Exa", url: "https://mcp.exa.ai/mcp", token: "", secretRef: "", enabled: false },
 				{ id: "runtime-smoke", name: "smoke", url: `${endpoint}/mcp`, token: "", secretRef: "", enabled: true }],
-			codemodeEnabled: true, codemodeMode: "on",
+			codemodeMode: "on",
 		});
 		// Persist the new loopback endpoint before reload, so startup cannot race a dead previous fixture.
 		await initialPlugin.saveSettings({ reconfigure: false });
@@ -131,7 +131,7 @@ async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
 		await service.sendPrompt("/codemode only");
 		check("only declares exactly codemode", JSON.stringify(names()) === '["codemode"]');
 		const data = JSON.parse(await app.vault.adapter.read(".obsidian/plugins/piem/data.json"));
-		check("slash command persists the setting", data.codemodeEnabled && data.codemodeMode === "only");
+		check("slash command persists the setting", data.codemodeMode === "only" && !("codemodeEnabled" in data));
 		check("only description supplies tool parameters", /read\(args:/.test(service.getCodemodeTool().description));
 		await service.sendPrompt("codemode-runtime-roundtrip");
 		const wire = (await stats()).requests.filter(request => request.prompt.includes("codemode-runtime-roundtrip"));
