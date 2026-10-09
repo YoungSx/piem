@@ -194,6 +194,32 @@ function workflowRow(host: SettingsPanelHost): SettingDefinitionItem {
 	};
 }
 
+/** Maximum items displayed directly in a section before offloading to a dedicated subpage. */
+const PREVIEW_LIMIT = 3;
+
+/**
+ * Caps an item list to {@link PREVIEW_LIMIT} on the main settings page and
+ * offloads the complete list behind a native subpage link if the count exceeds it.
+ */
+function withPreviewPage(
+	items: SettingGroupItem[],
+	page: { name: string; desc: string; countText: string },
+): SettingGroupItem[] {
+	if (items.length <= PREVIEW_LIMIT) {
+		return items;
+	}
+	return [
+		...items.slice(0, PREVIEW_LIMIT),
+		{
+			type: "page",
+			name: page.name,
+			desc: page.desc,
+			displayValue: () => page.countText,
+			items,
+		},
+	];
+}
+
 /**
  * The built-in Pi extensions, one switch each, over {@link COMMUNITY_EXTENSION_CATALOG}.
  *
@@ -203,16 +229,21 @@ function workflowRow(host: SettingsPanelHost): SettingDefinitionItem {
  */
 function communityExtensionsGroup(host: SettingsPanelHost): SettingDefinitionItem {
 	const { t } = host;
+	const allItems: SettingGroupItem[] = COMMUNITY_EXTENSION_CATALOG.map((row): SettingGroupItem => ({
+		name: t.t(row.nameKey),
+		desc: t.t(row.descKey),
+		render: (setting) => configureExtensionToggle(setting, host, row.id),
+	}));
 	return {
 		type: "group",
 		heading: t.t("extensions.included"),
 		items: [
 			sectionNote(t.t("extensions.description"), t.t("extensions.applyNote")),
-			...COMMUNITY_EXTENSION_CATALOG.map((row): SettingGroupItem => ({
-				name: t.t(row.nameKey),
-				desc: t.t(row.descKey),
-				render: (setting) => configureExtensionToggle(setting, host, row.id),
-			})),
+			...withPreviewPage(allItems, {
+				name: t.t("extensions.allExtensions"),
+				desc: t.t("extensions.allExtensionsDesc"),
+				countText: t.t("extensions.allExtensionsCount", { count: allItems.length }),
+			}),
 		],
 	};
 }
@@ -328,13 +359,20 @@ function unifiedSkillsList(host: SettingsPanelHost, state: SettingsPanelState, s
 		// framework would never draw it. The empty sentence joins the note instead —
 		// and only once a read has landed, since before that the vault folder has
 		// not been looked in and claiming it is empty would be a guess.
-		items: [
-			sectionNoteWithHeadingBadge(t.t("skills.heading"), problemCountBadge(snapshot?.load.vault.length ?? 0, t), [
-				t.t("skills.desc"), snapshot && rows.length === 0 ? t.t("skills.empty") : undefined,
-			]),
-			...host.skills.catalog().map((entry) => unifiedSkillRow(host, state, entry,
-				entry.source === "vault" ? rows.find((row) => row.path.replace(/^\//, "") === entry.skill.filePath.replace(/^\//, "")) : undefined)),
-		],
+		items: (() => {
+			const allSkillRows = host.skills.catalog().map((entry) => unifiedSkillRow(host, state, entry,
+				entry.source === "vault" ? rows.find((row) => row.path.replace(/^\//, "") === entry.skill.filePath.replace(/^\//, "")) : undefined));
+			return [
+				sectionNoteWithHeadingBadge(t.t("skills.heading"), problemCountBadge(snapshot?.load.vault.length ?? 0, t), [
+					t.t("skills.desc"), snapshot && rows.length === 0 ? t.t("skills.empty") : undefined,
+				]),
+				...withPreviewPage(allSkillRows, {
+					name: t.t("skills.allSkills"),
+					desc: t.t("skills.allSkillsDesc"),
+					countText: t.t("skills.allSkillsCount", { count: allSkillRows.length }),
+				}),
+			];
+		})(),
 	};
 }
 
@@ -593,6 +631,7 @@ function configureUserSkillsDir(setting: Setting, host: SettingsPanelHost, state
 function mcpList(host: SettingsPanelHost): SettingDefinitionItem {
 	const { t } = host;
 	const states = host.mcp.states();
+	const allMcpRows = states.map((state) => mcpRow(host, state));
 	return {
 		type: "list",
 		heading: t.t("mcp.heading"),
@@ -609,7 +648,11 @@ function mcpList(host: SettingsPanelHost): SettingDefinitionItem {
 				t.t("mcp.bufferedNoPush"),
 				states.length === 0 ? t.t("mcp.empty") : undefined,
 			),
-			...states.map((state) => mcpRow(host, state)),
+			...withPreviewPage(allMcpRows, {
+				name: t.t("mcp.allServers"),
+				desc: t.t("mcp.allServersDesc"),
+				countText: t.t("mcp.allServersCount", { count: allMcpRows.length }),
+			}),
 		],
 	};
 }

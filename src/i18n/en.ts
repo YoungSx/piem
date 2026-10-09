@@ -105,6 +105,9 @@ export const en = {
 		},
 		shareDiagnostics: "Share error reports and performance data",
 		shareDiagnosticsDesc: "On by default. Sends model and tool names, usage, timing and errors to Piem's maintainers. Content capture is off, but error messages may include note text. Turning off takes effect immediately; reload Piem after turning back on.",
+		allExtensions: "All Pi extensions",
+		allExtensionsDesc: "View and configure all built-in Pi extensions.",
+		allExtensionsCount: "{count} extensions",
 	},
 	bookmarks: {
 		excerpt: "Showing the first 4,000 characters. The full reply remains in the conversation.",
@@ -1328,6 +1331,9 @@ export const en = {
 		conflict: "{name} has local edits, so nothing was overwritten. Conflicting files: {files}.",
 		couldNotUpdate: "Could not update {name}: {message}",
 		couldNotDelete: "Could not delete {name}: {message}",
+		allSkills: "All skills",
+		allSkillsDesc: "View and configure all skills loaded into the agent.",
+		allSkillsCount: "{count} skills",
 		/**
 		 * Reads the files again. The recovery for everything the two problem
 		 * lists below can report — fix the file, fix the folder's permissions,
@@ -1493,6 +1499,9 @@ export const en = {
 		addButton: "Add",
 		saveButton: "Save",
 		cancelButton: "Cancel",
+		allServers: "All MCP servers",
+		allServersDesc: "View and configure all remote MCP tool servers.",
+		allServersCount: "{count} servers",
 	},
 
 	/**

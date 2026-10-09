@@ -4301,69 +4301,77 @@ button.piem-chat__latest--asking {
 }
 
 /*
- * The fold toggle: a chevron plus a word, not a bare text link.
+ * The fold toggle: a native <details> / <summary> disclosure matching Obsidian native style.
  *
- * The chevron is the affordance a colour-blind or scanning reader gets when
- * the label is skimmed past; the label is the one a screen-reader user's
- * browser announces as the accessible name. Hover deepens the tone rather
- * than underlining — this is a control, not a link, and the chevron already
- * points somewhere. The icon rides `--icon-xs` so it matches the label's
- * cap height instead of floating above it.
+ * Uses Lucide chevron-right rotated 90deg on open, inheriting native disclosure
+ * semantics without any button borders, padding boxes, or background rectangles.
  */
-.piem-settings-desc-toggle {
+.piem-settings-desc-details {
+	display: inline-block;
+	margin-top: var(--size-2-1);
+}
+
+.piem-settings-desc-summary {
 	align-items: center;
-	background: none;
-	border: none;
-	border-radius: var(--radius-s);
-	box-shadow: none;
+	background: none !important;
+	border: none !important;
+	box-shadow: none !important;
 	color: var(--text-muted);
-	cursor: var(--cursor);
+	cursor: pointer;
 	display: inline-flex;
 	font-size: var(--font-ui-smaller);
 	gap: var(--size-2-1);
-	margin-top: var(--size-2-1);
+	list-style: none;
 	padding: 0;
+	user-select: none;
 	transition: color 0.15s ease-out;
 }
 
-.piem-settings-desc-toggle:focus-visible {
-	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
-	outline: none;
+.piem-settings-desc-summary::-webkit-details-marker {
+	display: none;
 }
 
-.piem-settings-desc-toggle-icon {
+.piem-settings-desc-summary::marker {
+	content: "";
+}
+
+.piem-settings-desc-summary:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: 2px;
+	border-radius: var(--radius-s);
+}
+
+.piem-settings-desc-icon {
+	align-items: center;
 	display: inline-flex;
 	transition: transform 0.15s ease-out;
 }
 
-.piem-settings-desc-toggle-icon svg {
+.piem-settings-desc-icon svg {
 	--icon-size: var(--icon-xs);
+	width: var(--icon-xs, 12px);
+	height: var(--icon-xs, 12px);
 }
 
-.piem-settings-desc-toggle[aria-expanded="true"] .piem-settings-desc-toggle-icon {
-	transform: rotate(180deg);
+.piem-settings-desc-details[open] .piem-settings-desc-icon {
+	transform: rotate(90deg);
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.piem-settings-desc-toggle,
-	.piem-settings-desc-toggle-icon {
+	.piem-settings-desc-summary,
+	.piem-settings-desc-icon {
 		transition: none;
 	}
 }
 
-/* A tap latches :hover on a phone, so the hover state rides the same gate
- * Obsidian wraps every one of its own hover rules in. */
 @media (hover: hover) {
-	.piem-settings-desc-toggle:hover {
+	.piem-settings-desc-summary:hover {
 		color: var(--text-normal);
 	}
 }
 
-/* A finger, not a cursor, taps this: the label sits at `--font-ui-smaller`,
- * well under any tap-target guidance, so the padding adds height without
- * asking the row for more room than a nudge. */
 @media (pointer: coarse) {
-	.piem-settings-desc-toggle {
+	.piem-settings-desc-summary {
 		padding: var(--size-2-2) 0;
 	}
 }
