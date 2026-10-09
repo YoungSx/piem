@@ -230,6 +230,7 @@ class SignInModal extends Modal {
 			});
 		this.addLink(verificationUri);
 		this.body.createEl("p", { text: t.t("signIn.waiting") });
+		this.body.createEl("p", { cls: "piem-sign-in-hint", text: t.t("signIn.deviceMobileHint") });
 	}
 
 	/**
@@ -302,16 +303,31 @@ class SignInModal extends Modal {
 			cls: "piem-sign-in-paste",
 			attr: { placeholder: placeholder ?? "", spellcheck: "false" },
 		});
-		new Setting(this.body).addButton((button) => {
-			button.setButtonText(t.t("signIn.pasteSubmit")).setCta();
-			button.onClick(() => {
-				// Trimmed: the paste arrives trailing a newline more often than not.
-				const value = input.value.trim();
-				if (value) {
-					submit(value);
-				}
+		new Setting(this.body)
+			.addButton((button) => {
+				button.setButtonText(t.t("signIn.pasteClipboard"));
+				button.onClick(() => {
+					void navigator.clipboard?.readText?.().then((text) => {
+						const trimmed = text?.trim();
+						if (trimmed) {
+							input.value = trimmed;
+						}
+					}).catch(() => {
+						// Clipboard access was declined or unsupported; user can paste manually.
+					});
+				});
+			})
+			.addButton((button) => {
+				button.setButtonText(t.t("signIn.pasteSubmit")).setCta();
+				button.onClick(() => {
+					// Trimmed: the paste arrives trailing a newline more often than not.
+					const value = input.value.trim();
+					if (value) {
+						submit(value);
+					}
+				});
 			});
-		});
+		this.body.createEl("p", { cls: "piem-sign-in-hint", text: t.t("signIn.pasteHint") });
 		// Enter submits, matching every other single-field dialog here.
 		input.addEventListener("keydown", (event: KeyboardEvent) => {
 			if (event.key === "Enter") {

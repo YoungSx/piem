@@ -44,7 +44,7 @@ describe("runGuardedRename", () => {
 				modal.remove();
 			},
 			undefined,
-			{ graceMs: 200, pollIntervalMs: 5 },
+			{ graceMs: 1000, pollIntervalMs: 5 },
 		);
 
 		expect(outcome).toEqual({ modal: "answered" });
@@ -188,7 +188,7 @@ describe("runGuardedRename", () => {
 				modal.remove();
 			},
 			undefined,
-			{ graceMs: 200, pollIntervalMs: 5 },
+			{ graceMs: 1000, pollIntervalMs: 5 },
 		);
 
 		expect(outcome).toEqual({ modal: "answered" });

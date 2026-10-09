@@ -25,6 +25,7 @@ const ALL_VENDORS: VendorId[] = [
 	"qwen",
 	"meta",
 	"minimax",
+	"github-copilot",
 ];
 
 describe("vendorIcons", () => {
@@ -59,27 +60,27 @@ describe("vendorIcons", () => {
 	it("ships render-ready SVG: a viewBox, no fixed root size, and source that follows the text color", () => {
 		addIconMock.mockClear();
 		registerVendorIcons();
-		for (const svg of addIconMock.mock.calls.map(([, content]) => content)) {
+		for (const [id, svg] of addIconMock.mock.calls) {
+			expect(svg).toStartWith("<svg");
+			expect(svg).toEndWith("</svg>");
 			expect(svg).toContain("viewBox=");
-			// Obsidian's --icon-size owns the render; a root width/height would
-			// fight it. (stroke-width — part of the artwork — is spelled with a
-			// hyphen and excluded by this pattern.)
-			expect(svg).not.toMatch(/<svg[^>]*\swidth=/);
-			expect(svg).not.toMatch(/<svg[^>]*\sheight=/);
-			expect(svg).toContain("currentColor");
+			// Width/height must be left to the consumer's CSS.
+			expect(svg).not.toMatch(/<svg[^>]*\b(width|height)=/);
+			// Either fill or stroke currentColor, never hard-coded hex or rgb.
+			expect(svg).toMatch(/(fill|stroke)="currentColor"/);
+			expect(svg).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+			expect(id).toStartWith("piem-");
 		}
 	});
-});
 
-describe("modelIconName", () => {
-	it("gives a model its vendor mark, and the neutral fallback when none matches", () => {
-		// Model-id match wins even through a custom gateway host.
-		expect(modelIconName("claude-opus-5", "https://bf.s8p.io/v1")).toBe(`${VENDOR_ICON_ID_PREFIX}anthropic`);
-		expect(modelIconName("deepseek-v4-flash", "https://bf.s8p.io/v1")).toBe(`${VENDOR_ICON_ID_PREFIX}deepseek`);
-		// Official host match when the id names no family.
-		expect(modelIconName("auto", "https://openrouter.ai/api/v1")).toBe(`${VENDOR_ICON_ID_PREFIX}openrouter`);
-		// Neither known: the neutral fallback, never undefined.
-		expect(modelIconName("sensenova-6.8-flash-lite", "https://token.sensenova.cn/v1")).toBe(MODEL_FALLBACK_ICON_ID);
+	it("resolves a model to its vendor mark, or the neutral fallback when unmatched", () => {
+		// Matching on id alone.
+		expect(modelIconName("claude-3-opus", undefined)).toBe(VENDOR_ICON_ID_PREFIX + "anthropic");
+		expect(modelIconName("openrouter/deepseek-ai/r1", undefined)).toBe(VENDOR_ICON_ID_PREFIX + "deepseek");
+		// Fallback to host when id is novel.
+		expect(modelIconName("custom-model-id", "https://api.openai.com/v1")).toBe(VENDOR_ICON_ID_PREFIX + "openai");
+		// Fallback to generic box when neither matches.
+		expect(modelIconName("custom-model-id", "https://proxy.internal/v1")).toBe(MODEL_FALLBACK_ICON_ID);
 		expect(modelIconName(undefined, undefined)).toBe(MODEL_FALLBACK_ICON_ID);
 	});
 });

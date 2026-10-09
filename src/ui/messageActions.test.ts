@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import type { App, WorkspaceLeaf } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -162,6 +162,15 @@ describe("appendToActiveNote", () => {
 });
 
 describe("copyToClipboard", () => {
+	const originalNavigator = (globalThis as { navigator?: unknown }).navigator;
+	afterAll(() => {
+		if (originalNavigator !== undefined) {
+			(globalThis as { navigator?: unknown }).navigator = originalNavigator;
+		} else {
+			delete (globalThis as { navigator?: unknown }).navigator;
+		}
+	});
+
 	beforeEach(() => {
 		delete (globalThis as { navigator?: unknown }).navigator;
 	});

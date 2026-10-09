@@ -137,6 +137,15 @@ describe("parseAuthorizationInput", () => {
 		// segment is "absent" (pi's truthy rule), so the verifier stands in.
 		expect(parseAuthorizationInput("code#")).toEqual({ code: "code", state: undefined });
 	});
+
+	it("strips wrapping quotes and angle brackets for mobile clipboard pastes", () => {
+		expect(parseAuthorizationInput('"code-in-quotes"')).toEqual({ code: "code-in-quotes", state: undefined });
+		expect(parseAuthorizationInput("'code-in-single-quotes'")).toEqual({ code: "code-in-single-quotes", state: undefined });
+		expect(parseAuthorizationInput("<https://localhost:53692/callback?code=abc&state=xyz>")).toEqual({
+			code: "abc",
+			state: "xyz",
+		});
+	});
 });
 
 describe("generatePkce", () => {

@@ -155,6 +155,52 @@ describe("SignInModal manual_code prompt", () => {
 		expect(content.querySelector("input.piem-sign-in-paste")).not.toBeNull();
 	});
 
+	it("pastes from clipboard into the input field", async () => {
+		const targetNav = (typeof window !== "undefined" && window.navigator ? window.navigator : (globalThis as unknown as { navigator: unknown }).navigator) as unknown as { clipboard?: { readText: () => Promise<string>; writeText: () => Promise<void> } };
+		const originalClipboard = targetNav?.clipboard;
+		const mockClipboard = {
+			readText: async () => "  clipboard-token-code  ",
+			writeText: async () => {},
+		};
+		if (targetNav) {
+			Object.defineProperty(targetNav, "clipboard", {
+				value: mockClipboard,
+				configurable: true,
+				writable: true,
+			});
+		}
+		const originalGlobalNav = (globalThis as unknown as { navigator: unknown }).navigator;
+		(globalThis as unknown as { navigator: unknown }).navigator = {
+			...(targetNav ?? {}),
+			clipboard: mockClipboard,
+		};
+		try {
+			const { content } = openDialog({
+				...captureSignInInteraction(async (interaction) => {
+					await interaction.prompt({ type: "manual_code", message: "" });
+					await new Promise(() => {});
+				}),
+			});
+			await startAndAwaitPrompt(content);
+			const input = content.querySelector<HTMLInputElement>("input.piem-sign-in-paste")!;
+			expect(input.value).toBe("");
+			buttonIn(content, t.t("signIn.pasteClipboard")).click();
+			for (let i = 0; i < 50 && input.value !== "clipboard-token-code"; i++) {
+				await new Promise((resolve) => setTimeout(resolve, 10));
+			}
+			expect(input.value).toBe("clipboard-token-code");
+		} finally {
+			(globalThis as unknown as { navigator: unknown }).navigator = originalGlobalNav;
+			if (targetNav) {
+				if (originalClipboard !== undefined) {
+					Object.defineProperty(targetNav, "clipboard", { value: originalClipboard, configurable: true, writable: true });
+				} else {
+					delete (targetNav as Record<string, unknown>).clipboard;
+				}
+			}
+		}
+	});
+
 	it("rejects the pending prompt when the dialog closes first", async () => {
 		let promptError: unknown;
 		const { content, options } = openDialog({

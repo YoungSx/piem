@@ -44,7 +44,8 @@ export type VendorId =
 	| "openrouter"
 	| "qwen"
 	| "meta"
-	| "minimax";
+	| "minimax"
+	| "github-copilot";
 
 /**
  * Official API hosts: every endpoint pi-ai ships a default for, plus every host
@@ -76,6 +77,8 @@ const VENDOR_BY_HOST: Record<string, VendorId> = {
 	"api.z.ai": "zai",
 	"open.bigmodel.cn": "zai",
 	"openrouter.ai": "openrouter",
+	"api.meta.ai": "meta",
+	"api.individual.githubcopilot.com": "github-copilot",
 	// Reached only through the preset table: MiniMax and Qwen ship marks and
 	// model-id rules, but pi-ai carries no provider factory for either, so their
 	// hosts had no entry until a preset started handing them out.
@@ -113,6 +116,8 @@ const VENDOR_BY_SLUG: Record<string, VendorId> = {
 	"meta-llama": "meta",
 	meta: "meta",
 	minimax: "minimax",
+	"github-copilot": "github-copilot",
+	github: "github-copilot",
 };
 
 /**
@@ -153,6 +158,8 @@ const VENDOR_STEMS: ReadonlyArray<readonly [stem: string, vendor: VendorId]> = [
 	["llama", "meta"],
 	["minimax", "minimax"],
 	["abab", "minimax"],
+	["copilot", "github-copilot"],
+	["github-copilot", "github-copilot"],
 ];
 
 /**
@@ -181,8 +188,7 @@ export function matchVendorByHost(baseUrl: string | undefined): VendorId | undef
 /**
  * The vendor behind a model id, or undefined when neither its slug segment nor
  * its stem names one. Ids are matched case-insensitively: users type
- * `Qwen2.5-Coder-32B`, gateways serve `DeepSeek-R1`.
- */
+ * `Qwen2.5-Coder-32B`, gateways serve `DeepSeek-R1`.\n */
 export function matchVendorByModelId(modelApiId: string | undefined): VendorId | undefined {
 	const id = modelApiId?.trim().toLowerCase();
 	if (!id) {
