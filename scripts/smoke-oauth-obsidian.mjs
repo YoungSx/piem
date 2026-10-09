@@ -3,9 +3,11 @@
  *
  * NOTE: This smoke verifies the real Obsidian runtime execution environment,
  * plugin bootstrapping, requestUrl availability, settings persistence round-trip,
- * DOM styling, and mobile clipboard/layout capabilities under Desktop and Mobile emulation.
+ * DOM styling, and presence of clipboard APIs under Desktop and Mobile emulation.
  * It does NOT execute external live OAuth network handshakes against commercial third-party
  * OAuth servers (which require interactive browser logins and commercial subscription accounts).
+ * Nor does it claim exhaustive system-level clipboard permission verification (which requires
+ * focused user-gesture interaction in native mobile shells).
  * End-to-end simulated OAuth flow and request execution are covered by automated unit/integration tests
  * (see src/auth/oauthE2E.test.ts).
  *
@@ -49,13 +51,20 @@ async function runSmoke(expectMobile) {
 			check("official phone emulation", app.isMobile && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")), `classes: ${document.body.className}`);
 		}
 
-		// Read and test plugin data persistence round-trip
-		const data = (await plugin.loadData()) ?? {};
-		check("plugin data loaded", typeof data === "object", typeof data);
+		// Read and test plugin data persistence round-trip, always restoring in finally
+		const originalData = (await plugin.loadData()) ?? {};
+		check("plugin data loaded", typeof originalData === "object", typeof originalData);
 		const testStamp = Date.now();
-		await plugin.saveData({ ...data, _smokeStamp: testStamp });
-		const reloadedData = await plugin.loadData();
-		check("plugin data persistence round-trip", reloadedData?._smokeStamp === testStamp, `${reloadedData?._smokeStamp} === ${testStamp}`);
+		try {
+			await plugin.saveData({ ...originalData, _smokeStamp: testStamp });
+			const reloadedData = await plugin.loadData();
+			check("plugin data persistence round-trip", reloadedData?._smokeStamp === testStamp, `${reloadedData?._smokeStamp} === ${testStamp}`);
+		} finally {
+			// Restore original plugin data so testing never pollutes live user configurations
+			await plugin.saveData(originalData);
+		}
+		const restoredData = await plugin.loadData();
+		check("plugin data restored without test fields", restoredData?._smokeStamp === undefined, `_smokeStamp=${restoredData?._smokeStamp}`);
 
 		// Verify DOM and CSS
 		const dummyEl = document.createElement("div");
@@ -65,8 +74,11 @@ async function runSmoke(expectMobile) {
 		check("piem-sign-in-hint styles loaded", computed.fontSize !== "", `font-size: ${computed.fontSize}`);
 		dummyEl.remove();
 
-		// Check clipboard API in browser context
-		check("navigator.clipboard exists", Boolean(navigator.clipboard), typeof navigator.clipboard);
+		// Check clipboard API in browser context.
+		// Note: verifies navigator.clipboard API presence; live permission for clipboard read/write
+		// depends on runtime user gesture and document focus in native shells.
+		check("navigator.clipboard API object availability", Boolean(navigator.clipboard), typeof navigator.clipboard);
+		check("clipboard writeText function exists", typeof navigator.clipboard?.writeText === "function", typeof navigator.clipboard?.writeText);
 
 		report.diag = {
 			pluginVersion: plugin.manifest.version,
