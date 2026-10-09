@@ -6,7 +6,7 @@
  * which is the source of truth for them; `deviceCode.ts`'s header explains why
  * the flows themselves are reimplemented rather than imported, and the copying
  * is the cost that decision carries — a provider that rotates a client id needs
- * a change here.
+ * a change here rather than a dependency bump.
  *
  * The two tables are two interaction shapes, and the split is load-bearing:
  *
@@ -34,13 +34,26 @@ import { createManualCodeOAuth, type ManualCodeFlow } from "./pkce";
  * every row that named it. They match pi's own provider ids so the two can be
  * read side by side.
  */
-export type DeviceCodeFlowId = "openai-codex" | "github-copilot" | "meta" | "xai" | "kimi-coding";
+export type DeviceCodeFlowId = "github-copilot" | "meta" | "xai" | "kimi-coding";
 
 /** Stable identifiers for the pasted-code sign-ins, same compatibility surface. */
 export type ManualCodeFlowId = "anthropic" | "openrouter";
 
 /** Every sign-in this build can perform, by its persisted id. */
 export type OAuthFlowId = DeviceCodeFlowId | ManualCodeFlowId;
+
+/**
+ * Extracts the user-specific Copilot API proxy endpoint from their token if present.
+ * Defaults to the standard individual Copilot proxy endpoint.
+ */
+export function extractCopilotBaseUrl(token: string): string {
+	const match = token.match(/proxy-ep=([^;]+)/);
+	if (!match || !match[1]) {
+		return "https://api.individual.githubcopilot.com";
+	}
+	const host = match[1].replace(/^proxy\./, "api.");
+	return `https://${host}`;
+}
 
 /**
  * The sign-ins that poll a device code.
@@ -52,19 +65,6 @@ export type OAuthFlowId = DeviceCodeFlowId | ManualCodeFlowId;
  * not assumed — see `oauthFlows.test.ts`.
  */
 export const DEVICE_CODE_FLOWS: Readonly<Record<DeviceCodeFlowId, DeviceCodeFlow>> = {
-	"openai-codex": {
-		name: "OpenAI (ChatGPT Plus/Pro)",
-		loginLabel: "Sign in with ChatGPT Plus/Pro",
-		clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-		deviceCodeUrl: "https://auth.openai.com/api/accounts/deviceauth/usercode",
-		tokenUrl: "https://auth.openai.com/oauth/token",
-		defaultTokenLifetimeSeconds: 3600,
-		flavor: "openai-codex",
-		verificationUri: "https://auth.openai.com/codex/device",
-		pollUrl: "https://auth.openai.com/api/accounts/deviceauth/token",
-		redirectUri: "https://auth.openai.com/deviceauth/callback",
-		toAuth: (accessToken) => ({ apiKey: accessToken }),
-	},
 	"github-copilot": {
 		name: "GitHub Copilot",
 		loginLabel: "Sign in with GitHub Copilot",
@@ -78,9 +78,13 @@ export const DEVICE_CODE_FLOWS: Readonly<Record<DeviceCodeFlowId, DeviceCodeFlow
 		flavor: "github-copilot",
 		toAuth: (accessToken) => ({
 			apiKey: accessToken,
+			baseUrl: extractCopilotBaseUrl(accessToken),
 			headers: {
+				"User-Agent": "GitHubCopilotChat/0.35.0",
 				"Editor-Version": "vscode/1.107.0",
+				"Editor-Plugin-Version": "copilot-chat/0.35.0",
 				"Copilot-Integration-Id": "vscode-chat",
+				"Openai-Intent": "conversation-edits",
 			},
 		}),
 	},
@@ -139,12 +143,9 @@ export const MANUAL_CODE_FLOWS: Readonly<Record<ManualCodeFlowId, ManualCodeFlow
 		// the address rather than wait for it to load.
 		redirectUri: () => "http://localhost:53692/callback",
 		grant: "token-pair",
-		clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-		// pi's authorize request verbatim. `code: "true"` is what makes
-		// Anthropic's page display the code as text instead of only redirecting —
-		// the display the manual path reads from. Returned as URLSearchParams so
-		// `has("state")` means "this flow sent a state", which the paste path
-		// checks against; a flow that sends none is never asked to match one.
+		// pi's authorize request verbatim: PKCE S256 with the verifier mirrored in
+		// `state`, so the paste path can verify the returned state matches the
+		// exchange it is finishing.
 		authorizeQuery: ({ challenge, verifier, redirectUri }) =>
 			new URLSearchParams({
 				code: "true",
@@ -190,7 +191,6 @@ export const MANUAL_CODE_FLOWS: Readonly<Record<ManualCodeFlowId, ManualCodeFlow
  * project's membership idiom is a readonly array (see `isWireProtocol`).
  */
 export const OAUTH_FLOW_IDS: readonly OAuthFlowId[] = [
-	"openai-codex",
 	"github-copilot",
 	"meta",
 	"xai",
@@ -210,23 +210,27 @@ function isDeviceCodeFlowId(id: OAuthFlowId): id is DeviceCodeFlowId {
 }
 
 /**
- * The `OAuthAuth` a provider advertises for one sign-in.
+ * Presents one configured sign-in as the `OAuthAuth` pi expects.
  *
- * Built per `Models` instance rather than cached, because it closes over the
- * transport: a cached one would keep serving whichever `fetch` happened to
- * create it. Construction is a closure over a table row, so there is nothing to
- * save. The sleep injection exists for the polling flows' tests alone; a paste
- * flow has no wait to substitute, and passing one here would be a promise the
- * shape cannot keep.
+ * Dispatches on table membership rather than a discriminated union: the two
+ * tables already know their shapes, so adding a discriminator would be a third
+ * place to say what the tables already declare.
  */
-export function createOAuthAuth(id: OAuthFlowId, fetchImpl: FetchFn, sleep?: DeviceCodeDeps["sleep"]): OAuthAuth {
+export function createOAuthAuth(
+	id: OAuthFlowId,
+	fetchImpl: FetchFn,
+	sleepImpl?: (ms: number, signal: AbortSignal) => Promise<void>,
+): OAuthAuth {
 	if (isDeviceCodeFlowId(id)) {
-		return createDeviceCodeOAuth(DEVICE_CODE_FLOWS[id], { fetch: fetchImpl, sleep });
+		return createDeviceCodeOAuth(DEVICE_CODE_FLOWS[id], { fetch: fetchImpl, sleep: sleepImpl });
 	}
 	return createManualCodeOAuth(MANUAL_CODE_FLOWS[id], { fetch: fetchImpl });
 }
 
-/** Display name for one sign-in, for panel copy that has to name the account. */
+/** Label for the provider settings row when an OAuth flow is selected. */
 export function oauthFlowName(id: OAuthFlowId): string {
-	return isDeviceCodeFlowId(id) ? DEVICE_CODE_FLOWS[id].name : MANUAL_CODE_FLOWS[id].name;
+	if (isDeviceCodeFlowId(id)) {
+		return DEVICE_CODE_FLOWS[id].name;
+	}
+	return MANUAL_CODE_FLOWS[id].name;
 }

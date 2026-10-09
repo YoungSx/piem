@@ -23,6 +23,7 @@ import {
 	requestDeviceAuthorization,
 	type DeviceCodeFlow,
 } from "./deviceCode";
+import { DEVICE_CODE_FLOWS } from "./oauthFlows";
 
 const FLOW: DeviceCodeFlow = {
 	name: "Test Provider",
@@ -98,7 +99,6 @@ function fakeClock(start = 1_700_000_000_000): {
 	const waits: number[] = [];
 	return {
 		now: () => value,
-		waits,
 		sleep: async (ms, signal) => {
 			if (signal.aborted) {
 				throw new Error(LOGIN_CANCELLED);
@@ -106,21 +106,31 @@ function fakeClock(start = 1_700_000_000_000): {
 			waits.push(ms);
 			value += ms;
 		},
+		waits,
 	};
 }
+
+const DEVICE = {
+	deviceCode: "dc-1",
+	userCode: "USER-1",
+	verificationUri: "https://example.com/activate",
+	intervalSeconds: 5,
+	expiresInSeconds: 900,
+};
 
 const DEVICE_BODY = {
 	device_code: "dc-1",
 	user_code: "WDJB-MJHT",
-	verification_uri: "https://example.com/activate",
+	verification_uri_complete: "https://example.com/activate?user_code=WDJB-MJHT",
 	interval: 5,
 	expires_in: 900,
 };
 
 describe("requestDeviceAuthorization", () => {
-	it("posts the client id and extra fields, returning the parsed response", async () => {
+	it("posts the provider's form fields and normalizes the response", async () => {
 		const { fetch, calls } = scriptedFetch([{ body: DEVICE_BODY }]);
-		const device = await requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal);
+		const auth = await requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal);
+
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.url).toBe("https://auth.example.com/device");
 		expect(calls[0]?.fields).toEqual({
@@ -128,72 +138,63 @@ describe("requestDeviceAuthorization", () => {
 			scope: "offline_access",
 			referrer: "pi",
 		});
-		expect(device).toEqual({
+		expect(auth).toEqual({
 			deviceCode: "dc-1",
 			userCode: "WDJB-MJHT",
-			verificationUri: "https://example.com/activate",
+			verificationUri: "https://example.com/activate?user_code=WDJB-MJHT",
 			intervalSeconds: 5,
 			expiresInSeconds: 900,
 		});
 	});
 
-	it("prefers verification_uri_complete when the server offers one", async () => {
+	it("falls back to verification_uri when the server has no pre-filled link", async () => {
 		const { fetch } = scriptedFetch([
 			{
 				body: {
-					...DEVICE_BODY,
-					verification_uri_complete: "https://example.com/activate?user_code=WDJB-MJHT",
+					device_code: "dc-1",
+					user_code: "WDJB-MJHT",
+					verification_uri: "https://example.com/activate",
 				},
 			},
 		]);
-		const device = await requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal);
-		expect(device.verificationUri).toBe("https://example.com/activate?user_code=WDJB-MJHT");
+		const auth = await requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal);
+		expect(auth.verificationUri).toBe("https://example.com/activate");
 	});
 
-	it("rejects a verification URL whose scheme is not https", async () => {
-		// A compromised or misconfigured server might redirect to a custom scheme
-		// or javascript: URL that this plugin would pass to `open`; https is the
-		// only scheme the flow has any reason to accept.
-		const { fetch } = scriptedFetch([{ body: { ...DEVICE_BODY, verification_uri: "http://example.com/activate" } }]);
-		await expect(requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal)).rejects.toThrow("unusable");
-	});
-
-	it("fails with the provider's reason when the device request is refused", async () => {
+	it("rejects an insecure verification link from the server", async () => {
+		// http: on the wire would invite credential interception on a public net;
+		// file: or javascript: would run local code. Neither is a login link.
 		const { fetch } = scriptedFetch([
-			{ status: 400, body: { error: "unauthorized_client", error_description: "bad client id" } },
+			{
+				body: {
+					device_code: "dc-1",
+					user_code: "WDJB-MJHT",
+					verification_uri: "http://example.com/insecure",
+				},
+			},
 		]);
 		await expect(requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal)).rejects.toThrow(
-			"Test Provider device authorization failed (HTTP 400): unauthorized_client: bad client id",
+			"unusable device authorization response",
+		);
+	});
+
+	it("fails with the provider's error text on a non-200", async () => {
+		const { fetch } = scriptedFetch([
+			{
+				status: 400,
+				body: { error: "unauthorized_client", error_description: "The client id is unknown." },
+			},
+		]);
+		await expect(requestDeviceAuthorization(FLOW, { fetch }, new AbortController().signal)).rejects.toThrow(
+			"Test Provider device authorization failed (HTTP 400): unauthorized_client: The client id is unknown.",
 		);
 	});
 });
 
 describe("pollDeviceAuthorization", () => {
-	const DEVICE = {
-		deviceCode: "dc-1",
-		userCode: "WDJB-MJHT",
-		verificationUri: "https://example.com/activate",
-		intervalSeconds: 5,
-		expiresInSeconds: 900,
-	};
-
-	it("waits the full interval BEFORE the first poll", async () => {
-		// The user cannot have typed a code before opening the page; an immediate
-		// poll is an empty round trip that wastes rate limit.
+	it("waits one interval before the first poll, then completes on success", async () => {
 		const { fetch, calls } = scriptedFetch([
-			{ body: { access_token: "at-1", refresh_token: "rt-1", expires_in: 3600 } },
-		]);
-		const { sleep, waits, now } = fakeClock();
-		await pollDeviceAuthorization(FLOW, { fetch, sleep }, DEVICE, new AbortController().signal, now);
-		expect(waits[0]).toBe(5000);
-		expect(calls).toHaveLength(1);
-	});
-
-	it("polls repeatedly while the provider answers authorization_pending", async () => {
-		const { fetch, calls } = scriptedFetch([
-			{ status: 400, body: { error: "authorization_pending" } },
-			{ status: 400, body: { error: "authorization_pending" } },
-			{ body: { access_token: "at-1", refresh_token: "rt-1", expires_in: 3600 } },
+			{ body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
 		]);
 		const { sleep, waits, now } = fakeClock();
 		const credential = await pollDeviceAuthorization(
@@ -203,18 +204,39 @@ describe("pollDeviceAuthorization", () => {
 			new AbortController().signal,
 			now,
 		);
-		expect(calls).toHaveLength(3);
-		expect(waits).toEqual([5000, 5000, 5000]);
+
+		// The initial wait is the reason the first poll works; without it we would
+		// hit the server before the user could possibly have authorized.
+		expect(waits).toEqual([5000]);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.url).toBe("https://auth.example.com/token");
+		expect(calls[0]?.fields).toEqual({
+			client_id: "client-1",
+			device_code: "dc-1",
+			grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+		});
 		expect(credential).toEqual({
 			type: "oauth",
-			access: "at-1",
-			refresh: "rt-1",
-			expires: 1_700_000_000_000 + 15_000 + 3600 * 1000,
+			access: "at",
+			refresh: "rt",
+			expires: 1_700_000_000_000 + 5000 + 3600 * 1000,
 		});
 	});
 
-	it("adds five seconds to the interval when the server answers slow_down", async () => {
-		// RFC 8628 §3.5: each slow_down must increase the interval by 5 seconds.
+	it("keeps polling through authorization_pending", async () => {
+		const { fetch, calls } = scriptedFetch([
+			{ status: 400, body: { error: "authorization_pending" } },
+			{ status: 400, body: { error: "authorization_pending" } },
+			{ body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
+		]);
+		const { sleep, waits, now } = fakeClock();
+		await pollDeviceAuthorization(FLOW, { fetch, sleep }, DEVICE, new AbortController().signal, now);
+
+		expect(calls).toHaveLength(3);
+		expect(waits).toEqual([5000, 5000, 5000]);
+	});
+
+	it("widens the interval on slow_down and respects the wider pace thereafter", async () => {
 		const { fetch } = scriptedFetch([
 			{ status: 400, body: { error: "slow_down" } },
 			{ status: 400, body: { error: "authorization_pending" } },
@@ -222,30 +244,33 @@ describe("pollDeviceAuthorization", () => {
 		]);
 		const { sleep, waits, now } = fakeClock();
 		await pollDeviceAuthorization(FLOW, { fetch, sleep }, DEVICE, new AbortController().signal, now);
-		// First wait is initial interval (5s); slow_down raises it to 10s for the
-		// next wait; subsequent pending keeps the 10s.
+
+		// RFC 8628 §3.5: add 5s to the interval on slow_down. That is +5s on the
+		// subsequent polls, not a single one-off pause.
 		expect(waits).toEqual([5000, 10_000, 10_000]);
 	});
 
-	it("obeys a server-supplied interval on slow_down when provided", async () => {
+	it("adopts the server's explicit interval on slow_down when offered", async () => {
+		// RFC 8628 §3.5 leaves room for the server to dictate the new pace.
 		const { fetch } = scriptedFetch([
 			{ status: 400, body: { error: "slow_down", interval: 15 } },
 			{ body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
 		]);
 		const { sleep, waits, now } = fakeClock();
 		await pollDeviceAuthorization(FLOW, { fetch, sleep }, DEVICE, new AbortController().signal, now);
+
 		expect(waits).toEqual([5000, 15_000]);
 	});
 
-	it("fails with a clear message when the user denies the request", async () => {
+	it("fails promptly on access_denied", async () => {
 		const { fetch } = scriptedFetch([{ status: 400, body: { error: "access_denied" } }]);
 		const { sleep, now } = fakeClock();
 		await expect(
 			pollDeviceAuthorization(FLOW, { fetch, sleep }, DEVICE, new AbortController().signal, now),
-		).rejects.toThrow("Test Provider sign-in was denied");
+		).rejects.toThrow("Test Provider sign-in was denied.");
 	});
 
-	it("fails when the device code expires on the server", async () => {
+	it("fails on expired_token from the server", async () => {
 		const { fetch } = scriptedFetch([{ status: 400, body: { error: "expired_token" } }]);
 		const { sleep, now } = fakeClock();
 		await expect(
@@ -326,7 +351,7 @@ describe("createDeviceCodeOAuth", () => {
 			{
 				type: "device_code",
 				userCode: "WDJB-MJHT",
-				verificationUri: "https://example.com/activate",
+				verificationUri: "https://example.com/activate?user_code=WDJB-MJHT",
 				intervalSeconds: 5,
 				expiresInSeconds: 900,
 			},
@@ -417,77 +442,22 @@ describe("abortableSleep", () => {
 	});
 });
 
-describe("openai-codex device authorization", () => {
-	const OPENAI_FLOW: DeviceCodeFlow = {
-		name: "OpenAI (ChatGPT Plus/Pro)",
-		loginLabel: "Sign in with ChatGPT Plus/Pro",
-		clientId: "app_test",
-		deviceCodeUrl: "https://auth.openai.com/api/accounts/deviceauth/usercode",
-		tokenUrl: "https://auth.openai.com/oauth/token",
-		defaultTokenLifetimeSeconds: 3600,
-		flavor: "openai-codex",
-		verificationUri: "https://auth.openai.com/codex/device",
-		pollUrl: "https://auth.openai.com/api/accounts/deviceauth/token",
-		redirectUri: "https://auth.openai.com/deviceauth/callback",
-		toAuth: (accessToken) => ({ apiKey: accessToken }),
-	};
-
-	function fakeJwt(accountId?: string): string {
-		const header = btoa(JSON.stringify({ alg: "RS256" }));
-		const payloadObj = accountId
-			? { "https://api.openai.com/auth": { chatgpt_account_id: accountId } }
-			: {};
-		const payload = btoa(JSON.stringify(payloadObj));
-		return `${header}.${payload}.sig`;
-	}
-
-	it("requests device authorization using JSON and default verificationUri", async () => {
-		const { fetch, calls } = scriptedFetch([
-			{ body: { device_auth_id: "da-123", user_code: "OPEN-1234", interval: 5 } },
+describe("device authorization error handling", () => {
+	it("fails immediately on HTTP 403 or 404 rather than indefinitely polling", async () => {
+		const { fetch: fetch403 } = scriptedFetch([
+			{ status: 403, body: { error: "access_forbidden", error_description: "Client not authorized" } },
 		]);
-		const auth = await requestDeviceAuthorization(OPENAI_FLOW, { fetch }, new AbortController().signal);
-		expect(auth.deviceCode).toBe("da-123");
-		expect(auth.userCode).toBe("OPEN-1234");
-		expect(auth.verificationUri).toBe("https://auth.openai.com/codex/device");
-		expect(calls[0]?.json).toEqual({ client_id: "app_test" });
-	});
+		const { sleep, now } = fakeClock();
+		await expect(
+			pollDeviceAuthorization(FLOW, { fetch: fetch403, sleep }, DEVICE, new AbortController().signal, now),
+		).rejects.toThrow("failed (HTTP 403): access_forbidden: Client not authorized");
 
-	it("polls with JSON, backs up on slow_down, and exchanges authorization code", async () => {
-		const token = fakeJwt("acct_chatgpt_456");
-		const { fetch, calls } = scriptedFetch([
-			{ status: 403, body: { error: { code: "deviceauth_authorization_pending" } } },
-			{ status: 400, body: { error: "slow_down" } },
-			{ body: { authorization_code: "code_999", code_verifier: "verifier_888" } },
-			{ body: { access_token: token, refresh_token: "rf_000", expires_in: 3600 } },
+		const { fetch: fetch404 } = scriptedFetch([
+			{ status: 404, body: { error: "not_found", error_description: "Device code unknown" } },
 		]);
-		const { sleep, waits, now } = fakeClock();
-		const credential = await pollDeviceAuthorization(
-			OPENAI_FLOW,
-			{ fetch, sleep },
-			{
-				deviceCode: "da-123",
-				userCode: "OPEN-1234",
-				verificationUri: "https://auth.openai.com/codex/device",
-				intervalSeconds: 5,
-				expiresInSeconds: 900,
-			},
-			new AbortController().signal,
-			now,
-		);
-
-		expect(credential.access).toBe(token);
-		expect(credential.refresh).toBe("rf_000");
-		expect(credential.accountId).toBe("acct_chatgpt_456");
-		expect(waits).toEqual([5000, 5000, 10_000]);
-
-		expect(calls[0]?.json).toEqual({ device_auth_id: "da-123", user_code: "OPEN-1234" });
-		expect(calls[3]?.fields).toEqual({
-			grant_type: "authorization_code",
-			client_id: "app_test",
-			code: "code_999",
-			code_verifier: "verifier_888",
-			redirect_uri: "https://auth.openai.com/deviceauth/callback",
-		});
+		await expect(
+			pollDeviceAuthorization(FLOW, { fetch: fetch404, sleep }, DEVICE, new AbortController().signal, now),
+		).rejects.toThrow("failed (HTTP 404): not_found: Device code unknown");
 	});
 });
 
@@ -644,5 +614,21 @@ describe("github-copilot device authorization", () => {
 				new AbortController().signal,
 			),
 		).rejects.toThrow("Check your subscription");
+	});
+
+	it("derives Copilot headers and base URL correctly from token", () => {
+		const authIndividual = DEVICE_CODE_FLOWS["github-copilot"].toAuth("tid=sample;exp=123");
+		expect(authIndividual.apiKey).toBe("tid=sample;exp=123");
+		expect(authIndividual.baseUrl).toBe("https://api.individual.githubcopilot.com");
+		expect(authIndividual.headers).toEqual({
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+			"Openai-Intent": "conversation-edits",
+		});
+
+		const authEnterprise = DEVICE_CODE_FLOWS["github-copilot"].toAuth("tid=sample;proxy-ep=proxy.enterprise.example.com;exp=123");
+		expect(authEnterprise.baseUrl).toBe("https://api.enterprise.example.com");
 	});
 });
