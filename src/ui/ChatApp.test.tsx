@@ -989,7 +989,7 @@ describe("ChatApp model switcher", () => {
 
 		mounted.host.querySelector<HTMLButtonElement>(".piem-chat__model-switcher")?.click();
 		await flushRender();
-		lastMenu().click("Scripts only · Beta (recommended)");
+		lastMenu().click("Automated orchestration · Beta (recommended)");
 
 		expect(mounted.service.setCodemodeModes).toEqual(["only"]);
 	});

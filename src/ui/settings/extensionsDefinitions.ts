@@ -40,7 +40,6 @@ import {
 import { rowAction, type SettingsPanelHost } from "./panelHost";
 import { sectionNote, sectionNoteWithHeadingBadge } from "./sectionNote";
 import { COMMUNITY_EXTENSION_CATALOG } from "./communityExtensionCatalog";
-import { DEFAULT_CODEMODE_MODE } from "../../settings";
 
 /**
  * Records a failed skill action.
@@ -165,7 +164,6 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		...userSkillsSection(host, state, snapshot),
 		communityExtensionsGroup(host),
 		workflowRow(host),
-		codemodeRow(host),
 		{
 			name: host.t.t("extensions.shareDiagnostics"),
 			desc: host.t.t("extensions.shareDiagnosticsDesc"),
@@ -193,34 +191,6 @@ function workflowRow(host: SettingsPanelHost): SettingDefinitionItem {
 		name: host.t.t("extensions.workflowName"),
 		desc: host.t.t("extensions.workflowDesc"),
 		control: { type: "toggle", key: "workflowEnabled", defaultValue: false },
-	};
-}
-
-/**
- * The codemode row: one tri-state, not a switch plus a mode.
- *
- * The dropdown and the model menu's "Tool mode" group read the same
- * `toolMode.*` copy, so the two surfaces name the three answers identically.
- * The description carries the disclosure — download cost and the trade between
- * the modes — because the row is the one place with room for it.
- */
-function codemodeRow(host: SettingsPanelHost): SettingDefinitionItem {
-	return {
-		name: host.t.t("toolMode.heading"),
-		desc: host.t.t("extensions.codemodeDesc"),
-		// A record, not a list of pairs: the generic dropdown reads its current
-		// value out of `settings[key]`, and `{value, label}` is a different
-		// control's shape.
-		control: {
-			type: "dropdown",
-			key: "codemodeMode",
-			defaultValue: DEFAULT_CODEMODE_MODE,
-			options: {
-				off: host.t.t("toolMode.off"),
-				on: host.t.t("toolMode.on"),
-				only: host.t.t("toolMode.only"),
-			},
-		},
 	};
 }
 

@@ -1,3 +1,4 @@
+import { DEFAULT_CODEMODE_MODE } from "../../settings";
 import { type Setting, type SettingDefinitionItem, type SettingGroupItem } from "obsidian";
 import type { PromptQueueStrategy } from "../../agent/queueStrategy";
 import { CONVERSATION_LANGUAGES } from "../../agent/conversationLanguage";
@@ -74,6 +75,29 @@ function conversationLanguageOptions(host: SettingsPanelHost): Record<string, st
 /**
  * The Chat tab's rows, in the order they read: behaviour, then storage.
  */
+/**
+ * The codemode row: one tri-state controlling how tools are orchestrated.
+ *
+ * Placed in Chat settings as a native conversation execution mechanism.
+ * The dropdown options match the "Tool calling" submenu in the model switcher.
+ */
+function codemodeRow(host: SettingsPanelHost): SettingDefinitionItem {
+	return {
+		name: host.t.t("toolMode.heading"),
+		desc: host.t.t("extensions.codemodeDesc"),
+		control: {
+			type: "dropdown",
+			key: "codemodeMode",
+			defaultValue: DEFAULT_CODEMODE_MODE,
+			options: {
+				only: host.t.t("toolMode.only"),
+				on: host.t.t("toolMode.on"),
+				off: host.t.t("toolMode.off"),
+			},
+		},
+	};
+}
+
 export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[] {
 	const { t } = host;
 	return [
@@ -114,6 +138,7 @@ export function chatDefinitions(host: SettingsPanelHost): SettingDefinitionItem[
 				},
 			},
 		},
+		codemodeRow(host),
 		compactionPage(host),
 		queueingPage(host),
 		retryPage(host),

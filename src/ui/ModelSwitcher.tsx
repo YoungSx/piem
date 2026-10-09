@@ -69,16 +69,6 @@ export function ModelSwitcher({ target, onSelect, toolMode, onSelectToolMode, on
 	 */
 	const openMenu = (event: React.MouseEvent<HTMLButtonElement>): void => {
 		const menu = new Menu();
-		// The tool-mode group reads the same `toolMode.*` copy the Extensions
-		// tab's dropdown does, so the two surfaces name the three answers
-		// identically — one vocabulary, checked on the row that is in force.
-		menu.addItem((item) => item.setTitle(t.t("toolMode.heading")).setIsLabel(true));
-		for (const mode of ["off", "on", "only"] as const) {
-			menu.addItem((item) =>
-				item.setTitle(t.t(`toolMode.${mode}`)).setChecked(mode === toolMode).onClick(() => onSelectToolMode(mode)),
-			);
-		}
-		menu.addSeparator();
 		if (choices.length === 0) {
 			menu.addItem((item) => item.setTitle(t.t("modelSwitcher.noModels")).setIsLabel(true));
 		}
@@ -94,10 +84,34 @@ export function ModelSwitcher({ target, onSelect, toolMode, onSelectToolMode, on
 					.onClick(() => onSelect(choice.id)),
 			);
 		}
-		if (onOpenSettings) {
-			if (choices.length > 0) {
-				menu.addSeparator();
+		menu.addSeparator();
+		menu.addItem((item) => {
+			item.setTitle(t.t("toolMode.heading")).setIcon("wrench");
+			if (typeof item.setSubmenu === "function") {
+				const submenu = item.setSubmenu();
+				for (const mode of ["only", "on", "off"] as const) {
+					submenu.addItem((subItem) =>
+						subItem
+							.setTitle(t.t(`toolMode.${mode}`))
+							.setChecked(mode === toolMode)
+							.onClick(() => onSelectToolMode(mode)),
+					);
+				}
+				if (onOpenSettings) {
+					submenu.addSeparator();
+					submenu.addItem((subItem) =>
+						subItem
+							.setTitle(t.t("toolMode.settings"))
+							.setIcon("settings")
+							.onClick(onOpenSettings),
+					);
+				}
+			} else if (onOpenSettings) {
+				item.onClick(onOpenSettings);
 			}
+		});
+		if (onOpenSettings) {
+			menu.addSeparator();
 			menu.addItem((item) => item.setTitle(t.t("modelSwitcher.manageModels")).setIcon("settings").onClick(onOpenSettings));
 		}
 		/*

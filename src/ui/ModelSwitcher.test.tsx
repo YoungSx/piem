@@ -118,26 +118,25 @@ describe("ModelSwitcher menu", () => {
 	it("lists every configured model, in the order settings stores them", async () => {
 		const host = await renderSwitcher();
 
-		expect((await openMenu(host)).titles()).toEqual(["Tool mode", "Off", "Both", "Scripts only · Beta (recommended)", "Opus 5 · OpenRouter", "Sonnet 5 · Anthropic"]);
+		expect((await openMenu(host)).titles()).toEqual(["Opus 5 · OpenRouter", "Sonnet 5 · Anthropic", "Tool calling"]);
 	});
 
 	it("carries each model's mark on its row, so the menu reads like the composer face", async () => {
 		const host = await renderSwitcher();
 
 		const menu = await openMenu(host);
-		// The group's rows carry no icon; the models' marks are what the test is
-		// about, and they still lead the rows that have one.
-		expect(menu.items.filter((item) => item.icon).map((item) => item.icon)).toEqual([opus.icon, sonnet.icon]);
+		// The models carry their provider icon, and Tool calling carries its wrench icon.
+		expect(menu.items.filter((item) => item.icon).map((item) => item.icon)).toEqual([opus.icon, sonnet.icon, "wrench"]);
 	});
 
 	it("marks the active row with a check, since its label deliberately does not say so", async () => {
 		const host = await renderSwitcher();
 
 		const items = (await openMenu(host)).items;
-		// Group first: heading and the separator carry no check, Off unchecked,
-		// Both checked (the shipped mode), Only unchecked; then the models, Opus
-		// active.
-		expect(items.map((item) => item.checked)).toEqual([undefined, false, true, false, undefined, true, false]);
+		// Models first: Opus active (checked), Sonnet inactive (unchecked).
+		// Followed by separator and Tool calling (not checked on top-level).
+		expect(items.slice(0, 2).map((item) => item.checked)).toEqual([true, false]);
+		expect(items.find((item) => item.title === "Tool calling")?.checked).toBeUndefined();
 	});
 
 	it("routes a selection to the host by model id, not by label", async () => {
@@ -153,19 +152,17 @@ describe("ModelSwitcher menu", () => {
 		const host = await renderSwitcher({ onOpenSettings: () => undefined });
 
 		const menu = await openMenu(host);
-		expect(menu.titles()).toEqual(["Tool mode", "Off", "Both", "Scripts only · Beta (recommended)", "Opus 5 · OpenRouter", "Sonnet 5 · Anthropic", "Manage models…"]);
+		expect(menu.titles()).toEqual(["Opus 5 · OpenRouter", "Sonnet 5 · Anthropic", "Tool calling", "Manage models…"]);
 		expect(menu.items.some((item) => item.separator)).toBe(true);
 	});
 
 	it("says the list is empty rather than opening an empty popover", async () => {
-		// The one state where the switcher has nothing to switch between. The
-		// group still leads, and the label under it keeps "Manage models" from
-		// reading as a list that failed to load.
+		// The one state where the switcher has nothing to switch between.
 		const host = await renderSwitcher({ target: { modelChoices: [], activeModelId: undefined }, onOpenSettings: () => undefined });
 
 		const menu = await openMenu(host);
-		expect(menu.titles()).toEqual(["Tool mode", "Off", "Both", "Scripts only · Beta (recommended)", "No models configured", "Manage models…"]);
-		expect(menu.items[5]?.isLabel).toBe(true);
+		expect(menu.titles()).toEqual(["No models configured", "Tool calling", "Manage models…"]);
+		expect(menu.items[0]?.isLabel).toBe(true);
 	});
 
 	it("routes the settings row to the host callback", async () => {
@@ -177,38 +174,61 @@ describe("ModelSwitcher menu", () => {
 		expect(opened).toBe(1);
 	});
 
-	describe("tool-mode group", () => {
-		it("leads the menu with a heading that is a label, not an action", async () => {
+	describe("tool calling submenu", () => {
+		it("places tool calling with an icon in the menu", async () => {
 			const host = await renderSwitcher();
 
 			const menu = await openMenu(host);
-			expect(menu.items[0]?.title).toBe("Tool mode");
-			expect(menu.items[0]?.isLabel).toBe(true);
+			const toolItem = menu.items.find((item) => item.title === "Tool calling");
+			expect(toolItem).toBeDefined();
+			expect(toolItem?.icon).toBe("wrench");
+			expect(toolItem?.submenu).toBeDefined();
+		});
+
+		it("offers the three orchestration modes and detailed settings in the submenu", async () => {
+			let opened = 0;
+			const host = await renderSwitcher({ onOpenSettings: () => (opened += 1) });
+
+			const menu = await openMenu(host);
+			const toolItem = menu.items.find((item) => item.title === "Tool calling");
+			expect(toolItem?.submenu?.titles()).toEqual([
+				"Automated orchestration · Beta (recommended)",
+				"Hybrid",
+				"Native tools",
+				"Detailed settings…",
+			]);
+
+			toolItem?.submenu?.click("Detailed settings…");
+			expect(opened).toBe(1);
 		});
 
 		it("checks the mode that is in force, whatever it is", async () => {
 			const host = await renderSwitcher({ toolMode: "only" });
 
 			const menu = await openMenu(host);
-			expect(menu.items.find((item) => item.title === "Scripts only · Beta (recommended)")?.checked).toBe(true);
-			expect(menu.items.find((item) => item.title === "Both")?.checked).toBe(false);
+			const toolItem = menu.items.find((item) => item.title === "Tool calling");
+			const onlyItem = toolItem?.submenu?.items.find((item) => item.title === "Automated orchestration · Beta (recommended)");
+			const hybridItem = toolItem?.submenu?.items.find((item) => item.title === "Hybrid");
+			expect(onlyItem?.checked).toBe(true);
+			expect(hybridItem?.checked).toBe(false);
 		});
 
 		it("routes a mode choice to the host by mode, not by label", async () => {
 			const chosen: string[] = [];
 			const host = await renderSwitcher({ onSelectToolMode: (mode) => chosen.push(mode) });
 
-			(await openMenu(host)).click("Off");
+			(await openMenu(host)).click("Native tools");
 
 			expect(chosen).toEqual(["off"]);
 		});
 
-		it("separates the group from the models, so the two lists read as two", async () => {
+		it("separates the models from the tool calling submenu", async () => {
 			const host = await renderSwitcher();
 
 			const menu = await openMenu(host);
-			// The separator right after the group's third option.
-			expect(menu.items[4]?.separator).toBe(true);
+			const sepIndex = menu.items.findIndex((item) => item.separator);
+			expect(sepIndex).toBeGreaterThanOrEqual(1);
+			expect(menu.items[sepIndex + 1]?.title).toBe("Tool calling");
 		});
 	});
 
