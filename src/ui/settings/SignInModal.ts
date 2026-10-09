@@ -1,5 +1,6 @@
 import { Modal, Notice, Setting, type App } from "obsidian";
-import type { AuthEvent, AuthPrompt, ProviderAuthInteraction } from "@earendil-works/pi-ai";import type { Translator } from "../../i18n";
+import type { AuthEvent, AuthPrompt, ProviderAuthInteraction } from "@earendil-works/pi-ai";
+import type { Translator } from "../../i18n";
 
 /**
  * The dialog a subscription sign-in happens in.
@@ -117,27 +118,28 @@ class SignInModal extends Modal {
 
 	private renderActions(): void {
 		const { t } = this.options;
-		new Setting(this.contentEl)
+		const footer = new Setting(this.contentEl)
 			.setClass("piem-settings-modal-footer")
 			.addButton((button) => {
 				button.setButtonText(t.t("signIn.close"));
 				button.onClick(() => this.close());
-			})
-			.addButton((button) => {
-				// Only offered when there is something to remove, so the dialog never
-				// invites a sign-out that would do nothing.
-				if (!this.options.signedIn) {
-					return;
-				}
+			});
+		// Only offered when there is something to remove, so the dialog never
+		// invites a sign-out that would do nothing. Calling addButton creates
+		// the DOM element immediately, so conditional buttons must be guarded
+		// before calling addButton rather than returning inside the callback.
+		if (this.options.signedIn) {
+			footer.addButton((button) => {
 				button.setButtonText(t.t("signIn.signOut")).setDestructive();
 				button.onClick(() => void this.runSignOut());
-			})
-			.addButton((button) => {
-				button.setButtonText(t.t(this.options.signedIn ? "signIn.again" : "signIn.start"));
-				button.setCta();
-				button.setDisabled(!this.options.canStore);
-				button.onClick(() => void this.runSignIn());
 			});
+		}
+		footer.addButton((button) => {
+			button.setButtonText(t.t(this.options.signedIn ? "signIn.again" : "signIn.start"));
+			button.setCta();
+			button.setDisabled(!this.options.canStore);
+			button.onClick(() => void this.runSignIn());
+		});
 	}
 
 	private async runSignIn(): Promise<void> {

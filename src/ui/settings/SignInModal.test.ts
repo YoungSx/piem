@@ -283,3 +283,32 @@ describe("SignInModal manual_code prompt", () => {
 		expect(content.textContent).toContain(t.t("signIn.failed", { message: "" }).split("{message}")[0]!);
 	});
 });
+
+describe("SignInModal footer actions", () => {
+	it("renders only Close and Sign In buttons when signed out — without any blank button", () => {
+		const { content } = openDialog({ signedIn: false });
+		const footer = content.querySelector(".piem-settings-modal-footer");
+		expect(footer).not.toBeNull();
+		const buttons = Array.from(footer!.querySelectorAll("button"));
+		expect(buttons).toHaveLength(2);
+		expect(buttons[0]?.textContent).toBe(t.t("signIn.close"));
+		expect(buttons[1]?.textContent).toBe(t.t("signIn.start"));
+		for (const button of buttons) {
+			expect(button.textContent?.trim()).not.toBe("");
+		}
+	});
+
+	it("renders Close, Sign Out, and Sign In Again buttons when signed in", () => {
+		const { content } = openDialog({ signedIn: true });
+		const footer = content.querySelector(".piem-settings-modal-footer");
+		expect(footer).not.toBeNull();
+		const buttons = Array.from(footer!.querySelectorAll("button"));
+		expect(buttons).toHaveLength(3);
+		expect(buttons[0]?.textContent).toBe(t.t("signIn.close"));
+		expect(buttons[1]?.textContent).toBe(t.t("signIn.signOut"));
+		expect(buttons[2]?.textContent).toBe(t.t("signIn.again"));
+		for (const button of buttons) {
+			expect(button.textContent?.trim()).not.toBe("");
+		}
+	});
+});

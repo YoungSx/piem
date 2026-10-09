@@ -53,6 +53,10 @@ import {
 } from "./ui/noteReferenceCommand";
 import { registerContextMenus } from "./ui/fileMenuEntry";
 import {
+	openSignInModal,
+	type SignInModalOptions,
+} from "./ui/settings/SignInModal";
+import {
 	deliverContextRequest,
 	type ContextRequest,
 } from "./ui/contextRequest";
@@ -1075,6 +1079,28 @@ export default class PiemPlugin extends Plugin {
 		}
 		await leaf.setViewState({ type: VIEW_TYPE_PIEM_LOGS, active: true });
 		await this.app.workspace.revealLeaf(leaf);
+	}
+
+	/**
+	 * Opens the OAuth sign-in modal for an integration.
+	 */
+	openSignInModal(options?: Partial<SignInModalOptions>): void {
+		const language = resolveLanguage(
+			this.app.vault as LanguageHost,
+			this.settings.language,
+		);
+		const t = getT(language);
+		openSignInModal({
+			app: this.app,
+			target: options?.target ?? "xAI (SuperGrok / X Premium)",
+			method: options?.method ?? "xAI (Grok/X subscription)",
+			signedIn: options?.signedIn ?? false,
+			canStore: options?.canStore ?? (this.signInSession?.canStore() ?? false),
+			t,
+			signIn: options?.signIn ?? (async () => {}),
+			signOut: options?.signOut ?? (async () => {}),
+			onChanged: options?.onChanged ?? (() => {}),
+		});
 	}
 }
 
