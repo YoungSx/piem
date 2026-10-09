@@ -166,16 +166,13 @@ export const MANUAL_CODE_FLOWS: Readonly<Record<ManualCodeFlowId, ManualCodeFlow
 		loginLabel: "Sign in with OpenRouter",
 		authorizeUrl: "https://openrouter.ai/auth",
 		tokenUrl: "https://openrouter.ai/api/v1/auth/keys",
-		// A fresh path per login, matching pi: the uuid is what makes a retried
-		// sign-in a new request instead of a callback someone already used.
-		redirectUri: () => `http://127.0.0.1:53692/oauth/callback/${crypto.randomUUID()}`,
 		grant: "permanent-key",
-		// pi's authorize request verbatim: OpenRouter's shape names the callback
-		// rather than a redirect_uri, and carries no state — the exchange is tied
-		// to the verifier alone, so the paste path has nothing to compare against.
-		authorizeQuery: ({ challenge, redirectUri }) =>
+		// OpenRouter official headless / out-of-band PKCE flow:
+		// Omitting callback_url completely displays the authorization code directly on
+		// screen, completely avoiding localhost/loopback dependency and enabling
+		// seamless copy-paste on both mobile and desktop browsers.
+		authorizeQuery: ({ challenge }) =>
 			new URLSearchParams({
-				callback_url: redirectUri,
 				code_challenge: challenge,
 				code_challenge_method: "S256",
 			}),

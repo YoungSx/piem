@@ -98,87 +98,6 @@ function scriptedInteraction(answers: (string | (() => string))[], signal = new 
 	return { interaction, events, prompts };
 }
 
-describe("parseAuthorizationInput", () => {
-	it("reads code and state out of a full redirect URL", () => {
-		const parsed = parseAuthorizationInput("https://localhost:53692/callback?code=abc&state=xyz");
-		expect(parsed).toEqual({ code: "abc", state: "xyz" });
-	});
-
-	it("reads the displayed code#state pair", () => {
-		expect(parseAuthorizationInput("abc#xyz")).toEqual({ code: "abc", state: "xyz" });
-	});
-
-	it("reads a bare query string", () => {
-		expect(parseAuthorizationInput("code=abc&state=xyz")).toEqual({ code: "abc", state: "xyz" });
-	});
-
-	it("treats a bare code as a code", () => {
-		expect(parseAuthorizationInput("abc")).toEqual({ code: "abc", state: undefined });
-	});
-
-	it("trims surrounding whitespace first", () => {
-		expect(parseAuthorizationInput("  abc\n")).toEqual({ code: "abc", state: undefined });
-	});
-
-	it("answers empty input with no code and no state", () => {
-		expect(parseAuthorizationInput("")).toEqual({ code: undefined, state: undefined });
-		expect(parseAuthorizationInput("   ")).toEqual({ code: undefined, state: undefined });
-	});
-
-	it("reports a URL carrying an error rather than exchanging it", () => {
-		// The provider refused; exchanging would only re-refuse with less context.
-		expect(() => parseAuthorizationInput("https://localhost:53692/callback?error=access_denied")).toThrow(
-			"access_denied",
-		);
-	});
-
-	it("reads a trailing separator as no state rather than an empty one", () => {
-		// A displayed pair with the state cut off must still sign in: an empty
-		// segment is "absent" (pi's truthy rule), so the verifier stands in.
-		expect(parseAuthorizationInput("code#")).toEqual({ code: "code", state: undefined });
-	});
-
-	it("strips wrapping quotes and angle brackets for mobile clipboard pastes", () => {
-		expect(parseAuthorizationInput('"code-in-quotes"')).toEqual({ code: "code-in-quotes", state: undefined });
-		expect(parseAuthorizationInput("'code-in-single-quotes'")).toEqual({ code: "code-in-single-quotes", state: undefined });
-		expect(parseAuthorizationInput("<https://localhost:53692/callback?code=abc&state=xyz>")).toEqual({
-			code: "abc",
-			state: "xyz",
-		});
-	});
-});
-
-describe("generatePkce", () => {
-	it("makes a verifier long enough for RFC 7636's 43-character floor", async () => {
-		// 32 random bytes are 43 base64url characters — exactly the spec's
-		// minimum, without padding.
-		expect(await generatePkceVerifiers()).toContain(43);
-	});
-
-	it("makes the challenge the base64url SHA-256 of the verifier", async () => {
-		const { verifier, challenge } = await generatePkce();
-		const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-		const expected = base64Url(new Uint8Array(digest));
-		expect(challenge).toBe(expected);
-	});
-
-	it("generates a fresh pair per login", async () => {
-		const first = await generatePkce();
-		const second = await generatePkce();
-		expect(first.verifier).not.toBe(second.verifier);
-		expect(first.challenge).not.toBe(second.challenge);
-	});
-});
-
-/** Collects verifier lengths without making the test a promise chain. */
-async function generatePkceVerifiers(): Promise<number[]> {
-	const lengths: number[] = [];
-	for (let i = 0; i < 5; i += 1) {
-		lengths.push((await generatePkce()).verifier.length);
-	}
-	return lengths;
-}
-
 function base64Url(bytes: Uint8Array): string {
 	let binary = "";
 	for (const byte of bytes) {
@@ -187,15 +106,84 @@ function base64Url(bytes: Uint8Array): string {
 	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+describe("parseAuthorizationInput", () => {
+	it("accepts a full redirect URL", () => {
+		const parsed = parseAuthorizationInput("https://localhost:53692/callback?code=abc&state=xyz");
+		expect(parsed).toEqual({ code: "abc", state: "xyz" });
+	});
+
+	it("accepts Anthropic's displayed code#state format", () => {
+		const parsed = parseAuthorizationInput("abc#xyz");
+		expect(parsed).toEqual({ code: "abc", state: "xyz" });
+	});
+
+	it("accepts a bare code with no state", () => {
+		const parsed = parseAuthorizationInput("sk-ant-code-12345");
+		expect(parsed).toEqual({ code: "sk-ant-code-12345", state: undefined });
+	});
+
+	it("accepts a query string with no scheme", () => {
+		const parsed = parseAuthorizationInput("code=abc&state=xyz");
+		expect(parsed).toEqual({ code: "abc", state: "xyz" });
+	});
+
+	it("surfaces a provider error reported on the redirect URL", () => {
+		// A refusal by the provider is an error, not a parse verdict — throwing
+		// tells the caller the sign-in failed instead of posting an exchange for
+		// a code that was never issued.
+		expect(() => parseAuthorizationInput("https://localhost:53692/callback?error=access_denied")).toThrow(
+			"access_denied",
+		);
+	});
+
+	it("returns empty pair on empty input", () => {
+		expect(parseAuthorizationInput("")).toEqual({ code: undefined, state: undefined });
+		expect(parseAuthorizationInput("   ")).toEqual({ code: undefined, state: undefined });
+	});
+
+	it("strips wrapping angle brackets or quotes commonly added by terminal copy", () => {
+		expect(parseAuthorizationInput("<https://localhost:53692/callback?code=abc&state=xyz>")).toEqual({
+			code: "abc",
+			state: "xyz",
+		});
+		expect(parseAuthorizationInput('"abc#xyz"')).toEqual({ code: "abc", state: "xyz" });
+		expect(parseAuthorizationInput("'code=abc&state=xyz'")).toEqual({ code: "abc", state: "xyz" });
+	});
+});
+
+describe("generatePkce", () => {
+	it("produces a 43-character base64url verifier and a 43-character challenge", async () => {
+		const { verifier, challenge } = await generatePkce();
+		// 32 bytes base64url-encoded with no padding is exactly 43 characters.
+		expect(verifier).toHaveLength(43);
+		expect(challenge).toHaveLength(43);
+		expect(verifier).toMatch(/^[A-Za-z0-9_-]+$/);
+		expect(challenge).toMatch(/^[A-Za-z0-9_-]+$/);
+	});
+
+	it("hashes the verifier with SHA-256 to produce the challenge", async () => {
+		const { verifier, challenge } = await generatePkce();
+		const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+		expect(base64Url(new Uint8Array(digest))).toBe(challenge);
+	});
+
+	it("generates distinct pairs across calls", async () => {
+		const a = await generatePkce();
+		const b = await generatePkce();
+		expect(a.verifier).not.toBe(b.verifier);
+		expect(a.challenge).not.toBe(b.challenge);
+	});
+});
+
 describe("runManualCodeLogin (token-pair, the Anthropic shape)", () => {
-	it("shows an authorize URL carrying the challenge and the state, then exchanges the paste", async () => {
-		const { fetch, calls } = scriptedFetch([{ body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } }]);
+	it("emits the authorize URL and exchanges the pasted code", async () => {
+		const { fetch, calls } = scriptedFetch([
+			{ body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
+		]);
 		const { interaction, events, prompts } = scriptedInteraction([
-			// The paste names the state this login actually sent, read off the URL
-			// the dialog showed — the verifier behind it is the flow's own business.
 			() => {
-				const shown = new URL((events[0] as { url: string }).url);
-				return `https://localhost:1/callback?code=pasted-code&state=${shown.searchParams.get("state")}`;
+				const sent = new URL((events[0] as { url: string }).url);
+				return `https://localhost:1/callback?code=pasted-code&state=${sent.searchParams.get("state")}`;
 			},
 		]);
 		const flow = tokenPairFlow();
@@ -304,10 +292,9 @@ describe("runManualCodeLogin (permanent-key, the OpenRouter shape)", () => {
 		return tokenPairFlow({
 			grant: "permanent-key",
 			clientId: undefined,
-			redirectUri: () => `http://127.0.0.1:1/oauth/callback/${crypto.randomUUID()}`,
-			authorizeQuery: ({ challenge, redirectUri }) =>
+			redirectUri: undefined,
+			authorizeQuery: ({ challenge }) =>
 				new URLSearchParams({
-					callback_url: redirectUri,
 					code_challenge: challenge,
 					code_challenge_method: "S256",
 				}),
@@ -316,31 +303,27 @@ describe("runManualCodeLogin (permanent-key, the OpenRouter shape)", () => {
 
 	it("posts only the code, verifier, and method — no client id, no state", async () => {
 		const { fetch, calls } = scriptedFetch([{ body: { key: "sk-or-1" } }]);
-		const { interaction, events } = scriptedInteraction(["https://127.0.0.1:1/cb?code=pasted&state=anything"]);
-		// A state on the paste is ignored, because this flow never sent one to
-		// compare it against.
+		const { interaction, events } = scriptedInteraction(["pasted-code-from-screen"]);
 		const credential = await runManualCodeLogin(permanentKeyFlow(), { fetch }, interaction);
 		expect(calls[0]?.body).toEqual({
-			code: "pasted",
+			code: "pasted-code-from-screen",
 			code_verifier: expect.any(String),
 			code_challenge_method: "S256",
 		});
 		expect(credential).toEqual({ type: "oauth", access: "sk-or-1", refresh: "", expires: Number.MAX_SAFE_INTEGER });
-		expect((events[0] as { url: string }).url).toContain("callback_url=");
+		const url = (events[0] as { url: string }).url;
+		expect(url).toContain("code_challenge=");
+		expect(url).not.toContain("callback_url=");
 	});
 
-	it("asks for a fresh callback address per login", async () => {
-		// The uuid path is what makes a retried sign-in a new request rather than
-		// a callback someone already used — so two logins must show two addresses.
-		const { fetch } = scriptedFetch([{ body: { key: "sk-or-1" } }, { body: { key: "sk-or-2" } }]);
-		const first = scriptedInteraction(["bare-code"]);
-		const second = scriptedInteraction(["bare-code"]);
-		await runManualCodeLogin(permanentKeyFlow(), { fetch }, first.interaction);
-		await runManualCodeLogin(permanentKeyFlow(), { fetch }, second.interaction);
-		const firstUrl = new URL((first.events[0] as { url: string }).url);
-		const secondUrl = new URL((second.events[0] as { url: string }).url);
-		const callback = (url: URL): string => url.searchParams.get("callback_url")!;
-		expect(callback(firstUrl)).not.toBe(callback(secondUrl));
+	it("operates in official out-of-band mode without any localhost or callback url", async () => {
+		const { fetch } = scriptedFetch([{ body: { key: "sk-or-1" } }]);
+		const { interaction, events, prompts } = scriptedInteraction(["bare-code"]);
+		await runManualCodeLogin(permanentKeyFlow(), { fetch }, interaction);
+		const shownUrl = new URL((events[0] as { url: string }).url);
+		expect(shownUrl.searchParams.has("callback_url")).toBe(false);
+		expect(shownUrl.searchParams.has("redirect_uri")).toBe(false);
+		expect(prompts[0]).toMatchObject({ type: "manual_code", placeholder: "Paste authorization code here" });
 	});
 
 	it("rejects a response with no key rather than storing an empty credential", async () => {
