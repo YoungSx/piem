@@ -145,12 +145,11 @@ describe("matchProviderPreset", () => {
 	});
 
 	it("tells the key and subscription rows apart at the OpenRouter endpoint too", () => {
-		// OpenRouter gained a subscription row the same way xAI did:
+		// Both Anthropic and OpenRouter have key rows and subscription rows:
 		// same host and protocol as the key row, sign-in in the identity.
 		const anthropic = { baseUrl: "https://api.anthropic.com", protocol: "anthropic-messages" } as const;
 		expect(matchProviderPreset({ ...anthropic, oauthFlow: "" })?.id).toBe("anthropic");
-		// Claude Pro/Max subscription is intentionally excluded as an unapproved preset
-		expect(matchProviderPreset({ ...anthropic, oauthFlow: "anthropic" })).toBeUndefined();
+		expect(matchProviderPreset({ ...anthropic, oauthFlow: "anthropic" })?.id).toBe("anthropic-subscription");
 
 		const openrouter = { baseUrl: "https://openrouter.ai/api/v1", protocol: "openai-completions" } as const;
 		expect(matchProviderPreset({ ...openrouter, oauthFlow: "" })?.id).toBe("openrouter");
@@ -219,8 +218,11 @@ describe("applyProviderPreset", () => {
 		expect(applied.protocol).toBe("anthropic-messages");
 	});
 
-	it("writes the paste-flow sign-in the OpenRouter subscription row owns", () => {
-		expect(findProviderPreset("anthropic-subscription")).toBeUndefined();
+	it("writes the paste-flow sign-in the Anthropic and OpenRouter subscription rows own", () => {
+		const anthropic = applyProviderPreset(emptyProviderConfig(), findProviderPreset("anthropic-subscription")!);
+		expect(anthropic.oauthFlow).toBe("anthropic");
+		expect(anthropic.baseUrl).toBe("https://api.anthropic.com");
+		expect(anthropic.protocol).toBe("anthropic-messages");
 
 		const openrouter = applyProviderPreset(emptyProviderConfig(), findProviderPreset("openrouter-subscription")!);
 		expect(openrouter.oauthFlow).toBe("openrouter");
