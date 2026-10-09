@@ -242,13 +242,30 @@ export function findProviderPreset(id: string): ProviderPreset | undefined {
 	return PROVIDER_PRESETS.find((preset) => preset.id === id);
 }
 
-/** Fills preset defaults into a draft row while keeping its identity intact. */
+/**
+ * Fills preset defaults into a draft row while keeping its identity intact.
+ *
+ * When changing authentication types (e.g. key to OAuth or vice-versa) or when
+ * switching to a preset with a different endpoint baseUrl, previous credentials
+ * (apiKey and secretRef) are cleared to prevent accidental credential leakage
+ * across different services or providers.
+ */
 export function applyProviderPreset(draft: ProviderConfig, preset: ProviderPreset): ProviderConfig {
+	const currentUrl = canonicalBaseUrl(draft.baseUrl);
+	const targetUrl = canonicalBaseUrl(preset.baseUrl);
+	const endpointChanged = Boolean(currentUrl && targetUrl && currentUrl !== targetUrl);
+	const authTypeChanged = Boolean(draft.oauthFlow) !== Boolean(preset.oauthFlow);
+	const switchingToOAuth = Boolean(preset.oauthFlow);
+
+	const clearCredentials = endpointChanged || authTypeChanged || switchingToOAuth;
+
 	return {
 		...draft,
 		name: preset.name,
 		baseUrl: preset.baseUrl,
 		protocol: preset.protocol,
 		oauthFlow: preset.oauthFlow ?? "",
+		apiKey: clearCredentials ? "" : draft.apiKey,
+		secretRef: clearCredentials ? "" : draft.secretRef,
 	};
 }

@@ -392,6 +392,73 @@ describe("ProviderModal preset row", () => {
 
 		close();
 	});
+
+	it("clears API key when editing an existing provider and switching to an OAuth preset then to another preset", async () => {
+		const existing: ProviderConfig = {
+			id: "p-existing",
+			name: "OpenAI",
+			baseUrl: "https://api.openai.com/v1",
+			protocol: "openai-completions",
+			apiKey: "sk-openai-confidential-key",
+			secretRef: "",
+			source: "user",
+			oauthFlow: "",
+		};
+		const { content, saved, close } = openForm(existing);
+
+		// Switch to GitHub Copilot (OAuth preset)
+		choose(presetSelect(content), "github-copilot");
+
+		// Then switch to DeepSeek (regular API key preset)
+		choose(presetSelect(content), "deepseek");
+
+		// Key input must be cleared, never leaking the confidential OpenAI key to DeepSeek
+		const keyInput = inputWithPlaceholder(content, t.t("providerModal.apiKeyPlaceholder"));
+		expect(keyInput.value).toBe("");
+
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.add") || button.textContent === t.t("providerModal.save"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.name).toBe("DeepSeek");
+		expect(saved[0]?.baseUrl).toBe("https://api.deepseek.com");
+		expect(saved[0]?.apiKey).toBe("");
+		close();
+	});
+
+	it("clears API key when switching directly between different provider endpoints", async () => {
+		const existing: ProviderConfig = {
+			id: "p-openai",
+			name: "OpenAI",
+			baseUrl: "https://api.openai.com/v1",
+			protocol: "openai-completions",
+			apiKey: "sk-openai-key-to-not-leak",
+			secretRef: "",
+			source: "user",
+			oauthFlow: "",
+		};
+		const { content, saved, close } = openForm(existing);
+
+		// Switch directly to DeepSeek
+		choose(presetSelect(content), "deepseek");
+
+		const keyInput = inputWithPlaceholder(content, t.t("providerModal.apiKeyPlaceholder"));
+		expect(keyInput.value).toBe("");
+
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.add") || button.textContent === t.t("providerModal.save"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.name).toBe("DeepSeek");
+		expect(saved[0]?.apiKey).toBe("");
+		close();
+	});
 });
 
 /**
