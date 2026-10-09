@@ -60,10 +60,11 @@ export const en = {
 	 * no description slot, so the one string is the whole disclosure.
 	 */
 	toolMode: {
-		heading: "Tool mode",
-		off: "Off",
-		on: "Both",
-		only: "Scripts only · Beta (recommended)",
+		heading: "Tool calling",
+		only: "Automated orchestration · Beta (recommended)",
+		on: "Hybrid",
+		off: "Native tools",
+		settings: "Detailed settings…",
 	},
 
 	/** Chat panel — header, banner, composer, message list, and trace rows. */
@@ -79,7 +80,7 @@ export const en = {
 		included: "Built-in Pi extensions",
 		description: "These integrations ship with Piem and load into every chat by default. Web search and draft rewriting send data to the current provider and may cost extra.",
 		applyNote: "Turning one off or on takes effect in your next chat, or after the next Stop.",
-		codemodeDesc: "How the agent reaches your tools. Both: every tool stays callable directly, and each one gains a line showing it can also be used inside a script. Scripts only: the script becomes the only path — the direct tools are withheld from the model and their declarations move into the codemode description, which is cheaper per request. Off removes the script tool. Adds about 370 KB to every plugin update and changes how the agent approaches multi-step work, so it ships on Both rather than at either extreme. Applies to the current chat and every chat after it; the model menu and the composer's /codemode command write this same setting.",
+		codemodeDesc: "How the assistant dispatches and runs tools in chat (powered by Code Mode). Automated orchestration: tool declarations become code APIs, and the assistant writes code in the background to chain multi-step tools without bloating conversation context, saving roundtrips and tokens. Hybrid: model-native tool calling and Code Mode orchestration coexist, chosen dynamically by task complexity. Native tools: turns off Code Mode and uses standard single-step tool calling, confirming each step with the model for maximum compatibility. Applies to current and subsequent chats; synced with the /codemode slash command.",
 		workflowName: "Workflow engine",
 		workflowDesc: "Adds run_workflow, for running a scripted sequence of agent steps in one go. Off by default since codemode covers the same ground; turn it on to get the fixed, repeatable version back.",
 		catalog: {

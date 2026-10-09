@@ -256,4 +256,22 @@ describe("buildSettingDefinitions", () => {
 			},
 		});
 	});
+
+	it.each(["en", "zh-cn"] as const)("offers the codemode tri-state in the Chat tab, in %s", (language) => {
+		const t = getT(language);
+		const host = stubHost({ t });
+		const definitions = buildSettingDefinitions(host, new SettingsPanelState());
+		const chat = definitions[1] as { items: Array<{ name?: string; desc?: string; control?: { type?: string; key?: string; defaultValue?: unknown; options?: Record<string, string> } }> };
+		const row = chat.items.find((item) => item.control?.key === "codemodeMode");
+		expect(row).toBeDefined();
+		if (!row?.control || row.control.type !== "dropdown") throw new Error("Codemode dropdown missing from chat tab");
+		expect(row.name).toBe(t.t("toolMode.heading"));
+		expect(row.desc).toBe(t.t("extensions.codemodeDesc"));
+		expect(row.control.defaultValue).toBe("on");
+		expect(row.control.options).toEqual({
+			only: t.t("toolMode.only"),
+			on: t.t("toolMode.on"),
+			off: t.t("toolMode.off"),
+		});
+	});
 });

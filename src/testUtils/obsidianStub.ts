@@ -461,6 +461,7 @@ export interface MenuItemRecording {
 	/** Whether the row is inert copy rather than an action. */
 	isLabel?: boolean;
 	click?: () => void;
+	submenu?: MenuRecording;
 }
 
 /**
@@ -491,6 +492,11 @@ export interface MenuRecording {
 	click(title: string): void;
 }
 
+interface SubmenuLike {
+	addItem(build: (item: MenuItemLike) => unknown): SubmenuLike;
+	addSeparator(): SubmenuLike;
+}
+
 /** The chainable builder Obsidian hands to `Menu.addItem`, as far as this plugin uses it. */
 interface MenuItemLike {
 	setTitle(title: string): MenuItemLike;
@@ -501,6 +507,18 @@ interface MenuItemLike {
 	setChecked(checked: boolean | null): MenuItemLike;
 	setIsLabel(isLabel: boolean): MenuItemLike;
 	onClick(handler: () => void): MenuItemLike;
+	setSubmenu(): SubmenuLike;
+}
+
+function findInRecording(recording: MenuRecording, title: string): MenuItemRecording | undefined {
+	for (const item of recording.items) {
+		if (item.title === title) return item;
+		if (item.submenu) {
+			const subFound = findInRecording(item.submenu, title);
+			if (subFound) return subFound;
+		}
+	}
+	return undefined;
 }
 
 /** A bare menu recording, with the navigation helpers a test reads it through. */
@@ -510,7 +528,7 @@ function createMenuRecording(): MenuRecording {
 		shown: false,
 		titles: () => recording.items.filter((item) => !item.separator).map((item) => item.title ?? ""),
 		click: (title: string) => {
-			const found = recording.items.find((item) => item.title === title);
+			const found = findInRecording(recording, title);
 			if (!found?.click) {
 				throw new Error(`no menu item titled ${title}`);
 			}
@@ -518,6 +536,22 @@ function createMenuRecording(): MenuRecording {
 		},
 	};
 	return recording;
+}
+
+function createSubmenuHandle(recording: MenuRecording): SubmenuLike {
+	const handle: SubmenuLike = {
+		addItem(build: (item: MenuItemLike) => unknown) {
+			const subEntry: MenuItemRecording = {};
+			recording.items.push(subEntry);
+			build(createMenuItem(subEntry));
+			return handle;
+		},
+		addSeparator() {
+			recording.items.push({ separator: true });
+			return handle;
+		},
+	};
+	return handle;
 }
 
 /** A chainable row builder over one recorded entry; shared by `Menu` and submenus. */
@@ -548,6 +582,12 @@ function createMenuItem(entry: MenuItemRecording): MenuItemLike {
 		onClick: (handler: () => void) => {
 			entry.click = handler;
 			return item;
+		},
+		setSubmenu: () => {
+			if (!entry.submenu) {
+				entry.submenu = createMenuRecording();
+			}
+			return createSubmenuHandle(entry.submenu);
 		},
 	};
 	return item;

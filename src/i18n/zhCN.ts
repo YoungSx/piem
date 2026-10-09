@@ -55,10 +55,11 @@ export const zhCN: DeepPartial<EnCopy> = {
 	 * 这一个字符串就是全部告知。
 	 */
 	toolMode: {
-		heading: "工具模式",
-		off: "关闭",
-		on: "并存",
-		only: "仅脚本 · Beta（推荐）",
+		heading: "工具调用",
+		only: "自动编排 · Beta（推荐）",
+		on: "混合",
+		off: "原生工具",
+		settings: "详细设置…",
 	},
 
 	extensions: {
@@ -73,7 +74,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		included: "内置 Pi 扩展",
 		description: "这些集成随 Piem 一起预装，默认在每段对话中加载。联网搜索和草稿改写会把数据发给当前服务商，可能额外计费。",
 		applyNote: "开关某个扩展会在下一段对话（或下次 Stop 后）生效。",
-		codemodeDesc: "助手如何触达你的工具。「并存」：工具仍可直接调用，每个工具多一行说明它也能在脚本里用。「仅脚本」：脚本成为唯一通路——直连工具不再暴露给模型，声明移进 codemode 的描述，每次请求更省。「关闭」移除脚本工具。每次插件更新要多下约 370 KB，且会改变助手处理多步任务的方式，所以默认停在「并存」而不是走任一极端。对当前及之后的每段对话生效；模型菜单与输入框的 /codemode 命令写的就是这同一个设置。",
+		codemodeDesc: "控制助手在对话中如何调度和执行各类工具（基于 Code Mode 机制）。「自动编排」：工具声明转为代码 API，由助手在后台自主编写代码串联多步工具，中间运算数据不占对话上下文，能大幅减少往返轮次与 Token 消耗。「混合」：模型原生工具调用与代码编排并存，助手根据任务复杂度灵活选用。「原生工具」：关闭 Code Mode 机制，仅采用大模型标准的单步工具调用（Tool Calling），每一步操作均与模型往返确认，兼容性最佳。对当前及之后的每段对话生效；模型菜单与输入框的 /codemode 命令亦同步此配置。",
 		workflowName: "Workflow 引擎",
 		workflowDesc: "提供 run_workflow，用脚本按顺序跑一串固定的 agent 步骤。默认关闭，因为 codemode 已覆盖同样的场景；打开它能拿回那种固定、可重复的版本。",
 		catalog: {
