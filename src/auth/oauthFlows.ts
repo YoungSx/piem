@@ -138,10 +138,10 @@ export const MANUAL_CODE_FLOWS: Readonly<Record<ManualCodeFlowId, ManualCodeFlow
 		loginLabel: "Sign in with Claude Pro/Max",
 		authorizeUrl: "https://claude.ai/oauth/authorize",
 		tokenUrl: "https://platform.claude.com/v1/oauth/token",
-		// pi's registered loopback address, verbatim. The user's browser lands
-		// there and finds nothing — that is fine, because in this flow they copy
-		// the address rather than wait for it to load.
-		redirectUri: () => "http://localhost:53692/callback",
+		// Anthropic official copy-code callback: after authorization, Claude displays
+		// the code#state pair directly on page with a one-click copy affordance,
+		// completely avoiding broken localhost/loopback page loading on mobile and desktop.
+		redirectUri: () => "https://platform.claude.com/oauth/code/callback",
 		grant: "token-pair",
 		// pi's authorize request verbatim: PKCE S256 with the verifier mirrored in
 		// `state`, so the paste path can verify the returned state matches the

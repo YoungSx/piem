@@ -192,30 +192,7 @@ export class ProviderModal extends Modal {
 		// device can delegate, the typed field where it cannot (or collapsed
 		// beneath the picker, as the road not taken). See secretField.ts.
 		this.keyContainerEl = contentEl.createDiv();
-		addSecretKeyField(this.keyContainerEl, {
-			app: this.app,
-			tier: this.options.secretStorage,
-			t,
-			readSecret: (id) => this.options.readSecret(id),
-			title: t.t("providerModal.apiKey"),
-			placeholder: t.t("providerModal.apiKeyPlaceholder"),
-			target: t.t("secretStorage.providerTarget"),
-			inlineKey: this.draft.apiKey,
-			secretRef: this.draft.secretRef,
-			onRefChange: (ref, plaintext) => {
-				this.draft.secretRef = ref;
-				this.draft.apiKey = plaintext;
-				this.onEdit();
-				this.testRow?.reset();
-			},
-			onInlineChange: (value) => {
-				// Typing retires the binding: one slot, one owner at a time.
-				this.draft.secretRef = "";
-				this.draft.apiKey = value;
-				this.onEdit();
-				this.testRow?.reset();
-			},
-		});
+		this.renderKeyField();
 		this.syncOAuthVisibility();
 
 		// Placed before the save row so a failing verdict is read before
@@ -288,24 +265,67 @@ export class ProviderModal extends Modal {
 	 * point: Custom exists so somebody can take a preset's endpoint over by hand,
 	 * which needs the values still there to edit.
 	 */
+	private renderKeyField(): void {
+		if (!this.keyContainerEl) {
+			return;
+		}
+		this.keyContainerEl.empty();
+		addSecretKeyField(this.keyContainerEl, {
+			app: this.app,
+			tier: this.options.secretStorage,
+			t: this.options.t,
+			readSecret: (id) => this.options.readSecret(id),
+			title: this.options.t.t("providerModal.apiKey"),
+			placeholder: this.options.t.t("providerModal.apiKeyPlaceholder"),
+			target: this.options.t.t("secretStorage.providerTarget"),
+			inlineKey: this.draft.apiKey,
+			secretRef: this.draft.secretRef,
+			onRefChange: (ref, plaintext) => {
+				this.draft.secretRef = ref;
+				this.draft.apiKey = plaintext;
+				this.onEdit();
+				this.testRow?.reset();
+			},
+			onInlineChange: (value) => {
+				// Typing retires the binding: one slot, one owner at a time.
+				this.draft.secretRef = "";
+				this.draft.apiKey = value;
+				this.onEdit();
+				this.testRow?.reset();
+			},
+		});
+	}
+
 	private choosePreset(id: string): void {
 		this.presetChoice = id;
 		this.syncCustomRows();
 		const preset = findProviderPreset(id);
 		if (!preset) {
+			const authTypeChanged = Boolean(this.draft.oauthFlow);
 			this.draft.oauthFlow = "";
+			if (authTypeChanged) {
+				this.draft.apiKey = "";
+				this.draft.secretRef = "";
+				this.renderKeyField();
+			}
 			this.syncOAuthVisibility();
 			this.onEdit();
 			return;
 		}
 		const applied = applyProviderPreset(this.draft, preset);
+		const credsChanged = this.draft.apiKey !== applied.apiKey || this.draft.secretRef !== applied.secretRef;
 		this.draft.name = applied.name;
 		this.draft.baseUrl = applied.baseUrl;
 		this.draft.protocol = applied.protocol;
 		this.draft.oauthFlow = applied.oauthFlow ?? "";
+		this.draft.apiKey = applied.apiKey;
+		this.draft.secretRef = applied.secretRef;
 		this.nameText?.setValue(this.draft.name);
 		this.baseUrlText?.setValue(this.draft.baseUrl);
 		this.protocolDropdown?.setValue(this.draft.protocol);
+		if (credsChanged) {
+			this.renderKeyField();
+		}
 		this.syncOAuthVisibility();
 		this.onEdit();
 		this.testRow?.reset();

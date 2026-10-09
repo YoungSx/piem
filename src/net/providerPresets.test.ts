@@ -240,14 +240,36 @@ describe("applyProviderPreset", () => {
 		expect(applyProviderPreset(subscription, findProviderPreset("xai")!).oauthFlow).toBe("");
 	});
 
-	it("leaves a leftover key harmless on a subscription row", () => {
-		// Deliberately not cleared, for the same reason as above — and safe, because
-		// the provider a signed-in row produces advertises no api-key auth at all,
-		// so there is nothing that could send it.
-		const withKey: ProviderConfig = { ...emptyProviderConfig(), apiKey: "sk-typed" };
+	it("clears credentials when switching to an OAuth subscription preset", () => {
+		// Switching to an OAuth subscription row clears leftover credentials so they
+		// are never silently retained in draft or leaked if the user switches to
+		// another provider later.
+		const withKey: ProviderConfig = { ...emptyProviderConfig(), apiKey: "sk-typed", secretRef: "sec-ref" };
 		const applied = applyProviderPreset(withKey, findProviderPreset("xai-subscription")!);
 
-		expect(applied.apiKey).toBe("sk-typed");
+		expect(applied.apiKey).toBe("");
+		expect(applied.secretRef).toBe("");
 		expect(applied.oauthFlow).toBe("xai");
+	});
+
+	it("clears credentials when switching between different provider endpoints", () => {
+		// When switching from OpenAI to DeepSeek, the OpenAI key must be cleared
+		// immediately rather than leaked across endpoints.
+		const openaiConfig = applyProviderPreset(emptyProviderConfig(), findProviderPreset("openai")!);
+		openaiConfig.apiKey = "sk-openai-secret";
+		openaiConfig.secretRef = "sec-openai";
+
+		const switched = applyProviderPreset(openaiConfig, findProviderPreset("deepseek")!);
+		expect(switched.apiKey).toBe("");
+		expect(switched.secretRef).toBe("");
+		expect(switched.baseUrl).toBe("https://api.deepseek.com");
+	});
+
+	it("clears credentials when switching from OAuth subscription back to regular preset", () => {
+		const subConfig = applyProviderPreset(emptyProviderConfig(), findProviderPreset("anthropic-subscription")!);
+		const switched = applyProviderPreset(subConfig, findProviderPreset("deepseek")!);
+		expect(switched.apiKey).toBe("");
+		expect(switched.secretRef).toBe("");
+		expect(switched.oauthFlow).toBe("");
 	});
 });

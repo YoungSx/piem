@@ -1,11 +1,13 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
-import type { Credential, CredentialStore, Model, ProviderAuthInteraction } from "@earendil-works/pi-ai";
+import type { Credential, CredentialStore, Model, OAuthCredential, ProviderAuthInteraction } from "@earendil-works/pi-ai";
 import { emptyProviderConfig, type ProviderConfig, type WireProtocol, buildConfiguredModel } from "../modelConfig";
 import { findProviderPreset, applyProviderPreset } from "../net/providerPresets";
 import { installObsidianStub, requestUrlMock } from "../testUtils/obsidianStub";
 import { installDom } from "../testUtils/dom";
 import { createSignInSession } from "./signInSession";
+import { MANUAL_CODE_FLOWS } from "./oauthFlows";
+import { createManualCodeOAuth } from "./pkce";
 
 installDom();
 installObsidianStub();
@@ -533,7 +535,8 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 		const entries = new Map<string, Credential>();
 		const credStore = storeOver(entries);
 
-		// Anthropic manual code flow: PKCE code exchange response
+		// Anthropic manual code flow: PKCE code exchange and refresh responses
+		const capturedFetches: Array<{ url: string; body: Record<string, unknown> }> = [];
 		const oauthReplies = [
 			{
 				body: {
@@ -542,10 +545,20 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 					expires_in: 3600,
 				},
 			},
+			{
+				body: {
+					access_token: "sk-ant-oat-refreshed-token",
+					refresh_token: "rt-claude-key-2",
+					expires_in: 3600,
+				},
+			},
 		];
 
 		let replyIdx = 0;
-		const scriptedFetch = async () => {
+		const scriptedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+			const parsedBody = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {};
+			capturedFetches.push({ url, body: parsedBody });
 			const reply = oauthReplies[replyIdx++];
 			if (!reply) throw new Error("Unexpected fetch call");
 			return new Response(JSON.stringify(reply.body), {
@@ -572,6 +585,8 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 			},
 			prompt: async () => {
 				const url = new URL(announcedUrl);
+				// Verify that official copy-code callback is used in the authorize query
+				expect(url.searchParams.get("redirect_uri")).toBe("https://platform.claude.com/oauth/code/callback");
 				const state = url.searchParams.get("state") ?? "";
 				return `mock_auth_code#${state}`;
 			},
@@ -579,11 +594,30 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 
 		await actions!.signIn(interaction);
 		expect(await actions!.isSignedIn()).toBe(true);
+
+		// Verify token exchange request sent official redirect_uri
+		expect(capturedFetches[0]?.url).toBe("https://platform.claude.com/v1/oauth/token");
+		expect(capturedFetches[0]?.body.redirect_uri).toBe("https://platform.claude.com/oauth/code/callback");
+		expect(capturedFetches[0]?.body.grant_type).toBe("authorization_code");
+
 		const savedCred = entries.get(providerConfig.id);
 		expect(savedCred?.type).toBe("oauth");
 		if (savedCred?.type === "oauth") {
 			expect(savedCred.access).toBe("sk-ant-oat-live-token");
+			expect(savedCred.refresh).toBe("rt-claude-key");
 		}
+
+		// Test Token Refresh capability
+		const manualFlow = MANUAL_CODE_FLOWS["anthropic"];
+		const manualOAuth = createManualCodeOAuth(manualFlow, { fetch: scriptedFetch as unknown as typeof fetch });
+		const refreshed = await manualOAuth.refresh(savedCred as OAuthCredential, new AbortController().signal);
+		expect(refreshed.access).toBe("sk-ant-oat-refreshed-token");
+		expect(refreshed.refresh).toBe("rt-claude-key-2");
+		expect(capturedFetches[1]?.body.grant_type).toBe("refresh_token");
+		expect(capturedFetches[1]?.body.refresh_token).toBe("rt-claude-key");
+
+		// Update stored credential with refreshed access token for downstream requests
+		entries.set(providerConfig.id, refreshed);
 
 		let capturedRequest: { url: string; headers: Record<string, string>; body: Record<string, unknown> } | undefined;
 		requestUrlMock.mockImplementation(async (params: unknown) => {
@@ -608,7 +642,7 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 
 		const auth = await bundle.models.getAuth(providerConfig.id);
 		expect(auth?.source).toBe("OAuth");
-		expect(auth?.auth.apiKey).toBe("sk-ant-oat-live-token");
+		expect(auth?.auth.apiKey).toBe("sk-ant-oat-refreshed-token");
 
 		const model: Model<WireProtocol> = buildConfiguredModel(
 			{
@@ -636,7 +670,7 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 		expect(result.errorMessage).toBeUndefined();
 		expect(result.content).toEqual([{ type: "text", text: "Hello Claude" }]);
 		expect(capturedRequest).toBeDefined();
-		expect(capturedRequest!.headers["authorization"]).toBe("Bearer sk-ant-oat-live-token");
+		expect(capturedRequest!.headers["authorization"]).toBe("Bearer sk-ant-oat-refreshed-token");
 		expect(capturedRequest!.headers["user-agent"]).toContain("claude-cli");
 	});
 
