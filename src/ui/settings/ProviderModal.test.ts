@@ -291,6 +291,78 @@ describe("ProviderModal preset row", () => {
 		expect(saved[0]?.source).toBe("user");
 		close();
 	});
+
+	it("saves oauthFlow when picking an OAuth subscription preset", async () => {
+		const { content, saved, close } = openForm();
+
+		choose(presetSelect(content), "github-copilot");
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.add"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.oauthFlow).toBe("github-copilot");
+		expect(saved[0]?.name).toBe("GitHub Copilot");
+		expect(saved[0]?.baseUrl).toBe("https://api.individual.githubcopilot.com");
+		expect(saved[0]?.protocol).toBe("openai-completions");
+		close();
+	});
+
+	it("clears oauthFlow when switching from an OAuth preset to a regular key preset", async () => {
+		const { content, saved, close } = openForm();
+
+		choose(presetSelect(content), "github-copilot");
+		choose(presetSelect(content), "deepseek");
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.add"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.oauthFlow).toBe("");
+		expect(saved[0]?.name).toBe("DeepSeek");
+		expect(saved[0]?.baseUrl).toBe("https://api.deepseek.com");
+		close();
+	});
+
+	it("clears oauthFlow when switching from an OAuth preset to Custom", async () => {
+		const { content, saved, close } = openForm();
+
+		choose(presetSelect(content), "github-copilot");
+		choose(presetSelect(content), "");
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.add"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.oauthFlow).toBe("");
+		expect(saved[0]?.baseUrl).toBe("https://api.individual.githubcopilot.com");
+		close();
+	});
+
+	it("clears oauthFlow when an OAuth preset endpoint URL is hand-edited away", async () => {
+		const { content, saved, close } = openForm();
+
+		choose(presetSelect(content), "github-copilot");
+		choose(presetSelect(content), "");
+		type(baseUrlInput(content), "https://custom.endpoint.com/v1");
+
+		const save = Array.from(content.querySelectorAll("button")).find(
+			(button) => button.textContent === t.t("providerModal.add"),
+		);
+		save?.click();
+		await Promise.resolve();
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0]?.oauthFlow).toBe("");
+		expect(saved[0]?.baseUrl).toBe("https://custom.endpoint.com/v1");
+		close();
+	});
 });
 
 /**

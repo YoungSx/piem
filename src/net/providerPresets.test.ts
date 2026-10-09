@@ -144,14 +144,13 @@ describe("matchProviderPreset", () => {
 		expect(matchProviderPreset({ ...key, oauthFlow: "xai" })?.id).toBe("xai-subscription");
 	});
 
-	it("tells the key and subscription rows apart at the two paste-flow endpoints too", () => {
-		// Anthropic and OpenRouter gained subscription rows the same way xAI did:
-		// same host and protocol as the key row, sign-in in the identity. These
-		// are the flows whose sign-in asks for a pasted code, so the rows are the
-		// only door a Claude Pro/Max or OpenRouter subscriber has.
+	it("tells the key and subscription rows apart at the OpenRouter endpoint too", () => {
+		// OpenRouter gained a subscription row the same way xAI did:
+		// same host and protocol as the key row, sign-in in the identity.
 		const anthropic = { baseUrl: "https://api.anthropic.com", protocol: "anthropic-messages" } as const;
 		expect(matchProviderPreset({ ...anthropic, oauthFlow: "" })?.id).toBe("anthropic");
-		expect(matchProviderPreset({ ...anthropic, oauthFlow: "anthropic" })?.id).toBe("anthropic-subscription");
+		// Claude Pro/Max subscription is intentionally excluded as an unapproved preset
+		expect(matchProviderPreset({ ...anthropic, oauthFlow: "anthropic" })).toBeUndefined();
 
 		const openrouter = { baseUrl: "https://openrouter.ai/api/v1", protocol: "openai-completions" } as const;
 		expect(matchProviderPreset({ ...openrouter, oauthFlow: "" })?.id).toBe("openrouter");
@@ -220,11 +219,8 @@ describe("applyProviderPreset", () => {
 		expect(applied.protocol).toBe("anthropic-messages");
 	});
 
-	it("writes the paste-flow sign-ins the new subscription rows own", () => {
-		const anthropic = applyProviderPreset(emptyProviderConfig(), findProviderPreset("anthropic-subscription")!);
-		expect(anthropic.oauthFlow).toBe("anthropic");
-		expect(anthropic.baseUrl).toBe("https://api.anthropic.com");
-		expect(anthropic.protocol).toBe("anthropic-messages");
+	it("writes the paste-flow sign-in the OpenRouter subscription row owns", () => {
+		expect(findProviderPreset("anthropic-subscription")).toBeUndefined();
 
 		const openrouter = applyProviderPreset(emptyProviderConfig(), findProviderPreset("openrouter-subscription")!);
 		expect(openrouter.oauthFlow).toBe("openrouter");

@@ -274,6 +274,70 @@ describe("createObsidianModels for a subscription row", () => {
 		expect(await bundle.models.getAuth("p1")).toEqual({ auth: { apiKey: "at-live" }, source: "OAuth" });
 	});
 
+	it("resolves GitHub Copilot auth with headers and proxy endpoint", async () => {
+		const copilotToken: Credential = {
+			type: "oauth",
+			access: "ghu_token;proxy-ep=proxy.copilot.net",
+			refresh: "",
+			expires: Date.now() + 3_600_000,
+		};
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [keyRow({ oauthFlow: "github-copilot", apiKey: "" })],
+			credentials: storeWith({ p1: copilotToken }),
+		});
+		const auth = await bundle.models.getAuth("p1");
+		expect(auth?.source).toBe("OAuth");
+		expect(auth?.auth.apiKey).toBe("ghu_token;proxy-ep=proxy.copilot.net");
+		expect(auth?.auth.baseUrl).toBe("https://api.copilot.net");
+		expect(auth?.auth.headers?.["Copilot-Integration-Id"]).toBe("vscode-chat");
+	});
+
+	it("resolves Kimi For Coding auth with Authorization Bearer header", async () => {
+		const kimiToken: Credential = {
+			type: "oauth",
+			access: "kimi_tok",
+			refresh: "kimi_ref",
+			expires: Date.now() + 3_600_000,
+		};
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [keyRow({ oauthFlow: "kimi-coding", apiKey: "" })],
+			credentials: storeWith({ p1: kimiToken }),
+		});
+		const auth = await bundle.models.getAuth("p1");
+		expect(auth?.source).toBe("OAuth");
+		expect(auth?.auth.headers?.Authorization).toBe("Bearer kimi_tok");
+	});
+
+	it("resolves Meta and OpenRouter auth with apiKey", async () => {
+		const metaToken: Credential = {
+			type: "oauth",
+			access: "meta_key",
+			refresh: "meta_ref",
+			expires: Date.now() + 3_600_000,
+		};
+		const metaBundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [keyRow({ oauthFlow: "meta", apiKey: "" })],
+			credentials: storeWith({ p1: metaToken }),
+		});
+		expect(await metaBundle.models.getAuth("p1")).toEqual({ auth: { apiKey: "meta_key" }, source: "OAuth" });
+
+		const orToken: Credential = {
+			type: "oauth",
+			access: "sk-or-v1-key",
+			refresh: "",
+			expires: Date.now() + 3_600_000,
+		};
+		const orBundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [keyRow({ oauthFlow: "openrouter", apiKey: "" })],
+			credentials: storeWith({ p1: orToken }),
+		});
+		expect(await orBundle.models.getAuth("p1")).toEqual({ auth: { apiKey: "sk-or-v1-key" }, source: "OAuth" });
+	});
+
 	it("reports a signed-out row as unconfigured", async () => {
 		const bundle = createObsidianModels({
 			transport: "requestUrl",
