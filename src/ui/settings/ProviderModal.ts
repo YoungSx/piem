@@ -184,10 +184,15 @@ export class ProviderModal extends Modal {
 		this.customOnlyRows.push(nameRow.settingEl, baseUrlRow.settingEl, protocolRow.settingEl);
 		this.syncCustomRows();
 
+		this.oauthHintSetting = new Setting(contentEl)
+			.setName(t.t("providerModal.oauthAuth"))
+			.setDesc(t.t("providerModal.oauthAuthDesc"));
+
 		// The key row changes shape with the tier: a keychain picker where the
 		// device can delegate, the typed field where it cannot (or collapsed
 		// beneath the picker, as the road not taken). See secretField.ts.
-		addSecretKeyField(contentEl, {
+		this.keyContainerEl = contentEl.createDiv();
+		addSecretKeyField(this.keyContainerEl, {
 			app: this.app,
 			tier: this.options.secretStorage,
 			t,
@@ -211,6 +216,7 @@ export class ProviderModal extends Modal {
 				this.testRow?.reset();
 			},
 		});
+		this.syncOAuthVisibility();
 
 		// Placed before the save row so a failing verdict is read before
 		// committing. The check needs no model id of its own: the caller probes with
@@ -265,6 +271,8 @@ export class ProviderModal extends Modal {
 	}
 
 	private testRow: ReturnType<typeof attachTestButton> | undefined;
+	private keyContainerEl: HTMLElement | undefined;
+	private oauthHintSetting: Setting | undefined;
 
 	/**
 	 * Applies a dropdown choice.
@@ -286,6 +294,7 @@ export class ProviderModal extends Modal {
 		const preset = findProviderPreset(id);
 		if (!preset) {
 			this.draft.oauthFlow = "";
+			this.syncOAuthVisibility();
 			this.onEdit();
 			return;
 		}
@@ -297,6 +306,7 @@ export class ProviderModal extends Modal {
 		this.nameText?.setValue(this.draft.name);
 		this.baseUrlText?.setValue(this.draft.baseUrl);
 		this.protocolDropdown?.setValue(this.draft.protocol);
+		this.syncOAuthVisibility();
 		this.onEdit();
 		this.testRow?.reset();
 	}
@@ -307,6 +317,21 @@ export class ProviderModal extends Modal {
 	 * A class rather than an inline style, so the one rule lives in `styles.css`
 	 * with everything else that decides what this modal looks like.
 	 */
+	/**
+	 * Toggles between the API key field and the OAuth subscription notice.
+	 *
+	 * When an OAuth preset is selected, entering an API key is meaningless and
+	 * misleading — the subscription flow manages credentials upon signing in.
+	 */
+	private syncOAuthVisibility(): void {
+		const isOAuth = Boolean(this.draft.oauthFlow);
+		this.keyContainerEl?.toggleClass("piem-settings-modal-row-hidden", isOAuth);
+		for (const item of this.keyContainerEl?.querySelectorAll(".setting-item") ?? []) {
+			item.toggleClass("piem-settings-modal-row-hidden", isOAuth);
+		}
+		this.oauthHintSetting?.settingEl.toggleClass("piem-settings-modal-row-hidden", !isOAuth);
+	}
+
 	private syncCustomRows(): void {
 		const isCustom = this.presetChoice === CUSTOM_PRESET_ID;
 		for (const row of this.customOnlyRows) {
@@ -335,6 +360,7 @@ export class ProviderModal extends Modal {
 		this.presetChoice = id;
 		this.presetDropdown?.setValue(id);
 		this.syncCustomRows();
+		this.syncOAuthVisibility();
 	}
 
 	/** One fresh edit clears the old verdict — it no longer describes this draft. */
