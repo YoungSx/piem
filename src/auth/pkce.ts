@@ -36,14 +36,13 @@ export interface ManualCodeFlow {
 	/** Where the authorization code is exchanged for the credential. */
 	tokenUrl: string;
 	/**
-	 * The redirect address the provider sends the user back to.
+	 * The redirect address the provider sends the user back to, where applicable.
 	 *
-	 * A function because OpenRouter's is expected to be unique per login (a
-	 * fresh UUID path), while Anthropic's is a fixed shape. Nothing in this
-	 * build listens on it: the user copies what the browser lands on, and the
-	 * page itself never has to load.
+	 * Undefined for headless / out-of-band flows (such as OpenRouter's official
+	 * headless mode) where no redirect is used and the authorization code is
+	 * displayed directly on the screen for the user to copy.
 	 */
-	redirectUri: () => string;
+	redirectUri?: () => string;
 	/**
 	 * What the exchange grants, which is also how the credential is used after.
 	 *
@@ -61,8 +60,7 @@ export interface ManualCodeFlow {
 	 * providers disagree on the shape itself, not just the values: Anthropic
 	 * takes a full OAuth 2.0 authorization request (`response_type`,
 	 * `redirect_uri`, `state`, scopes), OpenRouter takes exactly
-	 * `{callback_url, code_challenge, code_challenge_method}` — no state to
-	 * check, which is why its paste skips the state comparison.
+	 * `{code_challenge, code_challenge_method}` in headless mode.
 	 */
 	authorizeQuery(input: { challenge: string; verifier: string; redirectUri: string }): URLSearchParams;
 	/**
@@ -312,7 +310,7 @@ export async function runManualCodeLogin(
 ): Promise<OAuthCredential> {
 	interaction.signal.throwIfAborted();
 	const { verifier, challenge } = await generatePkce();
-	const redirectUri = flow.redirectUri();
+	const redirectUri = flow.redirectUri ? flow.redirectUri() : "";
 	const authorizeQuery = flow.authorizeQuery({ challenge, verifier, redirectUri });
 	const authorizeUrl = new URL(flow.authorizeUrl);
 	authorizeUrl.search = authorizeQuery.toString();
@@ -320,7 +318,7 @@ export async function runManualCodeLogin(
 	const pasted = await interaction.prompt({
 		type: "manual_code",
 		message: "",
-		placeholder: redirectUri,
+		placeholder: redirectUri || "Paste authorization code here",
 	});
 	interaction.signal.throwIfAborted();
 	const { code, state: pastedState } = parseAuthorizationInput(pasted);
@@ -399,8 +397,8 @@ export function createManualCodeOAuth(flow: ManualCodeFlow, deps: ManualCodeDeps
 		async refresh(credential: OAuthCredential, signal: AbortSignal): Promise<OAuthCredential> {
 			return refreshManualCodeCredential(flow, deps, credential, signal);
 		},
-		toAuth(credential: OAuthCredential): Promise<ModelAuth> {
-			return Promise.resolve(flow.toAuth(credential.access));
+		async toAuth(credential: OAuthCredential): Promise<ModelAuth> {
+			return flow.toAuth(credential.access);
 		},
 	};
 }

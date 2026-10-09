@@ -98,9 +98,11 @@ describe("every manual-code flow", () => {
 			expect(oauthFlowName(id as keyof typeof MANUAL_CODE_FLOWS)).toBe(flow.name);
 		});
 
-		it(`${id}: produces a redirect address nothing has to be listening on`, () => {
-			const redirect = flow.redirectUri();
-			expect(new URL(redirect).protocol).toEndWith(":");
+		it(`${id}: produces a redirect address or operates out-of-band`, () => {
+			if (flow.redirectUri) {
+				const redirect = flow.redirectUri();
+				expect(new URL(redirect).protocol).toEndWith(":");
+			}
 		});
 
 		it(`${id}: turns an access token into request auth that carries it`, () => {
