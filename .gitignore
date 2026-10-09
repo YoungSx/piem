@@ -32,3 +32,6 @@ sessions/
 
 # Rendered output of scripts/preview-command-menu.mjs, for eyeballing layout.
 .preview/
+
+# Local smoke testing rig
+.smoke-rig/
