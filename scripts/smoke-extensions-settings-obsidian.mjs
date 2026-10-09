@@ -170,9 +170,9 @@ async function main() {
 
 		// Check un-relocated items
 		const hasWorkflow = extPageInfo.some((i) => /Workflow engine|工作流引擎/i.test(i.name));
-		check("Workflow engine setting remains on Extensions page", hasWorkflow);
+		check("Workflow engine setting is not on Extensions page", !hasWorkflow);
 		const hasTelemetry = extPageInfo.some((i) => /error reports|错误报告/i.test(i.name));
-		check("Error reports setting remains on Extensions page", hasTelemetry);
+		check("Error reports setting is not on Extensions page", !hasTelemetry);
 		const hasMcp = extPageInfo.some((i) => /MCP/i.test(i.name));
 		check("MCP section remains on Extensions page", hasMcp);
 
@@ -312,6 +312,18 @@ async function main() {
 		// Screenshot
 		const shot = await settingsClient.send("Page.captureScreenshot", { format: "png" });
 		await writeFile(resolve(root, "settings-hierarchy-smoke.png"), Buffer.from(shot.data, "base64"));
+
+		// Check that Error reports (diagnostics) is on General page
+		await settingsClient.evaluate(`(() => {
+			const generalTab = [...document.querySelectorAll(".vertical-tab-nav-item")].find(i => /general|通用/i.test(i.textContent));
+			if (generalTab) generalTab.click();
+		})()`);
+		await new Promise(r => setTimeout(r, 400));
+		const generalHasTelemetry = await settingsClient.evaluate(`(() => {
+			const items = [...document.querySelectorAll(".setting-item-name")].map(i => i.textContent.trim());
+			return items.some(n => /error reports|错误报告/i.test(n));
+		})()`);
+		check("Error reports setting is present on General page", generalHasTelemetry);
 
 		// Clean up
 		await mainClient.evaluate(`(() => {

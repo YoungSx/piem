@@ -76,7 +76,7 @@ function host(overrides: Partial<SettingsPanelHost> = {}): SettingsPanelHost {
  * vanish from search unnoticed.
  */
 describe("generalDefinitions", () => {
-	it("puts the three stored settings behind typed controls", () => {
+	it("puts the stored settings behind typed controls", () => {
 		const definitions = generalDefinitions(host()) as Array<{
 			name?: string;
 			type?: string;
@@ -91,6 +91,21 @@ describe("generalDefinitions", () => {
 		expect(language?.control).toMatchObject({ type: "dropdown", key: "language" });
 		expect(shortcuts?.items?.[0]?.control).toMatchObject({ type: "dropdown", key: "sendShortcut" });
 		expect(logs?.items?.[0]?.control).toMatchObject({ type: "dropdown", key: "logLevel" });
+		expect(logs?.items?.[1]?.control).toMatchObject({ type: "toggle", key: "shareDiagnostics" });
+	});
+
+	it.each(["en", "zh-cn"] as const)("offers a default-on native diagnostics toggle in %s", (language) => {
+		const t = getT(language);
+		const definitions = generalDefinitions(host({ t })) as Array<{
+			heading?: string;
+			items?: Array<{ name: string; desc?: string; control?: { type?: string; key?: string; defaultValue?: boolean } }>;
+		}>;
+		const logs = definitions.find((item) => item.heading === t.t("settings.logsHeading"));
+		const row = logs?.items?.find((item) => item.control?.key === "shareDiagnostics");
+		expect(row).toBeDefined();
+		expect(row?.name).toBe(t.t("extensions.shareDiagnostics"));
+		expect(row?.desc).toBe(t.t("extensions.shareDiagnosticsDesc"));
+		expect(row?.control?.defaultValue).toBe(true);
 	});
 
 	it("keeps opening the log viewer an action, not a fake stored value", () => {

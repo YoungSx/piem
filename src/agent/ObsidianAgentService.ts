@@ -183,12 +183,6 @@ import { MAX_PINNED_REFS, type ContextRef } from "./contextRefs";
 import { withEnvironment } from "./environmentPrompt";
 import { withConversationLanguage } from "./conversationLanguage";
 import { createSubagentExtension } from "../subagent/extension";
-import { SUBAGENT_ROLES } from "../subagent/roles";
-import { createWorkflowHost } from "../workflow/host";
-import {
-	createWorkflowTool,
-	createMemoryJournalStore,
-} from "../workflow/workflowTool";
 import { codemodeSample, createCodemodeTool } from "../codemode/tool";
 import { parseCodemodeArgument, type CodemodeSessionMode } from "../codemode/mode";
 import type {
@@ -915,13 +909,6 @@ export class ObsidianAgentService {
 	 */
 	private readonly subagentExtension: ReturnType<typeof createSubagentExtension>;
 	/**
-	 * The `run_workflow` tool, built once over the subagent runner and shared by
-	 * every session's tool set. Its journal store is per-service, so a
-	 * `resumeFromRunId` from one session's run replays in another within the
-	 * session's lifetime — the store dies with the service.
-	 */
-	private readonly workflowTool: AgentTool;
-	/**
 	 * One runtime per open session file (issue #235). The service no longer
 	 * carries per-session state as singletons: every field that belongs to a
 	 * conversation lives on the {@link SessionRuntime} keyed by its file path,
@@ -1209,16 +1196,6 @@ export class ObsidianAgentService {
 			// conversation builds ride, so a child never waits on (or resurrects) a
 			// dead server's handshake. Undefined in hosts without the gather.
 			getExternalTools: this.getMountedExternalToolsFn,
-		});
-
-		// The workflow tool spawns through the same subagent runner, so a workflow
-		// child resolves its model, tools, and transport exactly as a delegated
-		// subagent does. Built once and shared; the journal store lives here.
-		this.workflowTool = createWorkflowTool({
-			host: createWorkflowHost(this.subagentExtension.workflowChildRunner),
-			store: createMemoryJournalStore(),
-			newRunId: () => crypto.randomUUID(),
-			agentTypes: SUBAGENT_ROLES.map((role) => role.name),
 		});
 
 	}
@@ -6190,13 +6167,7 @@ export class ObsidianAgentService {
 		};
 		const full = [
 			...this.subagentExtension.createTools(() => rt.skills, rt.sessionPath),
-			// One orchestration tool per set, top level only conceptually — a
-			// workflow's own children are leaves and never receive it, because they
-			// run at the subagent depth limit where the delegation tools are absent.
-			// Off unless the user asked for it: `codemode` took over the seat this
-			// tool held, and the engine stays in the bundle (43 KiB) so the switch is
-			// reversible rather than a deletion. See {@link ../settings}.
-			...(this.getSettings().workflowEnabled === true ? [this.workflowTool] : []),
+			// One orchestration tool per set, top level only conceptually.
 			...(codemodeOn ? [this.createSessionCodemodeTool(rt)] : []),
 			...(rt.communityHost?.tools ?? []),
 			// Inside the set the `offered` filter governs, like everything else: MCP
@@ -6242,15 +6213,6 @@ export class ObsidianAgentService {
 	 */
 	getSubagentRegistry(): ReturnType<typeof createSubagentExtension>["registry"] {
 		return this.subagentExtension.registry;
-	}
-
-	/**
-	 * The `run_workflow` tool, for the same reason {@link getSubagentRegistry}
-	 * is exposed: a read-only handle for an observer or a smoke to reach the one
-	 * shared instance, rather than rebuilding a session's tool set to find it.
-	 */
-	getWorkflowTool(): AgentTool {
-		return this.workflowTool;
 	}
 
 	/** The focused chat's tool, also reachable by the Obsidian smoke harness. */

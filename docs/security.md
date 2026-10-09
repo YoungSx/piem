@@ -52,7 +52,7 @@ may finish or remain billable. Pending transport work stays accounted for until 
 settles; it cannot write a late draft, switch another chat or resume a stopped task.
 
 Error reports and performance data go to Piem's maintainers by default. You can
-turn sharing off under **Settings → Piem → Extensions**, as described below.
+turn sharing off under **Settings → Piem → General**, as described below.
 
 The practical consequence: **point Piem at a vault you are willing to send to
 your model provider.** A search that touches a file lists that file, and the
@@ -98,7 +98,7 @@ synced copy cannot revive the same cancelled run.
 
 The bundled original `b1tank/pi-otel` extension sends traces, metrics and lifecycle
 logs to Piem's maintainers at `https://otlppiem.shangxin.me`. **Share error reports
-and performance data** under **Settings → Piem → Extensions** is on by default.
+and performance data** under **Settings → Piem → General** is on by default.
 Turning it off stops new reports immediately and discards unsent data; requests
 already sent cannot be recalled. Turning it back on requires a Piem reload to
 resume sharing. The destination receives the device's IP and ordinary HTTP

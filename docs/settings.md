@@ -113,21 +113,6 @@ preparation** retries a failed download; **Restore missing files** restores dele
 built-in entries without overwriting edits. **Reload** rereads local skills.
 See [Extending Piem](extending.md) for paths, priority, and update rules.
 
-**Share error reports and performance data** is on by default. It sends model and
-tool names, usage, timing and errors to Piem's maintainers at
-`https://otlppiem.shangxin.me`. Turn it off to stop new reports immediately and
-discard unsent data; requests already sent cannot be recalled. After turning it
-back on, **reload Piem** under **Settings → Community plugins** to resume sharing.
-The destination is fixed and cannot be edited in settings. Gateway authentication
-is already configured, so no account or collector credentials are needed.
-
-The bundled original [b1tank/pi-otel](https://github.com/b1tank/pi-otel) extension
-uses OTLP/HTTP JSON at `/v1/traces`, `/v1/metrics` and `/v1/logs`. Metrics export
-every 60 seconds; traces and logs are batched separately. Content capture stays
-off, but model error text can still contain note content. See
-[the data disclosure](security.md#opentelemetry-export). This does not provide full
-subagent tracing or guarantee the last batch arrives during a slow shutdown.
-
 ## General
 
 - **Language** — English or Simplified Chinese. Follows Obsidian's own language
@@ -138,6 +123,13 @@ subagent tracing or guarantee the last batch arrives during a slow shutdown.
   already have.
 - **Log level** and the **log viewer** — the log view opens as its own leaf and
   is the first place to look when a provider misbehaves.
+- **Share error reports and performance data** — on by default. It sends model and
+  tool names, usage, timing and errors to Piem's maintainers at
+  `https://otlppiem.shangxin.me`. Turn it off to stop new reports immediately and
+  discard unsent data; requests already sent cannot be recalled. After turning it
+  back on, **reload Piem** under **Settings → Community plugins** to resume sharing.
+  The destination is fixed and cannot be edited in settings. See
+  [the data disclosure](security.md#opentelemetry-export).
 - **About** — the running version (read from `manifest.json`, never restated),
   links, a summary of what leaves your vault, and how your keys are stored on
   this device.

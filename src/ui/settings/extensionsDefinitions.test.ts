@@ -107,31 +107,11 @@ async function settle(): Promise<void> {
 }
 
 describe("extensionsDefinitions", () => {
-	it.each(["en", "zh-cn"] as const)("offers a default-on native diagnostics toggle without a collector field in %s", async language => {
-		const t = getT(language);
-		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
-		const row = definitions.find(item => "control" in item && item.control?.key === "shareDiagnostics");
-		expect(row).toBeDefined();
-		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Diagnostics toggle missing");
-		expect(row.name).toBe(t.t("extensions.shareDiagnostics"));
-		expect(row.desc).toBe(t.t("extensions.shareDiagnosticsDesc"));
-		expect(row.control.defaultValue).toBe(true);
+	it("does not offer shareDiagnostics or workflowEnabled on the extensions tab", async () => {
+		const definitions = extensionsDefinitions(stubHost(), new SettingsPanelState());
+		expect(definitions.some(item => "control" in item && item.control?.key === "shareDiagnostics")).toBe(false);
+		expect(definitions.some(item => "control" in item && item.control?.key === "workflowEnabled")).toBe(false);
 		expect(definitions.some(item => "control" in item && item.control?.key === "otelEndpoint")).toBe(false);
-		await settle();
-	});
-
-	it.each(["en", "zh-cn"] as const)("offers the workflow engine switch, off by default, in %s", async language => {
-		const t = getT(language);
-		const definitions = extensionsDefinitions(stubHost({ t }), new SettingsPanelState());
-		const row = definitions.find(item => "control" in item && item.control?.key === "workflowEnabled");
-		expect(row).toBeDefined();
-		if (!row || !("control" in row) || row.control?.type !== "toggle") throw new Error("Workflow toggle missing");
-		expect(row.name).toBe(t.t("extensions.workflowName"));
-		expect(row.desc).toBe(t.t("extensions.workflowDesc"));
-		// Off, not on: codemode took the orchestration seat. The row is a plain
-		// toggle rather than a `disabledExtensions` entry because workflow is a
-		// built-in tool, and a blocklist of extension ids would misname it.
-		expect(row.control.defaultValue).toBe(false);
 		await settle();
 	});
 

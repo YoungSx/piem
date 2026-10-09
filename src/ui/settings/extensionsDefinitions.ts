@@ -163,35 +163,8 @@ export function extensionsDefinitions(host: SettingsPanelHost, state: SettingsPa
 		...problemRows(snapshot?.load.vault ?? [], vaultSkillProblemsCopy(host.t)),
 		...userSkillsSection(host, state, snapshot),
 		communityExtensionsGroup(host),
-		workflowRow(host),
-		{
-			name: host.t.t("extensions.shareDiagnostics"),
-			desc: host.t.t("extensions.shareDiagnosticsDesc"),
-			control: { type: "toggle", key: "shareDiagnostics", defaultValue: true },
-		},
 		mcpList(host),
 	];
-}
-
-/**
- * The `run_workflow` switch, off by default and beside the extension switches
- * because it is the same kind of decision: something that was in every chat and
- * now has to be asked for.
- *
- * Not a `disabledExtensions` row. Workflow is a built-in tool, not a community
- * extension, so the blocklist that seeds community ids has no honest place to
- * carry it — filing it there would make "disabled extensions" a name that lies.
- *
- * The row uses the declarative `control` form rather than a render callback:
- * there is no reconciliation to perform, and no state read outside the settings
- * object, so the generic toggle covers it.
- */
-function workflowRow(host: SettingsPanelHost): SettingDefinitionItem {
-	return {
-		name: host.t.t("extensions.workflowName"),
-		desc: host.t.t("extensions.workflowDesc"),
-		control: { type: "toggle", key: "workflowEnabled", defaultValue: false },
-	};
 }
 
 /** Maximum items displayed directly in a section before offloading to a dedicated subpage. */

@@ -6,8 +6,6 @@ import { createFollowUpSubagentTool, createKillSubagentTool, createListSubagents
 import { SubagentRegistry } from "./registry";
 import { SUBAGENT_DEPTH_LIMIT, createSpawnSubagentTool, type SubagentToolsContext } from "./spawnTool";
 import { createWaitSubagentTool, type WaitPacing } from "./waitTool";
-import { createWorkflowChildRunner } from "./workflowChildRunner";
-import type { WorkflowChildRunner } from "../workflow/host";
 
 /**
  * What the subagent extension borrows from its host — the Obsidian plugin —
@@ -127,12 +125,6 @@ export function createSubagentExtension(
 	 * are live bookkeeping, so observers must copy what they render.
 	 */
 	registry: SubagentRegistry;
-	/**
-	 * Runs one workflow child over this same context — the seam the workflow
-	 * tool's {@link WorkflowHost} spawns through, so a workflow child resolves its
-	 * model, tools, and transport exactly as a delegated subagent does.
-	 */
-	workflowChildRunner: WorkflowChildRunner;
 } {
 	const registry = new SubagentRegistry();
 
@@ -198,8 +190,5 @@ export function createSubagentExtension(
 		createTools: (getSkills, ownerId) => buildTools(0, ownerId, getSkills),
 		disposeAll: () => registry.disposeAll(),
 		registry,
-		// The runner mints child ids from the same registry the delegation tools
-		// use, so a workflow child and a spawned subagent draw from one id space.
-		workflowChildRunner: createWorkflowChildRunner(context, () => registry.nextId()),
 	};
 }

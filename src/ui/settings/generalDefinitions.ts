@@ -135,6 +135,11 @@ export function generalDefinitions(host: SettingsPanelHost): SettingDefinitionIt
 					control: { type: "dropdown", key: "logLevel", options: logLevelOptions(host) },
 				},
 				{
+					name: t.t("extensions.shareDiagnostics"),
+					desc: t.t("extensions.shareDiagnosticsDesc"),
+					control: { type: "toggle", key: "shareDiagnostics", defaultValue: true },
+				},
+				{
 					// Named rather than a bare button, so assistive technology announcing
 					// it out of context still says what it opens.
 					name: t.t("settings.logViewerName"),

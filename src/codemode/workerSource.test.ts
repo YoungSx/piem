@@ -8,8 +8,7 @@ import { CODEMODE_WORKER_SOURCE } from "./workerSource";
  *
  * The source is a string, so an unescaped backtick or a `\n` where `\\n` was
  * meant type-checks cleanly and then fails inside the worker as a syntax error
- * the user never sees. Same reason `src/workflow/workerSource.test.ts` parses
- * its source: these are asserts about text, not about a running VM.
+ * the user never sees. These are asserts about text, not about a running VM.
  *
  * They cannot run the VM. `bun test` evaluates this module without esbuild, so
  * {@link ./runtimeAsset} is the empty-constant version and the worker has no VM to

@@ -158,7 +158,7 @@ describe("buildSettingDefinitions", () => {
 		// here rather than in a user's settings window. `codemodeEnabled` is
 		// deliberately absent: the pre-merge switch is not a setting any more.
 		expect(keys.has("codemodeMode")).toBe(true);
-		expect(keys.has("workflowEnabled")).toBe(true);
+		expect(keys.has("workflowEnabled")).toBe(false);
 		expect(keys.has("codemodeEnabled")).toBe(false);
 	});
 
