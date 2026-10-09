@@ -6,8 +6,8 @@ import type { Translator } from "../../i18n";
  * Row descriptions written by outside hands — a skill's frontmatter, an MCP
  * server's URL — have no length limit, and one long one stretches its row and
  * everything under it out of the scan. Past the budget the text folds to two
- * lines with a 展开 button; the fold is a view state, so the full text stays in
- * the DOM for selection and screen readers either way.
+ * lines with a native HTML `<details>` disclosure; the fold is a view state,
+ * so the full text stays in the DOM for selection and screen readers either way.
  *
  * Deliberately not applied to diagnostics: an error message's tail is the part
  * that explains the failure, and shortening it would trade a tall row for an
@@ -21,12 +21,12 @@ export const DESC_FOLD_LIMIT = 200;
 const FOLDED_CLASS = "piem-settings-desc--folded";
 
 /**
- * Sets a row's description, folding it behind a toggle when it runs long.
+ * Sets a row's description, folding it behind a native HTML `<details>` disclosure
+ * when it runs long.
  *
  * The text lives in its own span rather than directly in `descEl` so the clamp
- * can bind to the text alone — a button inside a line-clamped box would be
- * clamped away with it. Appends nothing when short: a short description should
- * not carry fold machinery in its DOM.
+ * can bind to the text alone. Appends nothing when short: a short description
+ * should not carry fold machinery in its DOM.
  */
 export function setFoldableDescription(setting: Setting, text: string, t: Translator): void {
 	const desc = setting.descEl;
@@ -39,21 +39,29 @@ export function setFoldableDescription(setting: Setting, text: string, t: Transl
 	body.setText(text);
 	desc.classList.add("piem-settings-desc--foldable");
 	body.classList.add(FOLDED_CLASS);
-	const toggle = desc.createEl("button", {
-		cls: "piem-settings-desc-toggle",
-		attr: { "aria-expanded": "false", type: "button" },
+
+	const details = desc.createEl("details", {
+		cls: "piem-settings-desc-details",
 	});
-	// The chevron states the direction, the word states the action; each half
-	// stays legible where the other fails (colour-blind themes, icon scanning).
-	setIcon(toggle.createSpan({ cls: "piem-settings-desc-toggle-icon" }), "chevron-down");
-	toggle.createSpan({ cls: "piem-settings-desc-toggle-text" }).setText(t.t("descFold.more"));
-	toggle.addEventListener("click", (event) => {
-		// The row has no click behaviour to protect today, but the setting row is
-		// Obsidian's event surface — a fold must stay a fold, not trigger a row.
+	const summary = details.createEl("summary", {
+		cls: "piem-settings-desc-summary",
+	});
+
+	// The chevron rotates on open, matching Obsidian's native disclosure style.
+	setIcon(summary.createSpan({ cls: "piem-settings-desc-icon" }), "chevron-right");
+	const label = summary.createSpan({ cls: "piem-settings-desc-text" });
+	label.setText(t.t("descFold.more"));
+
+	// Stop propagation at details so setting rows don't treat clicks as a row event,
+	// while letting summary click bubble to details so native toggle works.
+	details.addEventListener("click", (event) => {
 		event.stopPropagation();
-		const folded = !body.classList.contains(FOLDED_CLASS);
+	});
+
+	details.addEventListener("toggle", () => {
+		const folded = !details.open;
 		body.classList.toggle(FOLDED_CLASS, folded);
-		toggle.querySelector(".piem-settings-desc-toggle-text")!.setText(t.t(folded ? "descFold.more" : "descFold.less"));
-		toggle.setAttribute("aria-expanded", String(!folded));
+		desc.classList.toggle("piem-settings-desc--open", !folded);
+		label.setText(t.t(folded ? "descFold.more" : "descFold.less"));
 	});
 }

@@ -623,7 +623,7 @@ describe("extension row badges", () => {
 		// button present because the combined text clears the fold limit.
 		const vaultSetting = render(vault.items![3] as SettingDefinitionRender);
 		expect(vaultSetting.descEl.querySelector(".piem-settings-desc-body")?.textContent).toBe("Imported instructions\n" + source);
-		expect(vaultSetting.descEl.querySelector("button")).not.toBeNull();
+		expect(vaultSetting.descEl.querySelector("details")).not.toBeNull();
 		// The user-level row's badge now lives on the unified row, so the section's
 		// own group holds only the folder infrastructure.
 		const user = definitions.find((item) => "heading" in item && item.heading === en.t("skills.userHeading")) as SettingDefinitionGroup;

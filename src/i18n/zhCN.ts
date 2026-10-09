@@ -99,6 +99,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		},
 		shareDiagnostics: "分享错误报告与性能数据",
 		shareDiagnosticsDesc: "默认向 Piem 维护者分享模型与工具名称、用量、耗时和错误。正文采集关闭，但错误文字可能包含笔记内容。关闭立即生效；重新开启后需重载 Piem。",
+		allExtensions: "全部 Pi 扩展",
+		allExtensionsDesc: "查看并配置全部内置 Pi 扩展。",
+		allExtensionsCount: "共 {count} 个扩展",
 	},
 	bookmarks: {
 		excerpt: "这里显示前 4000 个字符，完整回复仍保留在对话中。",
@@ -830,6 +833,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		conflict: "{name} 有本地修改，未覆盖任何内容。冲突的文件：{files}。",
 		couldNotUpdate: "无法更新 {name}：{message}",
 		couldNotDelete: "无法删除 {name}：{message}",
+		allSkills: "全部技能",
+		allSkillsDesc: "查看并配置已加载到 AI 中的全部技能。",
+		allSkillsCount: "共 {count} 个技能",
 		reload: "重新加载",
 		// 「就是」而不是「是」：这句承诺的是「完全一致」，不只是「有关系」。
 		reloadClean: "已重新读取技能，没有发现问题。",
@@ -937,6 +943,9 @@ export const zhCN: DeepPartial<EnCopy> = {
 		addButton: "添加",
 		saveButton: "保存",
 		cancelButton: "取消",
+		allServers: "全部 MCP 服务器",
+		allServersDesc: "查看并配置全部远程 MCP 工具服务器。",
+		allServersCount: "共 {count} 个服务器",
 	},
 
 	about: {
