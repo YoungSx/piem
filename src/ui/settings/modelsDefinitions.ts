@@ -285,8 +285,14 @@ function openProviderModal(host: SettingsPanelHost, provider?: ProviderConfig): 
 		// the row's name and the API id, never the key the draft carries.
 		onSubmit: async (saved) => {
 			try {
-				if (provider) replaceById(settings.providers, saved);
-				else settings.providers.push(saved);
+				if (provider) {
+					if (provider.oauthFlow && (provider.oauthFlow !== saved.oauthFlow || provider.baseUrl !== saved.baseUrl)) {
+						await host.signIn?.actionsFor(signInTargetFor(provider))?.signOut();
+					}
+					replaceById(settings.providers, saved);
+				} else {
+					settings.providers.push(saved);
+				}
 				await host.save();
 				host.refresh();
 			} catch (cause) {

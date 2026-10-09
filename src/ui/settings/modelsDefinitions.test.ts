@@ -157,6 +157,51 @@ describe("modelsDefinitions", () => {
 		expect(saves).toBe(1);
 	});
 
+	it("signs an OAuth row out when its endpoint or auth flow is edited away", async () => {
+		const settings = host().settings;
+		const originalProvider = { id: "p-sub", name: "Sub", baseUrl: "https://sub.test", protocol: "openai-completions" as const, apiKey: "", secretRef: "", source: "user" as const, oauthFlow: "xai" };
+		settings.providers.push(originalProvider);
+		let signOuts = 0;
+		const signIn = {
+			canStore: () => true,
+			actionsFor: (target: { id: string; flowId: string }) =>
+				target.id === "p-sub"
+					? { method: "xAI", isSignedIn: async () => true, signIn: async () => {}, signOut: async () => { signOuts += 1; } }
+					: undefined,
+		};
+		const current = host({
+			settings,
+			signIn: signIn as unknown as SettingsPanelHost["signIn"],
+		});
+		const list = modelsDefinitions(current).find(
+			(def) => (def as { heading?: string }).heading === en.t("settings.providersHeading"),
+		) as { items?: Array<{ render?: (setting: unknown) => void }> };
+		const setting = new (Setting as unknown as new (el: HTMLElement) => { extraButtons: Array<{ icon?: string; onClickHandler?: () => unknown }> })(document.createElement("div"));
+		list.items?.[1]?.render?.(setting);
+		const edit = setting.extraButtons.find((button) => button.icon === "pencil");
+		edit?.onClickHandler?.();
+		await Promise.resolve();
+
+		const modalEl = document.body.lastElementChild as HTMLElement;
+		const inputs = Array.from(modalEl.querySelectorAll("input"));
+		const baseUrlInput = inputs.find((inp) => inp.placeholder === en.t("providerModal.baseUrlPlaceholder"));
+		if (baseUrlInput) {
+			baseUrlInput.value = "https://custom.test";
+			baseUrlInput.dispatchEvent(new Event("input"));
+			baseUrlInput.dispatchEvent(new Event("change"));
+		}
+		const saveButton = Array.from(modalEl.querySelectorAll("button")).find(
+			(btn) => btn.textContent === en.t("providerModal.save"),
+		);
+		saveButton?.click();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(signOuts).toBe(1);
+		expect(settings.providers[0]?.baseUrl).toBe("https://custom.test");
+		expect(settings.providers[0]?.oauthFlow).toBe("");
+	});
+
 	it("draws the sign-in button only on a subscription row, key rows keep one door to their key", async () => {
 		const settings = host().settings;
 		settings.providers.push(

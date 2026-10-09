@@ -24,6 +24,7 @@ import type { PluginSecretStore } from "../keychain";
 // so a DOM has to be installed before a login is driven through a real flow.
 import { installDom } from "../testUtils/dom";
 import { createSignInSession, signInTargetFor } from "./signInSession";
+import { DEVICE_CODE_FLOWS } from "./oauthFlows";
 
 installDom();
 
@@ -179,6 +180,84 @@ describe("createSignInSession", () => {
 			expect(stored.refresh).toBe("rt-1");
 		}
 		expect(await session.actionsFor(XAI_ROW)!.isSignedIn()).toBe(true);
+	});
+
+	it("persists and resolves GitHub Copilot credential", async () => {
+		const copilotRow = { id: "row-copilot", flowId: "github-copilot" };
+		const replies = [
+			{ body: { device_code: "dc-gh", user_code: "GH-1234", verification_uri: "https://github.com/login/device" } },
+			{ body: { access_token: "gho_oauth_token", refresh_token: "", expires_in: 1800 } },
+			{ body: { token: "ghu_secret_token;proxy-ep=proxy.copilot.net", expires_at: 1800 } },
+		];
+		const entries = new Map<string, Credential>();
+		const session = createSignInSession({
+			credentials: storeOver(entries),
+			fetch: scriptedFetch(replies),
+			canStore: () => true,
+			sleep: NO_SLEEP,
+		});
+		await session.actionsFor(copilotRow)!.signIn(interaction());
+		const stored = entries.get(copilotRow.id);
+		expect(stored?.type).toBe("oauth");
+		expect(await session.actionsFor(copilotRow)!.isSignedIn()).toBe(true);
+		if (stored?.type === "oauth") {
+			expect(stored.access).toBe("ghu_secret_token;proxy-ep=proxy.copilot.net");
+			const resolved = DEVICE_CODE_FLOWS["github-copilot"].toAuth(stored.access);
+			expect(resolved.apiKey).toBe("ghu_secret_token;proxy-ep=proxy.copilot.net");
+			expect(resolved.baseUrl).toBe("https://api.copilot.net");
+			expect(resolved.headers?.["Copilot-Integration-Id"]).toBe("vscode-chat");
+		}
+	});
+
+	it("persists and resolves Meta credential", async () => {
+		const metaRow = { id: "row-meta", flowId: "meta" };
+		const replies = [
+			{ body: { device_code: "dc-meta", user_code: "META-1234", verification_uri: "https://auth.meta.com/device" } },
+			{ body: { id_token: "meta_id_token", access_token: "meta_access_token", refresh_token: "meta_refresh_token", expires_in: 86400 } },
+			{ body: { api_key: "meta_minted_key" } },
+		];
+		const entries = new Map<string, Credential>();
+		const session = createSignInSession({
+			credentials: storeOver(entries),
+			fetch: scriptedFetch(replies),
+			canStore: () => true,
+			sleep: NO_SLEEP,
+		});
+		await session.actionsFor(metaRow)!.signIn(interaction());
+		const stored = entries.get(metaRow.id);
+		expect(stored?.type).toBe("oauth");
+		expect(await session.actionsFor(metaRow)!.isSignedIn()).toBe(true);
+		if (stored?.type === "oauth") {
+			expect(stored.access).toBe("meta_minted_key");
+			expect(stored.refresh).toBe("meta_access_token");
+			const resolved = DEVICE_CODE_FLOWS["meta"].toAuth(stored.access);
+			expect(resolved.apiKey).toBe("meta_minted_key");
+		}
+	});
+
+	it("persists and resolves Kimi For Coding credential", async () => {
+		const kimiRow = { id: "row-kimi", flowId: "kimi-coding" };
+		const replies = [
+			{ body: { device_code: "dc-kimi", user_code: "KIMI-1234", verification_uri: "https://auth.kimi.com/device" } },
+			{ body: { access_token: "kimi_access_token", refresh_token: "kimi_refresh_token", expires_in: 3600 } },
+		];
+		const entries = new Map<string, Credential>();
+		const session = createSignInSession({
+			credentials: storeOver(entries),
+			fetch: scriptedFetch(replies),
+			canStore: () => true,
+			sleep: NO_SLEEP,
+		});
+		await session.actionsFor(kimiRow)!.signIn(interaction());
+		const stored = entries.get(kimiRow.id);
+		expect(stored?.type).toBe("oauth");
+		expect(await session.actionsFor(kimiRow)!.isSignedIn()).toBe(true);
+		if (stored?.type === "oauth") {
+			expect(stored.access).toBe("kimi_access_token");
+			expect(stored.refresh).toBe("kimi_refresh_token");
+			const resolved = DEVICE_CODE_FLOWS["kimi-coding"].toAuth(stored.access);
+			expect(resolved.headers?.Authorization).toBe("Bearer kimi_access_token");
+		}
 	});
 
 	it("reports signed-out for an empty store and signed-in for a stored oauth credential", async () => {

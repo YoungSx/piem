@@ -285,12 +285,15 @@ export class ProviderModal extends Modal {
 		this.syncCustomRows();
 		const preset = findProviderPreset(id);
 		if (!preset) {
+			this.draft.oauthFlow = "";
+			this.onEdit();
 			return;
 		}
 		const applied = applyProviderPreset(this.draft, preset);
 		this.draft.name = applied.name;
 		this.draft.baseUrl = applied.baseUrl;
 		this.draft.protocol = applied.protocol;
+		this.draft.oauthFlow = applied.oauthFlow ?? "";
 		this.nameText?.setValue(this.draft.name);
 		this.baseUrlText?.setValue(this.draft.baseUrl);
 		this.protocolDropdown?.setValue(this.draft.protocol);
@@ -321,7 +324,11 @@ export class ProviderModal extends Modal {
 	 * change where it points.
 	 */
 	private syncPresetChoice(): void {
-		const id = matchProviderPreset(this.draft)?.id ?? CUSTOM_PRESET_ID;
+		const matched = matchProviderPreset(this.draft);
+		const id = matched?.id ?? CUSTOM_PRESET_ID;
+		if (id === CUSTOM_PRESET_ID && this.draft.oauthFlow) {
+			this.draft.oauthFlow = "";
+		}
 		if (id === this.presetChoice) {
 			return;
 		}
