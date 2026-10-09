@@ -1,13 +1,13 @@
 /**
- * Real Obsidian smoke for OAuth provider flows and mobile sign-in affordances.
+ * Real Obsidian runtime environment and mobile affordance smoke.
  *
- * Verifies that:
- * 1. Piem loads cleanly in the real Obsidian runtime.
- * 2. Obsidian requestUrl is available.
- * 3. Settings & data persist and load correctly.
- * 4. DOM styling for mobile sign-in hint and paste buttons resolves without errors.
- * 5. Browser environment exposes clipboard and required Web APIs.
- * 6. Validates both desktop and official mobile emulation modes.
+ * NOTE: This smoke verifies the real Obsidian runtime execution environment,
+ * plugin bootstrapping, requestUrl availability, settings persistence round-trip,
+ * DOM styling, and mobile clipboard/layout capabilities under Desktop and Mobile emulation.
+ * It does NOT execute external live OAuth network handshakes against commercial third-party
+ * OAuth servers (which require interactive browser logins and commercial subscription accounts).
+ * End-to-end simulated OAuth flow and request execution are covered by automated unit/integration tests
+ * (see src/auth/oauthE2E.test.ts).
  *
  * Usage: node scripts/smoke-oauth-obsidian.mjs <CDP-port> <output-dir> [--expect-mobile]
  */
@@ -49,9 +49,13 @@ async function runSmoke(expectMobile) {
 			check("official phone emulation", app.isMobile && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")), `classes: ${document.body.className}`);
 		}
 
-		// Read plugin data
-		const data = await plugin.loadData();
+		// Read and test plugin data persistence round-trip
+		const data = (await plugin.loadData()) ?? {};
 		check("plugin data loaded", typeof data === "object", typeof data);
+		const testStamp = Date.now();
+		await plugin.saveData({ ...data, _smokeStamp: testStamp });
+		const reloadedData = await plugin.loadData();
+		check("plugin data persistence round-trip", reloadedData?._smokeStamp === testStamp, `${reloadedData?._smokeStamp} === ${testStamp}`);
 
 		// Verify DOM and CSS
 		const dummyEl = document.createElement("div");

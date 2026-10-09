@@ -1820,6 +1820,8 @@ export const en = {
 		baseUrlPlaceholder: "https://api.example.com/v1",
 		protocol: "Protocol",
 		protocolDesc: "The wire format this endpoint speaks. The first option is the one gateways and self-hosted servers implement most widely.",
+		oauthAuth: "Authentication",
+		oauthAuthDesc: "This provider authenticates with an account subscription. No API key is needed. After saving, use the Sign In button on the provider row to connect your account.",
 		apiKey: "API key",
 		apiKeyPlaceholder: "Enter API key",
 		connection: "Connection",

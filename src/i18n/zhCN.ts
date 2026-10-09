@@ -1139,6 +1139,8 @@ export const zhCN: DeepPartial<EnCopy> = {
 		baseUrlPlaceholder: "https://api.example.com/v1",
 		protocol: "协议",
 		protocolDesc: "端点支持的请求格式。通用网关和自托管服务通常推荐 OpenAI 协议。",
+		oauthAuth: "账号认证",
+		oauthAuthDesc: "该提供商使用账号订阅授权，无需填写 API 密钥。保存后请在提供商列表中点击“登录”按钮完成绑定。",
 		apiKey: "API 密钥",
 		apiKeyPlaceholder: "输入 API 密钥",
 		connection: "连接",

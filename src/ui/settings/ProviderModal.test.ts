@@ -363,6 +363,35 @@ describe("ProviderModal preset row", () => {
 		expect(saved[0]?.baseUrl).toBe("https://custom.endpoint.com/v1");
 		close();
 	});
+
+	it("hides the API key field and displays OAuth instructions for OAuth presets", () => {
+		const { content, close } = openForm();
+		const keyInput = inputWithPlaceholder(content, t.t("providerModal.apiKeyPlaceholder"));
+		const oauthNotice = Array.from(content.querySelectorAll(".setting-item")).find((item) =>
+			item.textContent?.includes(t.t("providerModal.oauthAuth")),
+		);
+
+		// Initially Custom: key input is visible, oauth notice is hidden
+		expect(isRowHidden(keyInput)).toBe(false);
+		expect(oauthNotice?.classList.contains("piem-settings-modal-row-hidden")).toBe(true);
+
+		// Switch to GitHub Copilot (OAuth preset)
+		choose(presetSelect(content), "github-copilot");
+		expect(isRowHidden(keyInput)).toBe(true);
+		expect(oauthNotice?.classList.contains("piem-settings-modal-row-hidden")).toBe(false);
+
+		// Switch back to DeepSeek (API key preset)
+		choose(presetSelect(content), "deepseek");
+		expect(isRowHidden(keyInput)).toBe(false);
+		expect(oauthNotice?.classList.contains("piem-settings-modal-row-hidden")).toBe(true);
+
+		// Switch to Custom
+		choose(presetSelect(content), "");
+		expect(isRowHidden(keyInput)).toBe(false);
+		expect(oauthNotice?.classList.contains("piem-settings-modal-row-hidden")).toBe(true);
+
+		close();
+	});
 });
 
 /**
