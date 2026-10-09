@@ -111,6 +111,13 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
 		oauthFlow: "kimi-coding",
 	},
 	{
+		id: "anthropic-subscription",
+		name: "Anthropic (Claude Pro/Max)",
+		baseUrl: "https://api.anthropic.com",
+		protocol: "anthropic-messages",
+		oauthFlow: "anthropic",
+	},
+	{
 		id: "openrouter-subscription",
 		name: "OpenRouter (subscription)",
 		baseUrl: "https://openrouter.ai/api/v1",

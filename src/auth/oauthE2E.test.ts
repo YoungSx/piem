@@ -25,7 +25,7 @@ function sseBody(text: string): string {
 /** Minimal Anthropic messages SSE payload. */
 function anthropicSseBody(text: string): string {
 	return [
-		`event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "m1", model: "kimi-k1", role: "assistant", content: [], usage: { input_tokens: 3, output_tokens: 0 } } })}\n\n`,
+		`event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "m1", model: "claude-3-7-sonnet", role: "assistant", content: [], usage: { input_tokens: 3, output_tokens: 0 } } })}\n\n`,
 		'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
 		`event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"${text}"}}\n\n`,
 		'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
@@ -256,8 +256,16 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 		});
 
 		const actions = session.actionsFor({ id: providerConfig.id, flowId: providerConfig.oauthFlow });
+		expect(actions).toBeDefined();
+		expect(await actions!.isSignedIn()).toBe(false);
+
 		await actions!.signIn(mockInteraction());
 		expect(await actions!.isSignedIn()).toBe(true);
+		const savedCred = entries.get(providerConfig.id);
+		expect(savedCred?.type).toBe("oauth");
+		if (savedCred?.type === "oauth") {
+			expect(savedCred.access).toBe("kimi_live_token");
+		}
 
 		let capturedRequest: { url: string; headers: Record<string, string>; body: Record<string, unknown> } | undefined;
 		requestUrlMock.mockImplementation(async (params: unknown) => {
@@ -414,5 +422,124 @@ describe("End-to-End OAuth Integration: Preset -> Sign-in -> Credential -> Reque
 		expect(result.errorMessage).toBeUndefined();
 		expect(capturedRequest).toBeDefined();
 		expect(capturedRequest!.headers["authorization"]).toBe("Bearer xai_access_token_val");
+	});
+
+	it("executes complete lifecycle for Anthropic (Claude Pro/Max) subscription", async () => {
+		const preset = findProviderPreset("anthropic-subscription");
+		expect(preset).toBeDefined();
+		const providerConfig = applyProviderPreset(
+			{ ...emptyProviderConfig(), id: "provider-claude" },
+			preset!,
+		);
+		expect(providerConfig.oauthFlow).toBe("anthropic");
+
+		const entries = new Map<string, Credential>();
+		const credStore = storeOver(entries);
+
+		// Anthropic manual code flow: PKCE code exchange response
+		const oauthReplies = [
+			{
+				body: {
+					access_token: "sk-ant-oat-live-token",
+					refresh_token: "rt-claude-key",
+					expires_in: 3600,
+				},
+			},
+		];
+
+		let replyIdx = 0;
+		const scriptedFetch = async () => {
+			const reply = oauthReplies[replyIdx++];
+			if (!reply) throw new Error("Unexpected fetch call");
+			return new Response(JSON.stringify(reply.body), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		};
+
+		const session = createSignInSession({
+			credentials: credStore,
+			fetch: scriptedFetch as unknown as typeof fetch,
+			canStore: () => true,
+		});
+
+		const actions = session.actionsFor({ id: providerConfig.id, flowId: providerConfig.oauthFlow });
+		expect(actions).toBeDefined();
+		expect(await actions!.isSignedIn()).toBe(false);
+
+		let announcedUrl = "";
+		const interaction: ProviderAuthInteraction = {
+			signal: new AbortController().signal,
+			notify: (event) => {
+				if (event.type === "auth_url") announcedUrl = event.url;
+			},
+			prompt: async () => {
+				const url = new URL(announcedUrl);
+				const state = url.searchParams.get("state") ?? "";
+				return `mock_auth_code#${state}`;
+			},
+		};
+
+		await actions!.signIn(interaction);
+		expect(await actions!.isSignedIn()).toBe(true);
+		const savedCred = entries.get(providerConfig.id);
+		expect(savedCred?.type).toBe("oauth");
+		if (savedCred?.type === "oauth") {
+			expect(savedCred.access).toBe("sk-ant-oat-live-token");
+		}
+
+		let capturedRequest: { url: string; headers: Record<string, string>; body: Record<string, unknown> } | undefined;
+		requestUrlMock.mockImplementation(async (params: unknown) => {
+			const p = params as { url: string; headers: Record<string, string>; body: string };
+			capturedRequest = {
+				url: p.url,
+				headers: p.headers ?? {},
+				body: JSON.parse(p.body) as Record<string, unknown>,
+			};
+			return {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+				arrayBuffer: new TextEncoder().encode(anthropicSseBody("Hello Claude")).buffer as ArrayBuffer,
+			};
+		});
+
+		const bundle = createObsidianModels({
+			transport: "requestUrl",
+			providers: [providerConfig],
+			credentials: credStore,
+		});
+
+		const auth = await bundle.models.getAuth(providerConfig.id);
+		expect(auth?.source).toBe("OAuth");
+		expect(auth?.auth.apiKey).toBe("sk-ant-oat-live-token");
+
+		const model: Model<WireProtocol> = buildConfiguredModel(
+			{
+				id: "m-claude",
+				providerId: providerConfig.id,
+				modelApiId: "claude-3-7-sonnet",
+				displayName: "Claude 3.7 Sonnet",
+				reasoning: false,
+				supportsImages: false,
+			},
+			providerConfig,
+		);
+
+		const stream = bundle.models.streamSimple(
+			model,
+			normalizeContext({
+				messages: [{ role: "user", content: [{ type: "text", text: "Hello Claude" }], timestamp: Date.now() }],
+			}),
+			{
+				fetch: toFetchFunction(createFetchForTransport("requestUrl")),
+			},
+		);
+
+		const result = await stream.result();
+		expect(result.errorMessage).toBeUndefined();
+		expect(result.content).toEqual([{ type: "text", text: "Hello Claude" }]);
+		expect(capturedRequest).toBeDefined();
+		expect(capturedRequest!.headers["authorization"]).toBe("Bearer sk-ant-oat-live-token");
+		expect(capturedRequest!.headers["user-agent"]).toContain("claude-cli");
 	});
 });
