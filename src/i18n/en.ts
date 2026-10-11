@@ -949,7 +949,6 @@ export const en = {
 		closed: "Closed",
 		undelivered: "Never opened",
 		errorTitle: "UI component error",
-		reportError: "Report error to agent",
 		close: "Close",
 	},
 

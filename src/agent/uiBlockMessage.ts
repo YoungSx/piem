@@ -26,11 +26,36 @@
 const MAX_PAYLOAD_CHARS = 4_000;
 
 /**
+ * The opening of every rendered view message, and the only durable mark that
+ * one is not something the user typed.
+ *
+ * The transcript stores these as plain user messages, which is the point — but
+ * it means the panel cannot otherwise tell them apart, and it offers the newest
+ * answered question an "Edit and resend" pencil. Offering that on a press is
+ * offering to rewind the conversation and let the user rewrite, by hand, a
+ * JSON report their click produced; the resent text would then be a user
+ * message claiming to be from a view, with the payload's framing intact and
+ * nothing behind it.
+ *
+ * A prefix rather than a field on the message: `AgentMessage` is pi's type and
+ * travels through compaction, the ledger and every provider adapter, so a field
+ * added here would have to survive all of them. The text already has to name
+ * the view for the model's sake, so the mark is free.
+ */
+const MESSAGE_PREFIX = "I used ";
+const MESSAGE_SUFFIX = " in the chat. It reported:";
+
+/**
  * Renders one `ui.sendMessage` payload as the user message the agent reads.
  *
  * `title` is the view's own title when it has one. Without it the view is named
  * only as an interactive view: a generated id would be noise to the model, which
  * cannot address a view by id anyway.
+ *
+ * It names the view without saying who put it there. A subagent's `present_ui`
+ * is owned by the conversation that spawned it, so the agent reading this may
+ * never have presented the view — and after a reload, may be an agent with no
+ * memory of the turn that did. "you put in the chat" told it otherwise.
  */
 export function renderUIBlockMessage(title: string | undefined, payload: Record<string, unknown>): string {
 	const source = title ? `the "${title}" view` : "an interactive view";
@@ -47,9 +72,22 @@ export function renderUIBlockMessage(title: string | undefined, payload: Record<
 		body = `${body.slice(0, MAX_PAYLOAD_CHARS)}\n... truncated at ${MAX_PAYLOAD_CHARS} characters`;
 	}
 	return [
-		`I used ${source} you put in the chat. It reported:`,
+		`${MESSAGE_PREFIX}${source}${MESSAGE_SUFFIX}`,
 		"```json",
 		body,
 		"```",
 	].join("\n");
+}
+
+/**
+ * Whether `text` is a view's report rather than something the user wrote.
+ *
+ * Used by the transcript to withhold the edit-and-resend action, which is the
+ * one place in the panel where a user message is handed back for rewriting. A
+ * user who types this exact opening gets the same treatment, which costs them
+ * nothing: the action they lose is one that would have thrown the turn away.
+ */
+export function isUIBlockMessage(text: string): boolean {
+	const firstLine = text.split("\n", 1)[0] ?? "";
+	return firstLine.startsWith(MESSAGE_PREFIX) && firstLine.endsWith(MESSAGE_SUFFIX);
 }

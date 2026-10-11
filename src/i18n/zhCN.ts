@@ -564,7 +564,6 @@ export const zhCN: DeepPartial<EnCopy> = {
 		closed: "已关闭",
 		undelivered: "未能打开",
 		errorTitle: "界面组件异常",
-		reportError: "向智能体反馈错误",
 		close: "关闭",
 	},
 

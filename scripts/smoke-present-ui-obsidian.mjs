@@ -11,7 +11,7 @@
  * 3. `ui.sendMessage` reaches the owning conversation as a new turn.
  * 4. `ui.update` records state for the next turn and wakes nobody.
  * 5. `ui.state` is handed back across a remount.
- * 6. A script that throws is reported, with its error visible and reportable.
+ * 6. A script that throws reports itself, with nobody pressing anything.
  * 7. `ui.close` and the card's own button both end the view.
  * 8. A delivered view survives the presenting run's abort.
  * 9. A view presented from inside a `codemode` script returns at once, outlives
@@ -165,29 +165,22 @@ async function runSmoke(root, expectMobile) {
 		await wait(() => broker.getLive(ownerId).length === 0);
 		record("script-initiated close removed the view", document.querySelector(".smoke-send-btn") === null);
 
-		// 7. A script that throws is reported and reportable.
+		// 7. A script that throws reports itself. Nobody clicks anything here:
+		//    while the error waited for a "Report error" button, a render failure
+		//    was the one case still blocking the call on a human — and in a
+		//    `codemode` script no human is coming.
 		const failing = broker.present(
 			{ code: `throw new Error("Deliberate smoke render explosion");`, title: "Smoke Error" },
 			undefined,
 			ownerId,
 		);
-		const failure = failing.then(() => null, error => error);
-		await wait(() => document.querySelector(".piem-ui-block-card__error") !== null);
+		const reported = await failing.then(() => null, error => error);
 		record(
-			"error visible in the card",
-			document
-				.querySelector(".piem-ui-block-card__error-message")
-				?.textContent?.includes("Deliberate smoke render explosion"),
-		);
-		const reportBtn = document.querySelector(".piem-ui-block-card__error-report");
-		record("report button present", reportBtn !== null);
-		reportBtn.click();
-		const reported = await failure;
-		record(
-			"failure reached the agent without deadlock",
+			"failure reached the agent unprompted",
 			String(reported).includes("Deliberate smoke render explosion"),
 		);
 		record("broker clean after failure", broker.getLive(ownerId).length === 0);
+		record("no report button left to press", document.querySelector(".piem-ui-block-card__error-report") === null);
 
 		// 8. A delivered view survives the presenting run's abort. This is the
 		//    regression the old coupling guaranteed: the call returns, its run

@@ -25,6 +25,7 @@ import { suppressOwnTooltip } from "./tooltipSuppression";
 import { IconButton, ObsidianIcon } from "./ObsidianIcon";
 import { Trace } from "./Trace";
 import { parseSkillInvocation, type SkillInvocation } from "../agent/skillInvocation";
+import { isUIBlockMessage } from "../agent/uiBlockMessage";
 import { GENERIC_TOOL_ICON, toolIcon } from "./toolCatalog";
 import { countDiffLines, describePendingTool, describeTool, isToolIdentifier, summarizeToolPayload, summarizeToolResult } from "./traceSummary";
 import { DEFAULT_TRACE_EXPAND, traceOpensByDefault, type TraceExpandSetting } from "./traceExpand";
@@ -354,9 +355,15 @@ function editableQuestionIndex(messages: AgentMessage[]): number | null {
 		return null;
 	}
 	for (let cursor = replyIndex - 1; cursor >= 0; cursor -= 1) {
-		if (messages[cursor]?.role === "user") {
-			return cursor;
-		}
+		const message = messages[cursor];
+		if (message?.role !== "user") continue;
+		// A live view's report is a user message — the same channel typed words
+		// use, deliberately — but it is not words the user wrote. Offering the
+		// pencil on one offers to rewind the conversation so they can hand-edit
+		// the JSON their own click produced, and resend it still claiming to come
+		// from a view. The newest *typed* question keeps the action instead.
+		if (isUIBlockMessage(userText(message))) continue;
+		return cursor;
 	}
 	return null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renderUIBlockMessage } from "./uiBlockMessage";
+import { isUIBlockMessage, renderUIBlockMessage } from "./uiBlockMessage";
 
 describe("renderUIBlockMessage", () => {
 	it("names the view and fences its payload", () => {
@@ -44,6 +44,20 @@ describe("renderUIBlockMessage", () => {
 
 		expect(text).toContain("truncated at 4000 characters");
 		expect(text.length).toBeLessThan(4_500);
+	});
+
+	it("recognizes its own output, so the transcript can withhold the edit action", () => {
+		expect(isUIBlockMessage(renderUIBlockMessage("Config", { action: "apply" }))).toBe(true);
+		expect(isUIBlockMessage(renderUIBlockMessage(undefined, { action: "apply" }))).toBe(true);
+	});
+
+	it("does not claim an ordinary question, however it is worded", () => {
+		expect(isUIBlockMessage("I used the dashboard to check something")).toBe(false);
+		expect(isUIBlockMessage("file it under Projects")).toBe(false);
+		expect(isUIBlockMessage("")).toBe(false);
+		// The marker is the first line. A quoted report inside a typed message is
+		// the user writing, and keeps the action.
+		expect(isUIBlockMessage(`look at this:\n${renderUIBlockMessage("X", { a: 1 })}`)).toBe(false);
 	});
 
 	it("reports the keys when a payload cannot serialize at all", () => {

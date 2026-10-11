@@ -23,6 +23,7 @@ export interface UIBlockCardProps {
 	onUpdate: (state: Record<string, unknown>) => void;
 	/** Script-initiated close, and the user's own cancel button. */
 	onClose: () => void;
+	/** The script threw. Reported without waiting for the user. */
 	onFail?: (error: string) => void;
 }
 
@@ -58,16 +59,33 @@ export function UIBlockCard({
 	 */
 	const handlers = useRef({ onReady, onSendMessage, onUpdate, onClose, onFail });
 	handlers.current = { onReady, onSendMessage, onUpdate, onClose, onFail };
+	/*
+	 * Seeded from the prop and then advanced by `ui.update` itself. The prop is
+	 * the broker's answer, which only changes when something re-renders the
+	 * panel; assigning it on every render is right because the broker is the
+	 * source of truth and a render can only have read it after the last publish.
+	 */
 	const stateRef = useRef(state);
 	stateRef.current = state;
 
-	const handleCancel = (): void => {
-		const { onFail: fail, onClose: close } = handlers.current;
-		if (error && fail) {
-			fail(error);
-		} else {
-			close();
-		}
+	/*
+	 * A script that throws reports itself, immediately.
+	 *
+	 * This used to wait for the user to press "Report error to agent", which made
+	 * a render failure the one case that still blocked the tool call on a human —
+	 * the exact mechanism this design exists to remove, reached through a door
+	 * nobody meant to leave open. The model wrote code that does not run; it does
+	 * not need a volunteer to be told so, and inside `codemode` nobody is coming:
+	 * the script would sit on the call until the sandbox deadline killed it.
+	 *
+	 * The error still shows here for the moment the card is on screen, and then
+	 * lands where every other tool failure lands — the result row in the
+	 * transcript — rather than in a second place with a button on it.
+	 */
+	const reportFailure = (err: unknown): void => {
+		const message = err instanceof Error ? err.message : String(err);
+		setError(message);
+		handlers.current.onFail?.(message);
 	};
 
 	/*
@@ -102,14 +120,30 @@ export function UIBlockCard({
 		 */
 		const ui = {
 			id: request.id,
-			state: stateRef.current,
+			/*
+			 * A getter, not the value. The script's whole lifetime is inside this
+			 * effect — a handler it registers reads `ui.state` minutes after mount —
+			 * and a captured value would hand it whatever was stored when the view
+			 * opened, forever. Its own `ui.update` would not be visible to it, which
+			 * is the opposite of what the parameter's description promises.
+			 */
+			get state(): Record<string, unknown> | null {
+				return stateRef.current;
+			},
 			sendMessage: (data?: unknown): void => {
 				if (!isMounted) return;
 				handlers.current.onSendMessage(asPayloadObject(data));
 			},
 			update: (next?: unknown): void => {
 				if (!isMounted) return;
-				handlers.current.onUpdate(asPayloadObject(next));
+				const published = asPayloadObject(next);
+				// Advanced here as well as published, because `update` deliberately
+				// does not notify — re-rendering the panel would remount this card and
+				// destroy the interaction that called it. Without this the `state`
+				// getter above would read a prop that nothing refreshes until some
+				// unrelated render happens to come along.
+				stateRef.current = published;
+				handlers.current.onUpdate(published);
 			},
 			close: (): void => {
 				if (!isMounted) return;
@@ -161,7 +195,7 @@ export function UIBlockCard({
 					})
 					.catch((err: unknown) => {
 						if (isMounted) {
-							setError(err instanceof Error ? err.message : String(err));
+							reportFailure(err);
 						}
 					});
 			} else {
@@ -171,7 +205,7 @@ export function UIBlockCard({
 				announceReady();
 			}
 		} catch (err: unknown) {
-			setError(err instanceof Error ? err.message : String(err));
+			reportFailure(err);
 		}
 
 		return () => {
@@ -203,7 +237,7 @@ export function UIBlockCard({
 						type="button"
 						className="piem-ui-block-card__dismiss clickable-icon"
 						aria-label={t.t("uiBlock.close")}
-						onClick={handleCancel}
+						onClick={() => handlers.current.onClose()}
 					>
 						<ObsidianIcon name="x" />
 					</button>
@@ -216,15 +250,6 @@ export function UIBlockCard({
 						{t.t("uiBlock.errorTitle")}
 					</div>
 					<div className="piem-ui-block-card__error-message">{error}</div>
-					{onFail ? (
-						<button
-							type="button"
-							className="piem-ui-block-card__error-report mod-warning"
-							onClick={() => onFail(error)}
-						>
-							{t.t("uiBlock.reportError")}
-						</button>
-					) : null}
 				</div>
 			) : null}
 

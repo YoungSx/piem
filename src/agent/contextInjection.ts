@@ -323,10 +323,18 @@ function renderUIBlockLines(blocks: readonly InjectedUIBlock[]): string[] {
 	if (blocks.length === 0) {
 		return [];
 	}
+	/*
+	 * "in this conversation", not "you presented". A view belongs to the
+	 * conversation, and a subagent's `present_ui` is owned by the conversation
+	 * that spawned it — so the agent reading this may be looking at a view it did
+	 * not create, and in a resumed session it may be an agent that has no memory
+	 * of the turn that did. Claiming authorship would be wrong in both cases, and
+	 * the state is equally actionable without the claim.
+	 */
 	const lines: string[] = [
 		blocks.length === 1
-			? "One interactive view you presented is open in the chat. Its current state:"
-			: `${blocks.length} interactive views you presented are open in the chat. Their current state:`,
+			? "One interactive view is open in this conversation. Its current state:"
+			: `${blocks.length} interactive views are open in this conversation. Their current state:`,
 	];
 	for (const block of blocks) {
 		let body: string;

@@ -31,6 +31,13 @@ export interface UIBlockOutcome {
  * made them destroyed them on return — so they read as a closed view with no id
  * to look up. Their payload is deliberately not rendered: it was the user's
  * answer to a question the transcript already shows the agent acting on.
+ *
+ * `dismissed` is *not* `undelivered`, which is the one way this reading can go
+ * wrong. In the old build the call could only return once the view was gone, and
+ * the one path to `dismissed: true` was a user pressing cancel on a card that
+ * was on screen in front of them; a view torn down before it mounted rejected
+ * instead and left no result at all. Reading those records as "never opened"
+ * would rewrite the user's own history into the opposite of what happened.
  */
 export function uiBlockOutcome(details: unknown): UIBlockOutcome | null {
 	if (!details || typeof details !== "object") {
@@ -47,8 +54,9 @@ export function uiBlockOutcome(details: unknown): UIBlockOutcome | null {
 	const id = typeof record.uiId === "string" ? record.uiId : undefined;
 
 	if (id === undefined) {
-		// Legacy shape: `dismissed` was the only outcome flag.
-		return { title, undelivered: record.dismissed === true };
+		// Legacy shape. Settled, with no id to look up, and delivered whatever
+		// `dismissed` says: see above.
+		return { title, undelivered: false };
 	}
 
 	return { id, title, undelivered: record.live !== true };

@@ -243,7 +243,52 @@ describe("UIBlockCard", () => {
 		expect(closed).toBe(1);
 	});
 
-	it("reports the error instead of closing when a broken card is dismissed", async () => {
+	/*
+	 * The regression this guards is the whole point of the lifecycle split,
+	 * reached by a different door: while the error waited for a "Report error to
+	 * agent" button, a script that threw left the tool call pending on a human —
+	 * and inside `codemode` no human is coming, so the script sat on it until the
+	 * sandbox deadline. The card must report itself.
+	 */
+	it("reports a throwing script without waiting for the user", async () => {
+		let failed: string | null = null;
+		let ready = 0;
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `throw new Error("Broken component");` })}
+				app={mockApp()}
+				{...handlers({
+					onReady: () => void ready++,
+					onFail: (error) => (failed = error),
+				})}
+			/>,
+		);
+
+		expect(String(failed)).toContain("Broken component");
+		expect(ready).toBe(0);
+		expect(document.querySelector(".piem-ui-block-card__error-message")?.textContent).toContain(
+			"Broken component",
+		);
+		expect(document.querySelector(".piem-ui-block-card__error-report")).toBeNull();
+	});
+
+	it("reports an async script's rejection the same way", async () => {
+		let failed: string | null = null;
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `await Promise.reject(new Error("Late failure"));` })}
+				app={mockApp()}
+				{...handlers({ onFail: (error) => (failed = error) })}
+			/>,
+		);
+		await flushRender();
+
+		expect(String(failed)).toContain("Late failure");
+	});
+
+	it("closes a broken card when the user dismisses it, having already reported it", async () => {
 		let failed: string | null = null;
 		let closed = 0;
 
@@ -258,12 +303,38 @@ describe("UIBlockCard", () => {
 			/>,
 		);
 
-		(
-			document.querySelector(".piem-ui-block-card__error-report") as HTMLButtonElement | null
-		)?.click();
-
 		expect(String(failed)).toContain("Broken component");
-		expect(closed).toBe(0);
+		(document.querySelector(".piem-ui-block-card__dismiss") as HTMLButtonElement | null)?.click();
+		expect(closed).toBe(1);
+	});
+
+	/*
+	 * `ui.update` does not re-render the panel — that would remount the card and
+	 * destroy the interaction that called it — so nothing refreshes the `state`
+	 * prop afterwards. A script reading `ui.state` back in a later handler has to
+	 * see what it last published, which is what the tool's own description
+	 * promises it.
+	 */
+	it("reads back the state the script itself published", async () => {
+		(window as any).__readBack = null;
+
+		await mount(
+			<UIBlockCard
+				request={request({
+					code: `
+						ui.update({ filter: "mine" });
+						const button = container.createEl("button", { cls: "read-back", text: "read" });
+						button.onclick = () => { window.__readBack = ui.state; };
+					`,
+				})}
+				app={mockApp()}
+				{...handlers({ onUpdate: () => undefined })}
+			/>,
+		);
+
+		(document.querySelector(".read-back") as HTMLButtonElement | null)?.click();
+
+		expect((window as any).__readBack).toEqual({ filter: "mine" });
 	});
 
 	it("does not re-run the script when a callback's identity changes", async () => {

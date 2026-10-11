@@ -221,9 +221,20 @@ export class UIBlockBroker {
 			.map((instance) => instance.request);
 	}
 
-	/** The state a live block should be remounted with, or `null`. */
+	/**
+	 * The state a live block should be remounted with, or `null`.
+	 *
+	 * A copy. This value is handed to the view's script as `ui.state`, and a
+	 * script that sorted it or pushed a row in place would otherwise be editing
+	 * the broker's own record — moving what the next turn reads with no publish
+	 * behind it, which is {@link update}'s job alone. Shallow is enough for the
+	 * accident worth preventing (`ui.state.rows = []`); a script that reaches two
+	 * levels down to mutate is past the point where a copy helps, and a deep
+	 * clone on a path the context block reads every request is not free.
+	 */
 	getState(id: string): UIBlockPayload | null {
-		return this.instances.find((instance) => instance.request.id === id)?.state ?? null;
+		const state = this.instances.find((instance) => instance.request.id === id)?.state;
+		return state ? { ...state } : null;
 	}
 
 	/**
@@ -322,11 +333,29 @@ export class UIBlockBroker {
 		this.notify();
 	}
 
-	/** The script threw while mounting. Rejects the delivery and drops the block. */
+	/**
+	 * The script threw. Rejects the delivery and drops the block.
+	 *
+	 * Reported by the card the moment it catches, not when a user volunteers to
+	 * press a button: the model wrote code that does not run, and a render failure
+	 * is the one outcome that must never wait on a person — see `UIBlockCard`.
+	 *
+	 * An already-live instance can reach this too. Its code runs again on every
+	 * remount, so a view that worked on first mount and throws on a reopened
+	 * panel ends here with no waiter left to reject. Dropping it is still right:
+	 * the view is broken, and its tool call has long since returned. The model
+	 * learns through the state of the transcript rather than through a rejection
+	 * nobody is holding.
+	 */
 	fail(id: string, error: string): void {
 		const instance = this.take(id);
 		if (!instance) return;
-		this.log.warn("UI block failed", () => ({ id, error }));
+		this.log.warn("UI block failed", () => ({
+			id,
+			ownerId: instance.request.ownerId,
+			delivered: instance.waiter === null,
+			error,
+		}));
 		instance.waiter?.reject(new Error(`UI component error: ${error}`));
 		this.notify();
 	}

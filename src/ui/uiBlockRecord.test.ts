@@ -63,10 +63,15 @@ describe("uiBlockOutcome", () => {
 			).toEqual({ title: "Config Form", undelivered: false });
 		});
 
-		it("reads a dismissed legacy result as never opened", () => {
+		/*
+		 * The old build could only return once the view was gone, and the one way
+		 * to `dismissed: true` was the user cancelling a card that was on screen.
+		 * Reading it as "never opened" would tell them their own history backwards.
+		 */
+		it("reads a dismissed legacy result as a closed view, not a view that never opened", () => {
 			expect(uiBlockOutcome({ dismissed: true, title: "Custom Title" })).toEqual({
 				title: "Custom Title",
-				undelivered: true,
+				undelivered: false,
 			});
 		});
 

@@ -2033,33 +2033,38 @@ export class ObsidianAgentService {
 			}));
 			return;
 		}
-		const text = renderUIBlockMessage(message.title, message.payload);
-		/*
-		 * Queue while the agent is answering, send now when it is idle — the same
-		 * fork `sendPrompt` takes, for the same reason. The chip the queue raises is
-		 * what tells the user their press is waiting rather than lost.
-		 */
-		if (rt.agent.state.isStreaming) {
-			this.enqueuePrompt(rt, text, text, [], []);
+		if (rt.bookmarkWork) {
+			// The same refusal a typed message gets while a bookmark is being
+			// written, and the same reason: the ledger is mid-write. Dropped rather
+			// than queued — `sendPromptEntries` would restore it to a chip the user
+			// did not create and cannot account for.
+			this.log.debug("UI block message dropped: bookmark work in flight", () => ({
+				uiId: message.id,
+				ownerId: message.ownerId,
+			}));
 			return;
 		}
+		const text = renderUIBlockMessage(message.title, message.payload);
 		/*
-		 * The id is only a take-back handle, and this entry departs immediately
-		 * rather than sitting on a chip the user could take back. It is minted here
-		 * anyway — and named for the view rather than for the queue — because
-		 * `sendPromptEntries` restores entries to the queue when a dispatch fails,
-		 * and an entry that landed there with a colliding id would take the wrong
-		 * chip back.
+		 * Queued first, always, and then drained if nothing is running.
+		 *
+		 * Not a fork on `isStreaming` with a direct send on the idle branch, which
+		 * is the shape this had: `sendPromptEntries` departs with *exactly* the
+		 * entries it is handed, and the queue is not always empty when the agent is
+		 * idle. A run that ended in an error puts its queue back on the chips and
+		 * leaves (`sendQueuedPrompts`), so a press arriving after that would have
+		 * jumped ahead of words the user typed first and left them sitting there.
+		 * Enqueue-then-drain is how `resolveAndDeliver` and the extension path both
+		 * do it, and it makes arrival order the dispatch order.
+		 *
+		 * The chip this raises while a reply is running is also what tells the user
+		 * their press is waiting rather than lost.
 		 */
-		void this.sendPromptEntries(rt, [
-			{
-				id: `ui-block-${message.id}-${Date.now()}`,
-				text,
-				imageCount: 0,
-				stagedImages: [],
-				message: { role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
-			},
-		]);
+		this.enqueuePrompt(rt, text, text, [], []);
+		if (rt.agent.state.isStreaming) {
+			return;
+		}
+		void this.sendPromptEntries(rt, rt.promptQueue.drain());
 	}
 
 	/**

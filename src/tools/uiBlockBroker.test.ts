@@ -120,6 +120,48 @@ describe("UIBlockBroker", () => {
 		expect(broker.getLive("session-1")).toHaveLength(0);
 	});
 
+	/*
+	 * A view's code runs again on every remount, so one that mounted cleanly can
+	 * throw later — a reopened panel, a switched session. There is no waiter left
+	 * by then; dropping the broken view must still work rather than throw on an
+	 * absent waiter or leave a view nothing can render.
+	 */
+	it("drops a live view whose remount throws, with no delivery left to reject", async () => {
+		const broker = new UIBlockBroker();
+		const promise = broker.present({ code: "x" }, undefined, "session-1");
+		const id = broker.getLive("session-1")[0]!.id;
+		broker.ready(id);
+		await expect(promise).resolves.toEqual({ id, delivered: true });
+
+		broker.update(id, { rows: 2 });
+		broker.fail(id, "Threw on remount");
+
+		expect(broker.getLive("session-1")).toHaveLength(0);
+		expect(broker.getState(id)).toBeNull();
+		expect(broker.getContext("session-1")).toHaveLength(0);
+	});
+
+	/*
+	 * `getState` feeds the script's own `ui.state`. Handing out the stored object
+	 * would let a script that sorts a list in place move what the next turn reads
+	 * with no publish behind it — `update` is the only writer.
+	 */
+	it("hands out a copy of the state, not the record itself", async () => {
+		const broker = new UIBlockBroker();
+		const promise = broker.present({ code: "x" }, undefined, "session-1");
+		const id = broker.getLive("session-1")[0]!.id;
+		broker.ready(id);
+		await promise;
+		broker.update(id, { rows: ["a", "b"] });
+
+		const handed = broker.getState(id)!;
+		handed.rows = [];
+		handed.injected = true;
+
+		expect(broker.getState(id)).toEqual({ rows: ["a", "b"] });
+		expect(broker.getContext("session-1")[0]!.state).toEqual({ rows: ["a", "b"] });
+	});
+
 	it("ignores every channel for an unknown or closed id", async () => {
 		const { sink, sent } = recordingSink();
 		const broker = new UIBlockBroker({ sendMessage: sink });

@@ -77,6 +77,27 @@ the chat panel exists but is hidden or collapsed, questions open in a dialog,
 one at a time across all chats. With no chat panel open, the agent must ask in
 the conversation text instead.
 
+`present_ui` — a working interactive view in the transcript, built from native
+Obsidian controls, for when a choice needs real controls rather than two to four
+buttons: a form with several fields, a filterable table, a panel you keep around
+while you work. The agent writes the view's code; it runs in the renderer with
+the `obsidian` module and the `App`, inside the vault like every other tool.
+
+It is not a question, and that distinction is the one worth knowing. `ask_user`
+stops the agent until you answer. A view opens and the agent's turn *ends* — it
+is not sitting there waiting, and several views can be open at once. What you do
+with one afterwards reaches the agent by one of two paths its own code chooses
+between: something the agent must act on (a submitted form, an "approve")
+arrives as a new message and the agent picks up from there, while an ordinary
+local change (a filter, an expanded row) is recorded and read in the agent's
+next turn without interrupting anything. So a dashboard whose every keystroke
+does not start a turn is possible, and so is a form whose submit does.
+
+A view stays until it closes itself, you close it, or the chat is closed, and it
+survives the panel being closed and reopened — the code runs again and is handed
+back the state it last recorded. If the code throws, the view does not open and
+the agent is told at once, without waiting for you.
+
 ## Tasks
 
 `list_tasks` · `summarize_tasks`
