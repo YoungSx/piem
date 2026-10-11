@@ -130,6 +130,14 @@ facts, not piem facts.
     author" CTA on every unlock poll, idempotently. Tell-tale if it regresses:
     `getSnapshot()` is correct but the mounted view is stuck on the default
     model.
+14. **Mobile emulation is latched in the profile, not in the process.**
+    `app.emulateMobile(true)` is persisted, so a `<root>` reused from a session
+    that ran a mobile pass comes back up in phone mode — and the desktop pass
+    fails its own first assertion, `app.isMobile === expectMobile`, which reads
+    like the product is broken rather than like the rig remembering. The manager
+    now returns the flag to desktop before the desktop pass, and only when it is
+    actually set: `emulateMobile` reloads the window, so reloading for nothing
+    costs ten seconds and re-races the plugin attach.
 
 ## Smoke inventory
 
@@ -148,6 +156,7 @@ facts, not piem facts.
 | `smoke-typography-obsidian.mjs` | Typography in real render (has `--baseline` instead of mobile) |
 | `smoke-proactive-obsidian.mjs` | Proactive intelligence (use its dedicated `run-smoke-proactive.py`) |
 | `smoke-model-icon-obsidian.mjs` | Composer model-switcher vendor mark: paints, tracks the active model, absent for unknown vendors |
+| `smoke-present-ui-obsidian.mjs` | `present_ui`'s lifecycle: mount-and-return, concurrent views, both report channels, state across a remount, render failure, every way a view ends, survival of the presenting run's abort, and a view presented from inside a `codemode` script |
 
 The durable smoke further constrains the plugin-visible `Platform` app flags:
 official phone emulation still reports `isDesktopApp: true`. Its report records

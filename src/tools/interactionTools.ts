@@ -104,7 +104,7 @@ export function createAskUserTool(app: App, broker: AskUserBroker, ownerId?: str
 const PresentUIParameters = Type.Object({
 	code: Type.String({
 		description:
-			"JavaScript executing with (container, obsidian, app, ui). Build native Obsidian controls (Setting, etc.) into container. The two ways back to the agent: ui.sendMessage(data) starts a new turn — use it for a decision the agent must act on (a submitted form, 'approve'); ui.update(state) only records state for the agent's next turn and does not interrupt it — use it for local changes like a filter or an expanded row. ui.close() removes the view. ui.state is whatever you last passed to ui.update, so re-apply it on entry: the view remounts when the panel reopens. Return a function to clean up timers or listeners.",
+			"JavaScript executing with (container, obsidian, app, ui). Build native Obsidian controls (Setting, etc.) into container. The two ways back to the agent: ui.sendMessage(data) starts a new turn — use it for a decision the agent must act on (a submitted form, 'approve'); ui.update(state) only records state for the agent's next turn and does not interrupt it — use it for local changes like a filter or an expanded row. ui.close() removes the view, and a one-shot form should call it after ui.sendMessage so it does not sit there inviting a second submission. ui.state is whatever you last passed to ui.update, and is null on first mount — read it defensively (ui.state?.filter ?? \"all\") and restore from it, because the code runs again whenever the view remounts (the panel is reopened, the session is switched). Return a function to clean up timers or listeners. If this code throws, the view does not open and you get the error back.",
 	}),
 	title: Type.Optional(
 		Type.String({

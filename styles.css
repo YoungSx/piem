@@ -7000,12 +7000,6 @@ input.piem-ask-other::placeholder {
 	word-break: break-word;
 }
 
-.piem-ui-block-card__error-report {
-	margin-top: var(--size-4-1);
-	font-size: var(--font-ui-smaller);
-	cursor: pointer;
-}
-
 
 
 

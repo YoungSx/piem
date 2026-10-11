@@ -15,6 +15,7 @@ const document = installDom();
 const { MessageList } = await import("./MessageList");
 const { createRoot: createRootImpl } = await import("react-dom/client");
 const { createReferenceMessage } = await import("../agent/contextReference");
+const { renderUIBlockMessage } = await import("../agent/uiBlockMessage");
 
 let createRootSync: typeof createRoot;
 
@@ -920,6 +921,37 @@ describe("MessageList edit action", () => {
 			isStreaming: true,
 			onEditMessage: () => undefined,
 		});
+		await flushRender();
+
+		expect(host.querySelectorAll('[aria-label="Edit and resend"]')).toHaveLength(0);
+	});
+
+	/*
+	 * A live view's report arrives as a user message, deliberately — it is the
+	 * same channel typed words use. But it is not words the user wrote, and the
+	 * pencil would offer to rewind the conversation so they could hand-edit the
+	 * JSON their own click produced and resend it still claiming to be a view's
+	 * report. The newest typed question keeps the action instead.
+	 */
+	it("keeps the edit off a live view's report, falling back to the newest typed question", async () => {
+		const viewReport = userMessage(renderUIBlockMessage("Config", { action: "apply", port: 3000 }));
+		const host = renderMessages(
+			[userMessage("set the port"), assistantMessage("here is a form"), viewReport, assistantMessage("applied")],
+			{ onEditMessage: () => undefined },
+		);
+		await flushRender();
+
+		const questions = Array.from(host.querySelectorAll(".piem-chat__message--user"));
+		expect(questions).toHaveLength(2);
+		expect(questions[1]?.querySelector('[aria-label="Edit and resend"]')).toBeNull();
+		expect(questions[0]?.querySelector('[aria-label="Edit and resend"]')).not.toBeNull();
+	});
+
+	it("offers no edit at all when every question behind the reply came from a view", async () => {
+		const host = renderMessages(
+			[userMessage(renderUIBlockMessage("Panel", { pressed: true })), assistantMessage("noted")],
+			{ onEditMessage: () => undefined },
+		);
 		await flushRender();
 
 		expect(host.querySelectorAll('[aria-label="Edit and resend"]')).toHaveLength(0);

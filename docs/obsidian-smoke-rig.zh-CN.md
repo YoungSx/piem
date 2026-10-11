@@ -103,6 +103,13 @@ proactive smoke；新场景一律用管家。
     开始」的空状态，播种的设置也到不了它那里（模型切换器冻在内置回退上）。
     管家在每轮 unlock 轮询里幂等地点掉那个「信任作者」按钮。回归时的标志：
     `getSnapshot()` 正确，但挂载出来的视图卡在默认模型上。
+14. **手机模拟锁在 profile 里，不在进程里。**
+    `app.emulateMobile(true)` 是持久化的，所以复用上次跑过手机档的
+    `<root>`，台子起来就是手机模式——桌面档第一条断言
+    `app.isMobile === expectMobile` 直接红，看着像产品坏了，其实是台子记性
+    好。管家现在在桌面档之前把这个标志落回桌面，而且只在它真的置位时才
+    动：`emulateMobile` 会重载窗口，白重载一次要花十秒，还会重新和插件
+    attach 抢跑。
 
 ## Smoke 清单
 
@@ -121,6 +128,7 @@ proactive smoke；新场景一律用管家。
 | `smoke-typography-obsidian.mjs` | 真实渲染下的排版（用 `--baseline`，无手机档） |
 | `smoke-proactive-obsidian.mjs` | 主动智能（用专属的 `run-smoke-proactive.py`） |
 | `smoke-model-icon-obsidian.mjs` | composer 模型切换器的厂商标记：会画出来、跟随当前模型、未知厂商时不出现 |
+| `smoke-present-ui-obsidian.mjs` | `present_ui` 的生命周期：挂载即返回、多个视图并存、两条上报通道、重挂载后的状态、渲染失败、视图结束的每条路径、挺过发起方那一轮的 abort，以及从 `codemode` 脚本里呈现的视图 |
 
 durable smoke 还会限制插件可见的 `Platform` 应用标志，因为官方手机模拟仍
 报告 `isDesktopApp: true`。报告同时保留原始与受限标志。6 个负对照必须被真实
