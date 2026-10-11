@@ -3,7 +3,7 @@ export const PRESENT_UI_TOOL = "present_ui";
 
 /** What was submitted or decided in the UI block. */
 export interface UIBlockOutcome {
-	data?: Record<string, any>;
+	data?: Record<string, unknown>;
 	action?: string;
 	title?: string;
 	/** True when the user cancelled or dismissed the block. */
@@ -37,7 +37,7 @@ export function uiBlockOutcome(details: unknown): UIBlockOutcome | null {
 
 	const data =
 		record.data && typeof record.data === "object" && !Array.isArray(record.data)
-			? (record.data as Record<string, any>)
+			? (record.data as Record<string, unknown>)
 			: undefined;
 
 	return {

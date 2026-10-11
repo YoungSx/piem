@@ -7,7 +7,7 @@ export interface UIBlockRequest {
 	title?: string;
 }
 
-export type UIBlockPayload = Record<string, any>;
+export type UIBlockPayload = Record<string, unknown>;
 
 type Listener = () => void;
 type Settle = (payload: UIBlockPayload | null) => void;
