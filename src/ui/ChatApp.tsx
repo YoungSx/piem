@@ -34,6 +34,7 @@ import { TranslatorProvider } from "./TranslatorContext";
 import { useSessionDraft } from "./useSessionDraft";
 import { fileToPendingImage, newPendingImageId, toImageContents, type PendingImage } from "./pendingImages";
 import type { AskUserBroker, AskUserRequest } from "../tools/askUserBroker";
+import type { UIBlockBroker, UIBlockRequest } from "../tools/uiBlockBroker";
 import { BackgroundNotifications } from "./BackgroundNotifications";
 import { openSessionDeleteConfirm, openSessionPicker } from "./sessionDialogs";
 import { useExtensionUI } from "./useExtensionUI";
@@ -75,9 +76,10 @@ interface ChatAppProps {
 	 * appears, which is the honest state when nothing can ask one.
 	 */
 	askUserBroker?: AskUserBroker;
+	uiBlockBroker?: UIBlockBroker;
 }
 
-export function ChatApp({ service, inputController, component, draftStore, onOpenSubagents, askUserBroker }: ChatAppProps): React.JSX.Element {
+export function ChatApp({ service, inputController, component, draftStore, onOpenSubagents, askUserBroker, uiBlockBroker }: ChatAppProps): React.JSX.Element {
 	const [snapshot, setSnapshot] = useState<ChatSnapshot>(() => service.getSnapshot());
 	// Keyed by session: a half-written question belongs to the chat it was typed
 	// in, not to whatever is on screen when the reader comes back.
@@ -286,6 +288,27 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	const ownerId = snapshot.session?.path;
 	// A session switch renders before its subscription effect runs. Never render
 	// the previous conversation's card in that intermediate frame.
+	const [uiBlock, setUIBlock] = useState<{ request: UIBlockRequest | null; queued: number }>({
+		request: null,
+		queued: 0,
+	});
+
+	useEffect(() => {
+		if (!uiBlockBroker || !ownerId) {
+			setUIBlock({ request: null, queued: 0 });
+			return;
+		}
+		const resnapshot = (): void =>
+			setUIBlock({
+				request: uiBlockBroker.getPending(ownerId),
+				queued: uiBlockBroker.getQueuedCount(ownerId),
+			});
+		resnapshot();
+		return uiBlockBroker.subscribe(resnapshot);
+	}, [uiBlockBroker, ownerId]);
+
+	const pendingUIBlock = ownerId && uiBlock.request?.ownerId === ownerId ? uiBlock.request : null;
+
 	const pendingQuestion = ownerId && ask.request?.ownerId === ownerId ? ask.request : null;
 
 	useEffect(() => {
@@ -1053,6 +1076,10 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					contextWindow={snapshot.contextFill?.contextWindow}
 					onQuickAction={isExtensionBusy ? undefined : handleQuickAction}
 					suggestedActions={suggestedActions}
+					pendingUIBlock={pendingUIBlock}
+					queuedUIBlocks={pendingUIBlock ? uiBlock.queued : 0}
+					onCommitUIBlock={uiBlockBroker ? (id, data) => uiBlockBroker.commit(id, data) : undefined}
+					onDismissUIBlock={uiBlockBroker ? (id) => uiBlockBroker.dismiss(id) : undefined}
 					pendingQuestion={pendingQuestion}
 					queuedQuestions={pendingQuestion ? ask.queued : 0}
 					onAnswerQuestion={askUserBroker ? (id, answers) => askUserBroker.answer(id, answers) : undefined}

@@ -29,7 +29,9 @@ import { GENERIC_TOOL_ICON, toolIcon } from "./toolCatalog";
 import { countDiffLines, describePendingTool, describeTool, isToolIdentifier, summarizeToolPayload, summarizeToolResult } from "./traceSummary";
 import { DEFAULT_TRACE_EXPAND, traceOpensByDefault, type TraceExpandSetting } from "./traceExpand";
 import { AskUserCard, AskUserReceipt } from "./AskUserCard";
+import { UIBlockCard, UIBlockReceipt } from "./UIBlockCard";
 import { ASK_USER_TOOL, askUserOutcome } from "./askUserRecord";
+import { PRESENT_UI_TOOL, uiBlockOutcome } from "./uiBlockRecord";
 import {
 	blockIsVisible,
 	describeTraceFold,
@@ -53,6 +55,7 @@ import {
 import type { CompactionEvent } from "../agent/compaction";
 import type { AskUserAnswer } from "../tools/askUserQuestion";
 import type { AskUserRequest } from "../tools/askUserBroker";
+import type { UIBlockRequest } from "../tools/uiBlockBroker";
 
 export interface MessageListProps {
 	messages: AgentMessage[];
@@ -206,6 +209,10 @@ export interface MessageListProps {
 	queuedQuestions?: number;
 	onAnswerQuestion?: (id: string, answers: AskUserAnswer[]) => void;
 	onDismissQuestion?: (id: string) => void;
+	pendingUIBlock?: UIBlockRequest | null;
+	queuedUIBlocks?: number;
+	onCommitUIBlock?: (id: string, data: Record<string, any>) => void;
+	onDismissUIBlock?: (id: string) => void;
 	/**
 	 * Extension widgets that asked for the "aboveEditor" seat, rendered here at
 	 * the feed's tail — below the follow-up strip — instead of docked over the
@@ -482,6 +489,10 @@ export function MessageList({
 	queuedQuestions = 0,
 	onAnswerQuestion,
 	onDismissQuestion,
+	pendingUIBlock = null,
+	queuedUIBlocks = 0,
+	onCommitUIBlock,
+	onDismissUIBlock,
 	extensionTail,
 	transformMarkdown,
 	getMessageRenderer,
@@ -589,7 +600,7 @@ export function MessageList({
 		// one scroll that covered `messages` would otherwise stay there. The
 		// extension tail likewise: `ChatApp` memoizes it on the widget snapshot,
 		// so a fresh node means a widget appeared or changed below the fold.
-	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, followUpActions, extensionTail]);
+	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, pendingUIBlock, followUpActions, extensionTail]);
 
 	const updateFollowState = (): void => {
 		const transcript = transcriptRef.current;
@@ -693,6 +704,16 @@ export function MessageList({
 				 * "in the stream" is the whole point: it scrolls with the conversation and
 				 * the record that replaces it lands in the same place.
 				 */}
+				{pendingUIBlock && onCommitUIBlock ? (
+					<UIBlockCard
+						key={pendingUIBlock.id}
+						request={pendingUIBlock}
+						app={app}
+						queued={queuedUIBlocks}
+						onCommit={(data) => onCommitUIBlock(pendingUIBlock.id, data)}
+						onDismiss={onDismissUIBlock ? () => onDismissUIBlock(pendingUIBlock.id) : undefined}
+					/>
+				) : null}
 				{pendingQuestion && onAnswerQuestion && onDismissQuestion ? (
 					<AskUserCard
 						key={pendingQuestion.id}
@@ -1808,6 +1829,19 @@ function ToolResultTrace({ message, context }: { message: ToolResultMessage; con
 	 * older session file, a hand edit — falls through to the ordinary row rather
 	 * than to an empty one.
 	 */
+	if (message.toolName === PRESENT_UI_TOOL && !message.isError) {
+		const outcome = uiBlockOutcome(message.details);
+		if (outcome) {
+			return (
+				<UIBlockReceipt
+					title={outcome.title}
+					action={outcome.action}
+					data={outcome.data}
+					dismissed={outcome.dismissed}
+				/>
+			);
+		}
+	}
 	if (message.toolName === ASK_USER_TOOL && !message.isError) {
 		const outcome = askUserOutcome(message.details);
 		if (outcome) {

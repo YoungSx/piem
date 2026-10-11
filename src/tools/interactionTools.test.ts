@@ -6,8 +6,9 @@ import type { App } from "obsidian";
 installObsidianStub();
 
 // Dynamic imports so the mocked module wins over any cached real one.
-const { createNotifyTool, createAskUserTool } = await import("./interactionTools");
+const { createNotifyTool, createAskUserTool, createPresentUITool } = await import("./interactionTools");
 const { AskUserBroker } = await import("./askUserBroker");
+const { UIBlockBroker } = await import("./uiBlockBroker");
 
 beforeEach(() => {
 	resetNotices();
@@ -28,45 +29,36 @@ describe("notify", () => {
 	});
 });
 
-/**
- * The tool's own contract, which is now narrow: decide whether there is anybody
- * to ask, hand the question to the broker, and turn what comes back into
- * something the model can act on. How the question *looks* is tested against the
- * components in `src/ui`, and how it is queued and routed against the broker.
- */
 describe("ask_user", () => {
 	it("refuses when no chat panel exists instead of asking nobody", async () => {
 		const broker = new AskUserBroker();
+		const tool = createAskUserTool(appWithoutChat(), broker);
 
-		const error = await createAskUserTool(app({ chatOpen: false }), broker)
-			.execute("tool-call", { questions: [oneQuestion()] })
-			.then(() => null, asError);
+		const error = await tool.execute("tool-call", { questions: [oneQuestion()] }).then(() => null, asError);
 
-		// The first rung of the ladder. No panel at all means the user is not using
-		// Piem right now: a card would land in a transcript nothing is rendering,
-		// and a dialog would be thrown over whatever they are actually doing.
-		expect(error?.message).toContain("The chat panel is not open");
+		expect(error?.message).toContain("chat panel is not open");
 		expect(broker.getPending()).toBeNull();
 	});
 
 	it("hands the questions to the broker verbatim and formats the answers back", async () => {
 		const broker = new AskUserBroker();
-		const pending = createAskUserTool(app(), broker).execute("tool-call", { questions: [oneQuestion()] });
+		const tool = createAskUserTool(app(), broker);
 
-		const request = broker.getPending();
-		expect(request?.questions).toEqual([oneQuestion()]);
-		broker.answer(request?.id ?? "", [
+		const pending = tool.execute("tool-call", { questions: [oneQuestion()] });
+
+		const asked = broker.getPending();
+		expect(asked?.questions).toEqual([oneQuestion()]);
+
+		broker.answer(asked?.id ?? "", [
 			{ question: "Where should this note go?", header: "Where to file", selected: ["Inbox"] },
 		]);
 
 		const result = (await pending) as Result;
-		// `header: selected` is what the model reads back, which is the whole reason
-		// `header` survived being dropped as a visible line.
-		expect(textOf(result)).toBe("The user answered:\nWhere to file: Inbox");
-		expect(result.details).toMatchObject({
+		expect(result.details).toEqual({
 			dismissed: false,
 			answers: [{ question: "Where should this note go?", header: "Where to file", selected: ["Inbox"] }],
 		});
+		expect(textOf(result)).toBe("The user answered:\nWhere to file: Inbox");
 	});
 
 	it("joins several picks into one line per question", async () => {
@@ -113,38 +105,106 @@ describe("ask_user", () => {
 	});
 });
 
-interface Result {
-	content: { type: string }[];
-	details: unknown;
+describe("present_ui", () => {
+	it("refuses when no chat panel exists", async () => {
+		const broker = new UIBlockBroker();
+		const tool = createPresentUITool(appWithoutChat(), broker);
+
+		const error = await tool.execute("tool-call", { code: "/* test */" }).then(() => null, asError);
+
+		expect(error?.message).toContain("chat panel is not open");
+		expect(broker.getPending()).toBeNull();
+	});
+
+	it("hands the request to the broker and returns committed data", async () => {
+		const broker = new UIBlockBroker();
+		const tool = createPresentUITool(app(), broker);
+
+		const pending = tool.execute("tool-call", { code: "/* render */", title: "Config Block" });
+
+		const asked = broker.getPending();
+		expect(asked?.code).toBe("/* render */");
+		expect(asked?.title).toBe("Config Block");
+
+		broker.commit(asked?.id ?? "", { action: "submit", port: 8080 });
+
+		const result = (await pending) as Result;
+		expect(result.details).toMatchObject({
+			dismissed: false,
+			action: "submit",
+			title: "Config Block",
+			data: { action: "submit", port: 8080 },
+		});
+		expect(textOf(result)).toContain('User submitted action "submit"');
+		expect(textOf(result)).toContain('"port": 8080');
+	});
+
+	it("handles dismiss/cancel", async () => {
+		const broker = new UIBlockBroker();
+		const tool = createPresentUITool(app(), broker);
+
+		const pending = tool.execute("tool-call", { code: "/* test */" });
+		broker.dismiss(broker.getPending()?.id ?? "");
+
+		const result = (await pending) as Result;
+		expect(result.details).toMatchObject({ dismissed: true });
+		expect(textOf(result)).toContain("dismissed or cancelled");
+	});
+
+	it("rejects and cleans up when signal is aborted", async () => {
+		const controller = new AbortController();
+		const broker = new UIBlockBroker();
+		const pending = createPresentUITool(app(), broker).execute(
+			"tool-call",
+			{ code: "/* test */" },
+			controller.signal,
+		);
+
+		controller.abort();
+
+		const error = await pending.then(() => null, asError);
+		expect(error?.message).toBe("Operation aborted");
+		expect(broker.getPending()).toBeNull();
+	});
+});
+
+type Result = { content: Array<{ type: "text"; text: string }>; details?: unknown };
+
+function textOf(result: Result): string {
+	return result.content.find((item) => item.type === "text")?.text ?? "";
 }
 
-function oneQuestion() {
+function oneQuestion(): {
+	question: string;
+	header: string;
+	options: Array<{ label: string; description?: string }>;
+} {
 	return {
 		question: "Where should this note go?",
 		header: "Where to file",
 		options: [
-			{ label: "Inbox", description: "Leave it for later triage." },
-			{ label: "Archive", description: "File it away as read." },
+			{ label: "Inbox", description: "Sort it later from the desktop." },
+			{ label: "Archive", description: "Keep it for search, off the workbench." },
 		],
 	};
 }
 
-function app(options: { chatOpen?: boolean } = {}) {
-	const chatLeaves = options.chatOpen === false ? [] : [{}];
-	const workspace = {
-		getLeavesOfType: (type: string) => (type === VIEW_TYPE_PIEM_CHAT ? chatLeaves : []),
-	};
-	return { workspace } as unknown as App;
+function app(): App {
+	return {
+		workspace: {
+			getLeavesOfType: (type: string) => (type === VIEW_TYPE_PIEM_CHAT ? [{}] : []),
+		},
+	} as unknown as App;
 }
 
-function textOf(result: Result): string {
-	const block = result.content[0];
-	if (block?.type !== "text") {
-		throw new Error("Expected a text content block.");
-	}
-	return (block as { type: "text"; text: string }).text;
+function appWithoutChat(): App {
+	return {
+		workspace: {
+			getLeavesOfType: () => [],
+		},
+	} as unknown as App;
 }
 
-function asError(reason: unknown): Error | null {
-	return reason instanceof Error ? reason : null;
+function asError(value: unknown): Error {
+	return value instanceof Error ? value : new Error(String(value));
 }

@@ -136,6 +136,20 @@ describe("planTraceFolds", () => {
 		expect(traceFoldSlot(plan, 2, null)).toBeNull();
 	});
 
+	it("keeps the present_ui interactive block out of the fold, so the receipt stays visible", () => {
+		const plan = plan_([
+			assistant(call("read"), call("read")),
+			result("read"),
+			result("present_ui"),
+			result("read"),
+		]);
+
+		const groups = heads(plan);
+		expect(groups).toHaveLength(1);
+		expect(rowKeys(groups[0]!)).toEqual(["0:0", "0:1", "1:result"]);
+		expect(traceFoldSlot(plan, 2, null)).toBeNull();
+	});
+
 	it("lets a suppressed question call pass through a run without splitting it", () => {
 		// The call draws nothing in the default tier — the question card and the
 		// receipt carry it — so breaking the run there would leave two folds with an

@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { ASK_USER_TOOL } from "./askUserRecord";
+import { PRESENT_UI_TOOL } from "./uiBlockRecord";
 
 /**
  * Pairing a tool call with the result that answered it, so one invocation is one
@@ -65,7 +66,7 @@ export const EMPTY_TOOL_PAIR_PLAN: ToolPairPlan = { resultFor: new Map(), claime
 export function planToolPairs(messages: readonly AgentMessage[]): ToolPairPlan {
 	const resultsById = new Map<string, { result: ToolResultMessage; index: number }>();
 	for (const [index, message] of messages.entries()) {
-		if (message.role !== "toolResult" || message.toolName === ASK_USER_TOOL) {
+		if (message.role !== "toolResult" || message.toolName === ASK_USER_TOOL || message.toolName === PRESENT_UI_TOOL) {
 			continue;
 		}
 		if (!message.toolCallId || resultsById.has(message.toolCallId)) {
@@ -86,7 +87,7 @@ export function planToolPairs(messages: readonly AgentMessage[]): ToolPairPlan {
 			continue;
 		}
 		for (const [blockIndex, block] of message.content.entries()) {
-			if (block.type !== "toolCall" || block.name === ASK_USER_TOOL) {
+			if (block.type !== "toolCall" || block.name === ASK_USER_TOOL || block.name === PRESENT_UI_TOOL) {
 				continue;
 			}
 			const match = resultsById.get(block.id);

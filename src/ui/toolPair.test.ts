@@ -3,55 +3,50 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import { pairedResult, planToolPairs, resultIsPaired } from "./toolPair";
 
-/**
- * The rules behind drawing one row per tool invocation instead of two.
- *
- * Every case here is a shape the transcript actually produces, and the ones that
- * do *not* pair matter as much as the ones that do: a result the plan claims is a
- * result the renderer will not draw, so a wrong claim deletes a row rather than
- * merely misplacing it.
- */
-
 describe("a call and the result that answered it", () => {
 	it("pairs on the id the provider put on both", () => {
-		const messages = [assistant(call("read", "c1")), result("read", "c1")];
-		const plan = planToolPairs(messages);
+		const plan = planToolPairs([assistant(call("read", "c1")), result("read", "c1")]);
 
-		expect(pairedResult(plan, 0, 0)).toBe(messages[1] as ToolResultMessage);
+		const match = pairedResult(plan, 0, 0);
+		expect(match).not.toBeNull();
+		expect(match?.toolCallId).toBe("c1");
 		expect(resultIsPaired(plan, 1)).toBe(true);
 	});
 
 	/*
-	 * A turn issues three calls and then reports three results, so a result is not
-	 * next to its call and the order of the two runs need not even match. Pairing on
-	 * position would work on the common case and quietly cross the wires here.
+	 * pi delivers batched tool calls inside one assistant message. Pairing works by
+	 * id, not by sequence, so each call claims its own result no matter which
+	 * returned first.
 	 */
 	it("pairs across the gap when a turn batches its calls", () => {
-		const messages = [assistant(call("read", "c1"), call("grep", "c2")), result("grep", "c2"), result("read", "c1")];
+		const messages = [assistant(call("read", "c1"), call("write", "c2")), result("write", "c2"), result("read", "c1")];
 		const plan = planToolPairs(messages);
 
-		expect((pairedResult(plan, 0, 0) as ToolResultMessage).toolName).toBe("read");
-		expect((pairedResult(plan, 0, 1) as ToolResultMessage).toolName).toBe("grep");
+		expect(pairedResult(plan, 0, 0)?.toolCallId).toBe("c1");
+		expect(pairedResult(plan, 0, 1)?.toolCallId).toBe("c2");
+		expect(resultIsPaired(plan, 1)).toBe(true);
+		expect(resultIsPaired(plan, 2)).toBe(true);
 	});
 
 	/*
-	 * The state every call passes through, and the one the wrench is now left to
-	 * mean: asked, not yet answered. A row in this state has to draw itself, which
-	 * is what `null` tells the renderer.
+	 * While the tool is still running, its call has arrived but its result has
+	 * not. The call must not claim anything, and the plan must stay valid while the
+	 * transcript streams.
 	 */
 	it("leaves a call unpaired while the tool is still out", () => {
 		const plan = planToolPairs([assistant(call("read", "c1"))]);
 
 		expect(pairedResult(plan, 0, 0)).toBeNull();
+		expect(resultIsPaired(plan, 0)).toBe(false);
 	});
 
 	/*
-	 * The reverse: a result whose call is not in the transcript at all. Compaction
-	 * summarized the turn that made it, or the session file predates ids. It stays a
-	 * row of its own, exactly as it was before pairing existed.
+	 * An orphan result — a session file with a corrupted turn, a synthetic test
+	 * fixture. Leaving it unpaired lets it render itself so the user can see it,
+	 * rather than swallowing it because no call owns it.
 	 */
 	it("leaves a result unpaired when nothing in the transcript called it", () => {
-		const plan = planToolPairs([result("read", "vanished")]);
+		const plan = planToolPairs([result("read", "orphan")]);
 
 		expect(resultIsPaired(plan, 0)).toBe(false);
 	});
@@ -103,6 +98,13 @@ describe("the question the reader answered", () => {
 		expect(pairedResult(plan, 0, 0)).toBeNull();
 		expect(resultIsPaired(plan, 1)).toBe(false);
 	});
+
+	it("never pairs present_ui, so its receipt keeps its own row", () => {
+		const plan = planToolPairs([assistant(call("present_ui", "p1")), result("present_ui", "p1")]);
+
+		expect(pairedResult(plan, 0, 0)).toBeNull();
+		expect(resultIsPaired(plan, 1)).toBe(false);
+	});
 });
 
 function assistant(...content: AssistantMessage["content"]): AgentMessage {
@@ -113,14 +115,13 @@ function call(name: string, id: string): ToolCall {
 	return { type: "toolCall", id, name, arguments: { path: `${name}.md` } };
 }
 
-function result(toolName: string, toolCallId: string, overrides: Partial<ToolResultMessage> = {}): AgentMessage {
+function result(toolName: string, toolCallId: string): AgentMessage {
 	return {
 		role: "toolResult",
 		toolCallId,
 		toolName,
-		content: [{ type: "text", text: "done" }],
+		content: [{ type: "text", text: "ok" }],
 		isError: false,
 		timestamp: 0,
-		...overrides,
 	} as AgentMessage;
 }

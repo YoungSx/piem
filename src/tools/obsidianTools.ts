@@ -13,8 +13,9 @@ import {
 	createGotoLocationTool,
 	createInsertAtCursorTool,
 } from "./editorTools";
-import { createAskUserTool, createNotifyTool } from "./interactionTools";
+import { createAskUserTool, createNotifyTool, createPresentUITool } from "./interactionTools";
 import type { AskUserBroker } from "./askUserBroker";
+import type { UIBlockBroker } from "./uiBlockBroker";
 import { createMoveNoteTool, createTrashNoteTool } from "./organizeTools";
 import { createFindTool, createGrepTool, createLsTool } from "./searchTools";
 import { createListTasksTool, createSummarizeTasksTool } from "./taskTools";
@@ -84,6 +85,8 @@ export interface ObsidianToolDeps {
 	 * would block its own turn forever, which is worse than not offering it.
 	 */
 	askUserBroker?: AskUserBroker;
+	/** Where `present_ui` puts its interactive UI block. Omitted leaves the tool out. */
+	uiBlockBroker?: UIBlockBroker;
 	/** Originating conversation, bound when these tools are built. */
 	ownerId?: string;
 	/**
@@ -155,6 +158,9 @@ export function createObsidianTools(
 		 */
 		...(deps.askUserBroker
 			? [createAskUserTool(app, deps.askUserBroker, deps.ownerId)]
+			: []),
+		...(deps.uiBlockBroker
+			? [createPresentUITool(app, deps.uiBlockBroker, deps.ownerId)]
 			: []),
 		createWebFetchTool(deps.keychain),
 	];

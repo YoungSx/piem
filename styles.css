@@ -6894,3 +6894,160 @@ input.piem-ask-other::placeholder {
 .piem-welcome__body > :last-child {
 	margin-bottom: 0;
 }
+
+/*
+ * Native interactive UI block from the `present_ui` tool.
+ *
+ * Rendered in-feed to let the agent construct rich Obsidian UI components
+ * (form inputs, buttons, sliders, file pickers) directly within the conversation stream.
+ */
+.piem-ui-block-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: var(--size-4-3);
+}
+
+.piem-ui-block-card--settled {
+	background: var(--background-primary-alt);
+}
+
+.piem-ui-block-card--dismissed {
+	opacity: 0.8;
+}
+
+.piem-ui-block-card:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: 2px;
+}
+
+.piem-ui-block-card__header {
+	align-items: center;
+	display: flex;
+	gap: var(--size-4-2);
+}
+
+.piem-ui-block-card__icon {
+	color: var(--text-muted);
+	display: flex;
+	flex-shrink: 0;
+}
+
+.piem-ui-block-card__title {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: var(--line-height-tight);
+}
+
+.piem-ui-block-card__state {
+	align-items: center;
+	color: var(--text-muted);
+	display: flex;
+	font-size: var(--font-ui-smaller);
+	gap: var(--size-4-1);
+	margin-inline-start: auto;
+}
+
+.piem-ui-block-card--pending .piem-ui-block-card__state {
+	color: var(--text-accent);
+	font-weight: var(--font-medium);
+}
+
+.piem-ui-block-card__queued {
+	color: var(--text-muted);
+	font-weight: 400;
+	margin-inline-start: var(--size-4-2);
+}
+
+.piem-ui-block-card__dismiss {
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: var(--size-2-1);
+	border-radius: var(--radius-s);
+}
+
+@media (hover: hover) {
+	.piem-ui-block-card__dismiss:hover {
+		color: var(--text-normal);
+		background: var(--background-modifier-hover);
+	}
+}
+
+.piem-ui-block-card__body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	width: 100%;
+}
+
+.piem-ui-block-card__body .setting-item {
+	border-top: none;
+	padding: var(--size-4-1) 0;
+}
+
+.piem-ui-block-card__error {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	background: var(--background-modifier-error);
+	border-radius: var(--radius-s);
+	color: var(--text-error);
+	font-size: var(--font-ui-smaller);
+	gap: var(--size-4-1);
+	padding: var(--size-4-2);
+}
+
+.piem-ui-block-card__error-title {
+	font-weight: var(--font-semibold);
+}
+
+.piem-ui-block-card__error-message {
+	word-break: break-word;
+}
+
+.piem-ui-block-card__action-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.piem-ui-block-card__action-badge {
+	background: var(--background-primary);
+	border: 1px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	padding: var(--size-2-1) var(--size-4-2);
+}
+
+.piem-ui-block-card__record {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	margin: 0;
+}
+
+.piem-ui-block-card__pair {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.piem-ui-block-card__key {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: var(--line-height-tight);
+}
+
+.piem-ui-block-card__value {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-family: var(--font-monospace);
+	margin: 0;
+	word-break: break-all;
+}

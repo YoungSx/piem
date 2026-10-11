@@ -2,6 +2,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ThinkingContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Translator } from "../i18n";
 import { ASK_USER_TOOL } from "./askUserRecord";
+import { PRESENT_UI_TOOL } from "./uiBlockRecord";
 import { categorizeTool, type ToolCategory } from "./toolCatalog";
 import { EMPTY_TOOL_PAIR_PLAN, pairedResult, resultIsPaired, type ToolPairPlan } from "./toolPair";
 import type { TraceExpandSetting } from "./traceExpand";
@@ -205,6 +206,7 @@ export function planTraceFolds(messages: readonly AgentMessage[], options: Trace
 				if (
 					block.type !== "toolCall" ||
 					block.name === ASK_USER_TOOL ||
+					block.name === PRESENT_UI_TOOL ||
 					pairedResult(options.pairs ?? EMPTY_TOOL_PAIR_PLAN, index, blockIndex)?.isError
 				) {
 					flush();
@@ -226,7 +228,7 @@ export function planTraceFolds(messages: readonly AgentMessage[], options: Trace
 			if (resultIsPaired(options.pairs ?? EMPTY_TOOL_PAIR_PLAN, index)) {
 				return;
 			}
-			if (message.isError || message.toolName === ASK_USER_TOOL) {
+			if (message.isError || message.toolName === ASK_USER_TOOL || message.toolName === PRESENT_UI_TOOL) {
 				flush();
 				return;
 			}
@@ -257,7 +259,7 @@ export function blockIsVisible(block: AssistantMessage["content"][number], showA
 		return block.text.trim().length > 0;
 	}
 	if (block.type === "toolCall") {
-		return showAgentDetails || block.name !== ASK_USER_TOOL;
+		return showAgentDetails || (block.name !== ASK_USER_TOOL && block.name !== PRESENT_UI_TOOL);
 	}
 	return true;
 }

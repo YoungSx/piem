@@ -557,6 +557,18 @@ export const zhCN: DeepPartial<EnCopy> = {
 		remaining: "还有 {count} 题没答",
 	},
 
+	/** 智能体通过 present_ui 呈现的原生交互组件。 */
+	uiBlock: {
+		cardLabel: "来自 Piem 的交互组件",
+		defaultTitle: "交互界面",
+		waiting: "交互界面等待操作",
+		queued: "其后还有 {count} 个交互",
+		completed: "交互已完成",
+		cancelled: "交互已取消",
+		errorTitle: "界面组件异常",
+		cancel: "取消",
+	},
+
 	extensionUI: {
 		cancel: "取消",
 		confirm: "确认",
@@ -638,6 +650,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		gotoLocation: "跳到了笔记中的某处",
 		notify: "发出了一条提示",
 		askUser: "向你提了一个问题",
+		presentUI: "呈现了交互界面",
 		readSkill: "读取了一份技能",
 		getSettings: "读取了一项设置",
 		updateSetting: "改动了一项设置",

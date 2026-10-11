@@ -942,6 +942,18 @@ export const en = {
 		remaining: "{count} still to answer",
 	},
 
+	/** The agent's native interactive UI block, behind the present_ui tool. */
+	uiBlock: {
+		cardLabel: "Interactive UI block from Piem",
+		defaultTitle: "Interactive UI",
+		waiting: "Interactive UI waiting for your action",
+		queued: "{count} more after this",
+		completed: "Interaction completed",
+		cancelled: "Interaction cancelled",
+		errorTitle: "UI component error",
+		cancel: "Cancel",
+	},
+
 	extensionUI: {
 		cancel: "Cancel",
 		confirm: "Confirm",
@@ -1048,6 +1060,7 @@ export const en = {
 		gotoLocation: "Jumped to a spot in a note",
 		notify: "Sent a notice",
 		askUser: "Asked you a question",
+		presentUI: "Presented interactive UI",
 		readSkill: "Read a skill",
 		getSettings: "Read a setting",
 		updateSetting: "Changed a setting",
