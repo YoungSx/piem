@@ -14,6 +14,8 @@
  * 6. A script that throws is reported, with its error visible and reportable.
  * 7. `ui.close` and the card's own button both end the view.
  * 8. A delivered view survives the presenting run's abort.
+ * 9. A view presented from inside a `codemode` script returns at once, outlives
+ *    the script, and survives the sandbox cancelling the script's pending calls.
  *
  * Usage: node scripts/smoke-present-ui-obsidian.mjs <CDP-port> <output-directory> [--expect-mobile]
  */
@@ -216,6 +218,49 @@ async function runSmoke(root, expectMobile) {
 		document.querySelector(".piem-ui-block-card__dismiss").click();
 		await wait(() => broker.getLive(ownerId).length === 0);
 		record("user's close button ended the view", document.querySelector(".smoke-dismiss") === null);
+
+		// 10. The case that started this: a view presented from inside `codemode`.
+		//     The sandbox runs the model's script under a wall-clock deadline that
+		//     counts awaited tool time (`DEFAULT_TIMEOUT_MS`, two minutes), so while
+		//     the call waited for a commit, a dashboard drawn from a script could
+		//     only ever end in that deadline aborting it. Nothing in the sandbox
+		//     changed; the call returning on mount is what takes it out of range.
+		//     Driven through the real nested path — `executeNestedTool` → the broker
+		//     — rather than the broker alone, and `getCodemodeTool` works whatever
+		//     `codemodeMode` is, since the mode only governs what the model is told.
+		const script = [
+			'const delivery = await tools.present_ui({',
+			'  title: "Codemode Dashboard",',
+			'  code: "container.createEl(\\"div\\", { cls: \\"smoke-codemode\\", text: \\"Dashboard\\" }); ui.update({ rows: 3 });",',
+			"});",
+			'return "script finished: " + delivery.slice(0, 24);',
+		].join("\n");
+		const scriptStarted = performance.now();
+		const scripted = await service
+			.getCodemodeTool()
+			.execute("smoke-codemode", { code: script }, new AbortController().signal);
+		const scriptMs = Math.round(performance.now() - scriptStarted);
+		report.codemodeMs = scriptMs;
+		const scriptedText = (scripted.content ?? [])
+			.filter(item => item.type === "text")
+			.map(item => item.text)
+			.join("\n");
+		record("codemode script completed instead of timing out", scripted.isError !== true && !/timed out/.test(scriptedText));
+		// Two minutes is the deadline; mounting a card is one React commit.
+		record("codemode call returned nowhere near the sandbox deadline", scriptMs < 30_000);
+		record("script kept running after presenting", scriptedText.includes("script finished:"));
+		record("view rendered from inside the sandbox", document.querySelector(".smoke-codemode") !== null);
+		record("view outlived the script that presented it", broker.getLive(ownerId).length === 1);
+		record(
+			"state the sandboxed view published is readable",
+			broker.getContext(ownerId).some(entry => entry.title === "Codemode Dashboard" && entry.state.rows === 3),
+		);
+		// The sandbox terminates its worker once the script returns. That used to be
+		// the view's death too, because the view was the call.
+		await new Promise(r => setTimeout(r, 500));
+		record("view survived the sandbox worker terminating", document.querySelector(".smoke-codemode") !== null);
+		broker.clear();
+		await wait(() => broker.getLive(ownerId).length === 0);
 
 		record("no unhandled browser runtime errors", report.errors.length === 0);
 		report.passed = true;
