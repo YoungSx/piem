@@ -111,6 +111,36 @@ const PresentUIParameters = Type.Object({
 	),
 });
 
+export function sanitizePayload(value: unknown, seen = new WeakSet<object>()): unknown {
+	if (value === null || typeof value !== "object") {
+		if (typeof value === "function" || typeof value === "symbol") {
+			return undefined;
+		}
+		if (typeof value === "bigint") {
+			return value.toString();
+		}
+		return value;
+	}
+	if (seen.has(value)) {
+		return "[Circular]";
+	}
+	seen.add(value);
+	if (Array.isArray(value)) {
+		return value.map((item) => sanitizePayload(item, seen));
+	}
+	if (typeof (value as any).nodeType === "number") {
+		return `[Element <${(value as Element).tagName?.toLowerCase() || "node"}>]`;
+	}
+	const result: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(value)) {
+		const sanitized = sanitizePayload(v, seen);
+		if (sanitized !== undefined) {
+			result[k] = sanitized;
+		}
+	}
+	return result;
+}
+
 export function createPresentUITool(
 	app: App,
 	broker: UIBlockBroker,
@@ -132,26 +162,34 @@ export function createPresentUITool(
 				);
 			}
 
-			const payload = await broker.present(
+			const rawPayload = await broker.present(
 				{ code: params.code, title: params.title },
 				signal,
 				ownerId,
 			);
 
-			if (!payload || typeof payload !== "object") {
+			if (!rawPayload || typeof rawPayload !== "object") {
 				return textResult(
 					"The user dismissed or cancelled the interactive UI block.",
 					{ dismissed: true, title: params.title },
 				);
 			}
 
+			const payload = (sanitizePayload(rawPayload) as Record<string, any>) ?? {};
 			const action = typeof payload.action === "string" ? payload.action : undefined;
 			const summary = action
 				? `User submitted action "${action}"`
 				: "User submitted interactive UI response";
 
+			let formattedJson = "";
+			try {
+				formattedJson = JSON.stringify(payload, null, 2);
+			} catch {
+				formattedJson = String(payload);
+			}
+
 			return textResult(
-				`${summary}:\n${JSON.stringify(payload, null, 2)}`,
+				`${summary}:\n${formattedJson}`,
 				{ dismissed: false, data: payload, action, title: params.title },
 			);
 		},

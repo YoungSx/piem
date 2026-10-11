@@ -169,6 +169,18 @@ export interface UIBlockReceiptProps {
 	dismissed?: boolean;
 }
 
+
+function formatReceiptValue(value: unknown): string {
+	if (typeof value === "object" && value !== null) {
+		try {
+			return JSON.stringify(value);
+		} catch {
+			return String(value);
+		}
+	}
+	return String(value);
+}
+
 export function UIBlockReceipt({
 	title,
 	action,
@@ -215,7 +227,7 @@ export function UIBlockReceipt({
 						<div className="piem-ui-block-card__pair" key={key}>
 							<dt className="piem-ui-block-card__key">{key}</dt>
 							<dd className="piem-ui-block-card__value">
-								{typeof value === "object" ? JSON.stringify(value) : String(value)}
+								{formatReceiptValue(value)}
 							</dd>
 						</div>
 					))}
