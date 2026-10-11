@@ -1,11 +1,19 @@
 /**
- * Smoke verifying present_ui observability gaps in a real Obsidian instance (Desktop + Mobile).
- * Gaps covered:
- * 1. UI rendering inside Obsidian chat panel (Desktop & Mobile 390x844 layout).
- * 2. JS execution error caught, rendered in DOM with error title & report button.
- * 3. Settle/fail unblocks broker queue without deadlock/hanging.
- * 4. Dismissal observability and resolution.
- * 5. Lifecycle logs and interactive/userWaitMs telemetry.
+ * Smoke for `present_ui`'s lifecycle in a real Obsidian instance (desktop + official mobile).
+ *
+ * What this exists to catch, which no happy-dom test can: the view is rendered
+ * by the real panel, its script runs in the real Electron realm against the real
+ * `obsidian` module, and the two channels have to reach a real agent service.
+ *
+ * Covered:
+ * 1. A view mounts and the tool call returns while it stays on screen.
+ * 2. A second view opens without waiting behind the first.
+ * 3. `ui.sendMessage` reaches the owning conversation as a new turn.
+ * 4. `ui.update` records state for the next turn and wakes nobody.
+ * 5. `ui.state` is handed back across a remount.
+ * 6. A script that throws is reported, with its error visible and reportable.
+ * 7. `ui.close` and the card's own button both end the view.
+ * 8. A delivered view survives the presenting run's abort.
  *
  * Usage: node scripts/smoke-present-ui-obsidian.mjs <CDP-port> <output-directory> [--expect-mobile]
  */
@@ -24,7 +32,7 @@ async function runSmoke(root, expectMobile) {
 		throw new Error(`Condition timed out after ${timeoutMs}ms`);
 	};
 
-	await wait(() => window.app?.plugins?.plugins?.piem?.agentService);
+	await wait(() => window.app?.plugins?.plugins?.piem?.agentService, 90_000);
 	const report = { passed: false, checks: [], errors: [], environment: {} };
 	const record = (name, value) => {
 		if (!value) throw new Error(`Check failed: ${name}`);
@@ -59,7 +67,6 @@ async function runSmoke(root, expectMobile) {
 		const ownerId = service.getActiveSessionPath();
 		record("active session ready", !!ownerId);
 
-		// Activate chat panel so broker requests render
 		await plugin.activateChatView();
 		await wait(() => document.querySelector(".piem-chat") !== null);
 		record("chat view activated", true);
@@ -67,103 +74,148 @@ async function runSmoke(root, expectMobile) {
 		const broker = plugin.uiBlockBroker;
 		broker.clear();
 
-		// 1. Test normal execution & commit
-		const commitPromise = broker.present(
+		// 1. A view mounts, the call returns, the view stays.
+		const firstCall = broker.present(
 			{
 				code: `
-					const btn = container.createEl("button", { text: "Smoke Commit", cls: "smoke-commit-btn" });
-					btn.onclick = () => commit({ action: "smoke-success", answer: 123 });
+					container.createEl("button", { text: "Send", cls: "smoke-send-btn" })
+						.onclick = () => ui.sendMessage({ action: "smoke-send", answer: 123 });
+					container.createEl("button", { text: "Update", cls: "smoke-update-btn" })
+						.onclick = () => ui.update({ filter: "smoke-open" });
+					container.createEl("button", { text: "Close", cls: "smoke-close-btn" })
+						.onclick = () => ui.close();
+					container.createEl("div", { cls: "smoke-state", text: String(ui.state && ui.state.filter) });
 				`,
-				title: "Smoke Commit Test",
+				title: "Smoke Panel",
 			},
 			undefined,
 			ownerId,
 		);
 
+		await wait(() => document.querySelector(".smoke-send-btn") !== null);
+		record("view rendered in chat panel", true);
 
-
-		await wait(() => document.querySelector(".smoke-commit-btn") !== null);
-		record("ui block card rendered in chat panel", true);
+		const firstDelivery = await firstCall;
+		record("call returned on mount", firstDelivery?.delivered === true && !!firstDelivery.id);
+		record("view still on screen after the call returned", document.querySelector(".smoke-send-btn") !== null);
+		record("broker still holds the view", broker.getLive(ownerId).length === 1);
 
 		if (expectMobile) {
 			const card = document.querySelector(".piem-ui-block-card");
-			if (card) {
-				const rect = card.getBoundingClientRect();
-				record("card width fits mobile viewport", rect.width <= 390);
-			}
+			record("card width fits mobile viewport", card.getBoundingClientRect().width <= 390);
 		}
 
-		const commitBtn = document.querySelector(".smoke-commit-btn");
-		commitBtn.click();
-
-		const commitResult = await commitPromise;
-		record(
-			"broker committed with correct payload",
-			commitResult?.action === "smoke-success" && commitResult?.answer === 123,
-		);
-
-		// 2. Test runtime error observability & fail mechanism
-		let errorThrown = false;
-		const failPromise = broker.present(
-			{
-				code: `
-					throw new Error("Deliberate smoke render explosion");
-				`,
-				title: "Smoke Error Test",
-			},
+		// 2. A second view does not queue behind the first.
+		const secondCall = broker.present(
+			{ code: `container.createEl("div", { cls: "smoke-second", text: "Second" });`, title: "Second Panel" },
 			undefined,
 			ownerId,
 		);
+		await wait(() => document.querySelector(".smoke-second") !== null);
+		const secondDelivery = await secondCall;
+		record("second view opened without waiting", secondDelivery?.delivered === true);
+		record("both views live at once", broker.getLive(ownerId).length === 2);
+		broker.close(secondDelivery.id);
+		await wait(() => document.querySelector(".smoke-second") === null);
 
+		// 3. `ui.update` records state and wakes nobody.
+		const messagesBeforeUpdate = service.getSnapshot().messages.length;
+		document.querySelector(".smoke-update-btn").click();
+		await wait(() => broker.getState(firstDelivery.id)?.filter === "smoke-open");
+		record("update stored state for the next turn", true);
+		record(
+			"update started no turn",
+			service.getSnapshot().messages.length === messagesBeforeUpdate && !service.getSnapshot().isStreaming,
+		);
+		const context = broker.getContext(ownerId);
+		record(
+			"state reaches the context block",
+			context.some(entry => entry.title === "Smoke Panel" && entry.state.filter === "smoke-open"),
+		);
+
+		// 4. State survives a remount, which is what reopening the panel costs.
+		const leaves = app.workspace.getLeavesOfType("piem-chat-view");
+		leaves.forEach(leaf => leaf.detach());
+		await wait(() => document.querySelector(".piem-chat") === null);
+		await plugin.activateChatView();
+		await wait(() => document.querySelector(".smoke-state") !== null);
+		record(
+			"script received its state back on remount",
+			document.querySelector(".smoke-state")?.textContent === "smoke-open",
+		);
+		record("view survived the panel closing", broker.getLive(ownerId).length === 1);
+
+		// 5. `ui.sendMessage` reaches the owning conversation as a new turn.
+		document.querySelector(".smoke-send-btn").click();
+		await wait(() => {
+			const messages = service.getSnapshot().messages;
+			return messages.some(
+				message =>
+					message.role === "user" &&
+					JSON.stringify(message.content ?? "").includes("smoke-send"),
+			);
+		}, 15_000);
+		record("sendMessage arrived as a new turn in the owning conversation", true);
+		record("view survived its own message", broker.getLive(ownerId).length === 1);
+
+		// 6. `ui.close` ends it.
+		document.querySelector(".smoke-close-btn").click();
+		await wait(() => broker.getLive(ownerId).length === 0);
+		record("script-initiated close removed the view", document.querySelector(".smoke-send-btn") === null);
+
+		// 7. A script that throws is reported and reportable.
+		const failing = broker.present(
+			{ code: `throw new Error("Deliberate smoke render explosion");`, title: "Smoke Error" },
+			undefined,
+			ownerId,
+		);
+		const failure = failing.then(() => null, error => error);
 		await wait(() => document.querySelector(".piem-ui-block-card__error") !== null);
-		record("error block rendered in UI card", true);
-
-		const errorMsgEl = document.querySelector(".piem-ui-block-card__error-message");
 		record(
-			"error message visible in DOM",
-			errorMsgEl?.textContent?.includes("Deliberate smoke render explosion"),
+			"error visible in the card",
+			document
+				.querySelector(".piem-ui-block-card__error-message")
+				?.textContent?.includes("Deliberate smoke render explosion"),
 		);
-
 		const reportBtn = document.querySelector(".piem-ui-block-card__error-report");
-		record("report error button present in DOM", reportBtn !== null);
-
-		// Fail promise should reject on clicking the report error button
-		const failCatchPromise = failPromise.catch(err => {
-			errorThrown = true;
-			return err;
-		});
-
+		record("report button present", reportBtn !== null);
 		reportBtn.click();
-		const rejectedErr = await failCatchPromise;
+		const reported = await failure;
 		record(
-			"error reported to agent without deadlock",
-			errorThrown && String(rejectedErr).includes("Deliberate smoke render explosion"),
+			"failure reached the agent without deadlock",
+			String(reported).includes("Deliberate smoke render explosion"),
 		);
+		record("broker clean after failure", broker.getLive(ownerId).length === 0);
 
-		// Verify broker queue unblocked
-		record("broker queue clean after failure", broker.getPending() === null);
+		// 8. A delivered view survives the presenting run's abort. This is the
+		//    regression the old coupling guaranteed: the call returns, its run
+		//    ends, and the signal used to tear the card off the screen — which
+		//    inside `codemode` fired on a two-minute deadline.
+		const controller = new AbortController();
+		const abortable = broker.present(
+			{ code: `container.createEl("div", { cls: "smoke-survivor", text: "Still here" });`, title: "Survivor" },
+			controller.signal,
+			ownerId,
+		);
+		await wait(() => document.querySelector(".smoke-survivor") !== null);
+		const survivorDelivery = await abortable;
+		controller.abort();
+		await new Promise(r => setTimeout(r, 200));
+		record("delivered view survived the run's abort", broker.getLive(ownerId).length === 1);
+		record("survivor still on screen", document.querySelector(".smoke-survivor") !== null);
+		broker.close(survivorDelivery.id);
 
-		// 3. Test dismiss observability
-		const dismissPromise = broker.present(
-			{
-				code: `
-					container.createEl("div", { text: "Will dismiss" });
-				`,
-				title: "Smoke Dismiss Test",
-			},
+		// 9. The user's own close button.
+		const dismissible = broker.present(
+			{ code: `container.createEl("div", { cls: "smoke-dismiss", text: "Close me" });`, title: "Dismiss" },
 			undefined,
 			ownerId,
 		);
-
-		await wait(() => document.querySelector(".piem-ui-block-card__dismiss") !== null);
-		const dismissBtn = document.querySelector(".piem-ui-block-card__dismiss");
-		dismissBtn.click();
-
-		const dismissResult = await dismissPromise;
-		record("dismissed UI block resolves with null", dismissResult === null);
-		record("broker queue empty after dismiss", broker.getPending() === null);
-
-
+		await wait(() => document.querySelector(".smoke-dismiss") !== null);
+		await dismissible;
+		document.querySelector(".piem-ui-block-card__dismiss").click();
+		await wait(() => broker.getLive(ownerId).length === 0);
+		record("user's close button ended the view", document.querySelector(".smoke-dismiss") === null);
 
 		record("no unhandled browser runtime errors", report.errors.length === 0);
 		report.passed = true;
