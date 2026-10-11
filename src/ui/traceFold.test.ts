@@ -256,6 +256,8 @@ describe("blockIsVisible", () => {
 	it("hides the question call the transcript draws as a card, unless the payload is on show", () => {
 		expect(blockIsVisible(call("ask_user"), false)).toBe(false);
 		expect(blockIsVisible(call("ask_user"), true)).toBe(true);
+		expect(blockIsVisible(call("present_ui"), false)).toBe(false);
+		expect(blockIsVisible(call("present_ui"), true)).toBe(true);
 		expect(blockIsVisible(call("read"), false)).toBe(true);
 	});
 

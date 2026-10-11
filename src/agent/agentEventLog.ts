@@ -17,6 +17,8 @@
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { LogLevel } from "../logging/logLevel";
 import type { LogDetail, LogDetailValue } from "../logging/logRecord";
+import { ASK_USER_TOOL, askUserOutcome } from "../ui/askUserRecord";
+import { PRESENT_UI_TOOL, uiBlockOutcome } from "../ui/uiBlockRecord";
 
 /** How many characters of a failed tool result to keep in the log detail. */
 const MAX_TOOL_ERROR_CHARS = 200;
@@ -121,11 +123,44 @@ export function describeAgentEvent(event: AgentEvent, durationMs?: number): Agen
 				...(durationMs === undefined ? {} : { durationMs }),
 				...(errorText === undefined ? {} : { error: errorText }),
 			};
+
+			if (event.toolName === PRESENT_UI_TOOL && !event.isError) {
+				const outcome = uiBlockOutcome((event.result as { details?: unknown })?.details);
+				if (outcome) {
+					detail.outcome = outcome.dismissed ? "dismissed" : "committed";
+					if (outcome.action) detail.action = outcome.action;
+					if (outcome.data) detail.dataKeys = Object.keys(outcome.data).slice(0, 10);
+					detail.interactive = true;
+				}
+				const details = (event.result as { details?: Record<string, unknown> })?.details;
+				if (typeof details?.userWaitMs === "number") {
+					detail.userWaitMs = details.userWaitMs;
+				}
+			} else if (event.toolName === ASK_USER_TOOL && !event.isError) {
+				const outcome = askUserOutcome((event.result as { details?: unknown })?.details);
+				if (outcome) {
+					detail.outcome = outcome.dismissed ? "dismissed" : "answered";
+					detail.interactive = true;
+				}
+				const details = (event.result as { details?: Record<string, unknown> })?.details;
+				if (typeof details?.userWaitMs === "number") {
+					detail.userWaitMs = details.userWaitMs;
+				}
+			}
+
+			const message = event.isError
+				? `Tool failed: ${event.toolName}`
+				: detail.outcome === "dismissed"
+					? event.toolName === PRESENT_UI_TOOL
+						? "UI block dismissed"
+						: "User question dismissed"
+					: `Tool finished: ${event.toolName}`;
+
 			return {
 				// A failed tool is exactly what a warn threshold exists to surface;
 				// everything else waits for the user to turn the level down.
 				level: event.isError ? "warn" : "info",
-				message: event.isError ? `Tool failed: ${event.toolName}` : `Tool finished: ${event.toolName}`,
+				message,
 				detail,
 			};
 		}

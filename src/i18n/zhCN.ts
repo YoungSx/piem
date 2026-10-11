@@ -566,6 +566,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		completed: "交互已完成",
 		cancelled: "交互已取消",
 		errorTitle: "界面组件异常",
+		reportError: "向智能体反馈错误",
 		cancel: "取消",
 	},
 

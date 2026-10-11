@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { UIBlockBroker } from "./uiBlockBroker";
+import type { LoggerLike } from "../logging/Logger";
 
 describe("UIBlockBroker", () => {
 	it("enqueues and resolves with committed payload", async () => {
@@ -30,6 +31,23 @@ describe("UIBlockBroker", () => {
 		expect(broker.getPending("session-1")).toBeNull();
 	});
 
+	it("rejects and unblocks queue on fail", async () => {
+		const broker = new UIBlockBroker();
+		const p1 = broker.present({ code: "/* fail */" }, undefined, "session-1");
+		const p2 = broker.present({ code: "/* next */" }, undefined, "session-1");
+
+		const pending = broker.getPending("session-1");
+		expect(pending?.code).toBe("/* fail */");
+
+		broker.fail(pending!.id, "Component crashed");
+		expect(p1).rejects.toThrow("UI component error: Component crashed");
+
+		// After failure, next item in queue should be presented
+		expect(broker.getPending("session-1")?.code).toBe("/* next */");
+		broker.dismiss(broker.getPending("session-1")!.id);
+		expect(await p2).toBeNull();
+	});
+
 	it("handles abort signal before and during present", async () => {
 		const broker = new UIBlockBroker();
 		const preAborted = new AbortController();
@@ -44,6 +62,28 @@ describe("UIBlockBroker", () => {
 		controller.abort();
 		expect(promise).rejects.toThrow("Operation aborted");
 		expect(broker.getPending("session-1")).toBeNull();
+	});
+
+	it("logs lifecycle events when logger is provided", async () => {
+		const logs: Array<{ level: string; msg: string }> = [];
+		const mockLogger: LoggerLike = {
+			debug: (msg: string) => logs.push({ level: "debug", msg }),
+			info: (msg: string) => logs.push({ level: "info", msg }),
+			warn: (msg: string) => logs.push({ level: "warn", msg }),
+			error: (msg: string) => logs.push({ level: "error", msg }),
+			isEnabled: () => true,
+			child: () => mockLogger,
+		};
+
+		const broker = new UIBlockBroker({ logger: mockLogger });
+		const p = broker.present({ code: "console.log(1)" }, undefined, "session-1");
+		const pending = broker.getPending("session-1");
+		broker.commit(pending!.id, { ok: true });
+		await p;
+
+		expect(logs.some((l) => l.msg.includes("UI block queued"))).toBe(true);
+		expect(logs.some((l) => l.msg.includes("UI block presented"))).toBe(true);
+		expect(logs.some((l) => l.msg.includes("UI block committed"))).toBe(true);
 	});
 
 	it("keeps per-conversation queues isolated and pumps next on settle", async () => {

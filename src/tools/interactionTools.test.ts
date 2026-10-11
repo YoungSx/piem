@@ -54,10 +54,12 @@ describe("ask_user", () => {
 		]);
 
 		const result = (await pending) as Result;
-		expect(result.details).toEqual({
+		expect(result.details).toMatchObject({
 			dismissed: false,
 			answers: [{ question: "Where should this note go?", header: "Where to file", selected: ["Inbox"] }],
+			interactive: true,
 		});
+		expect(typeof (result.details as Record<string, unknown>).userWaitMs).toBe("number");
 		expect(textOf(result)).toBe("The user answered:\nWhere to file: Inbox");
 	});
 
@@ -134,7 +136,9 @@ describe("present_ui", () => {
 			action: "submit",
 			title: "Config Block",
 			data: { action: "submit", port: 8080 },
+			interactive: true,
 		});
+		expect(typeof (result.details as Record<string, unknown>).userWaitMs).toBe("number");
 		expect(textOf(result)).toContain('User submitted action "submit"');
 		expect(textOf(result)).toContain('"port": 8080');
 	});
@@ -147,8 +151,20 @@ describe("present_ui", () => {
 		broker.dismiss(broker.getPending()?.id ?? "");
 
 		const result = (await pending) as Result;
-		expect(result.details).toMatchObject({ dismissed: true });
+		expect(result.details).toMatchObject({ dismissed: true, interactive: true });
+		expect(typeof (result.details as Record<string, unknown>).userWaitMs).toBe("number");
 		expect(textOf(result)).toContain("dismissed or cancelled");
+	});
+
+	it("rejects when broker reports failure", async () => {
+		const broker = new UIBlockBroker();
+		const tool = createPresentUITool(app(), broker);
+
+		const pending = tool.execute("tool-call", { code: "/* crash */" });
+		broker.fail(broker.getPending()?.id ?? "", "render crashed");
+
+		const error = await pending.then(() => null, asError);
+		expect(error?.message).toContain("UI component error: render crashed");
 	});
 
 	it("rejects and cleans up when signal is aborted", async () => {

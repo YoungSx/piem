@@ -85,16 +85,18 @@ export function createAskUserTool(app: App, broker: AskUserBroker, ownerId?: str
 				);
 			}
 
+			const startTime = performance.now();
 			const answers = await broker.ask(params.questions, signal, ownerId);
+			const userWaitMs = Math.round(performance.now() - startTime);
 			if (answers === null) {
 				return textResult(
 					"The user handed the decision back without answering. Do not re-ask the same thing; make the most reasonable choice yourself and say that you did.",
-					{ dismissed: true },
+					{ dismissed: true, interactive: true, userWaitMs },
 				);
 			}
 
 			const lines = answers.map((answer) => `${answer.header}: ${answer.selected.join(", ")}`);
-			return textResult(`The user answered:\n${lines.join("\n")}`, { dismissed: false, answers });
+			return textResult(`The user answered:\n${lines.join("\n")}`, { dismissed: false, answers, interactive: true, userWaitMs });
 		},
 	};
 }
@@ -177,16 +179,18 @@ export function createPresentUITool(
 				);
 			}
 
+			const startTime = performance.now();
 			const rawPayload = await broker.present(
 				{ code: params.code, title: params.title },
 				signal,
 				ownerId,
 			);
+			const userWaitMs = Math.round(performance.now() - startTime);
 
 			if (!rawPayload || typeof rawPayload !== "object") {
 				return textResult(
 					"The user dismissed or cancelled the interactive UI block.",
-					{ dismissed: true, title: params.title },
+					{ dismissed: true, title: params.title, interactive: true, userWaitMs },
 				);
 			}
 
@@ -205,7 +209,7 @@ export function createPresentUITool(
 
 			return textResult(
 				`${summary}:\n${formattedJson}`,
-				{ dismissed: false, data: payload, action, title: params.title },
+				{ dismissed: false, data: payload, action, title: params.title, interactive: true, userWaitMs },
 			);
 		},
 	};

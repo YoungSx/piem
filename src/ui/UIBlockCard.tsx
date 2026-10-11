@@ -23,6 +23,7 @@ export interface UIBlockCardProps {
 	app: App;
 	onCommit: (data: Record<string, unknown>) => void;
 	onDismiss?: () => void;
+	onFail?: (error: string) => void;
 }
 
 type AsyncFunctionConstructor = new (
@@ -39,6 +40,7 @@ export function UIBlockCard({
 	app,
 	onCommit,
 	onDismiss,
+	onFail,
 }: UIBlockCardProps): React.JSX.Element {
 	const t = useT();
 	const sectionRef = useRef<HTMLElement | null>(null);
@@ -47,6 +49,16 @@ export function UIBlockCard({
 
 	const onCommitRef = useRef(onCommit);
 	onCommitRef.current = onCommit;
+	const onFailRef = useRef(onFail);
+	onFailRef.current = onFail;
+
+	const handleDismiss = (): void => {
+		if (error && onFailRef.current) {
+			onFailRef.current(error);
+		} else {
+			onDismiss?.();
+		}
+	};
 
 	useEffect(() => {
 		const card = sectionRef.current;
@@ -153,7 +165,7 @@ export function UIBlockCard({
 						type="button"
 						className="piem-ui-block-card__dismiss clickable-icon"
 						aria-label={t.t("uiBlock.cancel")}
-						onClick={onDismiss}
+						onClick={handleDismiss}
 					>
 						<ObsidianIcon name="x" />
 					</button>
@@ -166,6 +178,15 @@ export function UIBlockCard({
 						{t.t("uiBlock.errorTitle")}
 					</div>
 					<div className="piem-ui-block-card__error-message">{error}</div>
+					{onFail ? (
+						<button
+							type="button"
+							className="piem-ui-block-card__error-report mod-warning"
+							onClick={() => onFail(error)}
+						>
+							{t.t("uiBlock.reportError")}
+						</button>
+					) : null}
 				</div>
 			) : null}
 

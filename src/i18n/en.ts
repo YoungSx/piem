@@ -951,6 +951,7 @@ export const en = {
 		completed: "Interaction completed",
 		cancelled: "Interaction cancelled",
 		errorTitle: "UI component error",
+		reportError: "Report error to agent",
 		cancel: "Cancel",
 	},
 

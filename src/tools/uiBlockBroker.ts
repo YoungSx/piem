@@ -1,3 +1,5 @@
+import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
+
 export const OWNER_UNKNOWN = "";
 
 export interface UIBlockRequest {
@@ -9,12 +11,18 @@ export interface UIBlockRequest {
 
 export type UIBlockPayload = Record<string, unknown>;
 
+export interface UIBlockBrokerOptions {
+	logger?: LoggerLike;
+}
+
 type Listener = () => void;
 type Settle = (payload: UIBlockPayload | null) => void;
+type Reject = (error: Error) => void;
 
 interface Entry {
 	request: UIBlockRequest;
 	settle: Settle;
+	reject: Reject;
 	detach: () => void;
 }
 
@@ -23,6 +31,11 @@ export class UIBlockBroker {
 	private queue: Entry[] = [];
 	private nextId = 0;
 	private readonly presented = new Set<string>();
+	private readonly log: LoggerLike;
+
+	constructor(options?: UIBlockBrokerOptions) {
+		this.log = (options?.logger ?? NOOP_LOGGER).child("ui_block");
+	}
 
 	present(
 		request: { code: string; title?: string },
@@ -43,12 +56,14 @@ export class UIBlockBroker {
 					title: request.title,
 				},
 				settle: resolve,
+				reject,
 				detach: () => undefined,
 			};
 
 			if (signal) {
 				const onAbort = (): void => {
 					this.take(id);
+					this.log.debug("UI block aborted", () => ({ id, ownerId }));
 					reject(new Error("Operation aborted"));
 					this.pump();
 				};
@@ -57,6 +72,12 @@ export class UIBlockBroker {
 			}
 
 			this.queue.push(entry);
+			this.log.debug("UI block queued", () => ({
+				id,
+				ownerId,
+				...(request.title ? { title: request.title } : {}),
+				queued: this.getQueuedCount(ownerId),
+			}));
 			this.pump();
 		});
 	}
@@ -84,17 +105,35 @@ export class UIBlockBroker {
 	}
 
 	commit(id: string, payload: UIBlockPayload): void {
+		this.log.debug("UI block committed", () => ({
+			id,
+			dataKeys: Object.keys(payload).slice(0, 10),
+		}));
 		this.finish(id, payload);
 	}
 
 	dismiss(id: string): void {
+		this.log.debug("UI block dismissed", () => ({ id }));
 		this.finish(id, null);
+	}
+
+	fail(id: string, error: string): void {
+		this.log.warn("UI block failed", () => ({ id, error }));
+		const entry = this.take(id);
+		if (!entry) {
+			return;
+		}
+		entry.reject(new Error(`UI component error: ${error}`));
+		this.pump();
 	}
 
 	clear(): void {
 		const dropped = this.queue;
 		this.queue = [];
 		this.presented.clear();
+		if (dropped.length > 0) {
+			this.log.info("UI block queue cleared", () => ({ dropped: dropped.length }));
+		}
 		for (const entry of dropped) {
 			entry.detach();
 			entry.settle(null);
@@ -131,7 +170,14 @@ export class UIBlockBroker {
 		for (const { request } of this.queue) {
 			if (owners.has(request.ownerId)) continue;
 			owners.add(request.ownerId);
-			this.presented.add(request.id);
+			if (!this.presented.has(request.id)) {
+				this.presented.add(request.id);
+				this.log.debug("UI block presented", () => ({
+					id: request.id,
+					ownerId: request.ownerId,
+					...(request.title ? { title: request.title } : {}),
+				}));
+			}
 		}
 		this.notify();
 	}
