@@ -166,7 +166,31 @@ describe("present_ui", () => {
 		expect(error?.message).toBe("Operation aborted");
 		expect(broker.getPending()).toBeNull();
 	});
+	it("sanitizes circular structures and DOM nodes in committed payload", async () => {
+		const broker = new UIBlockBroker();
+		const tool = createPresentUITool(app(), broker);
+
+		const pending = tool.execute("tool-call", { code: "/* test */" });
+		const circular: Record<string, unknown> = { key: "value" };
+		circular.self = circular;
+		circular.element = { nodeType: 1, tagName: "BUTTON" };
+
+		broker.commit(broker.getPending()?.id ?? "", circular);
+
+		const result = (await pending) as Result;
+		expect(result.details).toMatchObject({
+			dismissed: false,
+			data: {
+				key: "value",
+				self: "[Circular]",
+				element: "[Element <button>]",
+			},
+		});
+		expect(textOf(result)).toContain("[Circular]");
+		expect(textOf(result)).toContain("[Element <button>]");
+	});
 });
+
 
 type Result = { content: Array<{ type: "text"; text: string }>; details?: unknown };
 
