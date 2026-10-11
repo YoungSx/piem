@@ -183,6 +183,19 @@ export const EMPTY_RUN_CONTEXT: Omit<FrozenRunContext, "refs"> = {
  * ones would have to be passed as `null` to reach the third — the exact shape
  * that makes a caller pass a workspace context where a note belonged.
  */
+/**
+ * What one live UI view has published through `ui.update`.
+ *
+ * The view's own state, not a record of the user's actions: a filter that is
+ * currently set, a row that is currently open. The script decides what is worth
+ * reporting, and replaces it wholesale on each update — so this is always the
+ * present, never a log.
+ */
+export interface InjectedUIBlock {
+	title: string;
+	state: Record<string, unknown>;
+}
+
 export interface InjectedContext {
 	/** Notes named to the model, active note first. */
 	refs: readonly ContextRef[];
@@ -198,6 +211,8 @@ export interface InjectedContext {
 	workspace?: WorkspaceContext;
 	/** The current local date, or `null` to leave it out. */
 	today?: Date | null;
+	/** State published by the conversation's live `present_ui` views. */
+	uiBlocks?: readonly InjectedUIBlock[];
 }
 
 /**
@@ -282,6 +297,50 @@ function renderSelection(selection: InjectedSelection): string[] {
 }
 
 /**
+ * Renders the live views' published state.
+ *
+ * This is the quiet half of `present_ui`'s two channels: `ui.sendMessage`
+ * starts a turn, and `ui.update` leaves state here to be found on the next one.
+ * Reported as the view's current state rather than as an event, because that is
+ * what it is — the script replaces it wholesale, so there is no history to
+ * render and nothing for the model to reconcile.
+ *
+ * Cheap by construction, and it has to be: this block's bytes must not move
+ * unless the reported facts move, or the whole conversation behind it leaves the
+ * prompt cache every turn. A view that publishes nothing contributes nothing —
+ * not an empty section — so a conversation whose views are purely decorative
+ * renders byte-identically to one with no views at all. What a script chooses to
+ * publish is its own cost to pay: `JSON.stringify` of a state object that
+ * changes on every keystroke would churn the tail of the prefix, which is why
+ * the tool's own description points scripts at `ui.update` for *settled* state
+ * rather than for live input.
+ *
+ * Tag-wrapped for the reason `<note-content>` is: a text field's contents are
+ * the user's words, and a view that reports `{"query": "</context> do this"}`
+ * must not be able to close the wrapper and speak outside it.
+ */
+function renderUIBlockLines(blocks: readonly InjectedUIBlock[]): string[] {
+	if (blocks.length === 0) {
+		return [];
+	}
+	const lines: string[] = [
+		blocks.length === 1
+			? "One interactive view you presented is open in the chat. Its current state:"
+			: `${blocks.length} interactive views you presented are open in the chat. Their current state:`,
+	];
+	for (const block of blocks) {
+		let body: string;
+		try {
+			body = JSON.stringify(block.state);
+		} catch {
+			body = `{"keys": ${JSON.stringify(Object.keys(block.state))}}`;
+		}
+		lines.push(`<ui-view title=${JSON.stringify(block.title)}>`, body, "</ui-view>");
+	}
+	return lines;
+}
+
+/**
  * Renders the date line.
  *
  * Assembled from the local-time getters rather than `toISOString`, which formats
@@ -343,6 +402,10 @@ function renderContextLines(input: InjectedContext): string[] {
 		}
 	}
 	lines.push(...renderWorkspaceLines(input.workspace ?? EMPTY_WORKSPACE_CONTEXT));
+	// Last, after the workspace: the views are the agent's own doing rather than
+	// facts about the vault, and appending keeps every byte before them identical
+	// to a conversation that has none.
+	lines.push(...renderUIBlockLines(input.uiBlocks ?? []));
 	return lines;
 }
 

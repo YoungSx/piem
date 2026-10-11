@@ -104,7 +104,7 @@ export function createAskUserTool(app: App, broker: AskUserBroker, ownerId?: str
 const PresentUIParameters = Type.Object({
 	code: Type.String({
 		description:
-			"JavaScript code executing with (container, obsidian, app, commit). Use native Obsidian UI components (Setting, etc.) to present interactive controls. Call commit(data) when user finishes or clicks an action button.",
+			"JavaScript executing with (container, obsidian, app, ui). Build native Obsidian controls (Setting, etc.) into container. The two ways back to the agent: ui.sendMessage(data) starts a new turn — use it for a decision the agent must act on (a submitted form, 'approve'); ui.update(state) only records state for the agent's next turn and does not interrupt it — use it for local changes like a filter or an expanded row. ui.close() removes the view. ui.state is whatever you last passed to ui.update, so re-apply it on entry: the view remounts when the panel reopens. Return a function to clean up timers or listeners.",
 	}),
 	title: Type.Optional(
 		Type.String({
@@ -112,51 +112,6 @@ const PresentUIParameters = Type.Object({
 		}),
 	),
 });
-
-function isDOMNode(value: unknown): value is { tagName?: string } {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		"nodeType" in value &&
-		typeof value.nodeType === "number"
-	);
-}
-
-export function sanitizePayload(value: unknown, ancestors = new Set<object>()): unknown {
-	if (value === null || typeof value !== "object") {
-		if (typeof value === "function" || typeof value === "symbol") {
-			return undefined;
-		}
-		if (typeof value === "bigint") {
-			return value.toString();
-		}
-		return value;
-	}
-	if (ancestors.has(value)) {
-		return "[Circular]";
-	}
-	if (isDOMNode(value)) {
-		const tagName = typeof value.tagName === "string" ? value.tagName.toLowerCase() : "node";
-		return `[Element <${tagName}>]`;
-	}
-
-	ancestors.add(value);
-	try {
-		if (Array.isArray(value)) {
-			return value.map((item) => sanitizePayload(item, ancestors));
-		}
-		const result: Record<string, unknown> = {};
-		for (const [k, v] of Object.entries(value)) {
-			const sanitized = sanitizePayload(v, ancestors);
-			if (sanitized !== undefined) {
-				result[k] = sanitized;
-			}
-		}
-		return result;
-	} finally {
-		ancestors.delete(value);
-	}
-}
 
 export function createPresentUITool(
 	app: App,
@@ -168,7 +123,7 @@ export function createPresentUITool(
 		label: "Present UI",
 		executionMode: "sequential",
 		description:
-			"Present an interactive native Obsidian UI block directly inside the chat transcript. You write JavaScript code executing in a sandboxed host context with (container, obsidian, app, commit). container is the root HTMLElement for your component; obsidian provides native Obsidian primitives (Setting, Notice, etc.); app is the Obsidian App instance; commit(data) settles this tool call with your user response payload (e.g. form values or { action: string, ... }). Blocks until the user interacts and calls commit, or is cancelled.",
+			"Put an interactive native Obsidian view into the chat transcript — a form to fill in, or a panel to work with over time. You write JavaScript running in a sandboxed host context with (container, obsidian, app, ui): container is the root HTMLElement, obsidian provides the native primitives (Setting, Notice, etc.), app is the Obsidian App. This returns as soon as the view is on screen, which ends your turn — do not say you are waiting and do not keep calling tools. The view stays live after you stop. When the user does something your code reports with ui.sendMessage(data), that arrives as a new turn and you continue then; anything they do that your code reports with ui.update(state) is waiting for you in the next turn's context without interrupting you. Use this instead of ask_user when the choice needs real controls rather than 2-4 options; use ask_user when you need the answer before you can take your next step in this turn.",
 		parameters: PresentUIParameters,
 		execute: async (_toolCallId, params, signal) => {
 			throwIfAborted(signal);
@@ -180,36 +135,25 @@ export function createPresentUITool(
 			}
 
 			const startTime = performance.now();
-			const rawPayload = await broker.present(
+			const delivery = await broker.present(
 				{ code: params.code, title: params.title },
 				signal,
 				ownerId,
 			);
-			const userWaitMs = Math.round(performance.now() - startTime);
+			const mountMs = Math.round(performance.now() - startTime);
 
-			if (!rawPayload || typeof rawPayload !== "object") {
+			if (!delivery.delivered) {
 				return textResult(
-					"The user dismissed or cancelled the interactive UI block.",
-					{ dismissed: true, title: params.title, interactive: true, userWaitMs },
+					"The interactive UI was closed before it finished opening, so the user never saw it. Do not present it again unless they ask; carry on in the chat.",
+					{ uiId: delivery.id, live: false, title: params.title, interactive: true, mountMs },
 				);
 			}
 
-			const payload = (sanitizePayload(rawPayload) as Record<string, unknown>) ?? {};
-			const action = typeof payload.action === "string" ? payload.action : undefined;
-			const summary = action
-				? `User submitted action "${action}"`
-				: "User submitted interactive UI response";
-
-			let formattedJson = "";
-			try {
-				formattedJson = JSON.stringify(payload, null, 2);
-			} catch {
-				formattedJson = "{unserializable payload}";
-			}
-
 			return textResult(
-				`${summary}:\n${formattedJson}`,
-				{ dismissed: false, data: payload, action, title: params.title, interactive: true, userWaitMs },
+				`The interactive UI is open in the chat and stays open. Your turn ends here: if the user does something that needs you, it will arrive as a new message${
+					params.title ? ` from "${params.title}"` : ""
+				}.`,
+				{ uiId: delivery.id, live: true, title: params.title, interactive: true, mountMs },
 			);
 		},
 	};

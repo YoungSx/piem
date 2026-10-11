@@ -115,62 +115,65 @@ describe("present_ui", () => {
 		const error = await tool.execute("tool-call", { code: "/* test */" }).then(() => null, asError);
 
 		expect(error?.message).toContain("chat panel is not open");
-		expect(broker.getPending()).toBeNull();
+		expect(broker.getLive()).toHaveLength(0);
 	});
 
-	it("hands the request to the broker and returns committed data", async () => {
+	it("returns once the view is on screen, leaving it live", async () => {
 		const broker = new UIBlockBroker();
 		const tool = createPresentUITool(app(), broker);
 
-		const pending = tool.execute("tool-call", { code: "/* render */", title: "Config Block" });
+		const call = tool.execute("tool-call", { code: "/* render */", title: "Config Block" });
 
-		const asked = broker.getPending();
-		expect(asked?.code).toBe("/* render */");
-		expect(asked?.title).toBe("Config Block");
+		const [presented] = broker.getLive();
+		expect(presented?.code).toBe("/* render */");
+		expect(presented?.title).toBe("Config Block");
 
-		broker.commit(asked?.id ?? "", { action: "submit", port: 8080 });
+		broker.ready(presented!.id);
 
-		const result = (await pending) as Result;
+		const result = (await call) as Result;
 		expect(result.details).toMatchObject({
-			dismissed: false,
-			action: "submit",
+			uiId: presented!.id,
+			live: true,
 			title: "Config Block",
-			data: { action: "submit", port: 8080 },
 			interactive: true,
 		});
-		expect(typeof (result.details as Record<string, unknown>).userWaitMs).toBe("number");
-		expect(textOf(result)).toContain('User submitted action "submit"');
-		expect(textOf(result)).toContain('"port": 8080');
+		expect(typeof (result.details as Record<string, unknown>).mountMs).toBe("number");
+		// The text has one job: stop the model from sitting there waiting.
+		expect(textOf(result)).toContain("stays open");
+		expect(textOf(result)).toContain("Your turn ends here");
+		expect(textOf(result)).toContain('from "Config Block"');
+		// And the view it just reported as open is in fact still open.
+		expect(broker.getLive()).toHaveLength(1);
 	});
 
-	it("handles dismiss/cancel", async () => {
+	it("reports a view closed before it mounted as never seen", async () => {
 		const broker = new UIBlockBroker();
 		const tool = createPresentUITool(app(), broker);
 
-		const pending = tool.execute("tool-call", { code: "/* test */" });
-		broker.dismiss(broker.getPending()?.id ?? "");
+		const call = tool.execute("tool-call", { code: "/* test */" });
+		broker.close(broker.getLive()[0]?.id ?? "");
 
-		const result = (await pending) as Result;
-		expect(result.details).toMatchObject({ dismissed: true, interactive: true });
-		expect(typeof (result.details as Record<string, unknown>).userWaitMs).toBe("number");
-		expect(textOf(result)).toContain("dismissed or cancelled");
+		const result = (await call) as Result;
+		expect(result.details).toMatchObject({ live: false, interactive: true });
+		expect(textOf(result)).toContain("never saw it");
+		expect(broker.getLive()).toHaveLength(0);
 	});
 
-	it("rejects when broker reports failure", async () => {
+	it("fails the call when the script throws while mounting", async () => {
 		const broker = new UIBlockBroker();
 		const tool = createPresentUITool(app(), broker);
 
-		const pending = tool.execute("tool-call", { code: "/* crash */" });
-		broker.fail(broker.getPending()?.id ?? "", "render crashed");
+		const call = tool.execute("tool-call", { code: "/* crash */" });
+		broker.fail(broker.getLive()[0]?.id ?? "", "render crashed");
 
-		const error = await pending.then(() => null, asError);
+		const error = await call.then(() => null, asError);
 		expect(error?.message).toContain("UI component error: render crashed");
 	});
 
-	it("rejects and cleans up when signal is aborted", async () => {
+	it("rejects and cleans up when the signal aborts before the view mounts", async () => {
 		const controller = new AbortController();
 		const broker = new UIBlockBroker();
-		const pending = createPresentUITool(app(), broker).execute(
+		const call = createPresentUITool(app(), broker).execute(
 			"tool-call",
 			{ code: "/* test */" },
 			controller.signal,
@@ -178,61 +181,26 @@ describe("present_ui", () => {
 
 		controller.abort();
 
-		const error = await pending.then(() => null, asError);
+		const error = await call.then(() => null, asError);
 		expect(error?.message).toBe("Operation aborted");
-		expect(broker.getPending()).toBeNull();
-	});
-	it("sanitizes circular structures and DOM nodes in committed payload", async () => {
-		const broker = new UIBlockBroker();
-		const tool = createPresentUITool(app(), broker);
-
-		const pending = tool.execute("tool-call", { code: "/* test */" });
-		const circular: Record<string, unknown> = { key: "value" };
-		circular.self = circular;
-		circular.element = { nodeType: 1, tagName: "BUTTON" };
-
-		broker.commit(broker.getPending()?.id ?? "", circular);
-
-		const result = (await pending) as Result;
-		expect(result.details).toMatchObject({
-			dismissed: false,
-			data: {
-				key: "value",
-				self: "[Circular]",
-				element: "[Element <button>]",
-			},
-		});
-		expect(textOf(result)).toContain("[Circular]");
-		expect(textOf(result)).toContain("[Element <button>]");
+		expect(broker.getLive()).toHaveLength(0);
 	});
 
-	it("preserves shared references in directed acyclic graphs (DAGs)", async () => {
+	it("leaves a delivered view alone when the run's signal fires afterwards", async () => {
+		const controller = new AbortController();
 		const broker = new UIBlockBroker();
-		const tool = createPresentUITool(app(), broker);
+		const call = createPresentUITool(app(), broker).execute(
+			"tool-call",
+			{ code: "/* test */" },
+			controller.signal,
+		);
+		broker.ready(broker.getLive()[0]!.id);
+		await call;
 
-		const pending = tool.execute("tool-call", { code: "/* test */" });
-		const shared = { enabled: true, count: 42 };
-		const payload = {
-			defaults: shared,
-			current: shared,
-			items: [shared, shared],
-		};
+		// The run this call belonged to ends. The view is not its to destroy.
+		controller.abort();
 
-		broker.commit(broker.getPending()?.id ?? "", payload);
-
-		const result = (await pending) as Result;
-		expect(result.details).toMatchObject({
-			dismissed: false,
-			data: {
-				defaults: { enabled: true, count: 42 },
-				current: { enabled: true, count: 42 },
-				items: [
-					{ enabled: true, count: 42 },
-					{ enabled: true, count: 42 },
-				],
-			},
-		});
-		expect(textOf(result)).not.toContain("[Circular]");
+		expect(broker.getLive()).toHaveLength(1);
 	});
 });
 

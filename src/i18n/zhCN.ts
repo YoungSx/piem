@@ -561,13 +561,11 @@ export const zhCN: DeepPartial<EnCopy> = {
 	uiBlock: {
 		cardLabel: "来自 Piem 的交互组件",
 		defaultTitle: "交互界面",
-		waiting: "交互界面等待操作",
-		queued: "其后还有 {count} 个交互",
-		completed: "交互已完成",
-		cancelled: "交互已取消",
+		closed: "已关闭",
+		undelivered: "未能打开",
 		errorTitle: "界面组件异常",
 		reportError: "向智能体反馈错误",
-		cancel: "取消",
+		close: "关闭",
 	},
 
 	extensionUI: {

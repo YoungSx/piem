@@ -3,15 +3,8 @@ import * as obsidian from "obsidian";
 import React, { useEffect, useRef, useState } from "react";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { suppressOwnTooltip } from "./tooltipSuppression";
+import { asPayloadObject } from "./uiBlockPayload";
 import { useT } from "./TranslatorContext";
-
-function focusIsEditable(root: HTMLElement | null): boolean {
-	const active = root?.ownerDocument.activeElement;
-	if (!(active instanceof HTMLElement)) return false;
-	if (active.isContentEditable) return true;
-	const tag = active.tagName;
-	return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
 
 export interface UIBlockCardProps {
 	request: {
@@ -19,10 +12,17 @@ export interface UIBlockCardProps {
 		code: string;
 		title?: string;
 	};
-	queued?: number;
 	app: App;
-	onCommit: (data: Record<string, unknown>) => void;
-	onDismiss?: () => void;
+	/** The script's last published state, re-applied across a remount. */
+	state?: Record<string, unknown> | null;
+	/** The view is on screen. Settles the tool call that presented it. */
+	onReady: () => void;
+	/** Channel 2: the user did something the agent has to answer. */
+	onSendMessage: (data: Record<string, unknown>) => void;
+	/** Channel 1: state for the next turn. Does not wake the agent. */
+	onUpdate: (state: Record<string, unknown>) => void;
+	/** Script-initiated close, and the user's own cancel button. */
+	onClose: () => void;
 	onFail?: (error: string) => void;
 }
 
@@ -36,10 +36,12 @@ interface AsyncFunctionPrototype {
 
 export function UIBlockCard({
 	request,
-	queued = 0,
 	app,
-	onCommit,
-	onDismiss,
+	state = null,
+	onReady,
+	onSendMessage,
+	onUpdate,
+	onClose,
 	onFail,
 }: UIBlockCardProps): React.JSX.Element {
 	const t = useT();
@@ -47,25 +49,38 @@ export function UIBlockCard({
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	const onCommitRef = useRef(onCommit);
-	onCommitRef.current = onCommit;
-	const onFailRef = useRef(onFail);
-	onFailRef.current = onFail;
+	/*
+	 * Refs, not dependencies. The effect below runs the script, and re-running it
+	 * is a remount: every control is rebuilt and whatever the user had typed into
+	 * one is gone. A parent that re-renders with a fresh callback identity — which
+	 * is every render, since the panel builds these inline — must not be able to
+	 * cause that. The effect's dependency list is the instance's identity only.
+	 */
+	const handlers = useRef({ onReady, onSendMessage, onUpdate, onClose, onFail });
+	handlers.current = { onReady, onSendMessage, onUpdate, onClose, onFail };
+	const stateRef = useRef(state);
+	stateRef.current = state;
 
-	const handleDismiss = (): void => {
-		if (error && onFailRef.current) {
-			onFailRef.current(error);
+	const handleCancel = (): void => {
+		const { onFail: fail, onClose: close } = handlers.current;
+		if (error && fail) {
+			fail(error);
 		} else {
-			onDismiss?.();
+			close();
 		}
 	};
 
-	useEffect(() => {
-		const card = sectionRef.current;
-		if (card && !focusIsEditable(card)) {
-			card.focus();
-		}
-	}, []);
+	/*
+	 * No focus grab on mount.
+	 *
+	 * The blocking card took focus because it *was* the turn: nothing else could
+	 * proceed until the user answered it, so moving the caret there was moving it
+	 * to the only live thing on screen. A delivered view is the opposite — the
+	 * agent has moved on, the composer is usable, and several views can be open at
+	 * once. Focusing here would pull the caret out of the composer every time one
+	 * remounted (a reopened panel, a switched session), which is a view stealing
+	 * the keyboard from someone typing to the agent about something else.
+	 */
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -75,18 +90,45 @@ export function UIBlockCard({
 		setError(null);
 
 		let isMounted = true;
-		let committed = false;
-		const safeCommit = (data?: unknown): void => {
-			if (committed) return;
-			committed = true;
-			const payload =
-				data && typeof data === "object" && !Array.isArray(data)
-					? (data as Record<string, unknown>)
-					: { value: data ?? true };
-			onCommitRef.current(payload);
+
+		/*
+		 * Every channel is gated on `isMounted`. A script that keeps a timer or an
+		 * async handler alive can reach these after its view is gone — a remount, a
+		 * closed panel, a switched session — and the instance it is addressing may
+		 * already be closed. The broker ignores an unknown id, so this is the second
+		 * of two guards rather than the only one, but it is the one that keeps a
+		 * stale closure from reporting state for a view the user is no longer
+		 * looking at.
+		 */
+		const ui = {
+			id: request.id,
+			state: stateRef.current,
+			sendMessage: (data?: unknown): void => {
+				if (!isMounted) return;
+				handlers.current.onSendMessage(asPayloadObject(data));
+			},
+			update: (next?: unknown): void => {
+				if (!isMounted) return;
+				handlers.current.onUpdate(asPayloadObject(next));
+			},
+			close: (): void => {
+				if (!isMounted) return;
+				handlers.current.onClose();
+			},
 		};
 
 		let cleanup: (() => void) | undefined;
+		/*
+		 * Readiness is "the script finished setting up", which for an async script
+		 * is its promise resolving — not the synchronous return of a function that
+		 * has only kicked off its own loading. The tool call is waiting on this, so
+		 * announcing it early would report a view as delivered while it was still
+		 * blank.
+		 */
+		const announceReady = (): void => {
+			if (!isMounted) return;
+			handlers.current.onReady();
+		};
 
 		try {
 			const asyncProto = Object.getPrototypeOf(async function () {}) as AsyncFunctionPrototype;
@@ -95,10 +137,10 @@ export function UIBlockCard({
 				"container",
 				"obsidian",
 				"app",
-				"commit",
+				"ui",
 				`"use strict";\n${request.code}`,
 			);
-			const result: unknown = runner(container, obsidian, app, safeCommit);
+			const result: unknown = runner(container, obsidian, app, ui);
 			if (result instanceof Promise) {
 				result
 					.then((resolved: unknown) => {
@@ -115,14 +157,18 @@ export function UIBlockCard({
 						if (typeof resolved === "function") {
 							cleanup = resolved as () => void;
 						}
+						announceReady();
 					})
 					.catch((err: unknown) => {
 						if (isMounted) {
 							setError(err instanceof Error ? err.message : String(err));
 						}
 					});
-			} else if (typeof result === "function") {
-				cleanup = result as () => void;
+			} else {
+				if (typeof result === "function") {
+					cleanup = result as () => void;
+				}
+				announceReady();
 			}
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -142,7 +188,7 @@ export function UIBlockCard({
 	return (
 		<section
 			ref={sectionRef}
-			className="piem-ui-block-card piem-ui-block-card--pending"
+			className="piem-ui-block-card piem-ui-block-card--live"
 			tabIndex={-1}
 			aria-label={t.t("uiBlock.cardLabel")}
 			onMouseOver={suppressOwnTooltip}
@@ -153,19 +199,11 @@ export function UIBlockCard({
 					{request.title || t.t("uiBlock.defaultTitle")}
 				</span>
 				<div className="piem-ui-block-card__state">
-					<span className="piem-ui-block-card__waiting-text">
-						{t.t("uiBlock.waiting")}
-					</span>
-					{queued > 0 ? (
-						<span className="piem-ui-block-card__queued">
-							{t.t("uiBlock.queued", { count: String(queued) })}
-						</span>
-					) : null}
 					<button
 						type="button"
 						className="piem-ui-block-card__dismiss clickable-icon"
-						aria-label={t.t("uiBlock.cancel")}
-						onClick={handleDismiss}
+						aria-label={t.t("uiBlock.close")}
+						onClick={handleCancel}
 					>
 						<ObsidianIcon name="x" />
 					</button>
@@ -195,52 +233,35 @@ export function UIBlockCard({
 	);
 }
 
+/**
+ * What stands in the transcript for a view that is no longer live.
+ *
+ * Two different facts reach this, and conflating them is what the old copy did:
+ * a view the user closed after using it, and a view that never opened at all.
+ * The first is the ordinary end of a delivered view and says nothing about
+ * whether the user got what they needed; the second is a report that the agent's
+ * attempt to show something failed.
+ */
 export interface UIBlockReceiptProps {
 	title?: string;
-	action?: string;
-	data?: Record<string, unknown>;
-	dismissed?: boolean;
+	/** True when the view was closed before it ever reached the screen. */
+	undelivered?: boolean;
 }
 
-function formatReceiptValue(value: unknown): string {
-	if (value === null) return "null";
-	if (typeof value === "undefined") return "undefined";
-	if (typeof value === "object") {
-		try {
-			return JSON.stringify(value);
-		} catch {
-			return "{unserializable value}";
-		}
-	}
-	if (typeof value === "string") return value;
-	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-		return value.toString();
-	}
-	return "{unknown value}";
-}
-
-export function UIBlockReceipt({
-	title,
-	action,
-	data,
-	dismissed,
-}: UIBlockReceiptProps): React.JSX.Element {
+export function UIBlockReceipt({ title, undelivered }: UIBlockReceiptProps): React.JSX.Element {
 	const t = useT();
-
-	// Exclude action if present in data, as it is prominently rendered in the badge.
-	const displayData = data ? Object.entries(data).filter(([key]) => key !== "action") : [];
 
 	return (
 		<section
 			className={`piem-ui-block-card piem-ui-block-card--settled ${
-				dismissed ? "piem-ui-block-card--dismissed" : "piem-ui-block-card--completed"
+				undelivered ? "piem-ui-block-card--dismissed" : "piem-ui-block-card--completed"
 			}`}
 			aria-label={t.t("uiBlock.cardLabel")}
 			onMouseOver={suppressOwnTooltip}
 		>
 			<div className="piem-ui-block-card__header">
 				<ObsidianIcon
-					name={dismissed ? "circle-slash" : "check"}
+					name={undelivered ? "circle-slash" : "layout"}
 					className="piem-ui-block-card__icon"
 				/>
 				<span className="piem-ui-block-card__title">
@@ -248,29 +269,10 @@ export function UIBlockReceipt({
 				</span>
 				<div className="piem-ui-block-card__state">
 					<span className="piem-ui-block-card__status-text">
-						{t.t(dismissed ? "uiBlock.cancelled" : "uiBlock.completed")}
+						{t.t(undelivered ? "uiBlock.undelivered" : "uiBlock.closed")}
 					</span>
 				</div>
 			</div>
-
-			{action ? (
-				<div className="piem-ui-block-card__action-row">
-					<span className="piem-ui-block-card__action-badge">{action}</span>
-				</div>
-			) : null}
-
-			{displayData.length > 0 ? (
-				<dl className="piem-ui-block-card__record">
-					{displayData.map(([key, value]) => (
-						<div className="piem-ui-block-card__pair" key={key}>
-							<dt className="piem-ui-block-card__key">{key}</dt>
-							<dd className="piem-ui-block-card__value">
-								{formatReceiptValue(value)}
-							</dd>
-						</div>
-					))}
-				</dl>
-			) : null}
 		</section>
 	);
 }

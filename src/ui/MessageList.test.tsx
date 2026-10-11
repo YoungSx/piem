@@ -1778,30 +1778,89 @@ describe("MessageList present_ui", () => {
 		expect(row?.getAttribute("data-last-block")).toBe("trace");
 	});
 
-	it("renders the completed outcome with action badge and key-value receipt", async () => {
-		const host = renderMessages([uiBlockResult({ dismissed: false, action: "approved", data: { target: "inbox" } })]);
+	it("renders a receipt for a view that is no longer live", async () => {
+		const host = renderMessages([uiBlockResult({ uiId: "ui-9", live: true, title: "Gone" })]);
 		await flushRender();
 
+		// No `liveUIBlocks`, so the broker has nothing by that id: the view is over.
 		expect(host.querySelector(".piem-ui-block-card--completed")).not.toBeNull();
-		expect(host.querySelector(".piem-ui-block-card__action-badge")?.textContent).toBe("approved");
-		expect(host.querySelector(".piem-ui-block-card__value")?.textContent).toBe("inbox");
+		expect(host.querySelector(".piem-ui-block-card--live")).toBeNull();
 		expect(host.querySelector("details")).toBeNull();
 	});
 
-	it("renders the pending UI block at the tail only when commit handler is provided", async () => {
-		const request = { id: "ui-0", ownerId: "chat-a", code: "container.createEl('button')", title: "Custom UI" };
-
-		const unwired = renderMessages([userMessage("Hello")], { pendingUIBlock: request });
+	it("distinguishes a view that never opened from one that was used", async () => {
+		const host = renderMessages([uiBlockResult({ uiId: "ui-9", live: false, title: "Never" })]);
 		await flushRender();
-		expect(unwired.querySelector(".piem-ui-block-card")).toBeNull();
 
-		const host = renderMessages([userMessage("Hello")], {
-			pendingUIBlock: request,
-			onCommitUIBlock: () => undefined,
+		expect(host.querySelector(".piem-ui-block-card--dismissed")).not.toBeNull();
+	});
+
+	it("mounts a live view at its own result row rather than a receipt", async () => {
+		const request = { id: "ui-0", ownerId: "chat-a", code: "container.createEl('button', { cls: 'live-btn' })", title: "Custom UI" };
+		const host = renderMessages(
+			[userMessage("Hello"), uiBlockResult({ uiId: "ui-0", live: true, title: "Custom UI" })],
+			{ liveUIBlocks: [request] },
+		);
+		await flushRender();
+
+		/*
+		 * The agent chose this point in the conversation to put the view, and this
+		 * is where it stays — a dashboard that jumped to the bottom every time the
+		 * panel reopened would lose that placement.
+		 */
+		expect(host.querySelector(".piem-ui-block-card--live")).not.toBeNull();
+		expect(host.querySelector(".live-btn")).not.toBeNull();
+		expect(host.querySelector(".piem-ui-block-card--completed")).toBeNull();
+		// One mount, not two: the tail must not also claim it.
+		expect(host.querySelectorAll(".piem-ui-block-card")).toHaveLength(1);
+	});
+
+	it("mounts a view at the tail while it has no result row yet", async () => {
+		const request = { id: "ui-1", ownerId: "chat-a", code: "container.createEl('button', { cls: 'tail-btn' })" };
+
+		// The window the mount handshake needs: the call has not returned, so no
+		// result row exists, but the script has to run somewhere to report ready.
+		const host = renderMessages([userMessage("Hello")], { liveUIBlocks: [request] });
+		await flushRender();
+
+		expect(host.querySelector(".tail-btn")).not.toBeNull();
+		expect(host.querySelectorAll(".piem-ui-block-card")).toHaveLength(1);
+	});
+
+	it("keeps several live views on screen at once", async () => {
+		const first = { id: "ui-a", ownerId: "chat-a", code: "container.createEl('div', { cls: 'first' })" };
+		const second = { id: "ui-b", ownerId: "chat-a", code: "container.createEl('div', { cls: 'second' })" };
+
+		const host = renderMessages(
+			[uiBlockResult({ uiId: "ui-a", live: true }), uiBlockResult({ uiId: "ui-b", live: true })],
+			{ liveUIBlocks: [first, second] },
+		);
+		await flushRender();
+
+		// Nothing waits on the user's attention, so nothing is queued behind.
+		expect(host.querySelector(".first")).not.toBeNull();
+		expect(host.querySelector(".second")).not.toBeNull();
+	});
+
+	it("hands a live view its published state", async () => {
+		const request = { id: "ui-s", ownerId: "chat-a", code: "container.createEl('div', { cls: 'state', text: String(ui.state?.filter) })" };
+
+		const host = renderMessages([uiBlockResult({ uiId: "ui-s", live: true })], {
+			liveUIBlocks: [request],
+			uiBlockState: () => ({ filter: "open" }),
 		});
 		await flushRender();
 
-		expect(host.querySelector(".piem-ui-block-card")).not.toBeNull();
+		expect(host.querySelector(".state")?.textContent).toBe("open");
+	});
+
+	it("falls back to the receipt for a result from before the lifecycle split", async () => {
+		const host = renderMessages([uiBlockResult({ dismissed: false, action: "approved", data: { target: "inbox" } })]);
+		await flushRender();
+
+		// No id to look up, and its build destroyed the view to produce the result.
+		expect(host.querySelector(".piem-ui-block-card--completed")).not.toBeNull();
+		expect(host.querySelector(".piem-ui-block-card--live")).toBeNull();
 	});
 });
 

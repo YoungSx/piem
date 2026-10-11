@@ -946,13 +946,11 @@ export const en = {
 	uiBlock: {
 		cardLabel: "Interactive UI block from Piem",
 		defaultTitle: "Interactive UI",
-		waiting: "Interactive UI waiting for your action",
-		queued: "{count} more after this",
-		completed: "Interaction completed",
-		cancelled: "Interaction cancelled",
+		closed: "Closed",
+		undelivered: "Never opened",
 		errorTitle: "UI component error",
 		reportError: "Report error to agent",
-		cancel: "Cancel",
+		close: "Close",
 	},
 
 	extensionUI: {
