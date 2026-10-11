@@ -87,65 +87,74 @@ describe("describeAgentEvent", () => {
 		expect(entry?.detail).toEqual({ type: "future_event" });
 	});
 
-	it("enriches present_ui execution end with committed outcome, dataKeys and wait time", () => {
+	it("reports a present_ui call as the view opening, not as an outcome", () => {
 		const entry = describeAgentEvent({
 			type: "tool_execution_end",
 			toolCallId: "call-ui",
-			toolName: "present_ui",			result: {
+			toolName: "present_ui",
+			result: {
 				content: [{ type: "text", text: "ok" }],
-				details: {
-					dismissed: false,
-					action: "confirm",
-					data: { secretValue: "confidential", choice: 1 },
-					userWaitMs: 3450,
-				},
+				details: { uiId: "ui-2", live: true, mountMs: 34 },
 			},
 			isError: false,
-		} as never, 3500);
+		} as never, 40);
 
 		expect(entry).toEqual({
 			level: "info",
-			message: "Tool finished: present_ui",
+			message: "UI block opened",
 			detail: {
 				tool: "present_ui",
 				toolCallId: "call-ui",
-				durationMs: 3500,
-				outcome: "committed",
-				action: "confirm",
-				dataKeys: ["secretValue", "choice"],
+				durationMs: 40,
+				outcome: "live",
+				uiId: "ui-2",
 				interactive: true,
-				userWaitMs: 3450,
+				mountMs: 34,
 			},
 		});
 	});
 
-	it("marks present_ui dismissed with distinct message and outcome", () => {
+	it("distinguishes a view that was closed before it opened", () => {
 		const entry = describeAgentEvent({
 			type: "tool_execution_end",
 			toolCallId: "call-ui-2",
 			toolName: "present_ui",
 			result: {
-				content: [{ type: "text", text: "dismissed" }],
-				details: {
-					dismissed: true,
-					userWaitMs: 1200,
-				},
+				content: [{ type: "text", text: "never opened" }],
+				details: { uiId: "ui-3", live: false, mountMs: 12 },
 			},
 			isError: false,
-		} as never, 1250);
+		} as never, 20);
 
 		expect(entry).toEqual({
 			level: "info",
-			message: "UI block dismissed",
+			message: "UI block closed before opening",
 			detail: {
 				tool: "present_ui",
 				toolCallId: "call-ui-2",
-				durationMs: 1250,
-				outcome: "dismissed",
+				durationMs: 20,
+				outcome: "undelivered",
+				uiId: "ui-3",
 				interactive: true,
-				userWaitMs: 1200,
+				mountMs: 12,
 			},
 		});
+	});
+
+	it("logs no payload keys for a present_ui call, because it carries none", () => {
+		// What the user does arrives later and on its own. A `dataKeys` list here
+		// would be describing a submission that has not happened.
+		const entry = describeAgentEvent({
+			type: "tool_execution_end",
+			toolCallId: "call-ui-3",
+			toolName: "present_ui",
+			result: { content: [], details: { uiId: "ui-4", live: true } },
+			isError: false,
+		} as never, 5);
+
+		expect(entry?.detail).not.toHaveProperty("dataKeys");
+		expect(entry?.detail).not.toHaveProperty("action");
+		expect(entry?.detail).not.toHaveProperty("userWaitMs");
 	});
 
 	it("enriches ask_user execution end with answered outcome and wait time", () => {

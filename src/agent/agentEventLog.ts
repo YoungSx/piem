@@ -124,17 +124,23 @@ export function describeAgentEvent(event: AgentEvent, durationMs?: number): Agen
 				...(errorText === undefined ? {} : { error: errorText }),
 			};
 
+			/*
+			 * A `present_ui` call ends when its view opens, so what is worth logging
+			 * here is the delivery, not a user decision — the decision arrives later,
+			 * on its own, and `uiBlockMessage` below records it. `mountMs` replaces
+			 * the old `userWaitMs` for the same reason: nothing here waits on a person
+			 * any more, and a number named for waiting would read as one.
+			 */
 			if (event.toolName === PRESENT_UI_TOOL && !event.isError) {
 				const outcome = uiBlockOutcome((event.result as { details?: unknown })?.details);
 				if (outcome) {
-					detail.outcome = outcome.dismissed ? "dismissed" : "committed";
-					if (outcome.action) detail.action = outcome.action;
-					if (outcome.data) detail.dataKeys = Object.keys(outcome.data).slice(0, 10);
+					detail.outcome = outcome.undelivered ? "undelivered" : "live";
+					if (outcome.id) detail.uiId = outcome.id;
 					detail.interactive = true;
 				}
 				const details = (event.result as { details?: Record<string, unknown> })?.details;
-				if (typeof details?.userWaitMs === "number") {
-					detail.userWaitMs = details.userWaitMs;
+				if (typeof details?.mountMs === "number") {
+					detail.mountMs = details.mountMs;
 				}
 			} else if (event.toolName === ASK_USER_TOOL && !event.isError) {
 				const outcome = askUserOutcome((event.result as { details?: unknown })?.details);
@@ -148,13 +154,21 @@ export function describeAgentEvent(event: AgentEvent, durationMs?: number): Agen
 				}
 			}
 
+			/*
+			 * A `present_ui` call that returns has not finished anything the reader
+			 * would recognize as an outcome — it opened a view. "Tool finished" would
+			 * read, in a log being scanned for why the agent stopped, as the
+			 * interaction being over when it has not started.
+			 */
 			const message = event.isError
 				? `Tool failed: ${event.toolName}`
 				: detail.outcome === "dismissed"
-					? event.toolName === PRESENT_UI_TOOL
-						? "UI block dismissed"
-						: "User question dismissed"
-					: `Tool finished: ${event.toolName}`;
+					? "User question dismissed"
+					: event.toolName === PRESENT_UI_TOOL && detail.outcome === "live"
+						? "UI block opened"
+						: event.toolName === PRESENT_UI_TOOL && detail.outcome === "undelivered"
+							? "UI block closed before opening"
+							: `Tool finished: ${event.toolName}`;
 
 			return {
 				// A failed tool is exactly what a warn threshold exists to surface;

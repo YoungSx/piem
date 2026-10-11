@@ -18,6 +18,29 @@ function mockApp(): App {
 	} as unknown as App;
 }
 
+function request(overrides: Partial<UIBlockRequest> & { code: string }): UIBlockRequest {
+	return { id: "req-1", ownerId: "session-1", ...overrides };
+}
+
+/** Every callback stubbed, so a test names only the one it is about. */
+function handlers(overrides: Partial<CardHandlers> = {}): CardHandlers {
+	return {
+		onReady: () => undefined,
+		onSendMessage: () => undefined,
+		onUpdate: () => undefined,
+		onClose: () => undefined,
+		...overrides,
+	};
+}
+
+interface CardHandlers {
+	onReady: () => void;
+	onSendMessage: (data: Record<string, unknown>) => void;
+	onUpdate: (state: Record<string, unknown>) => void;
+	onClose: () => void;
+	onFail?: (error: string) => void;
+}
+
 describe("UIBlockCard", () => {
 	beforeEach(() => {
 		document.body.replaceChildren();
@@ -27,182 +50,297 @@ describe("UIBlockCard", () => {
 		document.body.replaceChildren();
 	});
 
-	it("renders pending card and executes code inside container", async () => {
-		const req: UIBlockRequest = {
-			id: "req-1",
-			ownerId: "session-1",
-			code: `
-				container.createEl("div", { text: "Hello from dynamic UI", cls: "custom-div" });
-			`,
-			title: "Custom Card",
-		};
-
+	it("renders the card and runs the script inside its container", async () => {
 		await mount(
 			<UIBlockCard
-				request={req}
+				request={request({
+					code: `container.createEl("div", { text: "Hello from dynamic UI", cls: "custom-div" });`,
+					title: "Custom Card",
+				})}
 				app={mockApp()}
-				onCommit={() => undefined}
-				onDismiss={() => undefined}
+				{...handlers()}
 			/>,
 		);
 
-		expect(document.querySelector(".piem-ui-block-card--pending")).not.toBeNull();
+		expect(document.querySelector(".piem-ui-block-card--live")).not.toBeNull();
 		expect(document.querySelector(".piem-ui-block-card__title")?.textContent).toContain("Custom Card");
 		expect(document.querySelector(".custom-div")?.textContent).toBe("Hello from dynamic UI");
 	});
 
-	it("guards against multiple commits", async () => {
-		let commitCount = 0;
-		const req: UIBlockRequest = {
-			id: "req-2",
-			ownerId: "session-1",
-			code: `
-				commit({ count: 1 });
-				commit({ count: 2 });
-			`,
-		};
+	it("announces readiness once a synchronous script finishes setting up", async () => {
+		let ready = 0;
 
 		await mount(
 			<UIBlockCard
-				request={req}
+				request={request({ code: `container.createEl("div");` })}
 				app={mockApp()}
-				onCommit={() => {
-					commitCount++;
-				}}
-				onDismiss={() => undefined}
+				{...handlers({ onReady: () => void ready++ })}
 			/>,
 		);
 
-		expect(commitCount).toBe(1);
+		expect(ready).toBe(1);
 	});
 
-	it("normalizes empty commit argument to object with value", async () => {
-		let committedData: any = null;
-		const req: UIBlockRequest = {
-			id: "req-empty-commit",
-			ownerId: "session-1",
-			code: `
-				commit();
-			`,
-		};
+	it("waits for an async script's promise before announcing readiness", async () => {
+		const order: string[] = [];
 
 		await mount(
 			<UIBlockCard
-				request={req}
+				request={request({
+					code: `
+						await new Promise(resolve => setTimeout(resolve, 0));
+						window.__asyncSetupDone = true;
+					`,
+				})}
 				app={mockApp()}
-				onCommit={(data) => {
-					committedData = data;
-				}}
-				onDismiss={() => undefined}
+				{...handlers({
+					onReady: () => order.push((window as any).__asyncSetupDone ? "after-setup" : "before-setup"),
+				})}
 			/>,
 		);
 
-		expect(committedData).toEqual({ value: true });
+		// Readiness settles the tool call, so announcing it before the script's own
+		// setup resolved would report a blank view as delivered.
+		expect(order).toEqual(["after-setup"]);
 	});
 
-	it("does not re-execute code when onCommit prop reference changes", async () => {
+	it("never announces readiness for a script that threw", async () => {
+		let ready = 0;
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `throw new Error("UI code exploded");` })}
+				app={mockApp()}
+				{...handlers({ onReady: () => void ready++ })}
+			/>,
+		);
+
+		expect(ready).toBe(0);
+		expect(document.querySelector(".piem-ui-block-card__error")?.textContent).toContain(
+			"UI code exploded",
+		);
+	});
+
+	it("lets a script send repeatedly, with no one-shot latch", async () => {
+		const sent: Record<string, unknown>[] = [];
+
+		await mount(
+			<UIBlockCard
+				request={request({
+					code: `
+						ui.sendMessage({ count: 1 });
+						ui.sendMessage({ count: 2 });
+					`,
+				})}
+				app={mockApp()}
+				{...handlers({ onSendMessage: (data) => sent.push(data) })}
+			/>,
+		);
+
+		/*
+		 * The old card swallowed everything after the first call, because a commit
+		 * was the end of its view. A panel's button is pressed many times, so the
+		 * latch is gone and the broker owns what each call means.
+		 */
+		expect(sent).toEqual([{ count: 1 }, { count: 2 }]);
+	});
+
+	it("reads a bare send as an affirmative", async () => {
+		const sent: Record<string, unknown>[] = [];
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `ui.sendMessage();` })}
+				app={mockApp()}
+				{...handlers({ onSendMessage: (data) => sent.push(data) })}
+			/>,
+		);
+
+		expect(sent).toEqual([{ value: true }]);
+	});
+
+	it("routes update separately from sendMessage", async () => {
+		const sent: Record<string, unknown>[] = [];
+		const updated: Record<string, unknown>[] = [];
+
+		await mount(
+			<UIBlockCard
+				request={request({
+					code: `
+						ui.update({ filter: "open" });
+						ui.sendMessage({ action: "approve" });
+					`,
+				})}
+				app={mockApp()}
+				{...handlers({
+					onSendMessage: (data) => sent.push(data),
+					onUpdate: (state) => updated.push(state),
+				})}
+			/>,
+		);
+
+		// The two channels are the whole contract: one wakes the agent, one does not.
+		expect(updated).toEqual([{ filter: "open" }]);
+		expect(sent).toEqual([{ action: "approve" }]);
+	});
+
+	it("hands the script its last published state back on mount", async () => {
+		await mount(
+			<UIBlockCard
+				request={request({
+					code: `container.createEl("div", { cls: "restored", text: String(ui.state?.filter) });`,
+				})}
+				app={mockApp()}
+				state={{ filter: "closed" }}
+				{...handlers()}
+			/>,
+		);
+
+		// What makes a remount survivable: the panel reopening must not silently
+		// reset a dashboard's filters.
+		expect(document.querySelector(".restored")?.textContent).toBe("closed");
+	});
+
+	it("exposes its own id to the script", async () => {
+		await mount(
+			<UIBlockCard
+				request={request({ id: "req-id", code: `container.createEl("div", { cls: "id", text: ui.id });` })}
+				app={mockApp()}
+				{...handlers()}
+			/>,
+		);
+
+		expect(document.querySelector(".id")?.textContent).toBe("req-id");
+	});
+
+	it("closes when the script asks to", async () => {
+		let closed = 0;
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `ui.close();` })}
+				app={mockApp()}
+				{...handlers({ onClose: () => void closed++ })}
+			/>,
+		);
+
+		expect(closed).toBe(1);
+	});
+
+	it("closes when the user presses the card's own button", async () => {
+		let closed = 0;
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `container.createEl("div");` })}
+				app={mockApp()}
+				{...handlers({ onClose: () => void closed++ })}
+			/>,
+		);
+
+		(document.querySelector(".piem-ui-block-card__dismiss") as HTMLButtonElement | null)?.click();
+
+		expect(closed).toBe(1);
+	});
+
+	it("reports the error instead of closing when a broken card is dismissed", async () => {
+		let failed: string | null = null;
+		let closed = 0;
+
+		await mount(
+			<UIBlockCard
+				request={request({ code: `throw new Error("Broken component");` })}
+				app={mockApp()}
+				{...handlers({
+					onClose: () => void closed++,
+					onFail: (error) => (failed = error),
+				})}
+			/>,
+		);
+
+		(
+			document.querySelector(".piem-ui-block-card__error-report") as HTMLButtonElement | null
+		)?.click();
+
+		expect(String(failed)).toContain("Broken component");
+		expect(closed).toBe(0);
+	});
+
+	it("does not re-run the script when a callback's identity changes", async () => {
 		(window as any).__execCount = 0;
-
-		const req: UIBlockRequest = {
-			id: "req-stable",
-			ownerId: "session-1",
-			code: `
-				window.__execCount = (window.__execCount || 0) + 1;
-			`,
-		};
-
+		const req = request({ id: "req-stable", code: `window.__execCount = (window.__execCount || 0) + 1;` });
+		const app = mockApp();
 		const container = document.createElement("div");
 		document.body.appendChild(container);
 		const root = createRoot(container);
-		const app = mockApp();
 
-		root.render(
-			<UIBlockCard
-				request={req}
-				app={app}
-				onCommit={() => 1}
-				onDismiss={() => undefined}
-			/>,
-		);
+		root.render(<UIBlockCard request={req} app={app} {...handlers({ onSendMessage: () => 1 })} />);
 		await flushRender();
 
-		// Re-render with new inline onCommit callback identity
-		root.render(
-			<UIBlockCard
-				request={req}
-				app={app}
-				onCommit={() => 2}
-				onDismiss={() => undefined}
-			/>,
-		);
+		// The panel builds these inline, so every render is a new identity. If that
+		// re-ran the effect, a parent re-render would wipe a half-filled form.
+		root.render(<UIBlockCard request={req} app={app} {...handlers({ onSendMessage: () => 2 })} />);
 		await flushRender();
 
 		expect((window as any).__execCount).toBe(1);
 		root.unmount();
 	});
 
-	it("displays runtime error without crashing", async () => {
-		const req: UIBlockRequest = {
-			id: "req-3",
-			ownerId: "session-1",
-			code: `
-				throw new Error("UI code exploded");
-			`,
-		};
+	it("does not re-run the script when its state changes", async () => {
+		(window as any).__stateExecCount = 0;
+		const req = request({ id: "req-state", code: `window.__stateExecCount = (window.__stateExecCount || 0) + 1;` });
+		const app = mockApp();
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
 
-		await mount(
+		root.render(<UIBlockCard request={req} app={app} state={{ n: 1 }} {...handlers()} />);
+		await flushRender();
+
+		/*
+		 * `update` is the script's own write. Remounting on it would mean a view
+		 * destroyed itself every time it recorded a filter change — the interaction
+		 * eating its own view.
+		 */
+		root.render(<UIBlockCard request={req} app={app} state={{ n: 2 }} {...handlers()} />);
+		await flushRender();
+
+		expect((window as any).__stateExecCount).toBe(1);
+		root.unmount();
+	});
+
+	it("ignores channels reached by a stale closure after unmount", async () => {
+		const sent: Record<string, unknown>[] = [];
+		const req = request({
+			id: "req-late",
+			code: `
+				window.__lateSend = () => ui.sendMessage({ late: true });
+				return () => undefined;
+			`,
+		});
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		root.render(
 			<UIBlockCard
 				request={req}
 				app={mockApp()}
-				onCommit={() => undefined}
-				onDismiss={() => undefined}
+				{...handlers({ onSendMessage: (data) => sent.push(data) })}
 			/>,
 		);
+		await flushRender();
 
-		const error = document.querySelector(".piem-ui-block-card__error");
-		expect(error).not.toBeNull();
-		expect(error?.textContent).toContain("UI code exploded");
+		root.unmount();
+		await flushRender();
+		(window as any).__lateSend();
+
+		// A timer or async handler the script left behind must not report for a view
+		// the user is no longer looking at.
+		expect(sent).toEqual([]);
 	});
 
-	it("notifies onFail when reporting error or dismissing broken card", async () => {
-		let failedError: string | null = null;
-		const req: UIBlockRequest = {
-			id: "req-err-report",
-			ownerId: "session-1",
-			code: `
-				throw new Error("Broken component");
-			`,
-		};
-
-		await mount(
-			<UIBlockCard
-				request={req}
-				app={mockApp()}
-				onCommit={() => undefined}
-				onDismiss={() => undefined}
-				onFail={(err) => {
-					failedError = err;
-				}}
-			/>,
-		);
-
-		const reportBtn = document.querySelector(".piem-ui-block-card__error-report") as HTMLButtonElement | null;
-		expect(reportBtn).not.toBeNull();
-		reportBtn?.click();
-		expect(String(failedError)).toContain("Broken component");
-	});
-
-	it("runs cleanup on unmount", async () => {
-		const req: UIBlockRequest = {
-			id: "req-4",
-			ownerId: "session-1",
-			code: `
-				return () => {
-					window.__cleaned_up = true;
-				};
-			`,
-		};
-
+	it("runs the script's cleanup on unmount", async () => {
 		const container = document.createElement("div");
 		document.body.appendChild(container);
 		const root = createRoot(container);
@@ -210,10 +348,9 @@ describe("UIBlockCard", () => {
 
 		root.render(
 			<UIBlockCard
-				request={req}
+				request={request({ code: `return () => { window.__cleaned_up = true; };` })}
 				app={mockApp()}
-				onCommit={() => undefined}
-				onDismiss={() => undefined}
+				{...handlers()}
 			/>,
 		);
 		await flushRender();
@@ -234,36 +371,23 @@ describe("UIBlockReceipt", () => {
 		document.body.replaceChildren();
 	});
 
-	it("renders completed state with title, action and data record", async () => {
-		await mount(
-			<UIBlockReceipt
-				title="Action Card"
-				action="applied"
-				data={{ settingName: "Theme", value: "Dark" }}
-				dismissed={false}
-			/>,
-		);
+	it("marks a view that was used and then closed", async () => {
+		await mount(<UIBlockReceipt title="Action Card" />);
 
-		expect(document.querySelector(".piem-ui-block-card--settled")).not.toBeNull();
+		expect(document.querySelector(".piem-ui-block-card--completed")).not.toBeNull();
 		expect(document.querySelector(".piem-ui-block-card__title")?.textContent).toContain("Action Card");
-		expect(document.querySelector(".piem-ui-block-card__action-badge")?.textContent).toBe("applied");
-
-		const keys = Array.from(document.querySelectorAll(".piem-ui-block-card__key")).map(
-			(el) => el.textContent,
-		);
-		const values = Array.from(document.querySelectorAll(".piem-ui-block-card__value")).map(
-			(el) => el.textContent,
-		);
-
-		expect(keys).toEqual(["settingName", "value"]);
-		expect(values).toEqual(["Theme", "Dark"]);
+		expect(document.querySelector(".piem-ui-block-card__status-text")?.textContent).toContain("Closed");
 	});
 
-	it("renders dismissed receipt cleanly", async () => {
-		await mount(<UIBlockReceipt dismissed={true} />);
+	it("distinguishes a view that never opened", async () => {
+		await mount(<UIBlockReceipt undelivered={true} />);
 
+		// Two different facts: the agent's attempt to show something failed, versus
+		// the ordinary end of a view the user did use.
 		expect(document.querySelector(".piem-ui-block-card--dismissed")).not.toBeNull();
-		expect(document.querySelector(".piem-ui-block-card__status-text")?.textContent).toContain("cancelled");
+		expect(document.querySelector(".piem-ui-block-card__status-text")?.textContent).toContain(
+			"Never opened",
+		);
 	});
 });
 

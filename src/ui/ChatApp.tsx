@@ -286,28 +286,43 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 	const hasActiveNote = activeNotePath !== null;
 	const [ask, setAsk] = useState<{ request: AskUserRequest | null; queued: number }>({ request: null, queued: 0 });
 	const ownerId = snapshot.session?.path;
-	// A session switch renders before its subscription effect runs. Never render
-	// the previous conversation's card in that intermediate frame.
-	const [uiBlock, setUIBlock] = useState<{ request: UIBlockRequest | null; queued: number }>({
-		request: null,
-		queued: 0,
-	});
+	/*
+	 * Every live view in this conversation.
+	 *
+	 * A list, because a delivered view does not hold the turn: a dashboard and a
+	 * form can be open at once, and a new view no longer waits behind an
+	 * unanswered one. The owner filter below is still load-bearing — a session
+	 * switch renders before its subscription effect runs, and the previous
+	 * conversation's views must not appear in that intermediate frame.
+	 */
+	const [uiBlocks, setUIBlocks] = useState<readonly UIBlockRequest[]>([]);
 
 	useEffect(() => {
 		if (!uiBlockBroker || !ownerId) {
-			setUIBlock({ request: null, queued: 0 });
+			setUIBlocks([]);
 			return;
 		}
-		const resnapshot = (): void =>
-			setUIBlock({
-				request: uiBlockBroker.getPending(ownerId),
-				queued: uiBlockBroker.getQueuedCount(ownerId),
-			});
+		const resnapshot = (): void => setUIBlocks(uiBlockBroker.getLive(ownerId));
 		resnapshot();
 		return uiBlockBroker.subscribe(resnapshot);
 	}, [uiBlockBroker, ownerId]);
 
-	const pendingUIBlock = ownerId && uiBlock.request?.ownerId === ownerId ? uiBlock.request : null;
+	const liveUIBlocks = useMemo(
+		() => (ownerId ? uiBlocks.filter((block) => block.ownerId === ownerId) : []),
+		[uiBlocks, ownerId],
+	);
+
+	/*
+	 * `update` deliberately does not notify subscribers — the script has already
+	 * drawn whatever changed, and a re-render here would remount the card and
+	 * destroy the interaction that called it. So this reads the broker directly
+	 * rather than from the snapshot above, which is exactly what a remount needs:
+	 * the state as of now, not as of the last render.
+	 */
+	const uiBlockState = useCallback(
+		(id: string) => uiBlockBroker?.getState(id) ?? null,
+		[uiBlockBroker],
+	);
 
 	const pendingQuestion = ownerId && ask.request?.ownerId === ownerId ? ask.request : null;
 
@@ -1076,10 +1091,12 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					contextWindow={snapshot.contextFill?.contextWindow}
 					onQuickAction={isExtensionBusy ? undefined : handleQuickAction}
 					suggestedActions={suggestedActions}
-					pendingUIBlock={pendingUIBlock}
-					queuedUIBlocks={pendingUIBlock ? uiBlock.queued : 0}
-					onCommitUIBlock={uiBlockBroker ? (id, data) => uiBlockBroker.commit(id, data) : undefined}
-					onDismissUIBlock={uiBlockBroker ? (id) => uiBlockBroker.dismiss(id) : undefined}
+					liveUIBlocks={liveUIBlocks}
+					uiBlockState={uiBlockState}
+					onUIBlockReady={uiBlockBroker ? (id) => uiBlockBroker.ready(id) : undefined}
+					onUIBlockMessage={uiBlockBroker ? (id, data) => uiBlockBroker.sendMessage(id, data) : undefined}
+					onUIBlockUpdate={uiBlockBroker ? (id, state) => uiBlockBroker.update(id, state) : undefined}
+					onCloseUIBlock={uiBlockBroker ? (id) => uiBlockBroker.close(id) : undefined}
 					onFailUIBlock={uiBlockBroker ? (id, error) => uiBlockBroker.fail(id, error) : undefined}
 					pendingQuestion={pendingQuestion}
 					queuedQuestions={pendingQuestion ? ask.queued : 0}

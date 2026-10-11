@@ -161,6 +161,7 @@ import {
 	type FrozenRunContext,
 	type InjectedNote,
 } from "./contextInjection";
+import { renderUIBlockMessage } from "./uiBlockMessage";
 import {
 	probeEnvironment,
 	probeRunContext,
@@ -1080,6 +1081,12 @@ export class ObsidianAgentService {
 		this.streamFn = options.streamFn;
 		this.askUserBroker = options.askUserBroker;
 		this.uiBlockBroker = options.uiBlockBroker;
+		/*
+		 * Registered here rather than passed to the broker's constructor: the broker
+		 * is built first — this service takes it as a dependency — so there is no
+		 * moment at which the composition root could hand it a method of ours.
+		 */
+		this.uiBlockBroker?.setMessageSink((message) => this.deliverUIBlockMessage(message));
 		this.silentScout =
 			options.silentScout ??
 			new SilentScout(this.app, async (request, signal) => {
@@ -1451,6 +1458,11 @@ export class ObsidianAgentService {
 		runtime.dispose();
 		this.subagentExtension.registry.killAllLive("teardown", runtime.sessionPath);
 		this.subagentExtension.registry.pruneOwner(runtime.sessionPath);
+		// A view now outlives the tool call that made it, so nothing else would
+		// ever close one belonging to a deleted conversation — it would sit in the
+		// broker holding its script's closures, and its `sendMessage` would be
+		// delivered to a runtime that no longer exists.
+		this.uiBlockBroker?.clearOwner(runtime.sessionPath);
 		this.runtimes.delete(runtime.sessionPath);
 		this.sessionManager.releaseSession(runtime.sessionPath);
 	}
@@ -1983,6 +1995,71 @@ export class ObsidianAgentService {
 		});
 		this.notify();
 		return true;
+	}
+
+	/**
+	 * Delivers a live UI view's message to the conversation that owns it.
+	 *
+	 * Wired as the broker's sink. The routing is the whole substance of this
+	 * method, and it is why it cannot be {@link sendPrompt}: that resolves the
+	 * *focused* runtime, which is right for the composer — the user types into the
+	 * conversation they are looking at — and wrong for every view. A view belongs
+	 * to the conversation whose agent presented it, which the user may have
+	 * navigated away from minutes ago, and a dashboard's button landing in
+	 * whichever chat happens to be on screen would be an answer arriving in a
+	 * stranger's transcript. `ownerId` is that conversation's `sessionPath`, so
+	 * this is a lookup rather than a guess.
+	 *
+	 * Busy conversations queue, exactly as a typed message does, which is also why
+	 * this reuses the prompt queue rather than reaching for pi's steering: a
+	 * steered message cuts the running reply short, and a button press is not an
+	 * interruption of the work it is answering.
+	 *
+	 * Dropped — not queued, not re-homed — when that conversation is gone or has
+	 * no agent. The view outlived its session, and there is nobody left the
+	 * message was for.
+	 */
+	private deliverUIBlockMessage(message: {
+		ownerId: string;
+		id: string;
+		title?: string;
+		payload: Record<string, unknown>;
+	}): void {
+		const rt = this.runtimes.get(message.ownerId);
+		if (!rt?.agent || rt.bookmarkClosing || this.disposed) {
+			this.log.debug("UI block message dropped: conversation gone", () => ({
+				uiId: message.id,
+				ownerId: message.ownerId,
+			}));
+			return;
+		}
+		const text = renderUIBlockMessage(message.title, message.payload);
+		/*
+		 * Queue while the agent is answering, send now when it is idle — the same
+		 * fork `sendPrompt` takes, for the same reason. The chip the queue raises is
+		 * what tells the user their press is waiting rather than lost.
+		 */
+		if (rt.agent.state.isStreaming) {
+			this.enqueuePrompt(rt, text, text, [], []);
+			return;
+		}
+		/*
+		 * The id is only a take-back handle, and this entry departs immediately
+		 * rather than sitting on a chip the user could take back. It is minted here
+		 * anyway — and named for the view rather than for the queue — because
+		 * `sendPromptEntries` restores entries to the queue when a dispatch fails,
+		 * and an entry that landed there with a colliding id would take the wrong
+		 * chip back.
+		 */
+		void this.sendPromptEntries(rt, [
+			{
+				id: `ui-block-${message.id}-${Date.now()}`,
+				text,
+				imageCount: 0,
+				stagedImages: [],
+				message: { role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
+			},
+		]);
 	}
 
 	/**
@@ -6924,6 +7001,11 @@ export class ObsidianAgentService {
 					outlines: frozen.outlines,
 					workspace: frozen.workspace,
 					today: new Date(),
+					// Read per request, not frozen with the refs: the point of this channel
+					// is that a view the user touched mid-loop is visible to the next turn
+					// without waking the agent, which a snapshot taken when the run
+					// departed would defeat.
+					uiBlocks: this.uiBlockBroker?.getContext(rt.sessionPath) ?? [],
 				});
 			},
 			initialState: {

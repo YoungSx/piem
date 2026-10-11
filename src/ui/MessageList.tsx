@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { messageReferences, type ContextReference } from "../agent/contextReference";
 import { ReferenceCards } from "./ReferenceCards";
 import { AttachmentCard } from "./AttachmentCard";
@@ -209,10 +209,20 @@ export interface MessageListProps {
 	queuedQuestions?: number;
 	onAnswerQuestion?: (id: string, answers: AskUserAnswer[]) => void;
 	onDismissQuestion?: (id: string) => void;
-	pendingUIBlock?: UIBlockRequest | null;
-	queuedUIBlocks?: number;
-	onCommitUIBlock?: (id: string, data: Record<string, unknown>) => void;
-	onDismissUIBlock?: (id: string) => void;
+	/**
+	 * Every live UI block in this conversation, oldest first.
+	 *
+	 * A list rather than a head: a delivered view does not hold the turn, so a
+	 * conversation can have a dashboard and a form open at once. Each renders at
+	 * the tool result that created it, which is where the agent put it.
+	 */
+	liveUIBlocks?: readonly UIBlockRequest[];
+	/** The state a live block should be remounted with, by id. */
+	uiBlockState?: (id: string) => Record<string, unknown> | null;
+	onUIBlockReady?: (id: string) => void;
+	onUIBlockMessage?: (id: string, data: Record<string, unknown>) => void;
+	onUIBlockUpdate?: (id: string, state: Record<string, unknown>) => void;
+	onCloseUIBlock?: (id: string) => void;
 	onFailUIBlock?: (id: string, error: string) => void;
 	/**
 	 * Extension widgets that asked for the "aboveEditor" seat, rendered here at
@@ -490,10 +500,12 @@ export function MessageList({
 	queuedQuestions = 0,
 	onAnswerQuestion,
 	onDismissQuestion,
-	pendingUIBlock = null,
-	queuedUIBlocks = 0,
-	onCommitUIBlock,
-	onDismissUIBlock,
+	liveUIBlocks = NO_UI_BLOCKS,
+	uiBlockState,
+	onUIBlockReady,
+	onUIBlockMessage,
+	onUIBlockUpdate,
+	onCloseUIBlock,
 	onFailUIBlock,
 	extensionTail,
 	transformMarkdown,
@@ -542,6 +554,69 @@ export function MessageList({
 	 */
 	const settledIndex = runSettled ? regenerateIndex : null;
 	const followUpActions = !onQuickAction || settledIndex === null ? [] : suggestedActions;
+	/*
+	 * The live views, resolved once for the whole transcript.
+	 *
+	 * Two sites mount these — a result row, and the tail for one with no row yet —
+	 * and both need the same bundle of request, state and callbacks. Built here so
+	 * neither site assembles its own, and so the tail's exclusion set and the
+	 * rows' lookup come from one pass rather than two that could disagree about
+	 * which views already have a row.
+	 *
+	 * The callbacks are read through a ref rather than closed over, and that is
+	 * load-bearing rather than tidy. The panel passes them as inline arrows, so
+	 * their identity changes on every render; a memo that depended on them would
+	 * rebuild this map every time, which would hand `MessageHistory` a fresh
+	 * `liveUIBlock` and re-render the whole settled transcript — the exact cost
+	 * that boundary exists to avoid. What may genuinely invalidate a bundle is the
+	 * view list, the transcript, or a view's published state; nothing else.
+	 */
+	const uiBlockHandlers = useRef({
+		onUIBlockReady,
+		onUIBlockMessage,
+		onUIBlockUpdate,
+		onCloseUIBlock,
+		onFailUIBlock,
+	});
+	uiBlockHandlers.current = {
+		onUIBlockReady,
+		onUIBlockMessage,
+		onUIBlockUpdate,
+		onCloseUIBlock,
+		onFailUIBlock,
+	};
+	const uiBlocks = useMemo(() => {
+		const renderable = new Map<string, UIBlockRenderable>();
+		for (const request of liveUIBlocks) {
+			renderable.set(request.id, {
+				request,
+				state: uiBlockState?.(request.id) ?? null,
+				onReady: () => uiBlockHandlers.current.onUIBlockReady?.(request.id),
+				onSendMessage: (data) => uiBlockHandlers.current.onUIBlockMessage?.(request.id, data),
+				onUpdate: (state) => uiBlockHandlers.current.onUIBlockUpdate?.(request.id, state),
+				onClose: () => uiBlockHandlers.current.onCloseUIBlock?.(request.id),
+				onFail: (error) => uiBlockHandlers.current.onFailUIBlock?.(request.id, error),
+			});
+		}
+		/*
+		 * Which views the transcript already has a home for. Read off the results
+		 * themselves rather than tracked separately: the result row *is* the home,
+		 * so its presence in `messages` is the fact, and a session reloaded from
+		 * disk answers it the same way a live one does.
+		 */
+		const housed = new Set<string>();
+		for (const message of messages) {
+			if (message.role !== "toolResult" || message.toolName !== PRESENT_UI_TOOL) continue;
+			const id = uiBlockOutcome(message.details)?.id;
+			if (id !== undefined) housed.add(id);
+		}
+		return {
+			byId: renderable,
+			tail: [...renderable.values()].filter((block) => !housed.has(block.request.id)),
+		};
+	}, [liveUIBlocks, messages, uiBlockState]);
+	const tailUIBlocks = uiBlocks.tail;
+	const liveUIBlock = useCallback((id: string) => uiBlocks.byId.get(id) ?? null, [uiBlocks]);
 	const transcriptRef = useRef<HTMLElement | null>(null);
 	/*
 	 * The follow gate, held twice because one fact needs two readers: this
@@ -602,7 +677,7 @@ export function MessageList({
 		// one scroll that covered `messages` would otherwise stay there. The
 		// extension tail likewise: `ChatApp` memoizes it on the widget snapshot,
 		// so a fresh node means a widget appeared or changed below the fold.
-	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, pendingUIBlock, followUpActions, extensionTail]);
+	}, [messages, pendingToolCalls, isStreaming, pendingQuestion, tailUIBlocks, followUpActions, extensionTail]);
 
 	const updateFollowState = (): void => {
 		const transcript = transcriptRef.current;
@@ -697,26 +772,33 @@ export function MessageList({
 					contextWindow={contextWindow}
 					transformMarkdown={transformMarkdown}
 					getMessageRenderer={getMessageRenderer}
+					liveUIBlock={liveUIBlock}
 				/>
 				{/*
-				 * The question sits at the tail, below the last thing said and above the
-				 * running-tools line — which is where the turn actually is: the tool that
-				 * asked is one of the calls that line is reporting, and it is blocked on
-				 * this. Inside the scroller rather than docked over the composer, because
-				 * "in the stream" is the whole point: it scrolls with the conversation and
-				 * the record that replaces it lands in the same place.
+				 * A view whose result row has not landed yet.
+				 *
+				 * There is a window where the view exists and its tool result does not: the
+				 * call does not return until the view reports that it mounted, and it cannot
+				 * mount without being rendered. So every view is rendered here first, at the
+				 * tail, and moves to its own result row once that arrives — one remount,
+				 * which is why the script is handed its state back and told to re-apply it.
+				 *
+				 * `tailUIBlocks` excludes anything that already has a row, which is what
+				 * keeps the two mount sites from both claiming the same view.
 				 */}
-				{pendingUIBlock && onCommitUIBlock ? (
+				{tailUIBlocks.map((block) => (
 					<UIBlockCard
-						key={pendingUIBlock.id}
-						request={pendingUIBlock}
+						key={block.request.id}
+						request={block.request}
 						app={app}
-						queued={queuedUIBlocks}
-						onCommit={(data) => onCommitUIBlock(pendingUIBlock.id, data)}
-						onDismiss={onDismissUIBlock ? () => onDismissUIBlock(pendingUIBlock.id) : undefined}
-						onFail={onFailUIBlock ? (error) => onFailUIBlock(pendingUIBlock.id, error) : undefined}
+						state={block.state}
+						onReady={block.onReady}
+						onSendMessage={block.onSendMessage}
+						onUpdate={block.onUpdate}
+						onClose={block.onClose}
+						onFail={block.onFail}
 					/>
-				) : null}
+				))}
 				{pendingQuestion && onAnswerQuestion && onDismissQuestion ? (
 					<AskUserCard
 						key={pendingQuestion.id}
@@ -844,6 +926,8 @@ interface MessageHistoryProps extends Pick<MessageListProps,
 	canEdit: boolean;
 	canFork: boolean;
 	runSettled: boolean;
+	/** See {@link MessageContext.liveUIBlock}; threaded through to the rows. */
+	liveUIBlock?: (id: string) => UIBlockRenderable | null;
 }
 
 /**
@@ -856,7 +940,7 @@ const MessageHistory = memo(function MessageHistory({
 	messages, isStreaming, pendingToolCalls, unpersistedMessages, app, component,
 	sourcePathRef, actionsRef, canRetry, canEdit, canFork, runSettled,
 	showAgentDetails, traceExpand, compactionEvent, compactionRetained, contextWindow,
-	transformMarkdown, getMessageRenderer,
+	transformMarkdown, getMessageRenderer, liveUIBlock,
 }: MessageHistoryProps): React.JSX.Element {
 	const t = useT();
 	const activeIndex = streamingIndex(isStreaming, messages);
@@ -868,7 +952,7 @@ const MessageHistory = memo(function MessageHistory({
 	const context: MessageContext = {
 		app, component, sourcePath: sourcePathRef.current, showAgentDetails, traceExpand,
 		foldPlan, pairPlan, liveRow, runningToolCalls, streamingMessageIndex: activeIndex, contextWindow, t,
-		transformMarkdown, getMessageRenderer,
+		transformMarkdown, getMessageRenderer, liveUIBlock,
 	};
 	const regenerateIndex = regenerableIndex(messages);
 	const editIndex = editableQuestionIndex(messages);
@@ -1453,6 +1537,44 @@ interface MessageContext {
 	transformMarkdown?: (markdown: string, context: MarkdownTransformContext) => string;
 	/** Optional extension custom message renderer lookup */
 	getMessageRenderer?: (customType: string) => MessageRenderer | undefined;
+	/**
+	 * How a `present_ui` result row finds out whether its view is still live.
+	 *
+	 * A delivered view outlives the call that created it, so the result row is not
+	 * a record of something finished — it is the view's place in the transcript.
+	 * The row cannot answer this from `details`: the result was written when the
+	 * view opened and says nothing about whether it is still open now. Only the
+	 * broker knows, so the lookup is carried here and the row asks by id.
+	 *
+	 * Absent when the panel has no broker, which is every test that renders a
+	 * transcript without one. Then every result row falls back to its receipt.
+	 */
+	liveUIBlock?: (id: string) => UIBlockRenderable | null;
+}
+
+/**
+ * Everything a result row needs to mount a live view in place.
+ *
+ * Bundled rather than passed as six lookups so the row's one question — "is this
+ * view live, and if so what does it need" — has one answer.
+ */
+/**
+ * The default for {@link MessageListProps.liveUIBlocks}, hoisted.
+ *
+ * A `= []` default in the parameter list mints a new array on every render, and
+ * the memo keyed on it would rebuild — re-rendering the whole settled transcript
+ * for every panel that has no views at all, which is almost all of them.
+ */
+const NO_UI_BLOCKS: readonly UIBlockRequest[] = [];
+
+export interface UIBlockRenderable {
+	request: UIBlockRequest;
+	state: Record<string, unknown> | null;
+	onReady: () => void;
+	onSendMessage: (data: Record<string, unknown>) => void;
+	onUpdate: (state: Record<string, unknown>) => void;
+	onClose: () => void;
+	onFail?: (error: string) => void;
 }
 
 /**
@@ -1832,17 +1954,36 @@ function ToolResultTrace({ message, context }: { message: ToolResultMessage; con
 	 * older session file, a hand edit — falls through to the ordinary row rather
 	 * than to an empty one.
 	 */
+	/*
+	 * A `present_ui` result is the one row that may not be a record at all.
+	 *
+	 * The call returns when the view mounts, so a result sitting here with its
+	 * view still open is the normal case, not a stale one — and this is where the
+	 * view belongs: the agent chose this point in the conversation to put it, and
+	 * a dashboard that jumped to the bottom of the transcript every time the panel
+	 * reopened would lose that. So the row asks the broker first and renders the
+	 * live view in place; the receipt is what is left when the answer is no.
+	 */
 	if (message.toolName === PRESENT_UI_TOOL && !message.isError) {
 		const outcome = uiBlockOutcome(message.details);
 		if (outcome) {
-			return (
-				<UIBlockReceipt
-					title={outcome.title}
-					action={outcome.action}
-					data={outcome.data}
-					dismissed={outcome.dismissed}
-				/>
-			);
+			const live = outcome.id ? context.liveUIBlock?.(outcome.id) : null;
+			if (live) {
+				return (
+					<UIBlockCard
+						key={live.request.id}
+						request={live.request}
+						app={context.app}
+						state={live.state}
+						onReady={live.onReady}
+						onSendMessage={live.onSendMessage}
+						onUpdate={live.onUpdate}
+						onClose={live.onClose}
+						onFail={live.onFail}
+					/>
+				);
+			}
+			return <UIBlockReceipt title={outcome.title} undelivered={outcome.undelivered} />;
 		}
 	}
 	if (message.toolName === ASK_USER_TOOL && !message.isError) {
