@@ -473,6 +473,18 @@ def main():
     finish_network_probe(args.port)
     evaluate(args.port, "(async () => { await app.plugins.plugins.piem.agentService.initialize(); return true; })()")
 
+    # `app.emulateMobile(true)` is written to the profile, so a root reused from
+    # a session that ran a mobile pass comes back up in phone mode and the
+    # desktop pass fails its own device-mode assertion. Land on desktop first,
+    # whatever the profile remembers. Only acts when the flag is actually set:
+    # emulateMobile reloads the window, and reloading for nothing costs 10s and
+    # re-races the plugin attach.
+    if not args.mobile_only and evaluate(args.port, "app.isMobile === true") is True:
+        print("Profile is latched in mobile emulation; returning to desktop...")
+        evaluate(args.port, "app.emulateMobile(false)")
+        wait_until(args.port, "app.isMobile === false", 30, "desktop mode")
+        wait_until(args.port, "!!window.app?.plugins?.plugins?.piem?.agentService", 60, "plugin after desktop reload")
+
     results = {"desktop": None, "mobile": None}
     if args.smoke is None:
         print(
