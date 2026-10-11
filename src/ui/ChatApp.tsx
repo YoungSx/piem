@@ -1080,6 +1080,7 @@ export function ChatApp({ service, inputController, component, draftStore, onOpe
 					queuedUIBlocks={pendingUIBlock ? uiBlock.queued : 0}
 					onCommitUIBlock={uiBlockBroker ? (id, data) => uiBlockBroker.commit(id, data) : undefined}
 					onDismissUIBlock={uiBlockBroker ? (id) => uiBlockBroker.dismiss(id) : undefined}
+					onFailUIBlock={uiBlockBroker ? (id, error) => uiBlockBroker.fail(id, error) : undefined}
 					pendingQuestion={pendingQuestion}
 					queuedQuestions={pendingQuestion ? ask.queued : 0}
 					onAnswerQuestion={askUserBroker ? (id, answers) => askUserBroker.answer(id, answers) : undefined}

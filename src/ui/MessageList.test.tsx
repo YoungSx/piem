@@ -1759,6 +1759,57 @@ describe("MessageList ask_user", () => {
 	});
 });
 
+describe("MessageList present_ui", () => {
+	it("draws no trace row for the call, so the component is not in the transcript twice", async () => {
+		const host = renderMessages([assistantToolCall("present_ui", { code: "container.createEl('div')" })]);
+		await flushRender();
+
+		expect(host.querySelector(".piem-chat__trace")).toBeNull();
+		expect(host.querySelector(".piem-chat__message--assistant")).toBeNull();
+	});
+
+	it("keeps the raw call visible under agent details", async () => {
+		const host = renderMessages([assistantToolCall("present_ui", { code: "container.createEl('div')" })], { showAgentDetails: true });
+		await flushRender();
+
+		expect(host.querySelector(".piem-chat__trace")).not.toBeNull();
+		const row = host.querySelector("article.piem-chat__message--assistant");
+		expect(row?.getAttribute("data-first-block")).toBe("trace");
+		expect(row?.getAttribute("data-last-block")).toBe("trace");
+	});
+
+	it("renders the completed outcome with action badge and key-value receipt", async () => {
+		const host = renderMessages([uiBlockResult({ dismissed: false, action: "approved", data: { target: "inbox" } })]);
+		await flushRender();
+
+		expect(host.querySelector(".piem-ui-block-card--completed")).not.toBeNull();
+		expect(host.querySelector(".piem-ui-block-card__action-badge")?.textContent).toBe("approved");
+		expect(host.querySelector(".piem-ui-block-card__value")?.textContent).toBe("inbox");
+		expect(host.querySelector("details")).toBeNull();
+	});
+
+	it("renders the pending UI block at the tail only when commit handler is provided", async () => {
+		const request = { id: "ui-0", ownerId: "chat-a", code: "container.createEl('button')", title: "Custom UI" };
+
+		const unwired = renderMessages([userMessage("Hello")], { pendingUIBlock: request });
+		await flushRender();
+		expect(unwired.querySelector(".piem-ui-block-card")).toBeNull();
+
+		const host = renderMessages([userMessage("Hello")], {
+			pendingUIBlock: request,
+			onCommitUIBlock: () => undefined,
+		});
+		await flushRender();
+
+		expect(host.querySelector(".piem-ui-block-card")).not.toBeNull();
+	});
+});
+
+function uiBlockResult(details: JsonObject): ToolResultMessage {
+	return { ...toolResult(details), toolName: "present_ui", content: [{ type: "text", text: "Interactive UI completed." }] };
+}
+
+
 /** An `ask_user` result carrying `details` as the transcript will read them back. */
 function askResult(details: JsonObject): ToolResultMessage {
 	return { ...toolResult(details), toolName: "ask_user", content: [{ type: "text", text: "The user answered:\nWhere to file: Inbox" }] };

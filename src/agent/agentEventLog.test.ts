@@ -86,6 +86,97 @@ describe("describeAgentEvent", () => {
 		expect(entry?.level).toBe("debug");
 		expect(entry?.detail).toEqual({ type: "future_event" });
 	});
+
+	it("enriches present_ui execution end with committed outcome, dataKeys and wait time", () => {
+		const entry = describeAgentEvent({
+			type: "tool_execution_end",
+			toolCallId: "call-ui",
+			toolName: "present_ui",			result: {
+				content: [{ type: "text", text: "ok" }],
+				details: {
+					dismissed: false,
+					action: "confirm",
+					data: { secretValue: "confidential", choice: 1 },
+					userWaitMs: 3450,
+				},
+			},
+			isError: false,
+		} as never, 3500);
+
+		expect(entry).toEqual({
+			level: "info",
+			message: "Tool finished: present_ui",
+			detail: {
+				tool: "present_ui",
+				toolCallId: "call-ui",
+				durationMs: 3500,
+				outcome: "committed",
+				action: "confirm",
+				dataKeys: ["secretValue", "choice"],
+				interactive: true,
+				userWaitMs: 3450,
+			},
+		});
+	});
+
+	it("marks present_ui dismissed with distinct message and outcome", () => {
+		const entry = describeAgentEvent({
+			type: "tool_execution_end",
+			toolCallId: "call-ui-2",
+			toolName: "present_ui",
+			result: {
+				content: [{ type: "text", text: "dismissed" }],
+				details: {
+					dismissed: true,
+					userWaitMs: 1200,
+				},
+			},
+			isError: false,
+		} as never, 1250);
+
+		expect(entry).toEqual({
+			level: "info",
+			message: "UI block dismissed",
+			detail: {
+				tool: "present_ui",
+				toolCallId: "call-ui-2",
+				durationMs: 1250,
+				outcome: "dismissed",
+				interactive: true,
+				userWaitMs: 1200,
+			},
+		});
+	});
+
+	it("enriches ask_user execution end with answered outcome and wait time", () => {
+		const entry = describeAgentEvent({
+			type: "tool_execution_end",
+			toolCallId: "call-ask",
+			toolName: "ask_user",
+			result: {
+				content: [{ type: "text", text: "answers" }],
+				details: {
+					dismissed: false,
+					answers: [{ question: "q", header: "h", selected: ["a"] }],
+					userWaitMs: 5000,
+				},
+			},
+			isError: false,
+		} as never, 5100);
+
+		expect(entry).toEqual({
+			level: "info",
+			message: "Tool finished: ask_user",
+			detail: {
+				tool: "ask_user",
+				toolCallId: "call-ask",
+				durationMs: 5100,
+				outcome: "answered",
+				interactive: true,
+				userWaitMs: 5000,
+			},
+		});
+	});
 });
 
 describe("extractToolErrorText", () => {

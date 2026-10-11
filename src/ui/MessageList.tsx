@@ -213,6 +213,7 @@ export interface MessageListProps {
 	queuedUIBlocks?: number;
 	onCommitUIBlock?: (id: string, data: Record<string, unknown>) => void;
 	onDismissUIBlock?: (id: string) => void;
+	onFailUIBlock?: (id: string, error: string) => void;
 	/**
 	 * Extension widgets that asked for the "aboveEditor" seat, rendered here at
 	 * the feed's tail — below the follow-up strip — instead of docked over the
@@ -493,6 +494,7 @@ export function MessageList({
 	queuedUIBlocks = 0,
 	onCommitUIBlock,
 	onDismissUIBlock,
+	onFailUIBlock,
 	extensionTail,
 	transformMarkdown,
 	getMessageRenderer,
@@ -712,6 +714,7 @@ export function MessageList({
 						queued={queuedUIBlocks}
 						onCommit={(data) => onCommitUIBlock(pendingUIBlock.id, data)}
 						onDismiss={onDismissUIBlock ? () => onDismissUIBlock(pendingUIBlock.id) : undefined}
+						onFail={onFailUIBlock ? (error) => onFailUIBlock(pendingUIBlock.id, error) : undefined}
 					/>
 				) : null}
 				{pendingQuestion && onAnswerQuestion && onDismissQuestion ? (

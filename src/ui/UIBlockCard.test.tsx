@@ -164,6 +164,34 @@ describe("UIBlockCard", () => {
 		expect(error?.textContent).toContain("UI code exploded");
 	});
 
+	it("notifies onFail when reporting error or dismissing broken card", async () => {
+		let failedError: string | null = null;
+		const req: UIBlockRequest = {
+			id: "req-err-report",
+			ownerId: "session-1",
+			code: `
+				throw new Error("Broken component");
+			`,
+		};
+
+		await mount(
+			<UIBlockCard
+				request={req}
+				app={mockApp()}
+				onCommit={() => undefined}
+				onDismiss={() => undefined}
+				onFail={(err) => {
+					failedError = err;
+				}}
+			/>,
+		);
+
+		const reportBtn = document.querySelector(".piem-ui-block-card__error-report") as HTMLButtonElement | null;
+		expect(reportBtn).not.toBeNull();
+		reportBtn?.click();
+		expect(String(failedError)).toContain("Broken component");
+	});
+
 	it("runs cleanup on unmount", async () => {
 		const req: UIBlockRequest = {
 			id: "req-4",

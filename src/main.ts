@@ -371,7 +371,7 @@ export default class PiemPlugin extends Plugin {
 			},
 		});
 		this.askUserBroker = askUserBroker;
-		const uiBlockBroker = new UIBlockBroker();
+		const uiBlockBroker = new UIBlockBroker({ logger: this.requirePluginLogger().logger });
 		this.uiBlockBroker = uiBlockBroker;
 		if (BUILTIN_SKILL_ASSET) {
 			this.builtinSkillInstaller = new BuiltinSkillInstaller({
