@@ -73,6 +73,7 @@ import {
 	type Translator,
 } from "./i18n";
 import { AskUserBroker } from "./tools/askUserBroker";
+import { UIBlockBroker } from "./tools/uiBlockBroker";
 import { AskUserModal } from "./ui/AskUserModal";
 import { isChatPanelVisible } from "./ui/panelVisibility";
 
@@ -112,6 +113,7 @@ export default class PiemPlugin extends Plugin {
 	 * outcome the tool already knows how to handle.
 	 */
 	private askUserBroker: AskUserBroker | null = null;
+	private uiBlockBroker: UIBlockBroker | null = null;
 	/**
 	 * Escalated dialogs by request id, so one settled elsewhere can be taken off
 	 * the screen. A map rather than a single slot because the broker serializes
@@ -369,6 +371,8 @@ export default class PiemPlugin extends Plugin {
 			},
 		});
 		this.askUserBroker = askUserBroker;
+		const uiBlockBroker = new UIBlockBroker();
+		this.uiBlockBroker = uiBlockBroker;
 		if (BUILTIN_SKILL_ASSET) {
 			this.builtinSkillInstaller = new BuiltinSkillInstaller({
 				version: this.manifest.version,
@@ -412,6 +416,7 @@ export default class PiemPlugin extends Plugin {
 				},
 				logger: this.requirePluginLogger().logger,
 				askUserBroker,
+				uiBlockBroker,
 				// The chat panel's model switcher writes `activeModelId`; this is what
 				// makes that write survive a reload, and it reconfigures the running
 				// agent on the way back. A mid-run write (issue #252) passes
@@ -463,6 +468,7 @@ export default class PiemPlugin extends Plugin {
 					this.draftStore ?? undefined,
 					(subagentId) => void this.activateSubagentView(subagentId),
 					askUserBroker,
+					uiBlockBroker,
 				),
 		);
 		this.registerView(VIEW_TYPE_PIEM_LOGS, (leaf) => this.createLogView(leaf));
@@ -739,6 +745,8 @@ export default class PiemPlugin extends Plugin {
 		// never settle, and a dismissal is an outcome the model already handles.
 		this.askUserBroker?.clear();
 		this.askUserBroker = null;
+		this.uiBlockBroker?.clear();
+		this.uiBlockBroker = null;
 		this.openAskModals.clear();
 	}
 

@@ -123,6 +123,7 @@ export const TOOL_CATALOG: Readonly<Record<string, ToolFacts>> = {
 	// agent details the row comes back, and the fold planner reads this table.
 	notify: { copyKey: "traceTool.notify", category: "other", icon: "bell" },
 	ask_user: { copyKey: "traceTool.askUser", category: "other", icon: "circle-help" },
+	present_ui: { copyKey: "traceTool.presentUI", category: "other", icon: "layout" },
 
 	// Reading a skill, which is not a note — hence `other`, not `read`.
 	read_skill: { copyKey: "traceTool.readSkill", category: "other", icon: "book-open" },

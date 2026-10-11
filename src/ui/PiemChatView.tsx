@@ -14,6 +14,7 @@ import { watchWindowFocus } from "./windowFocusWatch";
 import type { DraftStore } from "../session/DraftStore";
 import { getT } from "../i18n";
 import type { AskUserBroker } from "../tools/askUserBroker";
+import type { UIBlockBroker } from "../tools/uiBlockBroker";
 
 export class PiemChatView extends ItemView {
 	private readonly service: ObsidianAgentService;
@@ -35,6 +36,7 @@ export class PiemChatView extends ItemView {
 	 * escalation modal, and only the plugin holds all three.
 	 */
 	private readonly askUserBroker: AskUserBroker | undefined;
+	private readonly uiBlockBroker: UIBlockBroker | undefined;
 	private root: Root | null = null;
 
 	constructor(
@@ -43,12 +45,14 @@ export class PiemChatView extends ItemView {
 		draftStore?: DraftStore,
 		openSubagents?: (subagentId?: string) => void,
 		askUserBroker?: AskUserBroker,
+		uiBlockBroker?: UIBlockBroker,
 	) {
 		super(leaf);
 		this.service = service;
 		this.draftStore = draftStore;
 		this.openSubagents = openSubagents;
 		this.askUserBroker = askUserBroker;
+		this.uiBlockBroker = uiBlockBroker;
 		this.scope = new Scope(this.app.scope);
 		this.scope.register(["Mod"], "Enter", (event) => {
 			event.preventDefault();
@@ -172,6 +176,7 @@ export class PiemChatView extends ItemView {
 					draftStore={this.draftStore}
 					onOpenSubagents={this.openSubagents}
 					askUserBroker={this.askUserBroker}
+					uiBlockBroker={this.uiBlockBroker}
 				/>
 			</PanelErrorBoundary>,
 		);

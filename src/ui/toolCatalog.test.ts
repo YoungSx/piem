@@ -13,6 +13,7 @@ const { createObsidianTools } = await import("../tools/obsidianTools");
 const { createVaultHarnessContext } = await import("../vault/harnessAdapter");
 const { DEFAULT_SETTINGS } = await import("../settings");
 const { AskUserBroker } = await import("../tools/askUserBroker");
+const { UIBlockBroker } = await import("../tools/uiBlockBroker");
 const { createSubagentExtension } = await import("../subagent/extension");
 
 const MODEL = { id: "test-model", api: "openai-completions", provider: "test", contextWindow: 128_000, maxTokens: 4_096 } as unknown as Model<string>;
@@ -36,6 +37,7 @@ function shippedToolIds(): string[] {
 	const vaultTools = createObsidianTools(app, createVaultHarnessContext(app).env, settings, {
 		getSkills: () => [],
 		askUserBroker: new AskUserBroker(),
+		uiBlockBroker: new UIBlockBroker(),
 	});
 	const extension = createSubagentExtension({
 		createVaultTools: () => [],

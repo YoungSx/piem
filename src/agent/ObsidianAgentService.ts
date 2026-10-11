@@ -109,6 +109,7 @@ import {
 import { createObsidianTools } from "../tools/obsidianTools";
 import { resolveNoteEditor } from "../vault/noteEditor";
 import type { AskUserBroker } from "../tools/askUserBroker";
+import type { UIBlockBroker } from "../tools/uiBlockBroker";
 import {
 	fetchQuickActionSuggestions,
 	lastAssistantText,
@@ -747,6 +748,8 @@ export interface ObsidianAgentServiceOptions {
 	 * tool set entirely rather than offering a tool that would hang.
 	 */
 	askUserBroker?: AskUserBroker;
+	/** Where `present_ui` UI blocks go, shared with the chat panel. */
+	uiBlockBroker?: UIBlockBroker;
 	/**
 	 * User-level skill loader, overridable so tests stay out of the real home
 	 * directory; defaults to {@link loadUserSkills}. Receives the configured
@@ -1059,6 +1062,7 @@ export class ObsidianAgentService {
 	 * tool out of the set — see {@link ObsidianAgentServiceOptions.askUserBroker}.
 	 */
 	private readonly askUserBroker: AskUserBroker | undefined;
+	private readonly uiBlockBroker: UIBlockBroker | undefined;
 	private readonly silentScout: SilentScout;
 
 	constructor(
@@ -1075,6 +1079,7 @@ export class ObsidianAgentService {
 		this.noteSessionIndex = new NoteSessionIndex(50, vaultKey);
 		this.streamFn = options.streamFn;
 		this.askUserBroker = options.askUserBroker;
+		this.uiBlockBroker = options.uiBlockBroker;
 		this.silentScout =
 			options.silentScout ??
 			new SilentScout(this.app, async (request, signal) => {
@@ -1150,6 +1155,7 @@ export class ObsidianAgentService {
 					// has one attention, and the broker queues so two agents asking at
 					// once produce two cards in turn rather than two dialogs stacked.
 					askUserBroker: this.askUserBroker,
+					uiBlockBroker: this.uiBlockBroker,
 					ownerId,
 					keychain: this.keychain,
 				}),
