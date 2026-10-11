@@ -189,6 +189,35 @@ describe("present_ui", () => {
 		expect(textOf(result)).toContain("[Circular]");
 		expect(textOf(result)).toContain("[Element <button>]");
 	});
+
+	it("preserves shared references in directed acyclic graphs (DAGs)", async () => {
+		const broker = new UIBlockBroker();
+		const tool = createPresentUITool(app(), broker);
+
+		const pending = tool.execute("tool-call", { code: "/* test */" });
+		const shared = { enabled: true, count: 42 };
+		const payload = {
+			defaults: shared,
+			current: shared,
+			items: [shared, shared],
+		};
+
+		broker.commit(broker.getPending()?.id ?? "", payload);
+
+		const result = (await pending) as Result;
+		expect(result.details).toMatchObject({
+			dismissed: false,
+			data: {
+				defaults: { enabled: true, count: 42 },
+				current: { enabled: true, count: 42 },
+				items: [
+					{ enabled: true, count: 42 },
+					{ enabled: true, count: 42 },
+				],
+			},
+		});
+		expect(textOf(result)).not.toContain("[Circular]");
+	});
 });
 
 

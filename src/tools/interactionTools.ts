@@ -120,7 +120,7 @@ function isDOMNode(value: unknown): value is { tagName?: string } {
 	);
 }
 
-export function sanitizePayload(value: unknown, seen = new WeakSet<object>()): unknown {
+export function sanitizePayload(value: unknown, ancestors = new Set<object>()): unknown {
 	if (value === null || typeof value !== "object") {
 		if (typeof value === "function" || typeof value === "symbol") {
 			return undefined;
@@ -130,25 +130,30 @@ export function sanitizePayload(value: unknown, seen = new WeakSet<object>()): u
 		}
 		return value;
 	}
-	if (seen.has(value)) {
+	if (ancestors.has(value)) {
 		return "[Circular]";
-	}
-	seen.add(value);
-	if (Array.isArray(value)) {
-		return value.map((item) => sanitizePayload(item, seen));
 	}
 	if (isDOMNode(value)) {
 		const tagName = typeof value.tagName === "string" ? value.tagName.toLowerCase() : "node";
 		return `[Element <${tagName}>]`;
 	}
-	const result: Record<string, unknown> = {};
-	for (const [k, v] of Object.entries(value)) {
-		const sanitized = sanitizePayload(v, seen);
-		if (sanitized !== undefined) {
-			result[k] = sanitized;
+
+	ancestors.add(value);
+	try {
+		if (Array.isArray(value)) {
+			return value.map((item) => sanitizePayload(item, ancestors));
 		}
+		const result: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(value)) {
+			const sanitized = sanitizePayload(v, ancestors);
+			if (sanitized !== undefined) {
+				result[k] = sanitized;
+			}
+		}
+		return result;
+	} finally {
+		ancestors.delete(value);
 	}
-	return result;
 }
 
 export function createPresentUITool(
