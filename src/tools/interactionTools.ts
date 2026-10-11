@@ -111,6 +111,15 @@ const PresentUIParameters = Type.Object({
 	),
 });
 
+function isDOMNode(value: unknown): value is { tagName?: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"nodeType" in value &&
+		typeof value.nodeType === "number"
+	);
+}
+
 export function sanitizePayload(value: unknown, seen = new WeakSet<object>()): unknown {
 	if (value === null || typeof value !== "object") {
 		if (typeof value === "function" || typeof value === "symbol") {
@@ -128,8 +137,9 @@ export function sanitizePayload(value: unknown, seen = new WeakSet<object>()): u
 	if (Array.isArray(value)) {
 		return value.map((item) => sanitizePayload(item, seen));
 	}
-	if (typeof (value as any).nodeType === "number") {
-		return `[Element <${(value as Element).tagName?.toLowerCase() || "node"}>]`;
+	if (isDOMNode(value)) {
+		const tagName = typeof value.tagName === "string" ? value.tagName.toLowerCase() : "node";
+		return `[Element <${tagName}>]`;
 	}
 	const result: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(value)) {
@@ -175,7 +185,7 @@ export function createPresentUITool(
 				);
 			}
 
-			const payload = (sanitizePayload(rawPayload) as Record<string, any>) ?? {};
+			const payload = (sanitizePayload(rawPayload) as Record<string, unknown>) ?? {};
 			const action = typeof payload.action === "string" ? payload.action : undefined;
 			const summary = action
 				? `User submitted action "${action}"`
@@ -185,7 +195,7 @@ export function createPresentUITool(
 			try {
 				formattedJson = JSON.stringify(payload, null, 2);
 			} catch {
-				formattedJson = String(payload);
+				formattedJson = "{unserializable payload}";
 			}
 
 			return textResult(

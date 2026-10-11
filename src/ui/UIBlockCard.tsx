@@ -21,8 +21,16 @@ export interface UIBlockCardProps {
 	};
 	queued?: number;
 	app: App;
-	onCommit: (data: Record<string, any>) => void;
+	onCommit: (data: Record<string, unknown>) => void;
 	onDismiss?: () => void;
+}
+
+type AsyncFunctionConstructor = new (
+	...args: string[]
+) => (...args: unknown[]) => unknown;
+
+interface AsyncFunctionPrototype {
+	constructor: AsyncFunctionConstructor;
 }
 
 export function UIBlockCard({
@@ -56,17 +64,21 @@ export function UIBlockCard({
 
 		let isMounted = true;
 		let committed = false;
-		const safeCommit = (data?: Record<string, any>): void => {
+		const safeCommit = (data?: unknown): void => {
 			if (committed) return;
 			committed = true;
-			const payload = data && typeof data === "object" ? data : { value: data ?? true };
+			const payload =
+				data && typeof data === "object" && !Array.isArray(data)
+					? (data as Record<string, unknown>)
+					: { value: data ?? true };
 			onCommitRef.current(payload);
 		};
 
 		let cleanup: (() => void) | undefined;
 
 		try {
-			const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+			const asyncProto = Object.getPrototypeOf(async function () {}) as AsyncFunctionPrototype;
+			const AsyncFunction = asyncProto.constructor;
 			const runner = new AsyncFunction(
 				"container",
 				"obsidian",
@@ -74,8 +86,8 @@ export function UIBlockCard({
 				"commit",
 				`"use strict";\n${request.code}`,
 			);
-			const result = runner(container, obsidian, app, safeCommit);
-			if (result && typeof result.then === "function") {
+			const result: unknown = runner(container, obsidian, app, safeCommit);
+			if (result instanceof Promise) {
 				result
 					.then((resolved: unknown) => {
 						if (!isMounted) {
@@ -98,7 +110,7 @@ export function UIBlockCard({
 						}
 					});
 			} else if (typeof result === "function") {
-				cleanup = result;
+				cleanup = result as () => void;
 			}
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -165,20 +177,25 @@ export function UIBlockCard({
 export interface UIBlockReceiptProps {
 	title?: string;
 	action?: string;
-	data?: Record<string, any>;
+	data?: Record<string, unknown>;
 	dismissed?: boolean;
 }
 
-
 function formatReceiptValue(value: unknown): string {
-	if (typeof value === "object" && value !== null) {
+	if (value === null) return "null";
+	if (typeof value === "undefined") return "undefined";
+	if (typeof value === "object") {
 		try {
 			return JSON.stringify(value);
 		} catch {
-			return String(value);
+			return "{unserializable value}";
 		}
 	}
-	return String(value);
+	if (typeof value === "string") return value;
+	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+		return value.toString();
+	}
+	return "{unknown value}";
 }
 
 export function UIBlockReceipt({

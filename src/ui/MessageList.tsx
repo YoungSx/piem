@@ -211,7 +211,7 @@ export interface MessageListProps {
 	onDismissQuestion?: (id: string) => void;
 	pendingUIBlock?: UIBlockRequest | null;
 	queuedUIBlocks?: number;
-	onCommitUIBlock?: (id: string, data: Record<string, any>) => void;
+	onCommitUIBlock?: (id: string, data: Record<string, unknown>) => void;
 	onDismissUIBlock?: (id: string) => void;
 	/**
 	 * Extension widgets that asked for the "aboveEditor" seat, rendered here at
