@@ -660,9 +660,83 @@ describe("browser codemode tool contract", () => {
 			await tool.execute("default", { code: "return 1" });
 			await tool.execute("override", { code: '// @options: {"timeout_ms": 500}\nreturn 1' });
 			await tool.execute("above the retired ceiling", { code: '// @options: {"timeout_ms": 900000}\nreturn 1' });
-			expect(deadlines).toEqual([DEFAULT_TIMEOUT_MS, 500, 900_000]);
+			// The host rung, wired here for the first time: it covers a script that
+			// asks for nothing and loses to one that asks. Nothing in production
+			// supplies it today, so this is the contract a future host dial inherits.
+			const hostTool = createCodemodeTool(emptyHost, { ...runtime, timeoutMs: 7_000 });
+			await hostTool.execute("host default", { code: "return 1" });
+			await hostTool.execute("script wins", { code: '// @options: {"timeout_ms": 500}\nreturn 1' });
+			expect(deadlines).toEqual([DEFAULT_TIMEOUT_MS, 500, 900_000, 7_000, 500]);
 		} finally { window.setTimeout = original; }
 	});
+
+	// Deleting our ceiling moved the effective bound rather than removing it: what
+	// now stops an absurd `timeout_ms` is pi's own parser, and its limit is exactly
+	// `setTimeout`'s. That is the claim the comment on the retired constant makes,
+	// and it is the one thing that would turn deleting the clamp into a hole, so it
+	// is asserted here rather than trusted — measured against the real parser, with
+	// the boundary value itself reaching the timer the way it could not before.
+	//
+	// 0 and negatives matter more than the large end: our old `Math.min` never
+	// bounded them either, so a parser that let them through would arm a timer that
+	// fires on the first tick and kill every script instantly.
+	it("leaves an absurd deadline to pi's parser, whose limit is setTimeout's own", async () => {
+		const MAX = 2_147_483_647;
+		const tool = createCodemodeTool(emptyHost, runtime);
+		const rejected = ['{"timeout_ms": 0}', '{"timeout_ms": -1}', '{"timeout_ms": 1.5}', `{"timeout_ms": ${MAX + 1}}`, '{"timeout_ms": "600000"}'];
+		for (const options of rejected) {
+			const result = await tool.execute("rejected", { code: `// @options: ${options}\nreturn 1` });
+			expect(result.isError).toBe(true);
+			// Rejected by the parser as a source error, not by a timer firing.
+			expect(JSON.stringify(result.content)).toContain("timeout_ms");
+		}
+
+		const original = window.setTimeout;
+		const deadlines: number[] = [];
+		window.setTimeout = ((handler: TimerHandler, timeout?: number) => {
+			deadlines.push(timeout ?? 0);
+			return original(handler, timeout);
+		}) as typeof window.setTimeout;
+		try {
+			const accepted = await tool.execute("at the limit", { code: `// @options: {"timeout_ms": ${MAX}}\nreturn 1` });
+			expect(accepted.isError).toBeFalsy();
+			// Arrives whole. Under the retired clamp this was 600_000.
+			expect(deadlines).toContain(MAX);
+		} finally { window.setTimeout = original; }
+	}, 30_000);
+
+	// `Number.isFinite` is the guard pi uses to mean "arm no timer at all" — it is
+	// how its own tool runs unbounded. Our tool never passes `Infinity` (the default
+	// is a real number), so this is reachable only by a direct sandbox caller, and
+	// it is asserted because it is the difference between pi's posture and ours: the
+	// mechanism for no-deadline is present and works, we simply decline to use it.
+	it("arms no timer when a direct caller asks for no deadline", async () => {
+		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, tools: [] });
+		// Boot on the real clock and only then swap it. Stubbing across the worker
+		// handshake made this flaky 1-in-8: the boot path arms timers of its own, and
+		// replacing the global mid-handshake is a race the assertion does not care
+		// about. By the time the clock is swapped, the only timer left to observe is
+		// the deadline — which is the whole claim.
+		const warmup = await sandbox.execute("return 1");
+		expect(warmup.ok).toBe(true);
+
+		const original = window.setTimeout;
+		const deadlines: number[] = [];
+		window.setTimeout = ((handler: TimerHandler, timeout?: number) => {
+			deadlines.push(timeout ?? 0);
+			return original(handler, timeout);
+		}) as typeof window.setTimeout;
+		try {
+			const result = await sandbox.execute("return 1", { timeoutMs: Number.POSITIVE_INFINITY });
+			expect(result.ok).toBe(true);
+			// Not merely "no Infinity" — no deadline timer was armed for this run at all.
+			expect(deadlines).not.toContain(Number.POSITIVE_INFINITY);
+			expect(deadlines).not.toContain(DEFAULT_TIMEOUT_MS);
+		} finally {
+			window.setTimeout = original;
+			await sandbox.close();
+		}
+	}, 30_000);
 
 	// Awaited tool time counts against the deadline — that is the mechanism behind
 	// the whole complaint, and raising the default did not change it. So the thing
