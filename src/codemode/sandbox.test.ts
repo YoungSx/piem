@@ -212,11 +212,13 @@ describe("the QuickJS sandbox, running", () => {
 		expect(JSON.parse(result.payload.writes as string)).toEqual([["gone"]]);
 	}, 30_000);
 
-	it("runs with no interrupt flag at all, which is all a WebView leaves us", async () => {
+	it("runs an ordinary loop with no interrupt flag wired at all", async () => {
 		// A WebView is not cross-origin isolated, so `SharedArrayBuffer` is
-		// `undefined` there (measured in WebKit 26.4) and no flag can cross the worker
-		// boundary. `terminate()` is the mechanism; a normal run must be undisturbed
-		// by its absence.
+		// `undefined` there (measured in WebKit 26.4) and pi's host-set flag cannot
+		// cross the worker boundary. `terminate()` is the mechanism instead, and a
+		// normal run must be undisturbed by the flag's absence. This says nothing
+		// about whether an in-VM `interruptHandler` is possible — it is; see
+		// `workerSource.ts` — only that nothing here depends on one.
 		const result = await runInWorker("let s = 0; for (let i = 0; i < 1e5; i++) s += i; return s;", []);
 		expect(result.payload.ok).toBe(true);
 		expect(JSON.parse(result.payload.value as string)).toBe(4999950000);
@@ -633,12 +635,20 @@ describe("cancelling queued writes", () => {
 });
 
 const { createCodemodeTool } = await import("./tool");
+// Read rather than restated: a test that hardcoded the default would keep passing
+// after someone changed it, which is the failure this file has had once already.
+const { DEFAULT_TIMEOUT_MS } = await import("./sandbox");
 const { Type } = await import("typebox");
 describe("browser codemode tool contract", () => {
 	const runtime = { wasm: WASM_MODULE, workerSource: WORKER_SOURCE };
 	const emptyHost = () => ({ tools: () => [], executeTool: async () => ({ content: [], details: undefined }) });
 
-	it("uses the documented deadline unless explicitly overridden", async () => {
+	// The third case is the one with history. A ceiling of ours used to clamp it to
+	// 600_000 — a number pi does not have, in codemode or in bash — so a model that
+	// asked for fifteen minutes got ten and was told nothing. What the model asks
+	// for is now what it gets; `DEFAULT_TIMEOUT_MS` only covers a script that asks
+	// for nothing.
+	it("takes the script's deadline as given, and defaults to the documented one", async () => {
 		const original = window.setTimeout;
 		const deadlines: number[] = [];
 		window.setTimeout = ((handler: TimerHandler, timeout?: number) => {
@@ -649,10 +659,43 @@ describe("browser codemode tool contract", () => {
 			const tool = createCodemodeTool(emptyHost, runtime);
 			await tool.execute("default", { code: "return 1" });
 			await tool.execute("override", { code: '// @options: {"timeout_ms": 500}\nreturn 1' });
-			await tool.execute("clamp", { code: '// @options: {"timeout_ms": 900000}\nreturn 1' });
-			expect(deadlines).toEqual([120_000, 500, 600_000]);
+			await tool.execute("above the retired ceiling", { code: '// @options: {"timeout_ms": 900000}\nreturn 1' });
+			expect(deadlines).toEqual([DEFAULT_TIMEOUT_MS, 500, 900_000]);
 		} finally { window.setTimeout = original; }
 	});
+
+	// Awaited tool time counts against the deadline — that is the mechanism behind
+	// the whole complaint, and raising the default did not change it. So the thing
+	// worth pinning is that the message says so: a script killed here did nothing
+	// wrong, and a model that reads "timed out" without reading *why* will go
+	// looking for the bug in its own loop instead of asking for a larger number.
+	//
+	// Deliberately not written as "a slow chain now survives": with the default at
+	// 300_000 any chain short enough to test would have cleared the old 120_000 too,
+	// so such a test would pass against the code this change replaced.
+	it("blames the clock, not the script, when a tool chain outlasts the deadline", async () => {
+		const tool = createCodemodeTool(() => ({
+			tools: () => [{
+				name: "slow", label: "Slow", description: "Takes its time.",
+				executionMode: "parallel", parameters: { type: "object", properties: {} },
+				execute: async () => ({ content: [{ type: "text" as const, text: "done" }], details: undefined }),
+			} as never],
+			executeTool: async () => {
+				await new Promise(resolve => setTimeout(resolve, 400));
+				return { content: [{ type: "text" as const, text: "done" }], details: undefined };
+			},
+		}), runtime);
+		const result = await tool.execute("chain", {
+			code: '// @options: {"timeout_ms": 600}\nawait tools.slow({}); await tools.slow({}); return "survived";',
+		});
+		const text = JSON.stringify(result.content);
+		expect(result.isError).toBe(true);
+		expect(text).not.toContain("survived");
+		// The two parts a model needs: that the bound covers awaited tool time, and
+		// which dial raises it.
+		expect(text).toContain("awaiting tool calls");
+		expect(text).toContain("timeout_ms");
+	}, 30_000);
 
 	it("bounds printing and the return value together, preserving head and tail", async () => {
 		const tool = createCodemodeTool(emptyHost, runtime);

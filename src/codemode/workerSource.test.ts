@@ -55,10 +55,14 @@ describe("CODEMODE_WORKER_SOURCE", () => {
 		// dead code under a comment calling it the graceful path is worse than not
 		// having it.
 		//
-		// Asserted on the call, not the bare word: the comment explaining the absence
-		// names it, and an assertion on the word would fail on its own prose.
+		// Asserted on the construct, not the bare word: the comment explaining the
+		// absence names both, so a word-level assertion fails on the prose. The
+		// `SharedArrayBuffer` line used to be word-level and passed only because that
+		// prose happened to say "a plain ArrayBuffer" — it now says the full name, so
+		// the assertion is on construction, which is what the ban is actually about.
 		expect(CODEMODE_WORKER_SOURCE).not.toContain("interruptHandler:");
-		expect(CODEMODE_WORKER_SOURCE).not.toContain("SharedArrayBuffer");
+		expect(CODEMODE_WORKER_SOURCE).not.toContain("new SharedArrayBuffer");
+		expect(CODEMODE_WORKER_SOURCE).not.toContain("Atomics.");
 		expect(CODEMODE_WORKER_SOURCE).not.toContain("new Int32Array(interrupt)");
 	});
 

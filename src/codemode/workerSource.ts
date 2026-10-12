@@ -52,12 +52,23 @@ function crash(error) {
   post({ type: "crash", message: error && error.message ? String(error.message) : String(error) });
 }
 
-// No interrupt handler. pi installs one so Bun can stop a thread spinning inside
-// wasm, which Bun's terminate() cannot reach; a plain ArrayBuffer cannot stand in
-// for it, because postMessage structured-clones the buffer and the worker would
-// read a different one from the one the host writes — the flag would look wired
-// and never fire. The host ends a runaway script with terminate(), measured at
-// 301 ms in WebKit, so nothing is lost by leaving it out.
+// No interrupt handler, because there is nothing here for one to do.
+//
+// pi's is not a deadline: it reads a SharedArrayBuffer flag the host sets just
+// before terminate() (see pi's runtime/worker.js), because Node's terminate()
+// cannot reach a thread spinning inside wasm. Browser terminate() is synchronous
+// and reaches it — measured at 301 ms in WebKit — so the flag has no job here, and
+// a plain ArrayBuffer could not carry it anyway: postMessage structured-clones the
+// buffer, so the worker would read a different one from the one the host writes.
+//
+// That rules out pi's handler, not every handler, and the earlier version of this
+// comment ran the two together. quickjs-wasi does expose an interruptHandler
+// option, it runs inside this worker with no thread boundary to cross, and it
+// fires about once per 5,000 bytecode-level steps rather than once per
+// instruction as its own type comment says — cheap enough to read a clock in. So
+// an in-VM budget is available if one is ever wanted. It is not wanted today: the
+// host's own deadline is the resource backstop, and a budget here would bound the
+// script's own compute, which is not what has ever gone wrong. See #580.
 function createVM(wasm, memoryLimitBytes) {
   return __QUICKJS_WASI__.QuickJS.create({
     wasm: wasm,
@@ -248,8 +259,9 @@ ${BRIDGE_SOURCE}
  *
  * - `parentPort` becomes `onmessage`/`postMessage`.
  * - `workerData` becomes the init message the host posts first.
- * - The `SharedArrayBuffer` interrupt flag is gone rather than downgraded; see
- *   `createVM` for why a plain buffer cannot stand in for it.
+ * - The `SharedArrayBuffer` interrupt flag is gone, because what it exists for in
+ *   pi — reaching a thread Node's `terminate()` cannot — does not arise here; see
+ *   `createVM`.
  * - `wasi.fd_write` is a discard that *reports* the byte count. Returning 0
  *   makes libc believe nothing was written and retry forever.
  */

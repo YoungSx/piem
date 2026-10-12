@@ -214,10 +214,13 @@ async function runSmoke(root, expectMobile) {
 
 		// 10. The case that started this: a view presented from inside `codemode`.
 		//     The sandbox runs the model's script under a wall-clock deadline that
-		//     counts awaited tool time (`DEFAULT_TIMEOUT_MS`, two minutes), so while
-		//     the call waited for a commit, a dashboard drawn from a script could
-		//     only ever end in that deadline aborting it. Nothing in the sandbox
-		//     changed; the call returning on mount is what takes it out of range.
+		//     counts awaited tool time (`DEFAULT_TIMEOUT_MS`), so while the call
+		//     waited for a commit, a dashboard drawn from a script could only ever
+		//     end in that deadline aborting it. Nothing in the sandbox changed; the
+		//     call returning on mount is what takes it out of range. That deadline
+		//     has since risen to five minutes and lost its ceiling (#580), which
+		//     would only have moved the wall further away — hence the assertion
+		//     below is on the margin being orders out, not on clearing a number.
 		//     Driven through the real nested path — `executeNestedTool` → the broker
 		//     — rather than the broker alone, and `getCodemodeTool` works whatever
 		//     `codemodeMode` is, since the mode only governs what the model is told.
@@ -238,8 +241,12 @@ async function runSmoke(root, expectMobile) {
 			.filter(item => item.type === "text")
 			.map(item => item.text)
 			.join("\n");
-		record("codemode script completed instead of timing out", scripted.isError !== true && !/timed out/.test(scriptedText));
-		// Two minutes is the deadline; mounting a card is one React commit.
+		record(
+			"codemode script completed instead of being stopped by the deadline",
+			scripted.isError !== true && !/held its worker/.test(scriptedText),
+		);
+		// Mounting a card is one React commit, so this should land in milliseconds
+		// against a five-minute deadline — two orders of magnitude of margin.
 		record("codemode call returned nowhere near the sandbox deadline", scriptMs < 30_000);
 		record("script kept running after presenting", scriptedText.includes("script finished:"));
 		record("view rendered from inside the sandbox", document.querySelector(".smoke-codemode") !== null);

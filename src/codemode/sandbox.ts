@@ -5,7 +5,26 @@ import type { CodemodeCall, CodemodeError, CodemodeOutputItem, CodemodeResult, C
 import { quickJsWasmUrl } from "./runtimeAsset";
 import { CODEMODE_WORKER_SOURCE } from "./workerSource";
 
-export const DEFAULT_TIMEOUT_MS = 120_000;
+/**
+ * How long one script may hold a worker, absent an explicit `timeout_ms`.
+ *
+ * A deliberate divergence from pi, recorded because the previous number was not
+ * one: pi's own codemode tool passes `Number.POSITIVE_INFINITY`
+ * (`pi-coding-agent/dist/extensions/codemode/execute.js`), so no timer is armed
+ * at all, and its `MAX_TIMEOUT_MS` is `setTimeout`'s own ceiling — "unbounded" is
+ * pi's position across codemode *and* bash, not a codemode quirk. This value is
+ * `host.js`'s own fallback for direct callers, taken for one reason: pi runs in a
+ * CLI process, where a leaked worker is the operating system's problem and the
+ * user's terminal is right there; this runs inside the user's note app, and on
+ * mobile. The same reasoning as {@link DEFAULT_MEMORY_LIMIT_BYTES}, which is
+ * likewise lower than pi's.
+ *
+ * It is a resource backstop and nothing else. It does not bound the script's own
+ * work — time spent awaiting tool calls counts against it, so a script that
+ * chains slow tools is honest work, not a runaway, and the model's own
+ * `timeout_ms` is taken as given rather than clamped.
+ */
+export const DEFAULT_TIMEOUT_MS = 300_000;
 export const DEFAULT_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 const RESERVED_GLOBALS = new Set(["tools", "ALL_TOOLS", "console", "text", "image", "exit", "globalThis", "store", "load"]);
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -71,7 +90,12 @@ class Execution {
 		this.promise = new Promise(resolve => { this.settle = resolve; });
 		const timeoutMs = run.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		if (Number.isFinite(timeoutMs)) {
-			this.timer = window.setTimeout(() => this.finish({ kind: "timeout", message: `Execution timed out after ${timeoutMs} ms` }), timeoutMs);
+			// Says what the bound is, because it is not a judgement on the script:
+			// awaited tool time counts, so a slow tool chain lands here too.
+			this.timer = window.setTimeout(() => this.finish({
+				kind: "timeout",
+				message: `Execution held its worker for ${timeoutMs} ms and was stopped. This limit covers the whole script, including time spent awaiting tool calls. Raise it with a first line of // @options: {"timeout_ms": <ms>}.`,
+			}), timeoutMs);
 		}
 		if (run.signal?.aborted) this.onAbort();
 		else run.signal?.addEventListener("abort", this.onAbort, { once: true });

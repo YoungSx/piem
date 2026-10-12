@@ -172,7 +172,14 @@ async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
 		const started = performance.now();
 		const spin = await run('// @options: {"timeout_ms":200}\nwhile(true){}');
 		report.spinMs = Math.round(performance.now() - started);
-		check("runaway worker is terminated", spin.isError && /timed out/.test(text(spin)) && report.spinMs < 5000);
+		// The message changed when the deadline became a resource backstop rather
+		// than a verdict on the script: it now names the bound and the dial, so a
+		// model stopped by it knows to ask for a larger number. Asserted on both
+		// halves, because a message that only said "stopped" would be a regression.
+		check(
+			"runaway worker is terminated, and told why",
+			spin.isError && /held its worker/.test(text(spin)) && /timeout_ms/.test(text(spin)) && report.spinMs < 5000,
+		);
 		const hungry = await run('const all=[]; while(true) all.push(new Array(1e5).fill(0));');
 		check("VM heap limit is enforced", hungry.isError && /out of memory/i.test(text(hungry)));
 		const controller = new AbortController();
