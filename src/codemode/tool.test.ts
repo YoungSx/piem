@@ -3,6 +3,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 
 import { DEFAULT_INLINE_BUDGET, createCodemodeTool } from "./tool";
+import { DEFAULT_TIMEOUT_MS } from "./sandbox";
 import type { CodemodeToolHost } from "./tool";
 
 /**
@@ -149,6 +150,10 @@ describe("the options line", () => {
 		const built = createCodemodeTool(host([tool("read", "Read a note.")]));
 		expect(built.description).toMatch(/@options/);
 		expect(built.description).toMatch(/timeout_ms/);
+		// The figure is read off the constant for the same reason the deadline test
+		// imports it: a hardcoded "five minutes" here would keep telling the model
+		// five minutes after someone moved the backstop.
+		expect(built.description).toContain(`${DEFAULT_TIMEOUT_MS / 60_000} minutes`);
 	});
 });
 

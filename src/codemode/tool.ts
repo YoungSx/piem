@@ -87,6 +87,7 @@ function renderToolDeclarations(tools: readonly SandboxTool[], budget: number): 
 	return `${rendered}\n// ${hidden} more tool${hidden === 1 ? " is" : "s are"} not listed here (description budget reached). Use ALL_TOOLS.filter(...) in the script to discover ${hidden === 1 ? "it" : "them"}, then call through tools[name].`;
 }
 
+const DEFAULT_DEADLINE_MINUTES = DEFAULT_TIMEOUT_MS / 60_000;
 const USAGE = `Run JavaScript that calls tools as \`await tools.<name>(args)\`. Results the script
 reads stay inside it — only text(), console output, image(), and the return value
 reach this conversation. Each call runs in its own VM, as an async function body.
@@ -103,8 +104,9 @@ Discover tools and parameter declarations with
 Then call \`await tools[name](args)\` inside the script.
 
 A first line of \`// @options: {"timeout_ms": 900000, "max_output_tokens": 10000}\`
-sets the deadline and output budget. The default deadline is five minutes, with no
-maximum — ask for what your script needs. It bounds the whole script and counts
+sets the deadline and output budget. The default deadline is ${DEFAULT_DEADLINE_MINUTES} minutes, with no
+maximum of ours — ask for what your script needs, up to setTimeout's own limit
+of 2147483647. It bounds the whole script and counts
 time spent awaiting tool calls, so budget for the tools you call: a chain of slow
 ones needs a larger number, not a faster script. The VM heap is 64 MiB.
 max_output_tokens (default 10000, maximum 50000) caps printed text, return values
