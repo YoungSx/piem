@@ -249,7 +249,8 @@ describe("UIBlockBroker", () => {
 		 * The regression this guards is the one the old coupling made inevitable:
 		 * the tool call returns, its run ends, and the signal fires — which used to
 		 * reach through and tear the card off the screen while the user was using
-		 * it. Inside `codemode` that fired on a two-minute deadline.
+		 * it. Inside `codemode` that fired on the sandbox deadline, two minutes at
+		 * the time (five now, with no ceiling — #580).
 		 */
 		controller.abort();
 

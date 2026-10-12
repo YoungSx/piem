@@ -266,9 +266,16 @@ branch. Successful scripts persist their writes in the session log; failed
 scripts do not. Storing `undefined` deletes a key. Switching chats does not move
 an in-flight script or its stored values to the other chat.
 
-Obsidian uses a 64 MiB VM heap and a two-minute default deadline, with a maximum
-of ten minutes. The first-line `// @options:` object can set `timeout_ms` and
-`max_output_tokens` (default 10000, maximum 50000). The text budget covers printed
+Obsidian uses a 64 MiB VM heap and a five-minute default deadline. The first-line
+`// @options:` object can set `timeout_ms` and `max_output_tokens` (default 10000,
+maximum 50000). There is no ceiling on `timeout_ms`: what a script asks for is
+what it gets, and the default only covers a script that asks for nothing. The
+deadline bounds the whole script and counts time spent awaiting tool calls, so a
+chain of slow tools needs a larger number rather than a faster script — a script
+stopped by it is told as much. Both the heap and the default are lower than Pi's
+own (256 MiB, no deadline at all), for the same reason: Pi runs in a CLI process
+where a leaked worker is the operating system's problem, and this runs inside
+Obsidian, including on mobile. The text budget covers printed
 output, return values and errors together; truncation keeps the beginning and
 end, and preserves images. Unlike the terminal extension, no full-output file
 is written to an operating-system temp directory. Filter large results before

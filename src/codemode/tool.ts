@@ -12,7 +12,17 @@ import type { SandboxTool } from "./types";
 export const DEFAULT_INLINE_BUDGET = 3000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
 const MAX_ALLOWED_OUTPUT_TOKENS = 50_000;
-const MAX_ALLOWED_TIMEOUT_MS = 600_000;
+/**
+ * No ceiling on `timeout_ms`, deliberately.
+ *
+ * There was one — 600_000 — and it was ours, not pi's: pi caps `timeout_ms` at
+ * `setTimeout`'s own limit in both codemode and bash, which is to say it does not
+ * cap it. A ceiling here could only override the model's judgement with a number
+ * picked in the dark, and it sat underneath every per-tool dial that is already
+ * the model's to turn — `wait_subagent`, whose own ceiling we removed for this
+ * exact reason (`src/subagent/waitTool.ts`), and MCP's per-call `mcpTimeoutMs`.
+ * {@link DEFAULT_TIMEOUT_MS} is the backstop for a script that asks for nothing.
+ */
 export type CodemodeMode = "on" | "only";
 
 export interface CodemodeToolHost {
@@ -92,11 +102,15 @@ Discover tools and parameter declarations with
 \`text(ALL_TOOLS.filter(t => /keyword/i.test(t.name + " " + t.description)));\`
 Then call \`await tools[name](args)\` inside the script.
 
-A first line of \`// @options: {"timeout_ms": 180000, "max_output_tokens": 10000}\`
-sets the deadline and output budget. On Obsidian, the default is two minutes,
-up to ten minutes, with a 64 MiB VM heap. max_output_tokens (default 10000, maximum 50000) caps printed text, return values and errors together; truncated
-text keeps its beginning and end. Images are preserved. Full output is not saved
-outside the vault; filter large results before printing them.`;
+A first line of \`// @options: {"timeout_ms": 900000, "max_output_tokens": 10000}\`
+sets the deadline and output budget. The default deadline is five minutes, with no
+maximum — ask for what your script needs. It bounds the whole script and counts
+time spent awaiting tool calls, so budget for the tools you call: a chain of slow
+ones needs a larger number, not a faster script. The VM heap is 64 MiB.
+max_output_tokens (default 10000, maximum 50000) caps printed text, return values
+and errors together; truncated text keeps its beginning and end. Images are
+preserved. Full output is not saved outside the vault; filter large results before
+printing them.`;
 
 /** capture() pins the session before the first await, including nested calls. */
 export function createCodemodeTool(capture: () => CodemodeToolHost, options: CodemodeOptions = {}): AgentTool<typeof codemodeSchema> {
@@ -129,7 +143,7 @@ export function createCodemodeTool(capture: () => CodemodeToolHost, options: Cod
 			const sandbox = new CodemodeSandbox({
 				tools: scriptTools(host), wasm: options.wasm, workerSource: options.workerSource,
 				memoryLimitBytes: options.memoryLimitBytes,
-				timeoutMs: Math.min(source.options.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_ALLOWED_TIMEOUT_MS),
+				timeoutMs: source.options.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 				onOutput: item => output.push(item),
 			});
 			try {

@@ -16,10 +16,12 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
  *
  * - A dashboard could not exist. Anything the user was meant to *read* rather
  *   than submit held the tool call open until they dismissed it.
- * - Inside `codemode`, a card lived at most two minutes. The sandbox deadline
- *   (`codemode/sandbox.ts`) is wall-clock over the whole script, so a human
- *   taking longer than the deadline aborted the pending call, and the abort
- *   path tore the card off the screen mid-interaction.
+ * - Inside `codemode`, a card lived no longer than the sandbox deadline — two
+ *   minutes at the time. That deadline (`codemode/sandbox.ts`) is wall-clock over
+ *   the whole script, so a human taking longer than it aborted the pending call,
+ *   and the abort path tore the card off the screen mid-interaction. The number
+ *   has since risen and its ceiling is gone (#580), which would have widened the
+ *   window without closing it; the fix below is what closed it.
  * - One card per conversation. The queue presented only each owner's head, so a
  *   card nobody had answered yet blocked every later one behind it.
  *
