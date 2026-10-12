@@ -9,7 +9,7 @@ const WASM_MODULE = await WebAssembly.compile(WASM_BYTES);
 // The bridge is the source module's own constant, not a restatement: a test
 // that kept its own copy would pass against a bridge the plugin stopped using.
 const { BRIDGE_SOURCE, DISPOSAL_POLYFILL } = await import("./workerSource");
-const { CodemodeSandbox: CodemodeSandboxClass } = await import("./sandbox");
+const { CodemodeSandbox: CodemodeSandboxClass, DEFAULT_TIMEOUT_MS } = await import("./sandbox");
 // Imported as a value (the worker harness needs the constructor) and as a type
 // (the return annotations below). A dynamic `await import` binding satisfies
 // only the first, so the type is spelled out here rather than left to inference.
@@ -637,7 +637,6 @@ describe("cancelling queued writes", () => {
 const { createCodemodeTool } = await import("./tool");
 // Read rather than restated: a test that hardcoded the default would keep passing
 // after someone changed it, which is the failure this file has had once already.
-const { DEFAULT_TIMEOUT_MS } = await import("./sandbox");
 const { Type } = await import("typebox");
 describe("browser codemode tool contract", () => {
 	const runtime = { wasm: WASM_MODULE, workerSource: WORKER_SOURCE };
@@ -666,7 +665,19 @@ describe("browser codemode tool contract", () => {
 			const hostTool = createCodemodeTool(emptyHost, { ...runtime, timeoutMs: 7_000 });
 			await hostTool.execute("host default", { code: "return 1" });
 			await hostTool.execute("script wins", { code: '// @options: {"timeout_ms": 500}\nreturn 1' });
-			expect(deadlines).toEqual([DEFAULT_TIMEOUT_MS, 500, 900_000, 7_000, 500]);
+			// The script rung is parser-checked (0, -1, 1.5, "600000" all
+			// rejected above); the host rung has no parser, so its invalid values
+			// fall through to the default rather than arming a 0 ms first-tick
+			// kill — and NaN, which `Number.isFinite` would treat as "no
+			// deadline", falls through too. A dead host dial must not become an
+			// unbounded or instantly-dead sandbox.
+			const brokenHost = createCodemodeTool(emptyHost, { ...runtime, timeoutMs: 0 });
+			await brokenHost.execute("host zero", { code: "return 1" });
+			const nanHost = createCodemodeTool(emptyHost, { ...runtime, timeoutMs: Number.NaN });
+			await nanHost.execute("host nan", { code: "return 1" });
+			// The invalid host values fell through to the default, not to 0 or to
+			// no timer at all.
+			expect(deadlines).toEqual([DEFAULT_TIMEOUT_MS, 500, 900_000, 7_000, 500, DEFAULT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS]);
 		} finally { window.setTimeout = original; }
 	});
 
@@ -712,11 +723,13 @@ describe("browser codemode tool contract", () => {
 	// mechanism for no-deadline is present and works, we simply decline to use it.
 	it("arms no timer when a direct caller asks for no deadline", async () => {
 		const sandbox = new CodemodeSandbox({ wasm: WASM_MODULE, workerSource: WORKER_SOURCE, tools: [] });
-		// Boot on the real clock and only then swap it. Stubbing across the worker
-		// handshake made this flaky 1-in-8: the boot path arms timers of its own, and
-		// replacing the global mid-handshake is a race the assertion does not care
-		// about. By the time the clock is swapped, the only timer left to observe is
-		// the deadline — which is the whole claim.
+		// Boot on the real clock and only then swap it. With the wasm pre-supplied
+		// the boot path itself arms no window timers (the exact-equality assertion in
+		// the deadline test above proves that), so the 1-in-8 flake stubbing across
+		// boot caused was not boot timers leaking into the capture — it was the swap
+		// itself racing the handshake's promise resolution. Swapping after a
+		// completed run sidesteps the race entirely, leaving the deadline as the
+		// only timer a run could arm.
 		const warmup = await sandbox.execute("return 1");
 		expect(warmup.ok).toBe(true);
 
@@ -769,6 +782,11 @@ describe("browser codemode tool contract", () => {
 		// which dial raises it.
 		expect(text).toContain("awaiting tool calls");
 		expect(text).toContain("timeout_ms");
+		// And the first word is not a verdict against the script: the timeout
+		// message was rewritten to blame the clock, and prefixing it with
+		// "Script error" would hand that verdict right back.
+		expect(text).toContain("Script stopped");
+		expect(text).not.toContain("Script error");
 	}, 30_000);
 
 	it("bounds printing and the return value together, preserving head and tail", async () => {

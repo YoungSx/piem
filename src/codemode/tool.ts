@@ -5,24 +5,14 @@ import type { CodemodeJsonSchema, CodemodeStoreWrites } from "@earendil-works/pi
 import { MCP_TYPESCRIPT_PREAMBLE, mcpStructuredContentSchema, renderDeclarations, renderToolSample } from "@earendil-works/pi-codemode/declarations";
 import { CODEMODE_SOURCE_GRAMMAR, parseCodemodeSource } from "@earendil-works/pi-codemode/source";
 import { Type } from "typebox";
-import { CodemodeSandbox, DEFAULT_TIMEOUT_MS, type BrowserSandboxOptions } from "./sandbox";
+import { CodemodeSandbox, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_TIMEOUT_MS, type BrowserSandboxOptions } from "./sandbox";
 import { ScriptOutput } from "./output";
 import type { SandboxTool } from "./types";
 
 export const DEFAULT_INLINE_BUDGET = 3000;
 export const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
 const MAX_ALLOWED_OUTPUT_TOKENS = 50_000;
-/**
- * No ceiling on `timeout_ms`, deliberately.
- *
- * There was one — 600_000 — and it was ours, not pi's: pi caps `timeout_ms` at
- * `setTimeout`'s own limit in both codemode and bash, which is to say it does not
- * cap it. A ceiling here could only override the model's judgement with a number
- * picked in the dark, and it sat underneath every per-tool dial that is already
- * the model's to turn — `wait_subagent`, whose own ceiling we removed for this
- * exact reason (`src/subagent/waitTool.ts`), and MCP's per-call `mcpTimeoutMs`.
- * {@link DEFAULT_TIMEOUT_MS} is the backstop for a script that asks for nothing.
- */
+
 export type CodemodeMode = "on" | "only";
 
 export interface CodemodeToolHost {
@@ -88,6 +78,12 @@ function renderToolDeclarations(tools: readonly SandboxTool[], budget: number): 
 }
 
 const DEFAULT_DEADLINE_MINUTES = DEFAULT_TIMEOUT_MS / 60_000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/** The host dial's share of the parser's contract: a positive integer up to `setTimeout`'s own limit. */
+function validTimeout(ms: number | undefined): number | undefined {
+	return typeof ms === "number" && Number.isInteger(ms) && ms > 0 && ms <= MAX_TIMEOUT_MS ? ms : undefined;
+}
 const USAGE = `Run JavaScript that calls tools as \`await tools.<name>(args)\`. Results the script
 reads stay inside it — only text(), console output, image(), and the return value
 reach this conversation. Each call runs in its own VM, as an async function body.
@@ -106,9 +102,9 @@ Then call \`await tools[name](args)\` inside the script.
 A first line of \`// @options: {"timeout_ms": 900000, "max_output_tokens": 10000}\`
 sets the deadline and output budget. The default deadline is ${DEFAULT_DEADLINE_MINUTES} minutes, with no
 maximum of ours — ask for what your script needs, up to setTimeout's own limit
-of 2147483647. It bounds the whole script and counts
+of ${MAX_TIMEOUT_MS}. It bounds the whole script and counts
 time spent awaiting tool calls, so budget for the tools you call: a chain of slow
-ones needs a larger number, not a faster script. The VM heap is 64 MiB.
+ones needs a larger number, not a faster script. The VM heap is ${DEFAULT_MEMORY_LIMIT_BYTES / 1024 / 1024} MiB.
 max_output_tokens (default 10000, maximum 50000) caps printed text, return values
 and errors together; truncated text keeps its beginning and end. Images are
 preserved. Full output is not saved outside the vault; filter large results before
@@ -145,7 +141,18 @@ export function createCodemodeTool(capture: () => CodemodeToolHost, options: Cod
 			const sandbox = new CodemodeSandbox({
 				tools: scriptTools(host), wasm: options.wasm, workerSource: options.workerSource,
 				memoryLimitBytes: options.memoryLimitBytes,
-				timeoutMs: source.options.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+				// No ceiling on `timeout_ms`, deliberately: there was one — 600_000 —
+				// and it was ours, not pi's (pi caps at `setTimeout`'s own limit in
+				// both codemode and bash, which is to say it does not cap it). It sat
+				// underneath every per-tool dial that is already the model's to turn,
+				// and {@link DEFAULT_TIMEOUT_MS} remains the backstop for a script
+				// that asks for nothing. The script rung is bounded by pi's parser
+				// (positive integer up to `setTimeout`'s 2147483647); the host rung
+				// gets no such check, so `validTimeout` makes it here. `??` would be
+				// wrong twice over: a host's 0 is a real value that would arm a
+				// first-tick kill, and NaN fails Number.isFinite and would silently
+				// arm no deadline at all.
+				timeoutMs: source.options.timeoutMs ?? validTimeout(options.timeoutMs) ?? DEFAULT_TIMEOUT_MS,
 				onOutput: item => output.push(item),
 			});
 			try {
@@ -159,7 +166,14 @@ export function createCodemodeTool(capture: () => CodemodeToolHost, options: Cod
 					if (result.value !== undefined) output.push({ type: "text", text: typeof result.value === "string" ? result.value : JSON.stringify(result.value) });
 				} else {
 					const calls = result.calls.map(call => `${call.name} (${call.status})`).join(", ");
-					output.push({ type: "text", text: `Script error: ${result.error.stack ?? result.error.message}\n\nTool calls made before the failure (they are not undone): ${calls || "none"}.` });
+					// The prefix is the first thing a model reads, and "Script error"
+					// is a verdict the sandbox did not reach for a timeout or an
+					// abort: the script did nothing wrong, the budget ran out or the
+					// caller stopped it. Sending it hunting for a bug in its own loop
+					// is the confusion the timeout message was rewritten to prevent.
+					const verdict = result.error.kind === "timeout" || result.error.kind === "aborted" ? "Script stopped" : "Script error";
+					const label = result.error.kind === "timeout" || result.error.kind === "aborted" ? "Tool calls already made (they are not undone)" : "Tool calls made before the failure (they are not undone)";
+					output.push({ type: "text", text: `${verdict}: ${result.error.stack ?? result.error.message}\n\n${label}: ${calls || "none"}.` });
 				}
 				return {
 					content: output.content(),
