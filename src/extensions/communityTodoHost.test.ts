@@ -5,6 +5,7 @@ import { Logger } from "../logging/Logger";
 import { stubWindowMembers } from "../testUtils/windowStub";
 import { createExtensionConfigStore } from "./extensionConfigStore";
 import { CommunityHost } from "./communityHost";
+import type { ContextSession } from "./contextSession";
 import type { ExtensionUIAdapter, NativeExtensionSurface } from "./extensionUI";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -46,6 +47,7 @@ async function host(ui: ExtensionUIAdapter) {
 		getEntries: () => [], getBranch: () => branch, getSessionId: () => "session-1", getSessionFile: () => "Piem/session-1.jsonl",
 		getModel: () => model, getModels: () => [model], getThinkingLevel: () => "off", isIdle: () => true,
 		notify: () => {}, prepare: async () => {}, deliver: () => {},
+		session: { appendEntry: async () => {}, cancel: () => {}, dispose: () => {}, refresh: async () => {}, flush: async () => {}, getBranch: () => branch as any, getEntries: () => branch as any } as unknown as ContextSession,
 		logger: new Logger({ level: () => "debug", sinks: [] }),
 		otelEnvironment: () => ({}),
 		platform: {

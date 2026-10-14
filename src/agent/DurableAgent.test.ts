@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { MemoryStorage, StorageRejected, type StorageWrite, type Seq } from "@earendil-works/pi-durable";
+import { MemoryStorage, StorageRequestError, type StorageWrite, type Seq } from "@earendil-works/pi-durable";
 import { createAssistantMessageEventStream, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
@@ -188,12 +188,15 @@ test("failed prompt admission makes no provider request", async () => {
 	const session = await PiemSession.open(storage, metadata);
 	let requests = 0;
 	const agent = await makeAgent(session, () => { requests++; return stream(answer([])); });
-	storage.commit = async () => { throw new StorageRejected("Disk full"); };
+	storage.commit = async () => { throw new StorageRequestError("Disk full"); };
 	try {
 		await expect(agent.prompt("Question")).rejects.toThrow("Disk full");
 		expect(requests).toBe(0);
-		expect(await session.findEntries({ type: "message" })).toEqual([]);
-	} finally { await session.close(); }
+		const recovered = await PiemSession.open(storage.crashCopy(), metadata);
+		try {
+			expect(await recovered.findEntries({ type: "message" })).toEqual([]);
+		} finally { await recovered.close(); }
+	} finally { await session.close().catch(() => undefined); }
 });
 
 test("an explicit stop settles its task instead of leaving a resumable run", async () => {

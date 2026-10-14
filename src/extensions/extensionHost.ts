@@ -823,7 +823,7 @@ export async function createExtensionHost(factories: readonly StaticExtension[],
 				await start();
 				if (!runner.hasHandlers("before_agent_start")) return undefined;
 				return invoke(async () => {
-					const result = await runner.emitBeforeAgentStart(prompt, images, { cwd: "/vault", forceSystemPrompt: systemPrompt });
+					const result = await runner.emitBeforeAgentStart({ messageType: "user", prompt, images }, { cwd: "/vault", forceSystemPrompt: systemPrompt });
 					return { messages: result.messages, systemPrompt: buildSystemPrompt(result.systemPromptOptions) };
 				});
 			},

@@ -932,7 +932,10 @@ export class ObsidianSessionManager {
 	}
 
 	async buildSessionContextFor(path: string, lane = "main"): Promise<SessionContext> {
-		const session = this.getSessionFor(path);
+		let session = this.getSessionFor(path);
+		if (session.needsRecovery) {
+			session = await this.reloadSession(path);
+		}
 		const entries = await session.view(lane).findEntriesOnBranch({ order: "oldestFirst" });
 		const projection = projectSession(entries);
 		const config = await session.getConfiguration(lane);
@@ -1093,6 +1096,19 @@ export class ObsidianSessionManager {
 	 * The path must already be hydrated; this is a recovery for a live session,
 	 * not a loader.
 	 */
+	async reloadSession(path: string): Promise<PiSession> {
+		const target = normalizeFolderPath(path, { allowPluginInternals: true });
+		let live = this.hydrated.get(target);
+		if (!live) {
+			throw new Error(`No session loaded: ${target}`);
+		}
+		await live.session.close().catch(() => undefined);
+		const session = await this.repo(this.resolveSessionDir()).open(live.metadata);
+		live = { session, metadata: live.metadata };
+		this.hydrated.set(target, live);
+		return session;
+	}
+
 	async reconcileExternalDrift(path: string): Promise<SessionReconcileOutcome> {
 		const target = normalizeFolderPath(path, { allowPluginInternals: true });
 		let live = this.hydrated.get(target);
@@ -1101,7 +1117,7 @@ export class ObsidianSessionManager {
 		}
 		const recovered = live.session.needsRecovery;
 		if (recovered) {
-			await live.session.close();
+			await live.session.close().catch(() => undefined);
 			const session = await this.repo(this.resolveSessionDir()).open(live.metadata);
 			live = { session, metadata: live.metadata };
 			this.hydrated.set(target, live);

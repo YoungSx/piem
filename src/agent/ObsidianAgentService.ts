@@ -682,6 +682,10 @@ function isReportedInTranscript(
  * standardized on, now written once.
  */
 function causeMessage(cause: unknown): string {
+	if (cause && typeof cause === "object" && "cause" in cause && cause.cause) {
+		const nested = causeMessage(cause.cause);
+		if (nested) return nested;
+	}
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
@@ -8925,6 +8929,9 @@ export class ObsidianAgentService {
 		// re-reads it on the way in — and must never overwrite the snapshot's
 		// `sessionInfo` with its own stale copy.
 		if (rt.sessionPath !== this.sessionManager.getActiveSessionPath()) {
+			return;
+		}
+		if (this.sessionManager.getSessionFor(rt.sessionPath).needsRecovery) {
 			return;
 		}
 		const info = await this.sessionManager.getActiveSessionInfo();

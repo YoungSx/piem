@@ -58,6 +58,7 @@ export class ContextSession {
 			try {
 				const session = await this.source.load();
 				this.assertActive(epoch, session);
+				if (session.needsRecovery) return;
 				await this.readSnapshot(session, epoch);
 			} catch (error) {
 				this.snapshot = undefined;
@@ -149,8 +150,11 @@ export class ContextSession {
 
 	/** The upstream reset is part of its pending navigation, never a separate Vault write. */
 	branch(targetId: string): void {
-		this.current();
-		if (!this.navigation || this.navigation.targetId !== targetId) throw new Error("Only the pending context branch can be selected.");
+		const snapshot = this.current();
+		if (targetId === snapshot.leafId || targetId === this.navigation?.fromId || targetId === this.navigation?.targetId) {
+			return;
+		}
+		throw new Error("Only the pending context branch can be selected.");
 	}
 
 	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }> {

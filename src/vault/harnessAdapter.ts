@@ -33,7 +33,7 @@ export function adaptHarnessTool<TParameters extends TSchema, TDetails extends J
 				if (mimeType) return { content: [{ type: "image", mimeType, data: arrayBufferToBase64(bytes.slice().buffer) }], details: undefined };
 			}
 			if (result.isError) throw new Error(result.diagnostics?.map(item => item.message).join("\n") || "Pi file tool failed");
-			const content = [...(result.content ?? [])];
+			const content = [...(result.output ?? [])];
 			if (result.diagnostics?.length) content.push({ type: "text", text: result.diagnostics.map(item => `[${item.message}]`).join("\n") });
 			return { content, details: result.details };
 		},

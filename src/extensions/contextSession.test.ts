@@ -30,9 +30,13 @@ async function fixture(lane = "main") {
 		});
 	};
 	const bridge = new ContextSession({
-		load: async () => manager.getSessionFor(path),
+		load: async () => {
+			const current = manager.getSessionFor(path);
+			return current.needsRecovery ? await manager.reloadSession(path) : current;
+		},
 		assertAvailable: session => {
-			if (!available || session && session !== manager.getSessionFor(path)) throw new Error("Owner unavailable");
+			const current = manager.getSessionFor(path);
+			if (!available || (session && session !== current && !session.needsRecovery)) throw new Error("Owner unavailable");
 		},
 		navigate: async (request, session) => { navigations.push(request); await navigate(request, session); },
 	}, lane);

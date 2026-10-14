@@ -39,7 +39,7 @@ async function fixture() {
 			ctx.abortSignal?.addEventListener("abort", abort, { once: true });
 			try { await release.promise; }
 			finally { ctx.abortSignal?.removeEventListener("abort", abort); }
-			return { content: [{ type: "text" as const, text: "Saved" }] };
+			return { output: [{ type: "text" as const, text: "Saved" }] };
 		},
 	});
 	const registry = createRegistry();

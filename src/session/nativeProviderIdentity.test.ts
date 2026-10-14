@@ -92,7 +92,7 @@ test("native forks and task-owned child conversations receive independent provid
 			const child = await api.conversation(childId, ctx);
 			if (!child) throw new Error("Child conversation missing");
 			await submit(child, "Child question");
-			return { content: [{ type: "text" as const, text: "Child answered" }] };
+			return { output: [{ type: "text" as const, text: "Child answered" }] };
 		},
 	});
 	options.registry.install(defineExtension({ name: "identity-test", tools: [childTool] }));

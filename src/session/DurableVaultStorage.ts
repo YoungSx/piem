@@ -1,7 +1,7 @@
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { MemoryStorage } from "@earendil-works/pi-durable/storage/memory";
-import { StorageRejected, type Seq, type StorageWrite } from "@earendil-works/pi-durable";
+import { StorageRequestError, type Seq, type StorageWrite } from "@earendil-works/pi-durable";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { DataAdapter } from "obsidian";
 import { normalizeFolderPath } from "../vault/path";
@@ -11,7 +11,7 @@ import { parseDurableWrites, validateDurableReferences } from "./durableCommit";
 type StorageAdapter = Pick<DataAdapter, "read" | "write" | "append" | "stat">;
 type Fingerprint = { mtime: number; size: number };
 
-export class SessionChangedError extends StorageRejected {
+export class SessionChangedError extends StorageRequestError {
 	constructor(readonly path: string) {
 		super(`Conversation changed on disk: ${path}`);
 	}
@@ -87,18 +87,18 @@ export class DurableVaultStorage extends MemoryStorage {
 		}
 		let prepared;
 		try { prepared = this.prepareCommit(writes); }
-		catch (error) { throw new StorageRejected(error instanceof Error ? error.message : String(error), { cause: error }); }
+		catch (error) { throw new StorageRequestError(error instanceof Error ? error.message : String(error)); }
 		const line = `${JSON.stringify({ kind: "durable_commit", seq: prepared.seq, writes: prepared.writes })}\n`;
 		try {
 			await this.adapter.append(this.path, line);
 		} catch (error) {
 			// A rejected append may have written nothing, part, or the whole frame.
 			// Read back before classifying it: only exact unchanged bytes justify
-			// StorageRejected, which lets Pi discard the transaction and continue.
+			// StorageRequestError, which lets Pi discard the transaction and continue.
 			let actual: Uint8Array | undefined;
 			try { actual = sha256(new TextEncoder().encode(await this.adapter.read(this.path))); } catch { /* Unknown outcome. */ }
 			if (actual && equalDigest(actual, this.digest.clone().digest())) {
-				throw new StorageRejected(error instanceof Error ? error.message : String(error), { cause: error });
+				throw new StorageRequestError(error instanceof Error ? error.message : String(error));
 			}
 			const committed = this.digest.clone().update(new TextEncoder().encode(line)).digest();
 			if (!actual || !equalDigest(actual, committed)) {

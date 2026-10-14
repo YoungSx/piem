@@ -72,8 +72,10 @@ export class ExtensionModelSwitch {
 					catch (rollbackError) { this.source.reportFailure(rollbackError); }
 				}
 				if (ownsSession() && this.source.sessions.isLoaded(rt.sessionPath)) {
-					await this.source.sessions.ensureConfigurationFor(rt.sessionPath, { provider: oldModel.provider, modelId: oldModel.id }, rt.activeLane);
-					if (ownsSession() && nextThinking !== oldThinking) await this.source.sessions.appendThinkingLevelChangeFor(rt.sessionPath, oldThinking, rt.activeLane);
+					try {
+						await this.source.sessions.ensureConfigurationFor(rt.sessionPath, { provider: oldModel.provider, modelId: oldModel.id }, rt.activeLane);
+						if (ownsSession() && nextThinking !== oldThinking) await this.source.sessions.appendThinkingLevelChangeFor(rt.sessionPath, oldThinking, rt.activeLane);
+					} catch { /* best-effort rollback */ }
 				}
 				throw error;
 			} finally { rt.sessionOperations -= 1; release(); }

@@ -1,3 +1,4 @@
+import type { ObsidianSessionManager } from "../session/ObsidianSessionManager";
 import type { ExtensionUIAdapter } from "../extensions/extensionUI";
 import type { Session } from "../session/PiemSession";
 import type { ChatSnapshot } from "../agent/ObsidianAgentService";
@@ -28,10 +29,7 @@ interface ResearchPlugin {
 	saveSettings(options?: { reconfigure?: boolean }): Promise<void>;
 	settings: PiemSettings;
 	agentService: ResearchService;
-	sessionManager: {
-		getSessionFor(path: string): Session;
-		buildSessionContextFor(path: string): Promise<{ messages: ChatSnapshot["messages"] }>;
-	};
+	sessionManager: ObsidianSessionManager;
 }
 export interface WireStep { text?: string; tool?: { name: string; args: Record<string, unknown> }; error?: number }
 export interface WirePlan { chat?: WireStep[]; clarify?: WireStep; search?: WireStep }

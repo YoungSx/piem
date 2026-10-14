@@ -2,7 +2,7 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { JsonObject } from "@earendil-works/pi-ai";
 import type { CodemodeJsonSchema, CodemodeStoreWrites } from "@earendil-works/pi-codemode";
-import { MCP_TYPESCRIPT_PREAMBLE, mcpStructuredContentSchema, renderDeclarations, renderToolSample } from "@earendil-works/pi-codemode/declarations";
+import { renderDeclarations, renderToolSample } from "@earendil-works/pi-codemode/declarations";
 import { CODEMODE_SOURCE_GRAMMAR, parseCodemodeSource } from "@earendil-works/pi-codemode/source";
 import { Type } from "typebox";
 import { CodemodeSandbox, DEFAULT_MEMORY_LIMIT_BYTES, DEFAULT_TIMEOUT_MS, type BrowserSandboxOptions } from "./sandbox";
@@ -128,9 +128,7 @@ export function createCodemodeTool(capture: () => CodemodeToolHost, options: Cod
 				: "No session store is attached: store()/load() values last only within this call.";
 			const catalog = only || !tools.length ? renderToolDeclarations(tools, options.inlineBudget ?? DEFAULT_INLINE_BUDGET)
 				: "Every tool above can also be reached from inside a script. ALL_TOOLS lists them.";
-			const mcpTypes = tools.some(tool => mcpStructuredContentSchema(tool.outputSchema) !== undefined)
-				? `\n\nShared MCP types:\n${MCP_TYPESCRIPT_PREAMBLE}` : "";
-			return `${scope}${USAGE}\n\n${store}${mcpTypes}\n\n${catalog}`;
+			return `${scope}${USAGE}\n\n${store}\n\n${catalog}`;
 		},
 		execute: async (_id, params, signal) => {
 			const host = capture();

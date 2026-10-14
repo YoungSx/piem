@@ -67,12 +67,18 @@ describe("Pi durable storage through the Vault API", () => {
 		if (phase === "after") await write();
 		else await expect(write()).rejects.toThrow("Disk failed");
 		adapter.append = append;
-		if (phase === "partial") await expect(write()).rejects.toThrow("poisoned");
-		else await write();
-		await session.close(BACKGROUND_CONTEXT);
 		const reopened = await DurableVaultStorage.open(adapter, path);
-		const entries = await reopened.scanEntries({ conversationId: conversation.id }, 10, undefined, BACKGROUND_CONTEXT);
+		if (phase === "partial") {
+			expect(reopened.needsRecovery).toBe(true);
+		} else {
+			const next = createSession(reopened);
+			await next.commit(tx => tx.appendEntry(conversation.id, { kind: "pi.user", model: [{ role: "user", content: "saved", timestamp: 1 }] }), BACKGROUND_CONTEXT);
+			await next.close(BACKGROUND_CONTEXT);
+		}
+		const verified = await DurableVaultStorage.open(adapter, path);
+		const entries = await verified.scanEntries({ conversationId: conversation.id }, 10, undefined, BACKGROUND_CONTEXT);
 		expect(entries.items).toHaveLength(phase === "after" ? 2 : phase === "before" ? 1 : 0);
+		await verified.close();
 		await reopened.close();
 	});
 });

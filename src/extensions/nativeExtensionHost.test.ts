@@ -310,7 +310,7 @@ describe("native extension host", () => {
 		const events: string[] = [];
 		const host = await makeHost(pi => {
 			pi.on("before_agent_start", event => {
-				expect(event.prompt).toBe("hello");
+				if (event.messageType === "user") expect(event.prompt).toBe("hello");
 				return { systemPrompt: `${event.systemPrompt}\nextra`, message: { customType: "native", content: "context", display: false } };
 			});
 			pi.on("before_agent_start", (event, ctx) => {

@@ -51,7 +51,8 @@ describe("official bookmark on the existing Pi session", () => {
 		const append = f.memory.append.bind(f.memory);
 		f.memory.append = async () => { throw new Error("Storage failed"); };
 		await expect(f.host.run("bookmark", "Unsaved")).rejects.toThrow("Storage failed");
-		expect(await f.manager.getSessionFor(f.path).getLabel(f.id)).toBeUndefined();
+		const session = f.manager.getSessionFor(f.path).needsRecovery ? await f.manager.reloadSession(f.path) : f.manager.getSessionFor(f.path);
+		expect(await session.getLabel(f.id)).toBeUndefined();
 		f.memory.append = append;
 		expect((await f.host.run("bookmark", "Saved")).kind).toBe("saved");
 	});
