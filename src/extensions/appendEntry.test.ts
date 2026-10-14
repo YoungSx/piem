@@ -24,8 +24,14 @@ async function fixture(factory: ExtensionFactory) {
 	const { path } = await sessions.createSession({ provider: "test", modelId: "test", thinkingLevel: "off" });
 	await sessions.appendMessageFor(path, { role: "user", content: "Hello", timestamp: 0 });
 	const session = new ContextSession({
-		load: async () => sessions.getSessionFor(path),
-		assertAvailable: source => { if (source && source !== sessions.getSessionFor(path)) throw new Error("Retired session"); },
+		load: async () => {
+			const current = sessions.getSessionFor(path);
+			return current.needsRecovery ? await sessions.reloadSession(path) : current;
+		},
+		assertAvailable: source => {
+			const current = sessions.getSessionFor(path);
+			if (source && source !== current && !source.needsRecovery) throw new Error("Retired session");
+		},
 		navigate: async () => { throw new Error("Unexpected navigation"); },
 	});
 	const host = await CommunityHost.create({
@@ -39,7 +45,11 @@ async function fixture(factory: ExtensionFactory) {
 	await session.refresh();
 	return {
 		host, session, sessions, memory, path,
-		stored: () => sessions.getSessionFor(path).findEntries({ type: "custom", order: "oldestFirst" }),
+		stored: async () => {
+			const current = sessions.getSessionFor(path);
+			const live = current.needsRecovery ? await sessions.reloadSession(path) : current;
+			return live.findEntries({ type: "custom", order: "oldestFirst" });
+		},
 		close: async () => { host.dispose(); await host.closed(); },
 	};
 }

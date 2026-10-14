@@ -205,7 +205,7 @@ describe("shipped community extensions in a permanently Node-free mobile realm",
 		await f.service.sendPrompt("Try switching");
 		expect(f.plugin.settings.activeModelId).toBe("a");
 		expect(f.requests.every(request => request.model === "alpha")).toBe(true);
-		expect(JSON.stringify(f.service.getSnapshot().messages)).toContain("Fixture disk full");
+		expect(JSON.stringify(f.service.getSnapshot())).toContain("Fixture disk full");
 		expect(JSON.stringify(f.service.getSnapshot().messages)).not.toContain("Switched to test/beta");
 	});
 

@@ -1,19 +1,19 @@
 {
 	"@earendil-works/pi-coding-agent": {
-		"version": "1.1.0",
+		"version": "1.2.0",
 		"virtualRoot": "/pi",
 		"files": {
 			"dist/config.js": "b53418ca3bc54b70e18ccb192eb471696f5211c5aa2e80d68fe6fe3851ff23ae",
 			"dist/core/event-bus.js": "f96a9a13071b2832955608387bf2482bcaf5310ce667f32f85a0d5bca44f08e3",
 			"dist/core/exec.js": "6aed92abe5273445a9bddcd92d4178264d0a23890b54b175a0efc73b20cdf53f",
 			"dist/core/extensions/loader.js": "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
-			"dist/core/extensions/runner.js": "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36",
+			"dist/core/extensions/runner.js": "0e659fb4338069d91c4d0a3b032b51bf8d179a99e6417bc3e39e59b672aaec76",
 			"dist/core/extensions/wrapper.js": "ea82999a05ca0af25ed31e76aaaba6e5ce6b99b5fcde3681f0d74766e4935247",
 			"dist/core/pi-manifest.js": "2ae94bb81155fc66766a5643f21ec38e808177ec5f2271e77c82013971ae5c03",
 			"dist/core/source-info.js": "67562eea112e99f4a7880913143730bd90e3655381c0f353e3dd18c5e9f1ef07",
 			"dist/core/timings.js": "9bec37f6fcacd80ca07ad7bafdc6aec91821f691698aa9d81dcdd2d7d5b08531",
 			"dist/core/tools/tool-definition-wrapper.js": "02fe785c52294d14216605d40d5592ac2accd1a3125891523e2a6c87feb5810c",
-			"dist/modes/interactive/theme/theme.js": "3fe13a2a0e06ffdbed1354b1f5c53a1207d2273bbf2d4917e4f8d1a2bf200a81",
+			"dist/modes/interactive/theme/theme.js": "8099c3916f52b2bd43757e2a397e292a7b922d81dbdc07bc3bed27000be26378",
 			"dist/utils/child-process.js": "cfc7b3361e42b61ee75aecc2b436ff7462f7e4431b4b646da7166f3c5706c9b8",
 			"dist/utils/fs-watch.js": "63dd709b28ea300f7200d236154f21ccc31a174a6052ca46a9be8064e2bd44e3",
 			"dist/utils/paths.js": "d5d48c2b2b2442c7e72aee6e98a79d828a52dce9526b152288186834c1dcf4a5",
@@ -30,7 +30,8 @@
 			"dist/core/usage-totals.js": "aa324545a6bdc16293380b8b0d09dd960356b99c2f5d4870f1bc2046e590c465",
 			"dist/core/compaction/compaction.js": "573f0321e9a93a4e8dca8c327f6459082ac438d1bc8b6c3c171d90894dd1543c",
 			"dist/core/compaction/branch-summarization.js": "0327aead9ce78dab3c3c7e54779b5974ec41bcb769dd3024f0c61edcd9ebea7e",
-			"dist/core/compaction/utils.js": "f7b64982eba185f03051cc4baedf52fdb5747bb2104d2398aec3426d02a5aa80"
+			"dist/core/compaction/utils.js": "c7e234cf33528670658080b0c2f599f40a70459565c6c2a71d4a27cb0e4c5cfb",
+			"dist/modes/interactive/theme/theme-tokens.js": "13e1374e108358de6ce88b332a58a76c01a80d8659106cdd65fc2dc150708742"
 		}
 	},
 	"pi-assistant-provenance": {
@@ -57,23 +58,24 @@
 	},
 	"pi-web-search": {
 		"entry": "src/index.ts",
-		"version": "1.6.0",
+		"version": "1.7.0",
 		"virtualRoot": "/extensions/pi-web-search",
 		"files": {
-			"src/api.ts": "8624bbb87af6c846b08d915d88f48755fdf0ccf9c37eb08d1324769227d3d21f",
+			"src/api.ts": "f6208be4cadd6261de372d45b9046bf8f24d2e044a184edc2ab1484ee6d46c47",
 			"src/format.ts": "687d3768a82b3cfebdae38dd144cf9608eb195fc454c223b3c44f90225989e28",
-			"src/index.ts": "53bf8c2105a630ef8f48951f456739b46d18e49458be05406bcff7fb8fcd8252",
-			"src/providers/anthropic.ts": "fbba214c4a59410b8abf65e6cf831d652fd6637a2c8fb333b48fe0d8278d2bf6",
+			"src/index.ts": "9af9bba418b696c7c75316f82e1be3495c230540f31b76c76edf3ddc8b09c918",
+			"src/providers/anthropic.ts": "1a89ffe4ba2ccb51caec61fa6f323d20f362bfb04459169b631dbc0054f1388a",
 			"src/providers/auth.ts": "b5310fb81e5aa8914d8920814bb8514fb6dc5763018f2daa7ea1673596e79165",
-			"src/providers/config.ts": "d0792779529ed0aeed3ce7ee38e09de38eb37f3974834010f791776064082fba",
-			"src/providers/google.ts": "296c758a9aa097af432a2592337446c5e72bcde4c59e623b9a340a044ac2266a",
-			"src/providers/openai.ts": "611344cc00929f5a33e24fbdc7a65129b1f8ae6b47f8f23f78faa64ba8dcf11c",
+			"src/providers/config.ts": "a803a2361f0276db445eb2287b8a9ac1c3a65bd95f4905487dde96ca527e687e",
+			"src/providers/google.ts": "080dc593c93ae4d19cccc6c0648e109a4c27ddcab4e79983841ca08859bbf789",
+			"src/providers/openai.ts": "50726672b1e44f272938e8273d3696c7a7fc654589707233b7d34569057fd0e9",
 			"src/providers/results.ts": "7a4db43a8d90315df32201d7c2af6e7e127b31d83ed40c30929f601e2b6c588b",
 			"src/providers/sse.ts": "29c38c5f99bf33be97194de080811679745d98d4b768f7c88054754f55a2fbd8",
-			"src/providers/types.ts": "eff4cef43763c5a44432d566bfaf04aa3ed28027f4fafd88699677948a289346",
-			"src/url_context.ts": "9fbc0d6ce1947e932e03a26c29469969f10e52e10eb8d805493e6cbe001cd0af",
-			"src/utils.ts": "090033d1c4f774d88feabe12cbedc835b9c91b426629d114a9878bb75e6d914d",
-			"src/web_search.ts": "1b4bb1392e3f89fbe768886d0f1140bb0072cfa65663a1fec425e314ad2958d4"
+			"src/providers/types.ts": "2525b837028331c254d2c8d1dd68a8f6bc23a421896786bfb54b57d758420b0b",
+			"src/url_context.ts": "7f13599d41f43225a6b37c48347478add51c1b9f95a92b9816e999d82145028b",
+			"src/utils.ts": "9e7888fa75f29260110b6b0eb1918ed0a5ada013185a85a28908aca048770026",
+			"src/web_search.ts": "897fe12c21720ebbf51883ba066213b92ea43a503a0b6330a61458d22461cf37",
+			"src/providers/ollama.ts": "d7320e5e350cbe529be31f6d255caaf67d9be9a25edaa917cff430af340462ec"
 		}
 	},
 	"pi-clarify": {
@@ -87,40 +89,40 @@
 	},
 	"pi-context": {
 		"entry": "src/index.ts",
-		"version": "2.2.0",
+		"version": "2.3.0",
 		"virtualRoot": "/extensions/pi-context",
 		"files": {
-			"src/context.ts": "febf78f928205b4b5743fd20322b25304967a93624d35250907c56f75aedbb0f",
-			"src/index.ts": "624dc3410e8d1150595d71f18f0f2a43271fa819462e9c93be0e0501db65b1fb",
-			"src/utils.ts": "ae77807811b58ca88d4dae9080e6f1ab5ddce536fa273b43149c4cffde1f4b75"
+			"src/context.ts": "c0076ddeeb4ce94d6f47ed767515123b72e99113ebc8b7158afcbad28bdf9547",
+			"src/index.ts": "d0f1abeb191f9d6d259824281b34f30bca226691c405b60a876e53f071a7000d",
+			"src/utils.ts": "0b374fd575bc5bcba311c73a3a094058df96134a1ab04548c043156b4013dde6"
 		}
 	},
 	"@juicesharp/rpiv-todo": {
 		"entry": "index.ts",
-		"version": "2.12.0",
+		"version": "2.13.8",
 		"virtualRoot": "/extensions/@juicesharp/rpiv-todo",
 		"files": {
 			"index.ts": "509904d71a601ba2e2694c3f0fda1f014553eaafde1515ddd99dab8bb123d85a",
 			"config.ts": "3fe24b3d3b128cabcbafc80a41f72b20907fd0edbdd84c8c57c391e27ffd76db",
 			"todo-overlay.ts": "bcc44d001ff08cc4c42d019163d78214edc9df2f3ba9219080f01f13ad8520e3",
-			"todo.ts": "ae4b00e934d896ed73f15097758d31a34989b2512cc93cf86a47906c0ce58d27",
+			"todo.ts": "6aa3f9c55b12882b8952ddbac93353377377d918f7589cf2384f8ec3c7dbefc7",
 			"tool/response-envelope.ts": "69aa3f344092c7ab735588d6b71abbc3d3f132517a42e874a057361c9277dad3",
-			"tool/types.ts": "3bff6cf87cdd86d66ae75e9fe596e539cc8a918b50dd381c1312218f2d12497a",
+			"tool/types.ts": "b5639465d1920e1eb0dfcbc636976d03c65a57b511264083353e16fb535690c2",
 			"tool/sanitize.ts": "eea928b89bc7b1768e75f3123acb881e984fe1604435e6e2cd7b576a6006616c",
 			"state/invariants.ts": "fbbafd0194a8f3dda36a85e974a485590246f6246477b533089f36fa715150c6",
 			"state/store.ts": "65dcadb64b7aa6c2ebb2ff6ae85d70112af88fab045302f1820bf23b14770c1b",
 			"state/i18n-bridge.ts": "b84a2076629ed7c4a123f714ce250e6988bd2d92ff0fbf5d19bb4812a13d3f2d",
-			"state/replay.ts": "222eacd01e0ce983e2d7dd5597f31111c6344ef290908ba09f0fe9f556f8a5c0",
+			"state/replay.ts": "e5994626d9cd99fbf039b1e10abdb7d642b10f8fd578df5a1b3921633039444c",
 			"state/task-graph.ts": "8bf3ec428bd4796b32dea5ee5c15a2930818fb0fccda0c6ee60b777cf426075b",
 			"state/state.ts": "f4eba088903593409555c7305c1aa8da627520a3905caf3e81f7bd7eff708717",
 			"state/selectors.ts": "8d39f82bc7e49abcf9480e24f00590bd3609ddec323cd25a98ae3efb9e1584ba",
-			"state/state-reducer.ts": "7a68da0f7415f759f9b69fe09d8f08c24b179809d8d4393a32da7723416eb261",
+			"state/state-reducer.ts": "82153b078572a6d1ec2c8f8943b338df64ab8f371daf1ba1f5a4bc4cf95321c1",
 			"view/format.ts": "86e6055085c0a74adb86699333ebd998487713b804ef760baf0c1995f8ab1ed4"
 		},
 		"dependencies": {
 			"@juicesharp/rpiv-config": {
 				"entry": "index.ts",
-				"version": "2.12.0",
+				"version": "2.13.8",
 				"files": {
 					"index.ts": "e28cca50596e6017e9d6800710851f6910f70589a54b58edc936c66bad4224bf",
 					"config.ts": "fdd8de5c565c1c06c51f71276f3675aac7717abc2e124e4edf732487f688a75f"

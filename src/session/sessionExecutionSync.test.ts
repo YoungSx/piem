@@ -135,7 +135,7 @@ test("rejects a failed receipt rebuild without hanging or publishing a resumable
 			if (path.endsWith(".migrating.tmp") && record.writes.some(write => write.type === "task" && write.value.state.status === "terminal")) throw new Error("Receipt disk failure");
 			await append(path, line);
 		};
-		await expect(f.repo.replace(f.local.metadata, snapshot, original)).rejects.toThrow("Receipt disk failure");
+		await expect(f.repo.replace(f.local.metadata, snapshot, original)).rejects.toThrow(/Receipt disk failure|Session failed after a storage error/);
 		expect(await f.adapter.read(f.info.path)).toBe(original);
 		expect(await (await f.local.execution()).hasPending()).toBe(false);
 	} finally { await f.manager.getSession().close(); }

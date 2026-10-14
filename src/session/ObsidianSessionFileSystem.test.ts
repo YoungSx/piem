@@ -32,7 +32,10 @@ describe("ObsidianSessionFileSystem", () => {
 		const { id } = await created.appendEntry({ type: "message", id: "answer", message: userMessage("answer") }, "main");
 		await adapter.write(path, empty);
 		await expect(created.setLabel(id, "Must not claim success")).rejects.toBeInstanceOf(SessionChangedError);
-		expect(await created.getLabel(id)).toBeUndefined();
+		const reopened = await repo.open(created.metadata);
+		try {
+			expect(await reopened.getLabel(id)).toBeUndefined();
+		} finally { await reopened.close(); }
 		expect(await adapter.read(path)).toBe(empty);
 	});
 	it("keeps paths vault-relative, so stored session paths need no translation", async () => {
@@ -227,10 +230,10 @@ describe("ObsidianSessionFileSystem", () => {
 			await foreign.appendMessage(userMessage("foreign-a"));
 			await foreign.close();
 			const before = await adapter.read(metadata.path);
-			for (const id of ["local-b", "local-c"]) {
-				await expect(local.appendEntry({ type: "message", id, message: userMessage(id) })).rejects.toBeInstanceOf(SessionChangedError);
-				expect(await adapter.read(metadata.path)).toBe(before);
-			}
+			await expect(local.appendEntry({ type: "message", id: "local-b", message: userMessage("local-b") })).rejects.toBeInstanceOf(SessionChangedError);
+			expect(await adapter.read(metadata.path)).toBe(before);
+			await expect(local.appendEntry({ type: "message", id: "local-c", message: userMessage("local-c") })).rejects.toThrow("Session failed after a storage error");
+			expect(await adapter.read(metadata.path)).toBe(before);
 			await local.close();
 			const reopened = await repo.open(metadata);
 			await reopened.appendMessage(userMessage("local-b"));

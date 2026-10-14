@@ -811,7 +811,7 @@ export function debounce<T extends unknown[], V>(
  */
 export class SecretComponentStub {
 	value = "";
-	change: ((value: string) => unknown) | undefined;
+	change: ((value: string | null) => unknown) | undefined;
 
 	constructor(_app: unknown, containerEl: HTMLElement) {
 		containerEl.createEl("div", { cls: "piem-stub-secret-component" });
@@ -822,13 +822,13 @@ export class SecretComponentStub {
 		return this;
 	}
 
-	onChange(cb: (value: string) => unknown): this {
+	onChange(cb: (value: string | null) => unknown): this {
 		this.change = cb;
 		return this;
 	}
 
 	/** Fires the registered change callback, the way a user picking an entry does. */
-	pick(value: string): unknown {
+	pick(value: string | null): unknown {
 		return this.change?.(value);
 	}
 }

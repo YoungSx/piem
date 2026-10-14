@@ -32,7 +32,7 @@ export class PiemSession<TMetadata extends SessionMetadata = SessionMetadata> {
 	private readonly executions = new Map<ConversationId, SessionExecution>();
 	private constructor(readonly metadata: TMetadata, private readonly native: DurableSession, private readonly storage: Storage, private readonly registry: Registry,
 		private readonly executionFailures: Set<(error: unknown) => void>) {}
-	get needsRecovery(): boolean { return this.storage instanceof DurableVaultStorage && this.storage.needsRecovery; }
+	get needsRecovery(): boolean { return (this.storage instanceof DurableVaultStorage && this.storage.needsRecovery) || (this.native as { failure?: unknown }).failure !== undefined; }
 	matchesStoredContent(content: string): boolean {
 		return this.storage instanceof DurableVaultStorage && this.storage.matchesContent(content);
 	}

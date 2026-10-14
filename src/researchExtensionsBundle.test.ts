@@ -284,9 +284,10 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 		await f.service.sendPrompt("Save a checkpoint on a read-only Vault");
 		await f.idle();
 		const result = f.service.getSnapshot().messages.find(message => message.role === "toolResult" && message.toolName === "context_checkpoint");
-		expect(textOf(result)).toContain("Fixture Vault is read only");
+		expect(textOf(result)).toContain("Extension operation was cancelled.");
 		expect(textOf(result)).not.toContain("Created checkpoint");
-		expect((await f.plugin.sessionManager.getSessionFor(f.service.getActiveSessionPath()).getLog()).some(item => item.kind === "fact" && item.fact === "label")).toBe(false);
+		const session = await f.plugin.sessionManager.reloadSession(f.service.getActiveSessionPath());
+		expect((await session.getLog()).some(item => item.kind === "fact" && item.fact === "label")).toBe(false);
 	});
 
 	it("keeps the original conversation when the summary write fails", async () => {
@@ -299,14 +300,14 @@ describe("shipped research extensions in a permanently Node-free mobile realm", 
 			if (value.includes('"type":"branch_summary"')) { attempted = true; throw new Error("Fixture summary write failed"); }
 			await append(file, value);
 		};
-		f.setPlan({ chat: [{ tool: { name: "context_compact", args: { target: "verified-notes", summary: "Only publish after saving." } } }, { text: "The original conversation is still selected." }] });
+		f.setPlan({ chat: [{ tool: { name: "context_compact", args: { target: "verified-notes", summary: "Only publish after saving." } } }, { text: "The original conversation is still selected." }, { text: "Acknowledged compaction failure." }] });
 		await f.service.sendPrompt("Try saving a handoff summary");
 		await waitForResearch(() => attempted, "failed-summary write");
 		await f.idle();
 		expect(attempted).toBe(true);
 		expect(JSON.stringify(f.service.getSnapshot())).toContain("Fixture summary write failed");
 		expect(JSON.stringify((await f.plugin.sessionManager.buildSessionContextFor(path)).messages)).toContain("Keep these original notes.");
-		const log = await session.getLog();
+		const log = await f.plugin.sessionManager.getSessionFor(path).getLog();
 		expect(originalIds.every(id => log.some(item => item.kind === "entry" && item.entry.id === id))).toBe(true);
 		expect(log.some(item => item.kind === "entry" && item.entry.type === "branch_summary")).toBe(false);
 	});

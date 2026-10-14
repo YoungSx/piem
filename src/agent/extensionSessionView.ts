@@ -22,6 +22,9 @@ export function extensionSessionView(options: {
 			const current = ++revision;
 			const lane = options.lane();
 			const session = options.sessions.getSessionFor(options.path);
+			if (session.needsRecovery) {
+				return;
+			}
 			const sameSession = loadedSession === session;
 			const changes = await session.getLog({ afterSeq: sameSession ? latestSeq : undefined });
 			const leaf = await session.view(lane).getLeafId();

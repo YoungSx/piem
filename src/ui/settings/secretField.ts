@@ -110,7 +110,8 @@ function addKeychainKeyField(containerEl: HTMLElement, options: SecretKeyFieldOp
 		.addComponent((el) =>
 			new SecretComponent(options.app, el)
 				.setValue(options.secretRef)
-				.onChange((id) => {
+				.onChange((rawId) => {
+					const id = rawId ?? "";
 					// Resolve immediately: the draft's plaintext has to match the
 					// binding or the in-memory invariant breaks the moment the
 					// form saves.
