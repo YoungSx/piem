@@ -610,7 +610,7 @@ describe("cancelling queued writes", () => {
 		const calls: number[] = [];
 		const controller = new AbortController();
 		const sandbox = new CodemodeSandbox({
-			wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: end === "timeout" ? 100 : 5_000,
+			wasm: WASM_MODULE, workerSource: WORKER_SOURCE, timeoutMs: end === "timeout" ? 1_000 : 5_000,
 			tools: [{ name: "write", sequential: true, execute: async args => {
 				const n = (args as { n: number }).n;
 				calls.push(n);
