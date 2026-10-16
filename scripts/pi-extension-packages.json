@@ -1,6 +1,6 @@
 {
 	"@earendil-works/pi-coding-agent": {
-		"version": "1.2.0",
+		"version": "1.3.0",
 		"virtualRoot": "/pi",
 		"files": {
 			"dist/config.js": "b53418ca3bc54b70e18ccb192eb471696f5211c5aa2e80d68fe6fe3851ff23ae",
@@ -24,7 +24,7 @@
 			"dist/core/system-prompt.js": "ab02924fa078eef81addcf39bc0e43d3663f06d627cb42ead403662a004a9e5c",
 			"dist/core/skills.js": "0e20ec500ed9783d5b01b5399e6600134fc3fdd10e6dc46c9113bc01565c9aa5",
 			"dist/core/messages.js": "8688b3f6eb28865f779cac998bd4754d1a4f08703200dfe0dd5a799aa0d42ef6",
-			"dist/core/prompt-templates.js": "f378bb43f6a5ee8e7a2e1b53fe8d91a6e0504d96d3a724a97a58c3bd9b647555",
+			"dist/core/prompt-templates.js": "7661704470a957c98d63132b178cb4b8238a268ff9ad25c1ad2a3e705ec4e41c",
 			"dist/utils/frontmatter.js": "3e1a0e99ecc419748d87202a342dd315160764cf8588551cefcf780208165da5",
 			"dist/core/session-manager.js": "046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926",
 			"dist/core/usage-totals.js": "aa324545a6bdc16293380b8b0d09dd960356b99c2f5d4870f1bc2046e590c465",
@@ -49,7 +49,7 @@
 		"virtualRoot": "/extensions/pi-model-switch"
 	},
 	"pi-invisible-continue": {
-		"version": "0.3.16",
+		"version": "0.3.17",
 		"files": {
 			"continue.ts": "840726e68cfb992152ec83a828b86aa1bd35ab24b094a542b5281d4b85a5a0f1",
 			"src/index.ts": "6cf6ce6812b020efd1e156eaf9515b762d7f8f98da8ea8e49309ee64fcfbfd4d"
