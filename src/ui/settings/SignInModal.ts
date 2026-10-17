@@ -303,7 +303,7 @@ class SignInModal extends Modal {
 		const input = this.body.createEl("input", {
 			type: "text",
 			cls: "piem-sign-in-paste",
-			attr: { placeholder: placeholder ?? "", spellcheck: "false" },
+			attr: { placeholder: placeholder ?? "", spellcheck: "false", "aria-label": t.t("signIn.pastePrompt") },
 		});
 		new Setting(this.body)
 			.addButton((button) => {
