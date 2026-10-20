@@ -49,7 +49,7 @@
 		"virtualRoot": "/extensions/pi-model-switch"
 	},
 	"pi-invisible-continue": {
-		"version": "0.3.17",
+		"version": "0.3.18",
 		"files": {
 			"continue.ts": "840726e68cfb992152ec83a828b86aa1bd35ab24b094a542b5281d4b85a5a0f1",
 			"src/index.ts": "6cf6ce6812b020efd1e156eaf9515b762d7f8f98da8ea8e49309ee64fcfbfd4d"
@@ -99,32 +99,32 @@
 	},
 	"@juicesharp/rpiv-todo": {
 		"entry": "index.ts",
-		"version": "2.13.8",
+		"version": "2.13.9",
 		"virtualRoot": "/extensions/@juicesharp/rpiv-todo",
 		"files": {
-			"index.ts": "509904d71a601ba2e2694c3f0fda1f014553eaafde1515ddd99dab8bb123d85a",
+			"index.ts": "3dd531ae484803e320923f5b72e9ab15cd223cb37f72a283b3232a82f70d639e",
 			"config.ts": "3fe24b3d3b128cabcbafc80a41f72b20907fd0edbdd84c8c57c391e27ffd76db",
-			"todo-overlay.ts": "bcc44d001ff08cc4c42d019163d78214edc9df2f3ba9219080f01f13ad8520e3",
-			"todo.ts": "6aa3f9c55b12882b8952ddbac93353377377d918f7589cf2384f8ec3c7dbefc7",
-			"tool/response-envelope.ts": "69aa3f344092c7ab735588d6b71abbc3d3f132517a42e874a057361c9277dad3",
+			"todo-overlay.ts": "3c26991b44a5d9436ca70399555787a239bcf7554c1f985cdae467ececed75c8",
+			"todo.ts": "f18bd3a3c5db58a3be252e201d7cafbc2c3f26e2f4d0e2beb99d3243ff94445d",
+			"tool/response-envelope.ts": "031e55dce17c84a857d80f3ebddcf234898795a6baec1a761b7c057ac808e966",
 			"tool/types.ts": "b5639465d1920e1eb0dfcbc636976d03c65a57b511264083353e16fb535690c2",
 			"tool/sanitize.ts": "eea928b89bc7b1768e75f3123acb881e984fe1604435e6e2cd7b576a6006616c",
-			"state/invariants.ts": "fbbafd0194a8f3dda36a85e974a485590246f6246477b533089f36fa715150c6",
-			"state/store.ts": "65dcadb64b7aa6c2ebb2ff6ae85d70112af88fab045302f1820bf23b14770c1b",
-			"state/i18n-bridge.ts": "b84a2076629ed7c4a123f714ce250e6988bd2d92ff0fbf5d19bb4812a13d3f2d",
-			"state/replay.ts": "e5994626d9cd99fbf039b1e10abdb7d642b10f8fd578df5a1b3921633039444c",
-			"state/task-graph.ts": "8bf3ec428bd4796b32dea5ee5c15a2930818fb0fccda0c6ee60b777cf426075b",
-			"state/state.ts": "f4eba088903593409555c7305c1aa8da627520a3905caf3e81f7bd7eff708717",
-			"state/selectors.ts": "8d39f82bc7e49abcf9480e24f00590bd3609ddec323cd25a98ae3efb9e1584ba",
-			"state/state-reducer.ts": "82153b078572a6d1ec2c8f8943b338df64ab8f371daf1ba1f5a4bc4cf95321c1",
-			"view/format.ts": "86e6055085c0a74adb86699333ebd998487713b804ef760baf0c1995f8ab1ed4"
+			"state/invariants.ts": "0d775f9ebf160e4c588337e9b5bada975ff657a20716ae9a5168f85dbefe3875",
+			"state/store.ts": "f318f9b161603cafa04a486cdad4fe962d86e6c6c7e5260853f8d87a91e5efce",
+			"state/i18n-bridge.ts": "6a76c64032f475c7663cbbbf32fc5a5ac6d09eb00b9a4c357a169d51bff00ab9",
+			"state/replay.ts": "146455257b43cc12a20e4d7cd01bc8e0ec74547f54ba8b1fb961ab3b94d6848d",
+			"state/task-graph.ts": "06a385b0a776218974a8c9b0ecda8757ed851c5e232d6aa2aba25eb871cede89",
+			"state/state.ts": "10bff755663a00f4876658d7b17eca5fc28a9cbce6c00b2b70dab9d84fc6b028",
+			"state/selectors.ts": "88e4d8e6c83c5630f0d566ea09c0268e04561ba214e51d8f744cceef34c73b35",
+			"state/state-reducer.ts": "7d379fbba10883f264e2508f6fbfdf6b5afaf04abe44eb56a2d4074c57a09b76",
+			"view/format.ts": "5c6f6b960b2928189b813536cf58980c881edf6cdde401f787580d3168e8c277"
 		},
 		"dependencies": {
 			"@juicesharp/rpiv-config": {
 				"entry": "index.ts",
-				"version": "2.13.8",
+				"version": "2.13.9",
 				"files": {
-					"index.ts": "e28cca50596e6017e9d6800710851f6910f70589a54b58edc936c66bad4224bf",
+					"index.ts": "ba8bcdf6c85cc605a5e9721b0c7487437dc758537e35147ffa503ec7f833e436",
 					"config.ts": "fdd8de5c565c1c06c51f71276f3675aac7717abc2e124e4edf732487f688a75f"
 				}
 			}
