@@ -57,7 +57,9 @@ async function runGate(files: {
 		const sourceRoot = join(dir, "src");
 		mkdirSync(sourceRoot, { recursive: true });
 		for (const [name, contents] of Object.entries(files.sources ?? {})) {
-			writeFileSync(join(sourceRoot, name), contents);
+			const target = join(sourceRoot, name);
+			mkdirSync(dirname(target), { recursive: true });
+			writeFileSync(target, contents);
 		}
 		for (const [name, contents] of Object.entries(files.docs ?? {})) {
 			const target = join(dir, name);
@@ -164,6 +166,13 @@ describe("check-version", () => {
 		it("exempts test files, where a version literal is a fixture", async () => {
 			const result = await runGate({
 				sources: { "thing.test.ts": `const stub = "${SCRATCH_VERSION}";\nexport { stub };\n` },
+			});
+			expect(result.exitCode).toBe(0);
+		});
+
+		it("exempts test utilities under testUtils, where a version literal is a stub", async () => {
+			const result = await runGate({
+				sources: { "testUtils/stub.ts": `export const STUB_VERSION = "${SCRATCH_VERSION}";\n` },
 			});
 			expect(result.exitCode).toBe(0);
 		});
