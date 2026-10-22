@@ -81,7 +81,12 @@ const SEMVER = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 
 /** Files whose version literals are fixtures rather than shipped values. */
 function isExemptSource(file) {
-	return file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.includes(`${sep}testing${sep}`);
+	return (
+		file.endsWith(".test.ts") ||
+		file.endsWith(".test.tsx") ||
+		file.includes(`${sep}testing${sep}`) ||
+		file.includes(`${sep}testUtils${sep}`)
+	);
 }
 
 /** Every TypeScript source under `root`, recursively. */
