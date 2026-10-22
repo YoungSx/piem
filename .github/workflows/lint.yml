@@ -46,6 +46,11 @@ jobs:
             - name: Check for hardcoded user-visible copy
               run: npm run check:copy
 
+            # Asserts that animation declarations reference existing keyframes
+            # and that all defined keyframes are used.
+            - name: Check CSS keyframe resolution
+              run: npm run check:css
+
             # Runs here as well as at release time so a second copy of the
             # version is caught in the PR that introduces it. Catching it only on
             # release means the drift is already merged, which is how
@@ -55,6 +60,13 @@ jobs:
 
             - name: Test
               run: bun test
+
+            - name: Obsidian headless smoke test
+              run: |
+                python3 scripts/obsidian-rig.py "$PWD" /tmp/obs-smoke 9388 \
+                  --smoke scripts/smoke-search-obsidian.mjs \
+                  --skip-build \
+                  --download
 
             - name: Lint
               run: npm run lint

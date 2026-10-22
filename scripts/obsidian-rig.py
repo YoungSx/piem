@@ -17,8 +17,8 @@ Usage:
       CDP driving; Ctrl-C tears it down.
   --display :114     Xvfb display to launch on.
   --obsidian PATH    Obsidian binary override (skip the known-location search).
-  --download         Fetch the pinned aarch64 build into <root>/runtime when no
-      runtime is found. This host is aarch64; the amd64 .deb cannot run here.
+  --download         Fetch the pinned build for this architecture (x86_64 or
+      arm64) into <root>/runtime when no runtime is found.
   --skip-build       Deploy the worktree's existing main.js instead of running
       esbuild. A fresh worktree has no main.js — build first or use this only
       when one is already there.
@@ -33,14 +33,42 @@ Teardown kills the process groups and reaps strays via /proc. Never use
 `pkill -f` on this rig: the pattern matches your own shell's command line and
 the kill lands on you (exit 144, output lost).
 """
-import argparse, ctypes, glob, hashlib, json, os, signal, socket, subprocess, sys, tarfile, time, urllib.request
+import argparse, ctypes, glob, hashlib, json, os, platform, signal, socket, subprocess, sys, tarfile, time, urllib.request
 from pathlib import Path, PurePosixPath
 
 OBSIDIAN_VERSION = "1.13.7"
-OBSIDIAN_URL = (
-    "https://github.com/obsidianmd/obsidian-releases/releases/download/"
-    f"v{OBSIDIAN_VERSION}/obsidian-{OBSIDIAN_VERSION}-arm64.tar.gz"
-)
+
+
+def get_arch_spec():
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        arch_slug = "x86_64"
+        tarball_name = f"obsidian-{OBSIDIAN_VERSION}.tar.gz"
+        folder_name = f"obsidian-{OBSIDIAN_VERSION}"
+        url = (
+            f"https://github.com/obsidianmd/obsidian-releases/releases/download/"
+            f"v{OBSIDIAN_VERSION}/obsidian-{OBSIDIAN_VERSION}.tar.gz"
+        )
+    elif machine in ("aarch64", "arm64"):
+        arch_slug = "arm64"
+        tarball_name = f"obsidian-{OBSIDIAN_VERSION}-arm64.tar.gz"
+        folder_name = f"obsidian-{OBSIDIAN_VERSION}-arm64"
+        url = (
+            f"https://github.com/obsidianmd/obsidian-releases/releases/download/"
+            f"v{OBSIDIAN_VERSION}/obsidian-{OBSIDIAN_VERSION}-arm64.tar.gz"
+        )
+    else:
+        sys.exit(f"Unsupported architecture for Obsidian rig: {machine}")
+
+    return {
+        "machine": machine,
+        "arch_slug": arch_slug,
+        "tarball_name": tarball_name,
+        "tarball": tarball_name,
+        "folder_name": folder_name,
+        "folder": folder_name,
+        "url": url,
+    }
 
 children = []
 stopping = False
@@ -248,9 +276,12 @@ def find_runtime(root, explicit, download):
         if not runtime.exists():
             sys.exit(f"--obsidian path does not exist: {runtime}")
         return runtime
+    arch = get_arch_spec()
     candidates = [
+        root / "runtime" / f"obsidian-{OBSIDIAN_VERSION}" / "obsidian",
         root / "runtime" / f"obsidian-{OBSIDIAN_VERSION}-arm64" / "obsidian",
-        *sorted(glob.glob(str(Path.home() / "piem-*-smoke-*" / "runtime" / "obsidian-*-arm64" / "obsidian"))),
+        *sorted(glob.glob(str(Path.home() / "piem-*-smoke-*" / "runtime" / f"obsidian-{OBSIDIAN_VERSION}" / "obsidian"))),
+        *sorted(glob.glob(str(Path.home() / "piem-*-smoke-*" / "runtime" / f"obsidian-{OBSIDIAN_VERSION}-arm64" / "obsidian"))),
         Path("/tmp/obs-app/obsidian"),
     ]
     for candidate in candidates:
@@ -260,18 +291,21 @@ def find_runtime(root, explicit, download):
         sys.exit(
             "No Obsidian runtime found. Checked:\n  "
             + "\n  ".join(str(c) for c in candidates)
-            + f"\nRe-run with --download to fetch {OBSIDIAN_URL} into <root>/runtime, "
+            + f"\nRe-run with --download to fetch {arch['url']} into <root>/runtime, "
             "or pass --obsidian /path/to/obsidian."
         )
     runtime_dir = root / "runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    tar_path = runtime_dir / f"obsidian-{OBSIDIAN_VERSION}-arm64.tar.gz"
-    print(f"Downloading Obsidian {OBSIDIAN_VERSION} (aarch64)...")
-    urllib.request.urlretrieve(OBSIDIAN_URL, tar_path)
+    tar_path = runtime_dir / arch["tarball_name"]
+    print(
+        f"Detected architecture {arch['arch_slug']} ({arch['machine']}). "
+        f"Downloading Obsidian {OBSIDIAN_VERSION} archive ({arch['tarball_name']})..."
+    )
+    urllib.request.urlretrieve(arch["url"], tar_path)
     with tarfile.open(tar_path) as tar:
         tar.extractall(runtime_dir, filter="data")
     tar_path.unlink()
-    runtime = runtime_dir / f"obsidian-{OBSIDIAN_VERSION}-arm64" / "obsidian"
+    runtime = runtime_dir / arch["folder_name"] / "obsidian"
     if not runtime.exists():
         sys.exit(f"Archive extracted but {runtime} is missing; inspect {runtime_dir}.")
     return runtime
@@ -436,7 +470,7 @@ def main():
     parser.add_argument("--mobile-only", action="store_true", help="run only in official phone emulation, including scripts without a mobile flag")
     parser.add_argument("--display", default=":114", help="Xvfb display")
     parser.add_argument("--obsidian", default=None, help="Obsidian binary override")
-    parser.add_argument("--download", action="store_true", help="fetch the pinned aarch64 build when no runtime is found")
+    parser.add_argument("--download", action="store_true", help="fetch the pinned build for this architecture when no runtime is found")
     parser.add_argument("--skip-build", action="store_true", help="deploy the existing main.js instead of building")
     parser.add_argument("--data", default=None, help="seed the vault plugin data.json from this file")
     args = parser.parse_args()
