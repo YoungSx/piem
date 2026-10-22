@@ -31,7 +31,7 @@ price means unknown. See [built-in Pi extensions](extending.md#built-in-pi-exten
 
 ## Files
 
-`read` · `write` · `edit` · `ls` · `find` · `grep` · `move_note` · `trash_note`
+`read` · `write` · `edit` · `ls` · `find` · `grep` · `search_notes` · `move_note` · `trash_note`
 
 `read`, `write`, and `edit` are pi's own harness tools running over a vault
 execution environment, so they behave the way they do in pi: `edit` applies an
@@ -40,6 +40,33 @@ a failed call, not a guess.
 
 `trash_note` goes through Obsidian's trash, so a deletion is recoverable the
 same way any other deletion in your vault is.
+
+`grep` returns matching **lines**, ordered by vault path and line number. It uses
+literal, case-insensitive matching by default; `regex` and `caseSensitive` change
+that. `maxMatches` is a page size (default 100, range 1–1000), not a total count.
+The result reports coverage and `nextOffset`: repeat the same arguments with that
+zero-based offset until `hasMore=false` for an exhaustive scan. The byte budget
+may return fewer lines, and the cursor advances only past delivered records.
+Changes to the vault between calls can shift pages. Long line text is shortened;
+use `read` at the returned line number for the full text. A read failure fails the
+search; cancellation is checked between reads and line batches, and cannot
+interrupt one synchronous regex evaluation.
+
+`search_notes` discovers Markdown notes, one result per note. It scans all notes
+in scope before choosing results, ranks distinct query-term coverage first,
+then title/aliases, headings/tags, and body matches, with path as a stable tie
+breaker. Repeated words do not add weight. Query terms are case-insensitive
+literal text separated by whitespace; up to 32 distinct terms and 1000
+normalized characters. Chinese text without spaces is one term. This provides
+word matching, without synonyms, semantic search, or Obsidian search operators.
+Each result gives a path, matching reasons, and a body line when available.
+`maxResults` defaults to 20 (range 1–100); narrow the query or path to find more.
+Missing metadata is disclosed and the title/body still participate. A read
+failure fails the search; Stop is checked between reads and line batches.
+
+Both accept an optional file/folder `path` to narrow scope; a missing path is an
+error. They use Obsidian's visible-file index and cached reads, so hidden folders
+are outside this search and external changes can briefly precede cache updates.
 
 ## Notes and Obsidian
 

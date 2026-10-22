@@ -1047,6 +1047,7 @@ export const en = {
 		ls: "Listed a folder",
 		find: "Looked for notes",
 		grep: "Searched the vault",
+		searchNotes: "Found related notes",
 		write: "Wrote a note",
 		edit: "Edited a note",
 		updateFrontmatter: "Changed note properties",

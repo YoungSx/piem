@@ -244,8 +244,12 @@ const METAFILE = `${BUNDLE}.meta.json`;
  * 19. Provider OAuth device-code flows (OpenAI Codex, GitHub Copilot, Meta AI)
  *     and mobile sign-in affordances measured 3,669,984 B. The ceiling follows
  *     to 3.52 MiB. No provider SDKs or dynamic network libraries were added.
+ * 20. Vault grep paging and note-level lexical search measure 3,697,479 B
+ *     against 3,690,619 B at the same lockfile (+6,860 B). These bytes cover
+ *     record budgets, cooperative scanning, metadata ranking and tool copy;
+ *     no dependency, index or provider SDK was added. Ceiling: 3.53 MiB.
  */
-const MAX_BUNDLE_BYTES = 3.52 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.53 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.

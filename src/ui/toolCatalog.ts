@@ -102,6 +102,7 @@ export const TOOL_CATALOG: Readonly<Record<string, ToolFacts>> = {
 	ls: { copyKey: "traceTool.ls", category: "search", icon: "folder-open" },
 	find: { copyKey: "traceTool.find", category: "search", icon: "file-search" },
 	grep: { copyKey: "traceTool.grep", category: "search", icon: "text-search" },
+	search_notes: { copyKey: "traceTool.searchNotes", category: "search", icon: "search" },
 
 	// Changing the vault. `insert_at_cursor` rides the editor rather than the
 	// vault API, which is why the plugin files it with the screen tools — but

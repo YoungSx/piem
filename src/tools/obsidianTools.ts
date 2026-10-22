@@ -18,6 +18,7 @@ import type { AskUserBroker } from "./askUserBroker";
 import type { UIBlockBroker } from "./uiBlockBroker";
 import { createMoveNoteTool, createTrashNoteTool } from "./organizeTools";
 import { createFindTool, createGrepTool, createLsTool } from "./searchTools";
+import { createNoteSearchTool } from "./noteSearchTool";
 import { createListTasksTool, createSummarizeTasksTool } from "./taskTools";
 import { createWebFetchTool } from "./webFetchTools";
 import { createReadSkillTool } from "./skillTools";
@@ -126,6 +127,7 @@ export function createObsidianTools(
 		createLsTool(app),
 		createFindTool(app),
 		createGrepTool(app),
+		createNoteSearchTool(app),
 		createListTasksTool(app),
 		createSummarizeTasksTool(app),
 		createNoteLinksTool(app),
