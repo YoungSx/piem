@@ -248,6 +248,7 @@ describe("ObsidianAgentService", () => {
 		expect(childToolNames[0]).toContain("read_skill");
 		expect(childToolNames[0]).toContain("write");
 		expect(childToolNames[0]).toContain("grep");
+		expect(childToolNames[0]).toContain("search_notes");
 	});
 
 	it("lets a child spawn once more and caps the tree below that", async () => {
@@ -302,6 +303,7 @@ describe("ObsidianAgentService", () => {
 		expect(grandchildToolNames).toHaveLength(1);
 		expect(grandchildToolNames[0]).not.toContain("spawn_subagent");
 		expect(grandchildToolNames[0]).toContain("grep");
+		expect(grandchildToolNames[0]).toContain("search_notes");
 		expect(childToolNames).toHaveLength(3);
 	});
 

@@ -1,11 +1,11 @@
-import { TFile, TFolder, type App } from "obsidian";
+import { TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { normalizeFolderPath } from "../vault/path";
-import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
+import { matchesFindPattern } from "../vault/search";
+export { createGrepTool } from "./grepTool";
 import { truncateToolOutput } from "../vault/truncate";
 import { maxResultsParameter, vaultScopeParameter } from "./parameters";
-import { TEXT_EXTENSIONS, compareFiles } from "./vaultFiles";
 import { textResult, throwIfAborted } from "./toolResult";
 
 const LsParameters = Type.Object({
@@ -20,17 +20,6 @@ const FindParameters = Type.Object({
 		description: "Matched against the whole vault-relative path.",
 	}),
 	maxResults: maxResultsParameter(100),
-});
-
-const GrepParameters = Type.Object({
-	// `pattern`, `caseSensitive` and `regex` are undescribed: the tool description
-	// already covers literal-vs-regex, and each name states its own effect. Only
-	// the scope carries a constraint the model cannot infer.
-	pattern: Type.String(),
-	path: vaultScopeParameter("Folder or file."),
-	caseSensitive: Type.Optional(Type.Boolean()),
-	regex: Type.Optional(Type.Boolean()),
-	maxMatches: maxResultsParameter(100),
 });
 
 export function createLsTool(app: App): AgentTool<typeof LsParameters> {
@@ -112,53 +101,4 @@ export function createFindTool(app: App): AgentTool<typeof FindParameters> {
 			});
 		},
 	};
-}
-
-export function createGrepTool(app: App): AgentTool<typeof GrepParameters> {
-	return {
-		name: "grep",
-		label: "Search file text",
-		// `cachedRead` never mutates, so overlapping greps contend on nothing.
-		executionMode: "parallel",
-		description: "Search text files in the vault. Supports literal matching by default and regex matching when regex is true.",
-		parameters: GrepParameters,
-		execute: async (_toolCallId, params, signal) => {
-			throwIfAborted(signal);
-			const maxMatches = params.maxMatches ?? 100;
-			const rootPath = params.path ? normalizeFolderPath(params.path) : "";
-			const matches: GrepMatch[] = [];
-			for (const file of getSearchableFiles(app, rootPath)) {
-				throwIfAborted(signal);
-				const content = await app.vault.cachedRead(file);
-				const remainingMatches = maxMatches - matches.length;
-				matches.push(
-					...grepContent(file.path, content, params.pattern, {
-						caseSensitive: params.caseSensitive,
-						regex: params.regex,
-						maxMatches: remainingMatches,
-					}),
-				);
-				if (matches.length >= maxMatches) {
-					break;
-				}
-			}
-			return textResult(formatGrepMatches(matches, matches.length >= maxMatches), {
-				pattern: params.pattern,
-				count: matches.length,
-				truncated: matches.length >= maxMatches,
-			});
-		},
-	};
-}
-
-function getSearchableFiles(app: App, rootPath: string): TFile[] {
-	return app.vault
-		.getFiles()
-		.filter((file) => isTextFile(file))
-		.filter((file) => !rootPath || file.path === rootPath || file.path.startsWith(`${rootPath}/`))
-		.sort(compareFiles);
-}
-
-function isTextFile(file: TFile): boolean {
-	return TEXT_EXTENSIONS.has(file.extension.toLowerCase());
 }

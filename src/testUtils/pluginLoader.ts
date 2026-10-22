@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
-import { debounce, getAllTags, prepareFuzzySearch, sortSearchResults } from "./obsidianStub";
+import { debounce, getAllTags, parseFrontMatterAliases, prepareFuzzySearch, sortSearchResults } from "./obsidianStub";
 
 /**
  * Loads the built `main.js` the way Obsidian does, so a bundle that cannot be
@@ -330,6 +330,7 @@ export function createObsidianHostModule(record: PluginHostRecord, platform: Rec
 		// separate (this one serves the bundle smoke test, not mock.module), but
 		// the semantics must not drift between them.
 		getAllTags,
+		parseFrontMatterAliases,
 		prepareFuzzySearch,
 		sortSearchResults,
 		// The old pass-through (`fn => fn`) had neither cancel() nor run(), so any

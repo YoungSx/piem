@@ -637,6 +637,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		ls: "列出了一个文件夹",
 		find: "查找了笔记",
 		grep: "搜索了笔记库",
+		searchNotes: "查找了相关笔记",
 		write: "写入了一条笔记",
 		edit: "编辑了一条笔记",
 		updateFrontmatter: "改动了笔记属性",

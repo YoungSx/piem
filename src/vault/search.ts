@@ -29,14 +29,11 @@ export function grepContent(path: string, content: string, pattern: string, opti
 	const matcher = createLineMatcher(pattern, options);
 	const matches: GrepMatch[] = [];
 	const maxMatches = options.maxMatches ?? 100;
-	const lines = content.split(/\r?\n/);
-
-	for (let index = 0; index < lines.length; index += 1) {
-		const line = lines[index] ?? "";
+	for (const { line, lineNumber } of textLines(content)) {
 		if (!matcher(line)) {
 			continue;
 		}
-		matches.push({ path, lineNumber: index + 1, line });
+		matches.push({ path, lineNumber, line });
 		if (matches.length >= maxMatches) {
 			break;
 		}
@@ -57,7 +54,7 @@ export function formatGrepMatches(matches: GrepMatch[], truncated: boolean): str
 	return truncated ? `${body}\n\n[Matches truncated.]` : body;
 }
 
-function createLineMatcher(pattern: string, options: GrepOptions): (line: string) => boolean {
+export function createLineMatcher(pattern: string, options: GrepOptions): (line: string) => boolean {
 	if (options.regex) {
 		const flags = options.caseSensitive ? "" : "i";
 		const regex = new RegExp(pattern, flags);
@@ -69,6 +66,21 @@ function createLineMatcher(pattern: string, options: GrepOptions): (line: string
 		const haystack = options.caseSensitive ? line : line.toLowerCase();
 		return haystack.includes(needle);
 	};
+}
+
+/** Walk without allocating an array containing every line of a large file. */
+export function* textLines(content: string): Generator<{ line: string; lineNumber: number }> {
+	let start = 0;
+	let lineNumber = 1;
+	while (start <= content.length) {
+		const newline = content.indexOf("\n", start);
+		const end = newline < 0 ? content.length : newline;
+		const line = content.slice(start, newline >= 0 && content[end - 1] === "\r" ? end - 1 : end);
+		yield { line, lineNumber };
+		if (newline < 0) return;
+		start = newline + 1;
+		lineNumber += 1;
+	}
 }
 
 function hasGlobCharacters(pattern: string): boolean {

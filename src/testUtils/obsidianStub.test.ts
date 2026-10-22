@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { debounce, getAllTags, prepareFuzzySearch, sortSearchResults, ToggleStub } from "./obsidianStub";
+import { debounce, getAllTags, parseFrontMatterAliases, prepareFuzzySearch, sortSearchResults, ToggleStub } from "./obsidianStub";
 import { installDom } from "./dom";
 
 const document = installDom();
@@ -14,6 +14,12 @@ const document = installDom();
  * is a stand-in, documented as such on `prepareFuzzySearch`.
  */
 describe("obsidianStub", () => {
+	it("reads scalar and array aliases like the native host without splitting scalar commas", () => {
+		expect(parseFrontMatterAliases(null)).toBeNull();
+		expect(parseFrontMatterAliases({})).toBeNull();
+		expect(parseFrontMatterAliases({ aliases: "alpha, beta" })).toEqual(["alpha, beta"]);
+		expect(parseFrontMatterAliases({ aliases: ["alpha", "beta", 3] })).toEqual(["alpha", "beta"]);
+	});
 	describe("getAllTags", () => {
 		it("returns null for a nullish cache", () => {
 			expect(getAllTags(null as never)).toBeNull();

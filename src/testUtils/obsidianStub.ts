@@ -687,6 +687,14 @@ export function getAllTags(cache: CachedMetadata): string[] | null {
 	];
 }
 
+/** Scalar aliases stay intact; native 1.13.7 probe verified comma/space behavior. */
+export function parseFrontMatterAliases(frontmatter: Record<string, unknown> | null): string[] | null {
+	const aliases = frontmatter?.aliases ?? frontmatter?.alias;
+	if (typeof aliases === "string") return [aliases];
+	if (Array.isArray(aliases)) return aliases.filter((value): value is string => typeof value === "string");
+	return null;
+}
+
 /**
  * Stand-in for Obsidian's `parseLinktext`: the linkpath is everything before the
  * first `#`, the subpath the rest, and a reference without one has an empty
@@ -835,6 +843,7 @@ export class SecretComponentStub {
 
 const obsidianStub = {
 	getAllTags,
+	parseFrontMatterAliases,
 	parseLinktext,
 	prepareFuzzySearch,
 	sortSearchResults,
