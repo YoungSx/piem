@@ -103,3 +103,109 @@ test("retaining an earlier compaction entry does not replay its summary or retai
 		expect(commits).toBe(1);
 	} finally { host.dispose(); }
 });
+
+test("turn_end with unpersisted tool result gracefully omits it from toolResultEntryIds without throwing", async () => {
+	const snapshot = fixture();
+	const reply: AssistantMessage = { role: "assistant", content: [{ type: "text", text: "Reply" }], timestamp: 2, api: "openai-completions", provider: "test", model: "test", stopReason: "stop", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+	snapshot.messages[2] = reply;
+	const persistedToolResult: AgentMessage = { role: "toolResult", toolCallId: "call_1", content: [{ type: "text", text: "res1" }], timestamp: 3 } as any;
+	const unpersistedToolResult: AgentMessage = { role: "toolResult", toolCallId: "call_2", content: [{ type: "text", text: "res2" }], timestamp: 4 } as any;
+	let observedToolResultIds: string[] | undefined;
+	const host = await createExtensionHost([{ id: "boundary", factory: pi => {
+		pi.on("turn_end", event => {
+			observedToolResultIds = event.toolResultEntryIds;
+			return undefined;
+		});
+	} }], {
+		getEntries: () => [], notify: () => {},
+		boundary: {
+			getMessageEntryId: message => message === reply ? "b" : message === persistedToolResult ? "res_1_entry" : undefined,
+			buildContext: drafts => prepareExtensionBoundary(snapshot, drafts, ["c"]).context,
+			commit: async () => {},
+		},
+	});
+	try {
+		const turn: AgentTurnContext = {
+			message: reply,
+			toolResults: [persistedToolResult as any, unpersistedToolResult as any],
+			context: { messages: snapshot.messages, tools: [] },
+			newMessages: [reply],
+		};
+		expect(await host.finishTurn(turn)).toBe(false);
+		expect(observedToolResultIds).toEqual(["res_1_entry"]);
+	} finally { host.dispose(); }
+});
+
+test("turn_end with unpersisted assistant message gracefully returns false without throwing", async () => {
+	const snapshot = fixture();
+	const unpersistedReply: AssistantMessage = { role: "assistant", content: [{ type: "text", text: "Unpersisted" }], timestamp: 2, api: "openai-completions", provider: "test", model: "test", stopReason: "stop", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+	let calls = 0;
+	const host = await createExtensionHost([{ id: "boundary", factory: pi => {
+		pi.on("turn_end", () => {
+			calls++;
+			return undefined;
+		});
+	} }], {
+		getEntries: () => [], notify: () => {},
+		boundary: {
+			getMessageEntryId: () => undefined,
+			buildContext: drafts => prepareExtensionBoundary(snapshot, drafts, ["c"]).context,
+			commit: async () => {},
+		},
+	});
+	try {
+		const turn: AgentTurnContext = {
+			message: unpersistedReply,
+			toolResults: [],
+			context: { messages: snapshot.messages, tools: [] },
+			newMessages: [unpersistedReply],
+		};
+		expect(await host.finishTurn(turn)).toBe(false);
+		expect(calls).toBe(0);
+	} finally { host.dispose(); }
+});
+
+test("turn_end returns false without throwing when continuation is requested without runnable context", async () => {
+	const snapshot = fixture();
+	const reply: AssistantMessage = { role: "assistant", content: [{ type: "text", text: "Reply" }], timestamp: 2, api: "openai-completions", provider: "test", model: "test", stopReason: "stop", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+	snapshot.messages[2] = reply;
+	const host = await createExtensionHost([{ id: "boundary", factory: pi => {
+		pi.on("turn_end", () => {
+			return { entries: [], continue: true };
+		});
+	} }], {
+		getEntries: () => [], notify: () => {},
+		boundary: {
+			getMessageEntryId: () => "b",
+			buildContext: () => ({ canContinue: false, contextEntries: [], contextMessages: [], llmMessages: [], pendingMessages: [] }),
+			commit: async () => {},
+		},
+	});
+	try {
+		const turn: AgentTurnContext = {
+			message: reply,
+			toolResults: [],
+			context: { messages: snapshot.messages, tools: [] },
+			newMessages: [reply],
+		};
+		expect(await host.finishTurn(turn)).toBe(false);
+	} finally { host.dispose(); }
+});
+
+test("agent_before_settle returns false without throwing when continuation is requested without runnable context", async () => {
+	const host = await createExtensionHost([{ id: "boundary", factory: pi => {
+		pi.on("agent_before_settle", () => {
+			return { entries: [], continue: true };
+		});
+	} }], {
+		getEntries: () => [], notify: () => {},
+		boundary: {
+			getMessageEntryId: () => "b",
+			buildContext: () => ({ canContinue: false, contextEntries: [], contextMessages: [], llmMessages: [], pendingMessages: [] }),
+			commit: async () => {},
+		},
+	});
+	try {
+		expect(await host.beforeSettle("completed")).toBe(false);
+	} finally { host.dispose(); }
+});

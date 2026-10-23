@@ -53,14 +53,13 @@ export class ExtensionAgentEvents {
 		if (!this.runner.hasHandlers("turn_end")) return false;
 		const boundary = this.requireBoundary();
 		const messageEntryId = boundary.getMessageEntryId(message);
-		if (!messageEntryId) throw new Error("Turn boundary message has not been persisted.");
+		if (!messageEntryId) return false;
 		return this.dispatch({
 			type: "turn_end", turnIndex: this.turnIndex, message, toolResults,
 			messageEntryId,
-			toolResultEntryIds: toolResults.map(result => {
+			toolResultEntryIds: toolResults.flatMap(result => {
 				const id = boundary.getMessageEntryId(result);
-				if (!id) throw new Error("Turn boundary tool result has not been persisted.");
-				return id;
+				return id ? [id] : [];
 			}),
 			outcome: message.role === "assistant" && message.stopReason === "error" ? "error"
 				: message.role === "assistant" && message.stopReason === "aborted" ? "aborted" : "completed",
@@ -92,7 +91,7 @@ export class ExtensionAgentEvents {
 		if (result.continue) {
 			const context = await boundary.buildContext([], event.type);
 			assertActive();
-			if (!context.canContinue) throw new Error(`${event.type} requested continuation without runnable model context.`);
+			if (!context.canContinue) return false;
 		}
 		return result.continue;
 	}
