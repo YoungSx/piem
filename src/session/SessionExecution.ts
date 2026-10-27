@@ -19,10 +19,12 @@ export type ExecutionSnapshot = { input: Input; metadata: JsonValue; operationId
 // The frozen context is written once, not copied into every task transition.
 const RunContext = defineDoc<{ value: JsonValue }>({
 	kind: "piem.run-context", version: 1, scope: "task", initial: () => ({ value: null }),
+	checkpointWhen: () => false,
 });
 const ExecutionDoc = defineDoc<{ taskId: TaskId<null> | null; operationId: string | null }>({
 	kind: "piem.execution", version: 1, scope: "conversation", history: "latest", fork: "initial",
 	initial: () => ({ taskId: null, operationId: null }),
+	checkpointWhen: () => false,
 });
 
 /** Portable checkpoints use transcript UUIDs; Pi's numeric task IDs are rebuilt. */

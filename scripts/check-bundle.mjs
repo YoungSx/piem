@@ -248,8 +248,11 @@ const METAFILE = `${BUNDLE}.meta.json`;
  *     against 3,690,619 B at the same lockfile (+6,860 B). These bytes cover
  *     record budgets, cooperative scanning, metadata ranking and tool copy;
  *     no dependency, index or provider SDK was added. Ceiling: 3.53 MiB.
+ * 21. Upgrading @earendil-works/* to 1.4.0, @juicesharp/rpiv-todo to 2.15.0
+ *     and @modelcontextprotocol/client to 2.4.0 measured 3,734,605 B (+37,126 B).
+ *     The ceiling follows to 3.57 MiB.
  */
-const MAX_BUNDLE_BYTES = 3.53 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 3.57 * 1024 * 1024;
 
 /**
  * Dynamic imports with a non-literal specifier that today's bundle still has.
