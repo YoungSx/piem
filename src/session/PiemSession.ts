@@ -24,6 +24,7 @@ type State = {
 const SessionState = defineDoc<State>({
 	kind: "piem.session", version: 1, scope: "session",
 	initial: () => ({ seq: 0, entryIds: {}, name: { seq: 0, value: null }, lanes: {}, labels: {}, records: {}, legacyValues: {} }),
+	checkpointWhen: () => false,
 });
 
 /** Piem's UUID transcript and branch pointers over Pi's unmodified transaction kernel. */

@@ -112,7 +112,7 @@ it("migrates the previous flat durable format into native forks without losing U
 		seq: 6, name: { seq: 5, value: "Previous chat" }, labels: { old: { seq: 4, value: "Keep" } }, records: {},
 		lanes: { main: { seq: 6, leafId: "old" }, alternative: { seq: 3, leafId: "alternate" } },
 		legacyValues: { "pi.lane.config/main": { model: { provider: "test", modelId: "original" }, thinkingLevel: "high" } },
-	}) });
+	}), checkpointWhen: () => false });
 	await old.commit(async tx => {
 		const conversation = await tx.createConversation({ ownership: { kind: "ownerless" } });
 		await tx.doc(state);
