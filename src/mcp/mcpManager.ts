@@ -8,7 +8,7 @@ import { NOOP_LOGGER, type LoggerLike } from "../logging/Logger";
 import { throwIfAborted } from "../tools/toolResult";
 import { truncateToolOutput } from "../vault/truncate";
 import { toAgentToolResult } from "./mcpContent";
-import { BUILTIN_MCP_SERVER_ID, slugifyServerName, type McpServerConfig } from "./mcpConfig";
+import { isBuiltinMcpServerId, slugifyServerName, type McpServerConfig } from "./mcpConfig";
 
 /**
  * The bridge between configured MCP servers and pi's tool list.
@@ -363,7 +363,7 @@ export class McpManager {
 				enabled: server.enabled,
 				status: server.enabled ? entry?.status ?? "untested" : "disabled",
 				toolCount: entry?.status === "ok" ? entry.tools.length : 0,
-				builtin: server.id === BUILTIN_MCP_SERVER_ID,
+				builtin: isBuiltinMcpServerId(server.id),
 				error: entry?.error,
 			};
 		});

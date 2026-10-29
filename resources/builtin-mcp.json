@@ -1,0 +1,16 @@
+{
+	"schemaVersion": 1,
+	"revision": 1,
+	"servers": [
+		{
+			"id": "builtin-exa",
+			"name": "Exa",
+			"url": "https://mcp.exa.ai/mcp"
+		},
+		{
+			"id": "builtin-searxng",
+			"name": "SearXNG",
+			"url": "https://mcp.api-inference.modelscope.net/ac045d81bffb47/mcp"
+		}
+	]
+}

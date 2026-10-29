@@ -351,10 +351,14 @@ describe("built bundle installs the separate official skill resource", () => {
 			const { version } = JSON.parse(readFileSync("manifest.json", "utf8")) as { version: string };
 			let requests = 0;
 			host.requestUrl = async (params) => {
-				// The bundled Exa MCP connects fire-and-forget at onload; the counter
-				// is about the skills resource, so the MCP traffic is answered and
-				// never counted.
-				if (params.url.startsWith("https://mcp.exa.ai/")) {
+				// The bundled MCPs connect and refresh fire-and-forget at onload; the
+				// counter is about the skills resource, so that background traffic is
+				// answered and never counted.
+				if (
+					params.url.startsWith("https://mcp.exa.ai/") ||
+					params.url.startsWith("https://mcp.api-inference.modelscope.net/") ||
+					params.url.includes("resources/builtin-mcp.json")
+				) {
 					return { status: 405, headers: {}, arrayBuffer: new ArrayBuffer(0) };
 				}
 				requests++;

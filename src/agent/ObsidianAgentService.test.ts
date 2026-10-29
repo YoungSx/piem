@@ -4556,6 +4556,7 @@ function createServiceWithMultimodalModel(
 		disabledExtensions: [],
 		seededExtensionDefaults: [],
 		mcpServers: [],
+		builtinMcpCatalog: DEFAULT_SETTINGS.builtinMcpCatalog,
 		logLevel: DEFAULT_LOG_LEVEL,
 	};
 	const sessionManager = new ObsidianSessionManager(adapter, SESSION_DIR, "obsidian-vault:Test");

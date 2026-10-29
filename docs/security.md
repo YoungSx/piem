@@ -30,6 +30,13 @@ No vault notes, conversation content or provider keys accompany this download.
 The resource is checksum-verified Markdown, written under `Piem/builtin-skills/`;
 no scripts execute and it never follows a newer release independently of the plugin.
 
+Built-in MCP catalog refresh sends a GET request to the project's fixed raw GitHub
+URL. It carries no vault content, conversation, provider key, or MCP token. The
+response is accepted only after schema and HTTPS validation, and the last valid
+catalog remains cached when the request fails. A catalog entry contains an MCP
+endpoint, so connecting to it sends that server's tool arguments as described
+above; changing an endpoint clears its old local token before reconnecting.
+
 Bundled `switch_model` can move the current conversation to another model whose
 API key you configured, and saves that selection. That provider receives the
 conversation and normal note context on its next request. `/continue` starts a
