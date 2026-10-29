@@ -31,6 +31,8 @@ import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
 import { ObsidianAgentService } from "./agent/ObsidianAgentService";
 import { McpManager } from "./mcp/mcpManager";
+import { fetchBuiltinMcpCatalog } from "./mcp/builtinMcpCatalog";
+import { ensureBuiltinMcpServers } from "./mcp/mcpConfig";
 import {
 	emptySkillLoadReport,
 	type SkillCatalogEntry,
@@ -148,6 +150,8 @@ export default class PiemPlugin extends Plugin {
 	 * rebuilding the manager or dropping live connections.
 	 */
 	private mcpBridge: McpManager | null = null;
+	/** Aborts a catalog refresh that is still in flight when the plugin unloads. */
+	private builtinMcpCatalogController: AbortController | null = null;
 	/**
 	 * The panel's sign-in facade, built on first ask. Stateless over its
 	 * closures — see {@link signInSession} — so caching buys identity, not
@@ -324,6 +328,9 @@ export default class PiemPlugin extends Plugin {
 		// result; an agent picks the tools up at its own rebuild point. The
 		// per-server chain in the manager keeps this from racing another caller.
 		void this.mcpManager.connect();
+		// Catalog refresh is deliberately after local startup: offline users keep
+		// the bundled/cached rows and chat never waits for GitHub.
+		void this.refreshBuiltinMcpCatalog();
 
 		// The manager reads the folder and the cap through this closure rather than
 		// from a snapshot, so a change in the Sessions tab reaches the next chat
@@ -725,6 +732,8 @@ export default class PiemPlugin extends Plugin {
 		this.bookmarkDialogs = undefined;
 		this.builtinSkillInstaller?.dispose();
 		this.builtinSkillInstaller = undefined;
+		this.builtinMcpCatalogController?.abort();
+		this.builtinMcpCatalogController = null;
 		this.settingsTab = undefined;
 		// Fire-and-forget: `flush` never rejects, and a final record landing after
 		// teardown still beats one lost to a dispose-then-queue race.
@@ -807,6 +816,48 @@ export default class PiemPlugin extends Plugin {
 		const raw = (await this.loadData()) as Partial<PiemSettings> | null;
 		this.settings = normalizeSettings(raw);
 		resolveSecretRefs(this.settings, this.requireSecretEnvironment().keychain());
+	}
+
+	/** Refreshes the catalog once per plugin load; invalid or unavailable data is ignored. */
+	private async refreshBuiltinMcpCatalog(): Promise<void> {
+		if (this.builtinMcpCatalogController !== null) return;
+		const controller = new AbortController();
+		this.builtinMcpCatalogController = controller;
+		const timer = window.setTimeout(() => controller.abort(new Error("Built-in MCP catalog refresh timed out.")), 15_000);
+		try {
+			const result = await fetchBuiltinMcpCatalog({
+				etag: this.settings.builtinMcpCatalogEtag,
+				signal: controller.signal,
+			});
+			if (controller.signal.aborted) return;
+			if (result.status === "not-modified") {
+				if (result.etag && result.etag !== this.settings.builtinMcpCatalogEtag) {
+					this.settings.builtinMcpCatalogEtag = result.etag;
+					await this.saveSettings({ reconfigure: false });
+				}
+				return;
+			}
+			if (result.catalog.revision <= this.settings.builtinMcpCatalog.revision) {
+				if (result.catalog.revision === this.settings.builtinMcpCatalog.revision && result.etag !== this.settings.builtinMcpCatalogEtag) {
+					this.settings.builtinMcpCatalogEtag = result.etag;
+					await this.saveSettings({ reconfigure: false });
+				}
+				return;
+			}
+			this.settings.mcpServers = ensureBuiltinMcpServers(this.settings.mcpServers, result.catalog);
+			this.settings.builtinMcpCatalog = result.catalog;
+			this.settings.builtinMcpCatalogEtag = result.etag;
+			await this.saveSettings();
+			if (controller.signal.aborted) return;
+			await this.mcpManager.connect();
+		} catch (error) {
+			if (!controller.signal.aborted) {
+				this.log.warn("Built-in MCP catalog refresh failed", () => ({ error: error instanceof Error ? error.message : String(error) }));
+			}
+		} finally {
+			window.clearTimeout(timer);
+			if (this.builtinMcpCatalogController === controller) this.builtinMcpCatalogController = null;
+		}
 	}
 
 	/**

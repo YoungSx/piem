@@ -19,7 +19,14 @@ import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compac
 import { isCodemodeSessionMode, type CodemodeSessionMode } from "./codemode/mode";
 
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
-import { ensureBuiltinMcpServer, normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
+import {
+	DEFAULT_BUILTIN_MCP_CATALOG,
+	ensureBuiltinMcpServers,
+	normalizeBuiltinMcpCatalog,
+	normalizeMcpServers,
+	type BuiltinMcpCatalog,
+	type McpServerConfig,
+} from "./mcp/mcpConfig";
 import { normalizeExtensionConfig, type ExtensionConfigData } from "./extensions/extensionConfigStore";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
@@ -244,6 +251,10 @@ export interface PiemSettings {
 	logLevel: LogLevelSetting;
 	/** Configured MCP servers; empty means no remote tools join the agent. */
 	mcpServers: McpServerConfig[];
+	/** Last validated built-in MCP catalog, retained for offline startup. */
+	builtinMcpCatalog: BuiltinMcpCatalog;
+	/** ETag for the last catalog response, when the host supplied one. */
+	builtinMcpCatalogEtag?: string;
 	/**
 	 * Per-extension JSON configuration, namespaced by extension id.
 	 *
@@ -299,6 +310,7 @@ export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	shareDiagnostics: true,
 	codemodeMode: DEFAULT_CODEMODE_MODE,
 	mcpServers: [],
+	builtinMcpCatalog: DEFAULT_BUILTIN_MCP_CATALOG,
 };
 
 /**
@@ -328,6 +340,10 @@ function seedExtensionDefaults(data: Partial<PiemSettings> | null | undefined): 
 export function normalizeSettings(data: Partial<PiemSettings> | null | undefined): PiemSettings {
 	const provider = data?.provider || DEFAULT_PROVIDER;
 	const modelId = data?.modelId || DEFAULT_MODEL_ID;
+	const cachedBuiltinMcpCatalog = normalizeBuiltinMcpCatalog(data?.builtinMcpCatalog);
+	const builtinMcpCatalog = cachedBuiltinMcpCatalog && cachedBuiltinMcpCatalog.revision >= DEFAULT_BUILTIN_MCP_CATALOG.revision
+		? cachedBuiltinMcpCatalog
+		: DEFAULT_BUILTIN_MCP_CATALOG;
 	// A stored `thinkingLevel` from before the field moved into the session file
 	// is deliberately dropped, not migrated: the level now belongs to each
 	// conversation, and a global leftover would claim authority over sessions
@@ -428,10 +444,11 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
-		// The bundled Exa server rides along on every load: absent from a
-		// hand-edited data.json means it reappears, with its `enabled` and token
-		// intact if the user had set either.
-		mcpServers: ensureBuiltinMcpServer(normalizeMcpServers(data?.mcpServers)),
+		// The validated local catalog supplies the built-in rows before the
+		// background refresh gets a chance to reach GitHub.
+		mcpServers: ensureBuiltinMcpServers(normalizeMcpServers(data?.mcpServers), builtinMcpCatalog),
+		builtinMcpCatalog,
+		builtinMcpCatalogEtag: typeof data?.builtinMcpCatalogEtag === "string" ? data.builtinMcpCatalogEtag : undefined,
 		shareDiagnostics: data?.shareDiagnostics !== false,
 		codemodeMode: readCodemodeMode(data),
 	};

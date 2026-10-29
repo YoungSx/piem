@@ -8,6 +8,7 @@
 		"strict": true,
 		"noImplicitReturns": true,
 		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
 		"jsx": "react-jsx",
 		"importHelpers": true,
 		"noUncheckedIndexedAccess": true,

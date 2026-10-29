@@ -5,7 +5,7 @@ import type { SkillCatalogEntry } from "../../agent/skillLoader";
 import { builtinSkillsDefinitions } from "./builtinSkillsDefinitions";
 import type { SkillRow } from "../../skills/skillManager";
 import { type SettingsPanelState, type SkillsSnapshot } from "./panelState";
-import { BUILTIN_MCP_SERVER_ID, createMcpServerConfig, type McpServerConfig } from "../../mcp/mcpConfig";
+import { BUILTIN_MCP_SERVER_ID, createMcpServerConfig, isBuiltinMcpServerId, type McpServerConfig } from "../../mcp/mcpConfig";
 import type { McpServerState } from "../../mcp/mcpManager";
 import { openConfirmDelete } from "./confirmDelete";
 import { setFoldableDescription } from "./descFold";
@@ -724,7 +724,7 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
 					}
 				});
 			});
-			if (state.id !== BUILTIN_MCP_SERVER_ID) {
+			if (!isBuiltinMcpServerId(state.id)) {
 				setting.addExtraButton((button) => {
 					rowAction(button, "trash-2", t.t("mcp.delete"));
 					button.onClick(() => {
