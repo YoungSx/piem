@@ -162,13 +162,16 @@ bearer token, and an enable switch.
 - **Test** in the server editor probes the draft configuration without saving it.
 - Bearer tokens follow the same sealed-at-rest lifecycle as provider API keys.
   See [Security and privacy](security.md#where-your-keys-live).
-- Piem ships a catalog of built-in HTTP MCP servers. It starts from the bundled
-  file, then checks `resources/builtin-mcp.json` on the project's default branch
-  in the background. A valid newer revision is cached locally; a network error,
-  invalid response, or older revision leaves the previous catalog in place. The
-  catalog carries names and endpoints, never tokens. If an endpoint changes, its
-  old token is cleared before reconnecting. User-added servers are not managed by
-  this catalog.
+- Built-in servers come from a project catalog. Their name and URL are locked and
+  they cannot be deleted; switch one off to stop using it. The catalog ships with
+  the plugin and, between releases, follows `resources/builtin-mcp.json` on the
+  project's default branch, checked in the background at startup. The last valid
+  copy is kept, so an offline start or a failed check changes nothing.
+- A catalog update can add a server, enabled like the bundled ones; retire one,
+  which removes its row and any token saved in it; or move one, which clears its
+  token rather than sending it to the new host. The catalog carries names and
+  endpoints only, never tokens, and servers you added are not affected. What the
+  check sends is in [Security and privacy](security.md#what-leaves-your-vault).
 - Timeouts are bounded: 15 s to connect and list tools, 120 s per tool call,
   with tool output truncated to the same byte budget as every other tool.
 

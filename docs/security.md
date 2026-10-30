@@ -30,12 +30,17 @@ No vault notes, conversation content or provider keys accompany this download.
 The resource is checksum-verified Markdown, written under `Piem/builtin-skills/`;
 no scripts execute and it never follows a newer release independently of the plugin.
 
-Built-in MCP catalog refresh sends a GET request to the project's fixed raw GitHub
-URL. It carries no vault content, conversation, provider key, or MCP token. The
-response is accepted only after schema and HTTPS validation, and the last valid
-catalog remains cached when the request fails. A catalog entry contains an MCP
-endpoint, so connecting to it sends that server's tool arguments as described
-above; changing an endpoint clears its old local token before reconnecting.
+The built-in MCP catalog check sends one GET request per startup to a fixed URL on
+the project's default branch. GitHub receives that URL, the device's IP address
+and ordinary request metadata — no vault notes, conversation, provider key or MCP
+token. Unlike the skill resource above, the catalog follows the default branch
+between releases: an update can add a built-in server, enabled like the bundled
+ones, so its tool arguments then reach that server as described above; retire
+one, removing its row and any token saved in it; or move one, which clears the
+token instead of sending it to the new host. A response is accepted only if every
+endpoint is HTTPS with no credentials in the URL; when the check fails or times
+out after 15 seconds, the last valid copy stays. Switch off any built-in server in
+**Settings → Piem → Extensions**.
 
 Bundled `switch_model` can move the current conversation to another model whose
 API key you configured, and saves that selection. That provider receives the
@@ -218,11 +223,11 @@ obfuscated payload.
 
 **Network requests.** Roughly twenty call sites, all through one transport layer:
 model provider streams, the connection test, the models.dev catalog suggestion,
-remote MCP servers, skill imports, built-in skill preparation, the `web_fetch` tool,
-and Piem's OpenTelemetry collector while diagnostic sharing is on. Your
-`requestUrl`-vs-`fetch` choice steers the requests where streaming matters —
-model streams and the connection test; the catalog, skill imports, built-in
-skill preparation, `web_fetch` and telemetry always ride `requestUrl`, because they fetch whole responses and
+remote MCP servers, the built-in MCP catalog check, skill imports, built-in skill
+preparation, the `web_fetch` tool, and Piem's OpenTelemetry collector while
+diagnostic sharing is on. Your `requestUrl`-vs-`fetch` choice steers the requests
+where streaming matters — model streams and the connection test; the catalogs,
+skill imports, built-in skill preparation, `web_fetch` and telemetry always ride `requestUrl`, because they fetch whole responses and
 must reach hosts that send no CORS headers. Egress stays inspectable in one
 place rather than scattered across the codebase.
 
