@@ -332,8 +332,13 @@ def deploy_plugin(worktree, vault, data_seed):
         (plugin_dir / name).write_bytes((worktree / name).read_bytes())
     (vault / ".obsidian" / "community-plugins.json").write_text(json.dumps(["piem"]))
     data = json.loads(Path(data_seed).read_text()) if data_seed else {}
-    # Network smokes supply their own loopback server after startup.
-    data.setdefault("mcpServers", [{"id": "builtin-exa", "name": "Exa", "url": "https://mcp.exa.ai/mcp", "token": "", "secretRef": "", "enabled": False}])
+    # Network smokes supply their own loopback server after startup, so every
+    # built-in the catalog ships starts disabled — read from the catalog, so a
+    # new entry cannot quietly start dialing out from every smoke.
+    catalog = json.loads((worktree / "resources" / "builtin-mcp.json").read_text())
+    data.setdefault("mcpServers", [
+        {**entry, "token": "", "secretRef": "", "enabled": False} for entry in catalog["servers"]
+    ])
     # An unpublished build cannot download its new skill digest from an older
     # release with the same manifest version. Install its actual bundled files.
     resource = (worktree / "dist" / "builtin-skills.json").read_bytes()

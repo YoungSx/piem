@@ -94,7 +94,8 @@ async function runSmoke(root, expectMobile, endpoint, observeNodeAccess) {
 			providers: [{ id: "runtime-smoke", name: "Local smoke", baseUrl: `${endpoint}/v1`, protocol: "openai-completions", apiKey: "local-fixture-only", secretRef: "", source: "user", oauthFlow: "" }],
 			models: [{ id: "runtime-smoke", providerId: "runtime-smoke", modelApiId: "smoke", displayName: "Smoke", reasoning: false, supportsImages: false }],
 			activeModelId: "runtime-smoke",
-			mcpServers: [{ id: "builtin-exa", name: "Exa", url: "https://mcp.exa.ai/mcp", token: "", secretRef: "", enabled: false },
+			// Every catalog built-in off, not just Exa: this smoke owns the only MCP server it talks to.
+			mcpServers: [...initialPlugin.settings.mcpServers.filter(s => s.id.startsWith("builtin-")).map(s => ({ ...s, enabled: false })),
 				{ id: "runtime-smoke", name: "smoke", url: `${endpoint}/mcp`, token: "", secretRef: "", enabled: true }],
 			codemodeMode: "on",
 		});
