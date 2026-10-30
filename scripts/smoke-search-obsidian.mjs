@@ -131,7 +131,8 @@ async function runSmoke(root, expectMobile, endpoint, observe, NEEDLE, SEARCH_FI
 			providers: [{ id: "search-smoke", name: "Local search fixture", baseUrl: `${endpoint}/v1`, protocol: "openai-completions", apiKey: "fixture-only", secretRef: "", source: "user", oauthFlow: "" }],
 			models: [{ id: "search-smoke", providerId: "search-smoke", modelApiId: "smoke", displayName: "Search fixture", reasoning: false, supportsImages: false }],
 			activeModelId: "search-smoke", codemodeMode: "on",
-			mcpServers: [{ id: "builtin-exa", name: "Exa", url: "https://mcp.exa.ai/mcp", token: "", secretRef: "", enabled: false }],
+			// Every catalog built-in off, not just Exa: this smoke talks to no MCP server.
+			mcpServers: plugin.settings.mcpServers.filter(s => s.id.startsWith("builtin-")).map(s => ({ ...s, enabled: false })),
 		});
 		// Persist the loopback endpoint before reload: startup must not race a dead one.
 		await plugin.saveSettings({ reconfigure: false });

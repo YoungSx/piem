@@ -87,7 +87,8 @@ async function runSmoke(root, mobile, endpoint, observe) {
 			providers: [{ id: "durable-smoke", name: "Local durable fixture", baseUrl: `${endpoint}/v1`, protocol: "openai-completions", apiKey: "fixture-only", secretRef: "", source: "user", oauthFlow: "" }],
 			models: [{ id: "durable-smoke", providerId: "durable-smoke", modelApiId: "smoke", displayName: "Durable fixture", reasoning: false, supportsImages: false }],
 			activeModelId: "durable-smoke", codemodeMode: "on",
-			mcpServers: [{ id: "builtin-exa", name: "Exa", url: "https://mcp.exa.ai/mcp", enabled: false }],
+			// Every catalog built-in off, not just Exa: this smoke talks to no MCP server.
+			mcpServers: plugin.settings.mcpServers.filter(s => s.id.startsWith("builtin-")).map(s => ({ ...s, enabled: false })),
 		});
 		await plugin.saveSettings({ reconfigure: false });
 		audit = mobile ? observe("piem", true) : undefined;

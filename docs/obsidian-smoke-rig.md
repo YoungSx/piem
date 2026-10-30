@@ -138,6 +138,15 @@ facts, not piem facts.
     now returns the flag to desktop before the desktop pass, and only when it is
     actually set: `emulateMobile` reloads the window, so reloading for nothing
     costs ten seconds and re-races the plugin attach.
+15. **A smoke cannot reach the `obsidian` module from `Runtime.evaluate`.**
+    `require` exists in the page, but `require("obsidian")` throws "Cannot find
+    module": Obsidian hands that module to plugin code only, so a smoke cannot
+    wrap `requestUrl` to watch or steer the plugin's traffic. To control a
+    request the plugin makes to a fixed URL, serve a loopback stand-in and
+    rewrite the URL in the *deployed* `main.js`; disabling and re-enabling the
+    plugin re-reads it from disk. Private fields still read fine from the page
+    (`app.plugins.plugins.piem.mcpManager.entries`), since esbuild keeps
+    property names.
 
 ## Smoke inventory
 

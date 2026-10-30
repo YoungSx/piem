@@ -110,6 +110,13 @@ proactive smoke；新场景一律用管家。
     好。管家现在在桌面档之前把这个标志落回桌面，而且只在它真的置位时才
     动：`emulateMobile` 会重载窗口，白重载一次要花十秒，还会重新和插件
     attach 抢跑。
+15. **smoke 在 `Runtime.evaluate` 里拿不到 `obsidian` 模块。** 页面里有
+    `require`，但 `require("obsidian")` 会抛 "Cannot find module"：Obsidian
+    只把这个模块交给插件代码，所以 smoke 没法包一层 `requestUrl` 去观察或
+    操控插件的流量。要控制插件对固定 URL 发出的请求，就起一个 loopback 替身，
+    再改**已部署**的 `main.js` 里的 URL；停用再启用插件会从磁盘重读它。页面
+    上照样能读私有字段（`app.plugins.plugins.piem.mcpManager.entries`），因为
+    esbuild 保留属性名。
 
 ## Smoke 清单
 
