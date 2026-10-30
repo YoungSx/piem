@@ -726,6 +726,43 @@ describe("McpManager", () => {
 		await manager.dispose();
 	});
 
+	it("mounts a failed server at once when its URL changes, cooldown or not", async () => {
+		// The cooldown spares a dead endpoint, not the row: an edited URL, or the
+		// built-in catalog moving one, is a new server that has not failed yet.
+		const servers = [serverFixture({ name: "x", url: "https://old.example.com/mcp" })];
+		const contacted: string[] = [];
+		const manager = makeManager(servers, () => async (url, init) => {
+			const target = String(url);
+			contacted.push(target);
+			if ((init?.method ?? "GET").toUpperCase() === "GET") {
+				return new Response(null, { status: 405 });
+			}
+			if (target.startsWith("https://old.example.com")) {
+				throw new TypeError("fetch failed");
+			}
+			const body = typeof init?.body === "string" ? init.body : "";
+			if (body.includes('"method":"initialize"')) {
+				return handshakeResponses("session-1")[0]!;
+			}
+			if (body.includes("notifications/initialized")) {
+				return new Response(null, { status: 202 });
+			}
+			return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+
+		await manager.connect();
+		expect(manager.getServerStates()[0]?.status).toBe("error");
+
+		servers[0] = { ...servers[0]!, url: "https://new.example.com/mcp" };
+		await manager.connect();
+		expect(contacted.some((target) => target.startsWith("https://new.example.com"))).toBe(true);
+		expect(manager.getServerStates()[0]?.status).toBe("ok");
+		await manager.dispose();
+	});
+
 	it("two concurrent connects to the same server share one handshake", async () => {
 		// The load warmup versus the panel's first open. Without the per-server
 		// chain, both calls would see no usable entry, both would mount, and the
