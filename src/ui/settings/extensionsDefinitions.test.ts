@@ -435,6 +435,21 @@ describe("the MCP connection button", () => {
 		expect(retry.extraSettingsEl.hidden).toBe(true);
 	});
 
+	it("gives Exa its quota hint, shows other built-ins their endpoint, and offers neither a delete", async () => {
+		// Only Exa has copy of its own. Another built-in keeps its URL in view —
+		// the catalog can move it, and the row is where a reader sees where it went.
+		const builtin = (id: string, url: string): McpServerState => ({ ...SERVER, id, url, builtin: true, status: "ok", toolCount: 1 });
+		const exa = builtin("builtin-exa", "https://mcp.exa.ai/mcp");
+		const other = builtin("builtin-search", "https://search.example.com/mcp");
+		for (const state of [exa, other]) {
+			const { container, extraButtons } = renderRow({ states: () => [state], test: async () => 0, reconnect: async () => undefined });
+			const desc = container.querySelector(".setting-item-description")?.textContent ?? "";
+			expect(desc).toContain(state === exa ? en.t("mcp.builtinDesc") : state.url);
+			expect(extraButtons.map((button) => button.tooltip)).not.toContain(en.t("mcp.delete"));
+		}
+		await settle();
+	});
+
 	it("a retry that fails again lands back on the error verdict", async () => {
 		const { container, extraButtons } = renderRow({
 			states: () => [{ ...SERVER, status: "error", toolCount: 0, error: "still down" }],

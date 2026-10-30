@@ -1479,7 +1479,7 @@ export const en = {
 		// The bundled Exa row's copy: the endpoint is fixed, so the row says the one
 		// thing an editable form is for — keyless is a shared quota, a key is yours.
 		builtinDesc:
-			"Built-in server managed by Piem. Its endpoint comes from a validated project catalog; your enable state and credentials stay local.",
+			"Built-in web search, ready to use with shared rate limits. Add an Exa API key for dedicated quota.",
 		builtinEditTitle: "Exa search",
 		builtinKeyName: "Exa API key",
 		builtinKeyDesc:

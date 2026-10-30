@@ -1,15 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
-	type McpServerConfig,
-	BUILTIN_MCP_SERVER_ID,
-	builtinExaServer,
-	builtinSearxngServer,
 	createMcpServerConfig,
 	normalizeMcpServer,
 	normalizeMcpServers,
 	slugifyServerName,
-	MAX_MCP_SERVERS,
-	ensureBuiltinMcpServers,
 } from "./mcpConfig";
 
 describe("slugifyServerName", () => {
@@ -102,30 +96,5 @@ describe("createMcpServerConfig", () => {
 
 	it("refuses an unusable URL instead of inventing a server", () => {
 		expect(createMcpServerConfig({ url: "nope" })).toBeNull();
-	});
-});
-
-
-describe("ensureBuiltinMcpServers", () => {
-	const user = (): McpServerConfig => ({ id: "srv-1", name: "Hub", url: "https://x.example.com", token: "", secretRef: "", enabled: true });
-
-	it("seeds every bundled row ahead of local servers", () => {
-		expect(ensureBuiltinMcpServers([])).toEqual([builtinExaServer(), builtinSearxngServer()]);
-	});
-
-	it("preserves local state for matching ids and retains user servers", () => {
-		const stored = { ...builtinExaServer(), enabled: false, token: "user-key" };
-		expect(ensureBuiltinMcpServers([stored, user()])).toEqual([stored, builtinSearxngServer(), user()]);
-	});
-
-	it("reappears when local settings omitted built-ins", () => {
-		expect(ensureBuiltinMcpServers([user()]).map((server) => server.id)).toEqual([
-			BUILTIN_MCP_SERVER_ID, "builtin-searxng", "srv-1",
-		]);
-	});
-
-	it("keeps every user row at the cap instead of evicting one for a builtin", () => {
-		const many: McpServerConfig[] = Array.from({ length: MAX_MCP_SERVERS }, (_, i) => ({ id: `s${i}`, name: `s${i}`, url: `https://s${i}.example.com`, token: "", secretRef: "", enabled: true }));
-		expect(ensureBuiltinMcpServers(many)).toEqual(many);
 	});
 });

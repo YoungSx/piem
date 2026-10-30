@@ -5,7 +5,7 @@ import type { PiemSettings } from "./settings";
 import type { ModelConfig, ProviderConfig, WireProtocol } from "./modelConfig";
 
 import { getT } from "./i18n";
-import { builtinExaServer, builtinSearxngServer } from "./mcp/mcpConfig";
+import { BUNDLED_BUILTIN_MCP_CATALOG, builtinServerRow } from "./mcp/builtinMcpCatalog";
 
 const t = getT("en");
 const zh = getT("zh-cn");
@@ -590,8 +590,24 @@ describe("normalizeSettings with promptQueueStrategy", () => {
 });
 
 describe("normalizeSettings with mcpServers", () => {
-	it("gives a vault written before the setting existed the bundled MCP rows", () => {
-		expect(normalizeSettings({}).mcpServers).toEqual([builtinExaServer(), builtinSearxngServer()]);
+	// Every load seeds the catalog's built-ins; an empty list is therefore never
+	// empty — it is exactly the built-in rows, keyless.
+	const builtinRows = () => BUNDLED_BUILTIN_MCP_CATALOG.servers.map(builtinServerRow);
+
+	it("gives a vault written before the setting existed the bundled built-in rows", () => {
+		const settings = normalizeSettings({});
+		expect(settings.mcpServers).toEqual(builtinRows());
+		expect(settings.builtinMcpCatalog).toBe(BUNDLED_BUILTIN_MCP_CATALOG);
+	});
+
+	it("keeps a key on a moved built-in after a pre-catalog release dropped the cache", () => {
+		// An older release rebuilds settings without `builtinMcpCatalog`. The row may
+		// already sit where a newer catalog moved it, so the load must not move it
+		// back to the bundled endpoint and strip the key entered there.
+		const moved = { ...builtinRows()[0]!, url: "https://moved.example.com/mcp", token: "user-key" };
+		const settings = normalizeSettings({ mcpServers: [moved] });
+		expect(settings.mcpServers).toEqual([moved]);
+		expect(settings.builtinMcpCatalog).toBeUndefined();
 	});
 
 	it("keeps a stored server whole: token passes untrimmed, order preserved", () => {
@@ -601,8 +617,7 @@ describe("normalizeSettings with mcpServers", () => {
 			],
 		});
 		expect(settings.mcpServers).toEqual([
-			builtinExaServer(),
-			builtinSearxngServer(),
+			...builtinRows(),
 			{ id: "srv-1", name: "GitHub", url: "https://gh.example.com/mcp", token: "enc:v1:AAAA", secretRef: "", enabled: false },
 		]);
 	});
@@ -617,7 +632,7 @@ describe("normalizeSettings with mcpServers", () => {
 				"garbage",
 			] as never,
 		});
-		expect(settings.mcpServers).toEqual([builtinExaServer(), builtinSearxngServer()]);
+		expect(settings.mcpServers).toEqual(builtinRows());
 	});
 });
 

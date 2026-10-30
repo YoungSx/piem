@@ -350,15 +350,14 @@ describe("built bundle installs the separate official skill resource", () => {
 			const payload = readFileSync("dist/builtin-skills.json", "utf8");
 			const { version } = JSON.parse(readFileSync("manifest.json", "utf8")) as { version: string };
 			let requests = 0;
+			// The built-in MCP servers connect, and their catalog refreshes,
+			// fire-and-forget at onload; the counter is about the skills resource, so
+			// that background traffic is answered and never counted. Read from the
+			// resource itself so a catalog edit cannot quietly start counting.
+			const mcpCatalog = JSON.parse(readFileSync("resources/builtin-mcp.json", "utf8")) as { servers: Array<{ url: string }> };
+			const background = [...mcpCatalog.servers.map((server) => server.url), "https://raw.githubusercontent.com/YoungSx/piem/master/resources/builtin-mcp.json"];
 			host.requestUrl = async (params) => {
-				// The bundled MCPs connect and refresh fire-and-forget at onload; the
-				// counter is about the skills resource, so that background traffic is
-				// answered and never counted.
-				if (
-					params.url.startsWith("https://mcp.exa.ai/") ||
-					params.url.startsWith("https://mcp.api-inference.modelscope.net/") ||
-					params.url.includes("resources/builtin-mcp.json")
-				) {
+				if (background.some((url) => params.url.startsWith(url))) {
 					return { status: 405, headers: {}, arrayBuffer: new ArrayBuffer(0) };
 				}
 				requests++;

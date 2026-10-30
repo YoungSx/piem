@@ -31,8 +31,7 @@ import { ObsidianSessionManager } from "./session/ObsidianSessionManager";
 import { getLegacySessionDir, isLegacySessionDir } from "./session/sessionDir";
 import { ObsidianAgentService } from "./agent/ObsidianAgentService";
 import { McpManager } from "./mcp/mcpManager";
-import { fetchBuiltinMcpCatalog } from "./mcp/builtinMcpCatalog";
-import { ensureBuiltinMcpServers } from "./mcp/mcpConfig";
+import { refreshBuiltinMcpCatalog } from "./mcp/builtinMcpCatalog";
 import {
 	emptySkillLoadReport,
 	type SkillCatalogEntry,
@@ -150,7 +149,7 @@ export default class PiemPlugin extends Plugin {
 	 * rebuilding the manager or dropping live connections.
 	 */
 	private mcpBridge: McpManager | null = null;
-	/** Aborts a catalog refresh that is still in flight when the plugin unloads. */
+	/** Aborts the built-in MCP catalog refresh, scheduled or in flight, when the plugin unloads. */
 	private builtinMcpCatalogController: AbortController | null = null;
 	/**
 	 * The panel's sign-in facade, built on first ask. Stateless over its
@@ -328,9 +327,6 @@ export default class PiemPlugin extends Plugin {
 		// result; an agent picks the tools up at its own rebuild point. The
 		// per-server chain in the manager keeps this from racing another caller.
 		void this.mcpManager.connect();
-		// Catalog refresh is deliberately after local startup: offline users keep
-		// the bundled/cached rows and chat never waits for GitHub.
-		void this.refreshBuiltinMcpCatalog();
 
 		// The manager reads the folder and the cap through this closure rather than
 		// from a snapshot, so a change in the Sessions tab reaches the next chat
@@ -670,6 +666,13 @@ export default class PiemPlugin extends Plugin {
 			});
 		}
 
+		// After local startup, like the installer above: the bundled or cached rows
+		// are already connecting, so an offline start never waits on GitHub. The
+		// controller exists from here so an unload before layout-ready cancels it.
+		const catalogController = new AbortController();
+		this.builtinMcpCatalogController = catalogController;
+		this.app.workspace.onLayoutReady(() => this.syncBuiltinMcpCatalog(catalogController.signal));
+
 		// Behind the layout hook, not inline: `onload` returns before the vault
 		// has painted, so a modal opened from it appears over a half-built
 		// window. The built-in skill installer above waits for the same reason.
@@ -818,46 +821,31 @@ export default class PiemPlugin extends Plugin {
 		resolveSecretRefs(this.settings, this.requireSecretEnvironment().keychain());
 	}
 
-	/** Refreshes the catalog once per plugin load; invalid or unavailable data is ignored. */
-	private async refreshBuiltinMcpCatalog(): Promise<void> {
-		if (this.builtinMcpCatalogController !== null) return;
-		const controller = new AbortController();
-		this.builtinMcpCatalogController = controller;
-		const timer = window.setTimeout(() => controller.abort(new Error("Built-in MCP catalog refresh timed out.")), 15_000);
-		try {
-			const result = await fetchBuiltinMcpCatalog({
+	/**
+	 * Fetches the built-in MCP catalog once per load. A change lands through
+	 * `saveSettings`, whose reconfigure is what reconnects the rows — only when a
+	 * row changed, since a validator-only update cannot alter what connects.
+	 */
+	private syncBuiltinMcpCatalog(signal: AbortSignal): void {
+		void refreshBuiltinMcpCatalog({
+			// A whole-file read gains nothing from streaming; same native transport
+			// as the skill resource and imports.
+			fetch: createObsidianRequestUrlFetch(),
+			signal,
+			logger: this.log.child("mcp"),
+			read: () => ({
+				servers: this.settings.mcpServers,
+				catalog: this.settings.builtinMcpCatalog,
 				etag: this.settings.builtinMcpCatalogEtag,
-				signal: controller.signal,
-			});
-			if (controller.signal.aborted) return;
-			if (result.status === "not-modified") {
-				if (result.etag && result.etag !== this.settings.builtinMcpCatalogEtag) {
-					this.settings.builtinMcpCatalogEtag = result.etag;
-					await this.saveSettings({ reconfigure: false });
-				}
-				return;
-			}
-			if (result.catalog.revision <= this.settings.builtinMcpCatalog.revision) {
-				if (result.catalog.revision === this.settings.builtinMcpCatalog.revision && result.etag !== this.settings.builtinMcpCatalogEtag) {
-					this.settings.builtinMcpCatalogEtag = result.etag;
-					await this.saveSettings({ reconfigure: false });
-				}
-				return;
-			}
-			this.settings.mcpServers = ensureBuiltinMcpServers(this.settings.mcpServers, result.catalog);
-			this.settings.builtinMcpCatalog = result.catalog;
-			this.settings.builtinMcpCatalogEtag = result.etag;
-			await this.saveSettings();
-			if (controller.signal.aborted) return;
-			await this.mcpManager.connect();
-		} catch (error) {
-			if (!controller.signal.aborted) {
-				this.log.warn("Built-in MCP catalog refresh failed", () => ({ error: error instanceof Error ? error.message : String(error) }));
-			}
-		} finally {
-			window.clearTimeout(timer);
-			if (this.builtinMcpCatalogController === controller) this.builtinMcpCatalogController = null;
-		}
+			}),
+			persist: async ({ state, serversChanged }) => {
+				this.settings.mcpServers = state.servers;
+				this.settings.builtinMcpCatalog = state.catalog;
+				this.settings.builtinMcpCatalogEtag = state.etag;
+				await this.saveSettings({ reconfigure: serversChanged });
+				if (serversChanged && this.settingsTab?.containerEl.isConnected) this.settingsTab.update();
+			},
+		});
 	}
 
 	/**

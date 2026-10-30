@@ -19,14 +19,8 @@ import { normalizeCompactionConfig, type CompactionConfig } from "./agent/compac
 import { isCodemodeSessionMode, type CodemodeSessionMode } from "./codemode/mode";
 
 import { normalizeRetryConfig, type RetryConfig } from "./net/retrySettings";
-import {
-	DEFAULT_BUILTIN_MCP_CATALOG,
-	ensureBuiltinMcpServers,
-	normalizeBuiltinMcpCatalog,
-	normalizeMcpServers,
-	type BuiltinMcpCatalog,
-	type McpServerConfig,
-} from "./mcp/mcpConfig";
+import { normalizeMcpServers, type McpServerConfig } from "./mcp/mcpConfig";
+import { loadBuiltinMcpState, type BuiltinMcpCatalog } from "./mcp/builtinMcpCatalog";
 import { normalizeExtensionConfig, type ExtensionConfigData } from "./extensions/extensionConfigStore";
 import { DEFAULT_SESSION_RETENTION, readRetentionLimit } from "./session/retention";
 import { DEFAULT_SESSION_DIR, normalizeSessionDir } from "./session/sessionDir";
@@ -251,9 +245,13 @@ export interface PiemSettings {
 	logLevel: LogLevelSetting;
 	/** Configured MCP servers; empty means no remote tools join the agent. */
 	mcpServers: McpServerConfig[];
-	/** Last validated built-in MCP catalog, retained for offline startup. */
-	builtinMcpCatalog: BuiltinMcpCatalog;
-	/** ETag for the last catalog response, when the host supplied one. */
+	/**
+	 * The built-in MCP catalog the rows were last reconciled against — the
+	 * offline copy the next start opens on. Absent while that is unknown, e.g.
+	 * after a release that predates the catalog rewrote `data.json`.
+	 */
+	builtinMcpCatalog?: BuiltinMcpCatalog;
+	/** Validator for {@link builtinMcpCatalog}, when the host supplied one. */
 	builtinMcpCatalogEtag?: string;
 	/**
 	 * Per-extension JSON configuration, namespaced by extension id.
@@ -310,7 +308,6 @@ export const DEFAULT_SETTINGS: PiemSettings = {	providers: [],
 	shareDiagnostics: true,
 	codemodeMode: DEFAULT_CODEMODE_MODE,
 	mcpServers: [],
-	builtinMcpCatalog: DEFAULT_BUILTIN_MCP_CATALOG,
 };
 
 /**
@@ -340,10 +337,13 @@ function seedExtensionDefaults(data: Partial<PiemSettings> | null | undefined): 
 export function normalizeSettings(data: Partial<PiemSettings> | null | undefined): PiemSettings {
 	const provider = data?.provider || DEFAULT_PROVIDER;
 	const modelId = data?.modelId || DEFAULT_MODEL_ID;
-	const cachedBuiltinMcpCatalog = normalizeBuiltinMcpCatalog(data?.builtinMcpCatalog);
-	const builtinMcpCatalog = cachedBuiltinMcpCatalog && cachedBuiltinMcpCatalog.revision >= DEFAULT_BUILTIN_MCP_CATALOG.revision
-		? cachedBuiltinMcpCatalog
-		: DEFAULT_BUILTIN_MCP_CATALOG;
+	// Rows and catalog are read together: which catalog the built-in rows answer
+	// to depends on the rows themselves (see `loadBuiltinMcpState`).
+	const builtinMcp = loadBuiltinMcpState(
+		normalizeMcpServers(data?.mcpServers),
+		data?.builtinMcpCatalog,
+		data?.builtinMcpCatalogEtag,
+	);
 	// A stored `thinkingLevel` from before the field moved into the session file
 	// is deliberately dropped, not migrated: the level now belongs to each
 	// conversation, and a global leftover would claim authority over sessions
@@ -444,11 +444,12 @@ export function normalizeSettings(data: Partial<PiemSettings> | null | undefined
 		// A corrupted or unknown stored value degrades to the default rather than
 		// throwing, matching how every other enum-typed setting is repaired.
 		logLevel: readLogLevel(data?.logLevel),
-		// The validated local catalog supplies the built-in rows before the
-		// background refresh gets a chance to reach GitHub.
-		mcpServers: ensureBuiltinMcpServers(normalizeMcpServers(data?.mcpServers), builtinMcpCatalog),
-		builtinMcpCatalog,
-		builtinMcpCatalogEtag: typeof data?.builtinMcpCatalogEtag === "string" ? data.builtinMcpCatalogEtag : undefined,
+		// The built-in rows ride along on every load, reconciled with the local
+		// catalog before the background refresh can reach GitHub: absent from a
+		// hand-edited data.json means they reappear, with `enabled` and token intact.
+		mcpServers: builtinMcp.servers,
+		builtinMcpCatalog: builtinMcp.catalog,
+		builtinMcpCatalogEtag: builtinMcp.etag,
 		shareDiagnostics: data?.shareDiagnostics !== false,
 		codemodeMode: readCodemodeMode(data),
 	};
