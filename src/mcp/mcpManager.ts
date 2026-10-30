@@ -446,23 +446,16 @@ export class McpManager {
 		// full connect timeout against a server that cannot be reached at all,
 		// blocking the composer for fifteen seconds on every operation forever.
 		// The panel keeps showing the error either way; the cooldown only bounds
-		// how often the dead endpoint is knocked on again.
+		// how often the dead endpoint is knocked on again. It holds for the
+		// configuration that failed, not for the row: a corrected URL or token —
+		// a user's edit, or the built-in catalog moving an endpoint — is a
+		// different server, and waiting out the old one's failure would leave the
+		// row reporting an error from a host it no longer points at.
 		if (
 			existing?.status === "error" &&
 			existing.failedAt !== undefined &&
-			Date.now() - existing.failedAt < MOUNT_RETRY_COOLDOWN_MS
-		) {
-			return;
-		}
-		// A failed mount is retried only after the cooldown. Without this, every
-		// connect — and connects ride the send and new-session paths — pays the
-		// full connect timeout against a server that cannot be reached at all,
-		// blocking the composer for fifteen seconds on every operation forever.
-		// The panel keeps showing the error either way; the cooldown only bounds
-		// how often the dead endpoint is knocked on again.
-		if (
-			existing?.status === "error" &&
-			existing.failedAt !== undefined &&
+			existing.connection?.url === server.url &&
+			existing.connection?.token === server.token &&
 			Date.now() - existing.failedAt < MOUNT_RETRY_COOLDOWN_MS
 		) {
 			return;
