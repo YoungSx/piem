@@ -5,7 +5,7 @@ import type { SkillCatalogEntry } from "../../agent/skillLoader";
 import { builtinSkillsDefinitions } from "./builtinSkillsDefinitions";
 import type { SkillRow } from "../../skills/skillManager";
 import { type SettingsPanelState, type SkillsSnapshot } from "./panelState";
-import { BUILTIN_MCP_SERVER_ID, createMcpServerConfig, isBuiltinMcpServerId, type McpServerConfig } from "../../mcp/mcpConfig";
+import { createMcpServerConfig, EXA_MCP_SERVER_ID, isBuiltinMcpServerId, type McpServerConfig } from "../../mcp/mcpConfig";
 import type { McpServerState } from "../../mcp/mcpManager";
 import { openConfirmDelete } from "./confirmDelete";
 import { setFoldableDescription } from "./descFold";
@@ -639,11 +639,11 @@ function openMcpModal(host: SettingsPanelHost, server?: McpServerConfig): void {
 		readSecret: (id) => host.readSecret(id),
 		t: host.t,
 		server,
-		// The bundled row's form speaks about the key, not the server: the endpoint
+		// The Exa row's form speaks about the key, not the server: the endpoint
 		// is fixed and the point of opening it is raising the shared quota.
-		title: server?.id === BUILTIN_MCP_SERVER_ID ? t.t("mcp.builtinEditTitle") : undefined,
-		tokenTitle: server?.id === BUILTIN_MCP_SERVER_ID ? t.t("mcp.builtinKeyName") : undefined,
-		tokenDesc: server?.id === BUILTIN_MCP_SERVER_ID ? t.t("mcp.builtinKeyDesc") : undefined,
+		title: server?.id === EXA_MCP_SERVER_ID ? t.t("mcp.builtinEditTitle") : undefined,
+		tokenTitle: server?.id === EXA_MCP_SERVER_ID ? t.t("mcp.builtinKeyName") : undefined,
+		tokenDesc: server?.id === EXA_MCP_SERVER_ID ? t.t("mcp.builtinKeyDesc") : undefined,
 		test: (draft) => host.mcp.test(draft),
 		onSubmit: async (draft) => {
 			// Re-created through the config factory so the row lands normalized; the
@@ -675,10 +675,10 @@ function mcpRow(host: SettingsPanelHost, state: McpServerState): SettingGroupIte
 		render: (setting) => {
 			// URLs are handed in verbatim and can be very long; the fold keeps the row
 			// scannable, and the verdict line below still appends after the folded body.
-			// The bundled server trades the fold for the one thing a reader of this row
-			// needs to act on: the keyless-shared-quota hint, with the fixed endpoint
-			// spelled out in the same breath.
-			if (state.builtin) {
+			// The Exa row trades the fold for the one thing a reader of it needs to act
+			// on: the keyless-shared-quota hint. Other built-ins keep their URL — the
+			// catalog can move it, and the row is where a reader sees where it went.
+			if (state.id === EXA_MCP_SERVER_ID) {
 				setting.setDesc(t.t("mcp.builtinDesc"));
 			} else {
 				setFoldableDescription(setting, state.url, t);

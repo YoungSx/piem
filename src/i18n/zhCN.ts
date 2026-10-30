@@ -924,7 +924,7 @@ export const zhCN: DeepPartial<EnCopy> = {
 		add: "添加服务器",
 		// 内置 Exa 行的专属文案：端点是死的，表单真正能编辑的只有密钥，行描述
 		// 也就只说这一件事——不带 key 是共享限额，带 key 才是自己的配额。
-		builtinDesc: "Piem 内置服务器。地址由经过校验的项目目录维护；你的启用状态和密钥仍由本地设置保留。",
+		builtinDesc: "Piem 内置联网搜索，无需配置即可使用（共享配额）。填入自己的 Exa API 密钥可使用独立配额。",
 		builtinEditTitle: "Exa 搜索",
 		builtinKeyName: "Exa API 密钥",
 		builtinKeyDesc: "填入 Exa API 密钥以使用专属配额，留空则使用内置共享额度。密钥可在 exa.ai 获取。",

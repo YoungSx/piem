@@ -116,7 +116,7 @@ export interface McpServerState {
 	enabled: boolean;
 	status: McpServerStatus;
 	toolCount: number;
-	/** The bundled, undeletable Exa row — the panel hides its delete button and badges it. */
+	/** A row the built-in catalog owns — the panel hides its delete button and badges it. */
 	builtin: boolean;
 	/** Last error message, when status is "error". */
 	error?: string;
